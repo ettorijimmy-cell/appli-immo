@@ -1,9 +1,17 @@
 import { randomUUID } from "crypto";
 import { ConfigModule } from "@nestjs/config";
 import { Test } from "@nestjs/testing";
-import { comptesBancairesSci, organisations, organisationSci, utilisateurs, type Database } from "db";
+import {
+  comptesBancairesSci,
+  journalAudit,
+  organisations,
+  organisationSci,
+  utilisateurs,
+  type Database
+} from "db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { ComptesBancairesSciModule } from "../comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { ComptesBancairesSciService } from "../comptes-bancaires-sci/comptes-bancaires-sci.service";
@@ -30,6 +38,7 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
         ConfigModule.forRoot({ isGlobal: true }),
         DatabaseModule,
         EncryptionModule,
+        AuditModule,
         UsersModule,
         AuthModule,
         ScisModule,
@@ -115,7 +124,52 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     expect(rowEnBase?.ibanChiffre).not.toContain(iban);
     expect(rowEnBase?.bicChiffre).not.toBe(bic);
 
-    const comptes = await comptesBancairesSciService.findBySciIdDecrypted(sci.id);
+    const comptes = await comptesBancairesSciService.findBySciIdDecrypted(sci.id, userId);
     expect(comptes).toEqual([{ id: created.id, sciId: sci.id, iban, bic }]);
+  });
+
+  it("consigne un accès à un document sensible dans journal_audit à chaque déchiffrement", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Audit",
+      regimeFiscal: "IR"
+    });
+
+    await comptesBancairesSciService.create({
+      sciId: sci.id,
+      iban: "FR7630006000011234567890189",
+      bic: "BNPAFRPPXXX"
+    });
+
+    await comptesBancairesSciService.findBySciIdDecrypted(sci.id, userId);
+
+    const entreesAudit = await db
+      .select()
+      .from(journalAudit)
+      .where(eq(journalAudit.entiteId, sci.id));
+
+    expect(entreesAudit).toHaveLength(1);
+    expect(entreesAudit[0]).toMatchObject({
+      entiteType: "document_sensible",
+      entiteId: sci.id,
+      action: "acces",
+      utilisateurId: userId
+    });
+    expect(entreesAudit[0]?.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("ne consigne rien si aucun compte bancaire n'existe pour la SCI", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Sans Compte",
+      regimeFiscal: "IR"
+    });
+
+    await comptesBancairesSciService.findBySciIdDecrypted(sci.id, userId);
+
+    const entreesAudit = await db
+      .select()
+      .from(journalAudit)
+      .where(eq(journalAudit.entiteId, sci.id));
+
+    expect(entreesAudit).toHaveLength(0);
   });
 });

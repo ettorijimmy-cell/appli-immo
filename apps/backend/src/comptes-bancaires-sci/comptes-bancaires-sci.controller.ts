@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ComptesBancairesSciService } from "./comptes-bancaires-sci.service";
 import { CreateCompteBancaireDto } from "./dto/create-compte-bancaire.dto";
@@ -16,7 +17,7 @@ export class ComptesBancairesSciController {
   // Seul point d'accès à l'IBAN/BIC en clair — voir CLAUDE.md, section
   // Règles importantes : jamais de déchiffrement côté apps/desktop.
   @Get("scis/:id/comptes-bancaires")
-  findForSci(@Param("id") id: string) {
-    return this.comptesBancairesSciService.findBySciIdDecrypted(id);
+  findForSci(@Param("id") id: string, @Req() req: Request) {
+    return this.comptesBancairesSciService.findBySciIdDecrypted(id, req.user!.sub);
   }
 }

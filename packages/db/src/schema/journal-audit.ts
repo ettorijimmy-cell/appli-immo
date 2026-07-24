@@ -5,7 +5,8 @@ import { utilisateurs } from "./utilisateurs";
 export const journalAuditActionEnum = pgEnum("journal_audit_action", [
   "creation",
   "modification",
-  "archivage"
+  "archivage",
+  "acces"
 ]);
 
 /**

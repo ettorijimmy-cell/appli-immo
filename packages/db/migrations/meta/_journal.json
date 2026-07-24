@@ -15,6 +15,13 @@
       "when": 1784928956612,
       "tag": "0001_minor_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784931116517,
+      "tag": "0002_charming_star_brand",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."journal_audit_action" ADD VALUE 'acces';

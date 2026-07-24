@@ -118,7 +118,7 @@ jamais modifiée après écriture.
 |---|---|---|
 | entite_type | text | Nom de la table concernée, ou `authentification` / `document_sensible` pour les événements de sécurité |
 | entite_id | uuid, nullable | Identifiant de la ligne concernée ; nullable car certains événements de sécurité n'ont pas d'entité métier identifiable |
-| action | enum | `creation` \| `modification` \| `archivage` |
+| action | enum | `creation` \| `modification` \| `archivage` \| `acces` — `acces` pour la consultation d'un document sensible (ex. déchiffrement d'IBAN/BIC, `GET /scis/:id/comptes-bancaires`) |
 | donnees_avant / donnees_apres | jsonb | État avant/après, pour audit complet |
 | utilisateur_id | uuid, nullable | Auteur de l'action ; nullable pour les événements non attribuables à un utilisateur résolu |
 | created_at | timestamp | Horodatage de l'événement |
