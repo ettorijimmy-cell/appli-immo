@@ -125,7 +125,7 @@ jamais modifiée après écriture.
 ## utilisateurs
 | Champ | Type | Description |
 |---|---|---|
-| organisation_id | uuid | Organisation de rattachement de l'utilisateur |
+| organisation_id | uuid | Organisation de rattachement de l'utilisateur (modèle multi-tenant, app-spec §2) ; structurel — non lu par le flux d'authentification JWT actuel (`AuthService`), qui ne s'appuie que sur `email`/`mot_de_passe_hash`/`statut` |
 | email | text, unique | Identifiant de connexion |
 | nom / prenom | text | |
 | mot_de_passe_hash | text | Argon2, jamais un autre algorithme |

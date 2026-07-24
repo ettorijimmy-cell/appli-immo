@@ -12,9 +12,9 @@ export const organisationSci = pgTable("organisation_sci", {
   organisationId: uuid("organisation_id")
     .notNull()
     .references(() => organisations.id),
-  // Pas de `.references()` : la table `scis` n'existe pas encore, elle
-  // arrive avec le Module 1. La contrainte de clé étrangère sera ajoutée
-  // dans la migration du Module 1, une fois `scis` créée.
+  // TODO(Module 1): pas de `.references()` ici — la table `scis` n'existe
+  // pas encore, elle arrive avec le Module 1. Ajouter la contrainte de clé
+  // étrangère dans la migration du Module 1, une fois `scis` créée.
   sciId: uuid("sci_id").notNull(),
   role: organisationSciRoleEnum("role").notNull(),
   dateDebut: date("date_debut").notNull(),

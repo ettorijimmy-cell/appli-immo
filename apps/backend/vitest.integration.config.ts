@@ -1,10 +1,10 @@
 import swc from "unplugin-swc";
-import { configDefaults, defineConfig } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [swc.vite()],
   test: {
     environment: "node",
-    exclude: [...configDefaults.exclude, "**/*.integration.spec.ts"]
+    include: ["**/*.integration.spec.ts"]
   }
 });
