@@ -67,7 +67,14 @@ respecte, contrairement à esbuild.
 (devDependencies `unplugin-swc`, `@swc/core`), `pnpm-workspace.yaml`
 (`allowBuilds.'@swc/core'`).
 
-**À surveiller** : tout nouveau test NestJS utilisant
-`Test.createTestingModule` doit passer par une config Vitest incluant ce
-plugin — sinon même symptôme. S'applique uniquement à apps/backend (seul
-package utilisant le conteneur DI de NestJS).
+**À surveiller** : ce n'est pas un problème propre au module auth — c'est
+un problème de configuration Vitest au niveau du package apps/backend tout
+entier. N'importe quel futur module NestJS testé via
+`Test.createTestingModule` (ex. finances, documents, alertes...) aurait le
+même symptôme si la config Vitest utilisée ne chargeait pas ce plugin. Le
+correctif est déjà au bon niveau (vitest.config.ts et
+vitest.integration.config.ts à la racine d'apps/backend, pas dans
+src/auth/), donc aucune action requise à la création d'un nouveau module —
+mais si quelqu'un crée un jour une config Vitest supplémentaire (par
+module, par exemple) sans repartir de celles-ci, le bug resurgira
+silencieusement.
