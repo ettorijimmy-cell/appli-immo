@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.turbo/
+
+.env
+.env.*
+!.env.example
+
+*.sqlite
+*.sqlite-journal
+
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
