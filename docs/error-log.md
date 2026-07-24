@@ -33,5 +33,41 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
-*(Aucune entrée pour l'instant — le journal s'alimente à partir du
-démarrage du développement, Phase 12.)*
+### [2026-07-24] Injection de dépendances NestJS cassée sous Vitest
+
+**Symptôme** : dans un test utilisant `Test.createTestingModule(...)` (NestJS
+Testing), un service injecté par type implicite dans un constructeur
+(`constructor(private readonly usersService: UsersService)`, sans
+`@Inject()` explicite) est `undefined` à l'exécution — erreur
+`TypeError: Cannot read properties of undefined (reading '...')` sur le
+premier appel à une méthode de ce service.
+
+**Contexte** : premier test d'intégration réel (`auth.integration.spec.ts`,
+Module 0) construisant un `AuthService` via un vrai `TestingModule`
+NestJS plutôt qu'en l'instanciant à la main.
+
+**Cause** : Vitest transforme le TypeScript via esbuild (transform Vite),
+qui n'émet pas `emitDecoratorMetadata`. NestJS s'appuie sur les métadonnées
+`design:paramtypes` (émises par `tsc` avec `emitDecoratorMetadata: true`)
+pour résoudre les types de paramètres de constructeur non annotés par
+`@Inject()`. Sans ces métadonnées, le conteneur DI ne sait pas quoi
+injecter. Les tests unitaires classiques (instanciation manuelle
+`new AuthService(usersService, jwtService)`) ne sont pas affectés, seuls
+les tests passant par le conteneur DI de NestJS le sont.
+
+**Solution** : ajouter `unplugin-swc` + `@swc/core` comme plugin Vite dans
+la config Vitest du package concerné, à la racine du package (pas dans un
+sous-dossier de module) pour que ça s'applique automatiquement à tout
+futur module. `unplugin-swc` lit `experimentalDecorators` /
+`emitDecoratorMetadata` depuis le `tsconfig.json` du package et les
+respecte, contrairement à esbuild.
+
+**Fichiers concernés** : `apps/backend/vitest.config.ts`,
+`apps/backend/vitest.integration.config.ts`, `apps/backend/package.json`
+(devDependencies `unplugin-swc`, `@swc/core`), `pnpm-workspace.yaml`
+(`allowBuilds.'@swc/core'`).
+
+**À surveiller** : tout nouveau test NestJS utilisant
+`Test.createTestingModule` doit passer par une config Vitest incluant ce
+plugin — sinon même symptôme. S'applique uniquement à apps/backend (seul
+package utilisant le conteneur DI de NestJS).

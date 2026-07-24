@@ -27,6 +27,10 @@ syndics). Architecture offline-first avec synchronisation cloud.
 - Emails : Gmail API (OAuth2, compte de l'utilisateur)
 - Monorepo : pnpm workspaces + Turborepo
 - Tests : Vitest partout (pas de Jest, même pour NestJS — un seul runner)
+- Transform Vitest côté apps/backend : unplugin-swc (pas esbuild) — esbuild
+  n'émet pas `emitDecoratorMetadata`, requis par l'injection de dépendances
+  NestJS (voir docs/error-log.md, [2026-07-24] Injection de dépendances
+  NestJS cassée sous Vitest)
 
 ## Structure du monorepo
 
