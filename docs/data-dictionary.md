@@ -19,12 +19,13 @@ n'est jamais supprimée physiquement.
 ## organisation_sci
 Table de liaison — une SCI peut avoir plusieurs organisations rattachées
 dans le temps (propriétaire actuel + mandataire éventuel). Créée au
-Module 0, avant la table `scis` (Module 1) : la colonne `sci_id` n'a donc
-pas encore de contrainte de clé étrangère — à ajouter dans la migration du
-Module 1 une fois `scis` créée.
+Module 0, avant la table `scis` (Module 1) ; la FK sur `sci_id` a été
+ajoutée dans la migration du Module 1 une fois `scis` créée (migration
+`0001_minor_gideon`). Le rattachement `proprietaire` est créé
+automatiquement à la création d'une SCI — voir
+`creerRattachementProprietaire` dans packages/core.
 | Champ | Type | Description |
 |---|---|---|
-| sci_id | uuid | Pas de FK avant le Module 1, voir ci-dessus |
 | role | enum | `proprietaire` \| `mandataire` |
 | date_debut / date_fin | date | Période de validité du rattachement |
 
