@@ -50,6 +50,18 @@ Le détail du raisonnement (comparatif Electron/Tauri, choix de PowerSync,
 choix de Scaleway) reste disponible dans l'historique de conception du
 projet si besoin de le retracer.
 
+## 3bis. Navigation
+
+Sidebar à 6 entrées, dans cet ordre exact :
+`Tableau de bord` · `Patrimoine` (SCI/Immeubles/Appartements réunis) ·
+`Locataires` · `Finances` · `Documents` · `Paramètres`.
+
+Règle : ajouter une 7e entrée nécessite d'en fusionner deux — pas
+d'ajout libre, pour préserver la sobriété visée en Phase 6.
+
+Navigation secondaire : palette de commandes (Ctrl+K), développée en
+dernier (Module 8) — voir docs/backlog.md.
+
 ## 4. Modules du MVP (3 mois)
 
 Périmètre fonctionnel du MVP :
