@@ -9,7 +9,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_STORAGE_KEY = "appli-immo:access-token";
+export const TOKEN_STORAGE_KEY = "appli-immo:access-token";
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_STORAGE_KEY));

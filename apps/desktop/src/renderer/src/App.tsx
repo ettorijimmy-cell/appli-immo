@@ -7,6 +7,7 @@ import { LocatairesPage } from "./pages/LocatairesPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ParametresPage } from "./pages/ParametresPage";
 import { PatrimoinePage } from "./pages/PatrimoinePage";
+import { SciDetailPage } from "./pages/SciDetailPage";
 import { TableauDeBordPage } from "./pages/TableauDeBordPage";
 
 function AuthenticatedApp(): React.JSX.Element {
@@ -21,6 +22,7 @@ function AuthenticatedApp(): React.JSX.Element {
       <Route element={<AppLayout />}>
         <Route index element={<TableauDeBordPage />} />
         <Route path="patrimoine" element={<PatrimoinePage />} />
+        <Route path="patrimoine/scis/:id" element={<SciDetailPage />} />
         <Route path="locataires" element={<LocatairesPage />} />
         <Route path="finances" element={<FinancesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
