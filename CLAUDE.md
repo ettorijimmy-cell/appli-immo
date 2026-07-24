@@ -72,6 +72,14 @@ pnpm build            build de production
 - Ne jamais appeler l'API Claude ou l'API Gmail directement depuis
   apps/desktop. Toujours passer par apps/backend (voir docs/app-spec.md,
   section Sécurité).
+- Ne jamais déchiffrer un champ chiffré applicativement (IBAN, BIC, pièce
+  d'identité...) côté apps/desktop. Le champ reste chiffré dans la base
+  locale SQLite et dans le payload synchronisé par PowerSync ; seul
+  apps/backend détient la clé (Secret Manager) et peut déchiffrer.
+  L'affichage en clair passe toujours par un endpoint backend authentifié
+  dédié (ex. `GET /scis/:id/comptes-bancaires`), jamais par une lecture
+  directe de la base locale. Même principe que la règle Claude/Gmail
+  ci-dessus.
 - Ne jamais stocker de secret (clé API, clé de chiffrement, mot de passe) en
   clair dans le code ou dans un fichier de config versionné.
 - Avant de corriger un bug, vérifier s'il est déjà documenté dans
