@@ -15,4 +15,9 @@ export class UsersService {
       .limit(1);
     return user ?? null;
   }
+
+  async findById(id: string) {
+    const [user] = await this.db.select().from(utilisateurs).where(eq(utilisateurs.id, id)).limit(1);
+    return user ?? null;
+  }
 }

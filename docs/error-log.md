@@ -33,6 +33,51 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-07-25] Guard JWT injectable dans un module mais pas dans un autre
+
+**Symptôme** : `UnknownDependenciesException` au démarrage (ou à la
+construction du TestingModule) — `Nest can't resolve dependencies of the
+JwtAuthGuard (?). Please make sure that the argument JwtService at index
+[0] is available in the XyzModule module.` Le message cible un module
+précis (ex. `ComptesBancairesSciModule`) qui n'importe même pas
+explicitement `AuthModule` ; un autre module utilisant exactement le même
+`@UseGuards(JwtAuthGuard)` (ex. `ScisModule`) démarre sans problème.
+
+**Contexte** : Module 1 (SCI), ajout de `ScisController` et
+`ComptesBancairesSciController`, tous deux protégés par
+`@UseGuards(JwtAuthGuard)`. Reproduit à la fois dans le TestingModule
+(`scis.integration.spec.ts`) et dans le vrai serveur démarré via
+`NestFactory.create(AppModule)` — ce n'est donc pas un artefact du
+harnais de test.
+
+**Cause** : `AuthModule` exportait `JwtAuthGuard` mais pas `JwtService`
+(ni le `JwtModule` qui le fournit). Exporter une classe n'exporte pas
+transitivement ses propres dépendances internes. Quand Nest a besoin de
+(re)construire une instance de `JwtAuthGuard` pour un module consommateur,
+il lui faut aussi que `JwtService` soit résolvable depuis ce module —
+sinon la construction échoue, et l'échec est attribué au module
+consommateur (pas à `AuthModule`), ce qui égare le diagnostic. Passer
+`AuthModule` en `@Global()` seul n'a pas suffi : `@Global()` ne rend
+disponibles que les exports du module marqué global, pas ceux de ses
+propres imports non ré-exportés.
+
+**Solution** : capturer l'instance de `JwtModule.registerAsync(...)` dans
+une variable et l'ajouter à la fois à `imports` et à `exports` d'
+`AuthModule` (en plus de `JwtAuthGuard`), pour que `JwtService` soit
+transitivement disponible partout où `AuthModule` est accessible.
+Combiné à `@Global()` sur `AuthModule`, tout futur module protégé par
+`@UseGuards(JwtAuthGuard)` fonctionne sans rien importer explicitement.
+
+**Fichiers concernés** : `apps/backend/src/auth/auth.module.ts`.
+
+**À surveiller** : si un jour un guard/intercepteur/pipe exporté d'un
+module a lui-même des dépendances non triviales, vérifier que TOUTES ses
+dépendances (pas seulement la classe elle-même) sont exportées par le
+module d'origine — sinon le même symptôme resurgira, avec un message
+d'erreur qui pointe vers le mauvais module (le consommateur, pas
+l'origine du problème). Toujours vérifier contre le vrai serveur démarré
+en plus du TestingModule avant de conclure qu'un correctif fonctionne.
+
 ### [2026-07-24] Injection de dépendances NestJS cassée sous Vitest
 
 **Symptôme** : dans un test utilisant `Test.createTestingModule(...)` (NestJS
