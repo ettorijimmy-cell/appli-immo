@@ -1,6 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
-import { createDbClient } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL } from "db";
 
 export const DATABASE_CONNECTION = Symbol("DATABASE_CONNECTION");
 
@@ -11,12 +11,12 @@ export const DATABASE_CONNECTION = Symbol("DATABASE_CONNECTION");
     {
       provide: DATABASE_CONNECTION,
       inject: [ConfigService],
-      // postgres.js se connecte paresseusement : la valeur par défaut permet
-      // au squelette de démarrer avant le provisionnement Scaleway (voir
-      // docs/backlog.md, Module 0). Une vraie requête échouera tant que
-      // DATABASE_URL ne pointe pas vers une instance réelle.
+      // postgres.js se connecte paresseusement : la valeur par défaut pointe
+      // vers le Postgres de dev local (docker-compose.yml). Une vraie
+      // requête échouera tant que ce conteneur ne tourne pas — ou qu'un
+      // DATABASE_URL de production (Scaleway) n'est pas fourni.
       useFactory: (config: ConfigService) =>
-        createDbClient(config.get<string>("DATABASE_URL", "postgres://localhost:5432/appli_immo_dev"))
+        createDbClient(config.get<string>("DATABASE_URL", DEFAULT_DEV_DATABASE_URL))
     }
   ],
   exports: [DATABASE_CONNECTION]

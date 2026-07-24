@@ -12,7 +12,8 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "seed:user": "pnpm --filter backend seed:user"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

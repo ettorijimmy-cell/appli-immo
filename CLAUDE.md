@@ -61,11 +61,19 @@ packages/ui      → composants React partagés
 
 ```
 pnpm install         installer les dépendances
+docker compose up -d  démarrer le Postgres de dev local (persistant, port 5433)
 pnpm dev              lancer backend + desktop en parallèle
+pnpm seed:user        créer/mettre à jour son utilisateur de connexion (email + mot de passe)
 pnpm test             exécuter les tests (Vitest) sur tous les packages
 pnpm lint             linter tout le monorepo
 pnpm build            build de production
 ```
+
+Le Postgres de dev (`docker-compose.yml`) tourne sur le port 5433, pas 5432,
+pour ne jamais entrer en conflit avec un autre Postgres déjà présent sur la
+machine. La chaîne de connexion de repli (`DEFAULT_DEV_DATABASE_URL`,
+packages/db/src/client.ts) pointe dessus — aucune variable d'environnement
+à définir pour un usage local.
 
 ## Règles importantes — à ne jamais enfreindre
 

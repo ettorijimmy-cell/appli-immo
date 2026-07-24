@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appli_immo_dev
+    ports:
+      # 5433 côté hôte : évite tout conflit avec un Postgres déjà présent
+      # sur 5432 (voir DEFAULT_DEV_DATABASE_URL, packages/db/src/client.ts).
+      - "5433:5432"
+    volumes:
+      - appli_immo_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  appli_immo_pg_data:
