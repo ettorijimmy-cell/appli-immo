@@ -18,9 +18,13 @@ n'est jamais supprimée physiquement.
 
 ## organisation_sci
 Table de liaison — une SCI peut avoir plusieurs organisations rattachées
-dans le temps (propriétaire actuel + mandataire éventuel).
+dans le temps (propriétaire actuel + mandataire éventuel). Créée au
+Module 0, avant la table `scis` (Module 1) : la colonne `sci_id` n'a donc
+pas encore de contrainte de clé étrangère — à ajouter dans la migration du
+Module 1 une fois `scis` créée.
 | Champ | Type | Description |
 |---|---|---|
+| sci_id | uuid | Pas de FK avant le Module 1, voir ci-dessus |
 | role | enum | `proprietaire` \| `mandataire` |
 | date_debut / date_fin | date | Période de validité du rattachement |
 
@@ -104,18 +108,26 @@ Table de liaison pour gérer la colocation.
 | seuil_jours_avant | integer | Configurable par type d'alerte dans Paramètres |
 
 ## journal_audit
-Table transverse — capture toute création/modification/archivage sur
-n'importe quelle entité, ainsi que les événements de sécurité (connexions,
-accès à un document sensible, exports).
+Table transverse, append-only — capture toute création/modification/archivage
+sur n'importe quelle entité, ainsi que les événements de sécurité (connexions,
+accès à un document sensible, exports). Ne porte pas les colonnes d'audit
+standard (`updated_at`/`version`/`archived_at`) : une ligne de journal n'est
+jamais modifiée après écriture.
 | Champ | Type | Description |
 |---|---|---|
 | entite_type | text | Nom de la table concernée, ou `authentification` / `document_sensible` pour les événements de sécurité |
+| entite_id | uuid, nullable | Identifiant de la ligne concernée ; nullable car certains événements de sécurité n'ont pas d'entité métier identifiable |
 | action | enum | `creation` \| `modification` \| `archivage` |
 | donnees_avant / donnees_apres | jsonb | État avant/après, pour audit complet |
+| utilisateur_id | uuid, nullable | Auteur de l'action ; nullable pour les événements non attribuables à un utilisateur résolu |
+| created_at | timestamp | Horodatage de l'événement |
 
 ## utilisateurs
 | Champ | Type | Description |
 |---|---|---|
+| organisation_id | uuid | Organisation de rattachement de l'utilisateur |
+| email | text, unique | Identifiant de connexion |
+| nom / prenom | text | |
 | mot_de_passe_hash | text | Argon2, jamais un autre algorithme |
 | statut | enum | `actif` \| `archive` |
 
