@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto";
 import { ConfigModule } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
-import { Test } from "@nestjs/testing";
+import { Test, type TestingModule } from "@nestjs/testing";
 import * as argon2 from "argon2";
-import { organisations, utilisateurs, type Database } from "db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { AuthService } from "./auth.service";
 
@@ -13,16 +14,27 @@ import { AuthService } from "./auth.service";
 // après application des migrations Drizzle. Nécessite DATABASE_URL dans
 // l'environnement — non inclus dans `pnpm test` par défaut (vitest.config.ts
 // exclut ce fichier), lancé séparément via `pnpm test:integration`.
+//
+// Chaque test tourne dans sa propre transaction annulée dans afterEach (voir
+// test-utils/transactional-test.ts) — y compris la création de l'organisation
+// et des utilisateurs de test, pour ne jamais laisser de résidu même si un
+// test plante en cours de route.
 describe("AuthService (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
   let authService: AuthService;
   let db: Database;
 
   const password = "mot-de-passe-integration";
-  const email = `integration-${randomUUID()}@example.com`;
-  const archivedEmail = `integration-archivee-${randomUUID()}@example.com`;
+  let email: string;
+  let archivedEmail: string;
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         DatabaseModule,
@@ -33,10 +45,12 @@ describe("AuthService (intégration Postgres réelle)", () => {
         })
       ],
       providers: [AuthService]
-    }).compile();
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
 
     authService = moduleRef.get(AuthService);
-    db = moduleRef.get(DATABASE_CONNECTION);
 
     const [organisation] = await db
       .insert(organisations)
@@ -47,6 +61,8 @@ describe("AuthService (intégration Postgres réelle)", () => {
     }
 
     const motDePasseHash = await argon2.hash(password);
+    email = `integration-${randomUUID()}@example.com`;
+    archivedEmail = `integration-archivee-${randomUUID()}@example.com`;
 
     await db.insert(utilisateurs).values({
       organisationId: organisation.id,
@@ -67,8 +83,13 @@ describe("AuthService (intégration Postgres réelle)", () => {
     });
   });
 
+  afterEach(async () => {
+    await moduleRef.close();
+    await rollback();
+  });
+
   afterAll(async () => {
-    await db.$client.end();
+    await rootDb.$client.end();
   });
 
   it("valide un utilisateur réel avec le bon mot de passe et émet un JWT exploitable", async () => {

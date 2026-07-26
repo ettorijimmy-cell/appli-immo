@@ -1,8 +1,10 @@
 import { randomUUID } from "crypto";
 import { ConfigModule } from "@nestjs/config";
-import { Test } from "@nestjs/testing";
+import { Test, type TestingModule } from "@nestjs/testing";
 import {
   comptesBancairesSci,
+  createDbClient,
+  DEFAULT_DEV_DATABASE_URL,
   journalAudit,
   organisations,
   organisationSci,
@@ -10,13 +12,14 @@ import {
   type Database
 } from "db";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { ComptesBancairesSciModule } from "../comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { ComptesBancairesSciService } from "../comptes-bancaires-sci/comptes-bancaires-sci.service";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { ScisModule } from "./scis.module";
 import { ScisService } from "./scis.service";
@@ -25,15 +28,25 @@ import { ScisService } from "./scis.service";
 // une SCI, lui associer un compte bancaire, vérifier que l'IBAN n'apparaît
 // jamais en clair en base. Tourne contre un vrai Postgres (voir
 // auth.integration.spec.ts pour le fonctionnement général).
+//
+// Chaque test tourne dans sa propre transaction annulée dans afterEach (voir
+// test-utils/transactional-test.ts), setup (organisation + utilisateur)
+// compris.
 describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
   let scisService: ScisService;
   let comptesBancairesSciService: ComptesBancairesSciService;
   let db: Database;
   let organisationId: string;
   let userId: string;
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         DatabaseModule,
@@ -44,11 +57,13 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
         ScisModule,
         ComptesBancairesSciModule
       ]
-    }).compile();
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
 
     scisService = moduleRef.get(ScisService);
     comptesBancairesSciService = moduleRef.get(ComptesBancairesSciService);
-    db = moduleRef.get(DATABASE_CONNECTION);
 
     const [organisation] = await db
       .insert(organisations)
@@ -76,8 +91,13 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     userId = user.id;
   });
 
+  afterEach(async () => {
+    await moduleRef.close();
+    await rollback();
+  });
+
   afterAll(async () => {
-    await db.$client.end();
+    await rootDb.$client.end();
   });
 
   it("rattache automatiquement l'organisation créatrice avec le rôle proprietaire", async () => {
