@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import type { Plugin } from "vite";
 
-const DEFAULT_API_URL = "http://localhost:3000";
+// Repli utilisable UNIQUEMENT en dev (voir garde-fou ci-dessous) — jamais
+// silencieusement actif dans un build de production.
+const DEFAULT_DEV_API_URL = "http://localhost:3000";
 const CSP_PLACEHOLDER = "__CSP__";
 
 // CSP différenciée dev/prod : en dev, le client HMR de Vite a besoin
@@ -12,19 +14,29 @@ const CSP_PLACEHOLDER = "__CSP__";
 // aucun relâchement — voir CLAUDE.md, Règles importantes.
 //
 // connect-src suit VITE_API_URL (même variable que
-// src/renderer/src/lib/api-config.ts, même fallback) — pas d'origine
-// backend codée en dur, pour ne rien avoir à changer ici une fois le
-// backend déployé sur Scaleway.
+// src/renderer/src/lib/api-config.ts) — pas d'origine backend codée en
+// dur, pour ne rien avoir à changer ici une fois le backend déployé sur
+// Scaleway.
 function cspPlugin(): Plugin {
   let isDev = false;
-  let apiUrl = DEFAULT_API_URL;
+  let apiUrl = DEFAULT_DEV_API_URL;
   return {
     name: "appli-immo-csp",
     configResolved(config) {
       // Plus fiable que ctx.server dans transformIndexHtml, qui ne reflète
       // pas toujours correctement le mode dev sous electron-vite.
       isDev = config.command === "serve";
-      apiUrl = (config.env["VITE_API_URL"] as string | undefined) ?? DEFAULT_API_URL;
+      const envApiUrl = config.env["VITE_API_URL"] as string | undefined;
+
+      // Échec bruyant plutôt qu'un repli silencieux vers localhost:3000
+      // dans un build livré — voir docs/error-log.md.
+      if (!isDev && !envApiUrl) {
+        throw new Error(
+          "VITE_API_URL doit être défini pour un build de production (voir .env.example)."
+        );
+      }
+
+      apiUrl = envApiUrl ?? DEFAULT_DEV_API_URL;
     },
     transformIndexHtml(html) {
       const csp = isDev

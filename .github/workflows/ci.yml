@@ -7,6 +7,11 @@ on:
 
 env:
   DATABASE_URL: postgres://postgres:postgres@localhost:5432/appli_immo_test
+  # Placeholder — aucun backend n'est encore déployé sur Scaleway. Sert
+  # uniquement à satisfaire le garde-fou de build de production dans
+  # apps/desktop/electron.vite.config.ts (VITE_API_URL obligatoire hors
+  # dev) ; à remplacer par l'origine réelle une fois déployée.
+  VITE_API_URL: https://api.appli-immo.example.com
 
 jobs:
   ci:
