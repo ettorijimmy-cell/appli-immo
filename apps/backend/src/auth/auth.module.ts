@@ -13,10 +13,21 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
 const jwtModule = JwtModule.registerAsync({
   imports: [ConfigModule],
   inject: [ConfigService],
-  useFactory: (config: ConfigService) => ({
-    secret: config.get<string>("JWT_SECRET", "dev-only-insecure-secret-change-me"),
-    signOptions: { expiresIn: config.get<number>("JWT_EXPIRES_IN_SECONDS", 3600) }
-  })
+  useFactory: (config: ConfigService) => {
+    const secret = config.get<string>("JWT_SECRET");
+
+    // Échec bruyant plutôt qu'un repli silencieux vers un secret par
+    // défaut en production (même principe que VITE_API_URL côté desktop
+    // — voir docs/error-log.md). Le repli reste actif en dev uniquement.
+    if (!secret && process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET doit être défini en production (voir .env.example).");
+    }
+
+    return {
+      secret: secret ?? "dev-only-insecure-secret-change-me",
+      signOptions: { expiresIn: config.get<number>("JWT_EXPIRES_IN_SECONDS", 3600) }
+    };
+  }
 });
 
 // Global : JwtAuthGuard est une préoccupation transversale (voir
