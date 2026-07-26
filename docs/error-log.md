@@ -33,6 +33,46 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-07-26] CSP bloquait le login Electron ("Identifiants invalides" trompeur)
+
+**Symptôme** : le login échouait systématiquement avec "Identifiants
+invalides", laissant croire à un problème de mot de passe/Argon2. La
+vraie cause, visible uniquement dans les DevTools du renderer : "Fetch
+API cannot load http://localhost:3000/auth/login. Refused to connect
+because it violates the document's Content Security Policy."
+
+**Contexte** : écran de connexion Electron (Module 0), premier essai de
+connexion réel après mise en place du Postgres de dev persistant.
+
+**Cause** : la CSP (`default-src 'self'; script-src 'self'`) n'avait pas
+de `connect-src` explicite ; `default-src 'self'` s'appliquait donc en
+repli et bloquait tout fetch vers une origine différente de celle du
+document (le backend sur `localhost:3000`).
+
+**Solution** : ajouter `connect-src 'self' <origine backend>` à la CSP,
+paramétré via `VITE_API_URL` (même variable que
+`lib/api-config.ts`) plutôt que codé en dur. CSP différenciée dev/prod
+(`electron.vite.config.ts`) car le client HMR de Vite a en plus besoin de
+`style-src 'unsafe-inline'` en dev uniquement (jamais présent en
+production).
+
+Correctif appliqué en deux temps : un premier correctif (regex sur la
+balise `<meta>` dans `transformIndexHtml`) a lui-même échoué
+silencieusement à cause d'une mise en forme multi-ligne de la balise
+source, avant d'être remplacé par un placeholder littéral (`__CSP__`)
+recherché par simple correspondance de chaîne, avec échec bruyant du
+build si le placeholder est absent.
+
+**Fichiers concernés** : `apps/desktop/src/renderer/index.html`,
+`apps/desktop/electron.vite.config.ts`, `.env.example`.
+
+**À surveiller** : si un jour une nouvelle origine backend doit être
+autorisée (ex. Scaleway en production), il suffit de renseigner
+`VITE_API_URL` — ne jamais coder une origine en dur dans la CSP. Si un
+"Identifiants invalides" résiste à un mot de passe pourtant vérifié en
+base, vérifier la console DevTools du renderer avant de suspecter
+Argon2/le hash.
+
 ### [2026-07-25] Guard JWT injectable dans un module mais pas dans un autre
 
 **Symptôme** : `UnknownDependenciesException` au démarrage (ou à la
