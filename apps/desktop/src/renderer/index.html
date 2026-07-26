@@ -2,10 +2,12 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' http://localhost:3000"
-    />
+    <!-- __CSP__ est remplacé au build/dev par electron.vite.config.ts
+         (cspPlugin) — jamais servi tel quel. Un placeholder littéral,
+         recherché par simple correspondance de chaîne (pas une regex sur
+         la balise), pour que le remplacement ne dépende d'aucune mise en
+         forme HTML environnante. -->
+    <meta http-equiv="Content-Security-Policy" content="__CSP__" />
     <title>Appli Immo</title>
   </head>
   <body>

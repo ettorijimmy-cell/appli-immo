@@ -4,6 +4,7 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import type { Plugin } from "vite";
 
 const DEFAULT_API_URL = "http://localhost:3000";
+const CSP_PLACEHOLDER = "__CSP__";
 
 // CSP différenciée dev/prod : en dev, le client HMR de Vite a besoin
 // d'injecter des styles inline (jamais présent dans le build de
@@ -29,12 +30,16 @@ function cspPlugin(): Plugin {
       const csp = isDev
         ? `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ${apiUrl}`
         : `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${apiUrl}`;
-      // \s+ (pas un espace littéral) : la balise <meta> source est
-      // multi-ligne dans index.html, un espace simple ne matchait pas.
-      return html.replace(
-        /<meta\s+http-equiv="Content-Security-Policy"[^>]*>/,
-        `<meta http-equiv="Content-Security-Policy" content="${csp}" />`
-      );
+      // Recherche d'un placeholder littéral, pas une regex sur la balise :
+      // insensible à toute mise en forme HTML environnante. Échec bruyant
+      // si absent plutôt qu'un remplacement silencieusement ignoré (cause
+      // du bug précédent — voir docs/error-log.md).
+      if (!html.includes(CSP_PLACEHOLDER)) {
+        throw new Error(
+          `${CSP_PLACEHOLDER} introuvable dans index.html : la CSP ne serait pas appliquée.`
+        );
+      }
+      return html.replaceAll(CSP_PLACEHOLDER, csp);
     }
   };
 }
