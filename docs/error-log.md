@@ -66,12 +66,17 @@ build si le placeholder est absent.
 **Fichiers concernés** : `apps/desktop/src/renderer/index.html`,
 `apps/desktop/electron.vite.config.ts`, `.env.example`.
 
-**À surveiller** : si un jour une nouvelle origine backend doit être
-autorisée (ex. Scaleway en production), il suffit de renseigner
-`VITE_API_URL` — ne jamais coder une origine en dur dans la CSP. Si un
-"Identifiants invalides" résiste à un mot de passe pourtant vérifié en
-base, vérifier la console DevTools du renderer avant de suspecter
-Argon2/le hash.
+**À surveiller** : tout futur module ajoutant un nouvel appel réseau
+depuis le renderer (pas seulement vers le backend — tout `fetch`/XHR/
+WebSocket) devra vérifier que l'origine appelée est bien whitelistée
+dans `connect-src`, sous peine du même symptôme trompeur. Si un jour une
+nouvelle origine backend doit être autorisée (ex. Scaleway en
+production), il suffit de renseigner `VITE_API_URL` — ne jamais coder
+une origine en dur dans la CSP. Plus généralement : un échec applicatif
+côté renderer (ici "Identifiants invalides") peut être un faux symptôme
+qui cache un blocage réseau, jamais un vrai problème d'authentification
+— vérifier la console DevTools du renderer avant de suspecter la logique
+métier (ici Argon2/le hash).
 
 ### [2026-07-25] Guard JWT injectable dans un module mais pas dans un autre
 
