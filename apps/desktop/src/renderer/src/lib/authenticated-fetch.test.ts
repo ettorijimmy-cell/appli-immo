@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TOKEN_STORAGE_KEY } from "../auth/AuthContext";
+import { authEvents, TOKEN_STORAGE_KEY, UNAUTHORIZED_EVENT } from "../auth/auth-events";
 import { ApiError, authenticatedFetch } from "./authenticated-fetch";
 
 function createLocalStorageStub(initial: Record<string, string> = {}): Storage {
@@ -57,7 +57,7 @@ describe("authenticatedFetch", () => {
   });
 
   it("lève une ApiError sur une réponse non-ok", async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
 
     await expect(authenticatedFetch("/scis")).rejects.toBeInstanceOf(ApiError);
   });
@@ -66,5 +66,19 @@ describe("authenticatedFetch", () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ id: "1" }), { status: 200 }));
 
     await expect(authenticatedFetch("/scis/1")).resolves.toEqual({ id: "1" });
+  });
+
+  it("sur 401 : purge le token stocké et émet l'évènement de déconnexion", async () => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, "token-mort");
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    const listener = vi.fn();
+    authEvents.addEventListener(UNAUTHORIZED_EVENT, listener);
+
+    await expect(authenticatedFetch("/scis")).rejects.toBeInstanceOf(ApiError);
+
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    authEvents.removeEventListener(UNAUTHORIZED_EVENT, listener);
   });
 });

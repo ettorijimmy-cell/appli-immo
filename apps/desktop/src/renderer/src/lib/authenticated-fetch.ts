@@ -1,4 +1,4 @@
-import { TOKEN_STORAGE_KEY } from "../auth/AuthContext";
+import { authEvents, TOKEN_STORAGE_KEY, UNAUTHORIZED_EVENT } from "../auth/auth-events";
 import { API_BASE_URL } from "./api-config";
 
 export class ApiError extends Error {
@@ -16,6 +16,15 @@ export async function authenticatedFetch<T>(path: string, init: RequestInit = {}
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+
+  if (response.status === 401) {
+    // Token mort (expiré ou signé par un secret différent — voir
+    // docs/error-log.md) : purge et notifie AuthProvider, qui bascule
+    // l'app en état déconnecté (redirection vers l'écran de connexion).
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    authEvents.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+
   if (!response.ok) {
     throw new ApiError(response.status);
   }
