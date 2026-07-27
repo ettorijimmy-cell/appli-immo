@@ -50,6 +50,14 @@ cloud fonctionne dans les deux sens sur une table de test.
 **Critère de complétion** : créer une SCI, lui associer un compte bancaire,
 vérifier que l'IBAN n'apparaît jamais en clair en base.
 
+**Écart connu** : l'endpoint "modifier" du CRUD SCI listé ci-dessus n'a
+jamais été implémenté — seuls create / findAll / findById / archiver
+existent (`apps/backend/src/scis`). Identifié lors du Module 2, qui a
+implémenté le CRUD complet (dont "modifier") pour Immeubles/Appartements/
+Équipements. Reste à corriger dans un ticket dédié (backend + bouton
+"Modifier" sur la fiche SCI) avant de considérer le Module 1 fidèle à sa
+propre définition.
+
 ---
 
 ## Module 2 — Patrimoine
