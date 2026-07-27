@@ -67,6 +67,7 @@ pnpm seed:user        créer/mettre à jour son utilisateur de connexion (email 
 pnpm test             exécuter les tests (Vitest) sur tous les packages
 pnpm lint             linter tout le monorepo
 pnpm build            build de production
+pnpm backup:local     pg_dump du Postgres de dev vers backups/ (horodaté, ignoré par git)
 ```
 
 Le Postgres de dev (`docker-compose.yml`) tourne sur le port 5433, pas 5432,

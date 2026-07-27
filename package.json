@@ -13,7 +13,8 @@
     "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "seed:user": "pnpm --filter backend seed:user"
+    "seed:user": "pnpm --filter backend seed:user",
+    "backup:local": "node scripts/backup-local.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

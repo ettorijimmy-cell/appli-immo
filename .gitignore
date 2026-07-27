@@ -12,6 +12,8 @@ build/
 *.sqlite
 *.sqlite-journal
 
+backups/
+
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
