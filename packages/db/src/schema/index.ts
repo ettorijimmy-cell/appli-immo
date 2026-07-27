@@ -7,3 +7,7 @@ export * from "./appartements";
 export * from "./equipements";
 export * from "./utilisateurs";
 export * from "./journal-audit";
+export * from "./locataires";
+export * from "./baux";
+export * from "./garants";
+export * from "./bail-locataires";

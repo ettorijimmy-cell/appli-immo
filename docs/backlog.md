@@ -91,6 +91,23 @@ appartement depuis l'écran Patrimoine sans naviguer par menus multiples.
   historique des baux précédents (sections repliables, Phase 6)
 - Complétion de la fiche appartement : onglets Bail actuel + Historique
   des baux
+
+**Écart connu (revue financial-logic-reviewer)** : `activer()`
+(`apps/backend/src/baux/baux.service.ts`) vérifie désormais directement la
+table `baux` (pas seulement le champ miroir `appartements.statut`) pour
+empêcher deux baux actifs simultanés sur le même appartement — corrigé
+avant de considérer le module terminé. Deux points restent volontairement
+non traités, risque jugé faible en usage mono-utilisateur desktop actuel,
+à revisiter avant l'ouverture SaaS multi-utilisateur :
+- Pas de verrou explicite (`SELECT ... FOR UPDATE`) ni d'index unique
+  partiel Postgres sur `baux(appartement_id) WHERE statut IN ('actif',
+  'preavis')` : deux appels concurrents à `activer()` pourraient en théorie
+  passer tous les deux la vérification avant qu'aucun ne committe.
+- `UpdateAppartementDto` permet toujours de forcer manuellement
+  `statut: 'loue'` sans qu'un bail actif n'existe réellement (décision
+  Module 2 assumée pour la correction de saisie) — rien ne garantit la
+  cohérence entre `appartements.statut` et l'état réel de `baux` en dehors
+  du chemin activer()/resilier().
 - Tests packages/core sur les règles de transition de statut
 
 **Critère de complétion** : créer un bail avec deux colocataires, vérifier

@@ -1,6 +1,7 @@
-// Filtrage des éléments archivés, partagé par les listes SCI / Immeubles /
-// Appartements / Équipements : masqués par défaut, réaffichables via un
-// bouton, visuellement distincts (grisés + badge) une fois réaffichés.
+// Filtrage des éléments archivés, partagé par toutes les listes de
+// l'application (Patrimoine, Locataires...) : masqués par défaut,
+// réaffichables via un bouton, visuellement distincts (grisés + badge) une
+// fois réaffichés.
 
 export function ArchiveToggle({
   show,

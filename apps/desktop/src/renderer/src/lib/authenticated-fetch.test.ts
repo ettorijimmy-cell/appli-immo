@@ -62,6 +62,28 @@ describe("authenticatedFetch", () => {
     await expect(authenticatedFetch("/scis")).rejects.toBeInstanceOf(ApiError);
   });
 
+  it("reprend le message d'erreur NestJS ({message: ...}) dans l'ApiError", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ statusCode: 409, message: "l'appartement n'est pas vacant" }), {
+        status: 409
+      })
+    );
+
+    await expect(authenticatedFetch("/baux/1/activer")).rejects.toMatchObject({
+      status: 409,
+      message: "l'appartement n'est pas vacant"
+    });
+  });
+
+  it("retombe sur un message générique si le corps de la réponse n'est pas du JSON exploitable", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
+
+    await expect(authenticatedFetch("/scis")).rejects.toMatchObject({
+      status: 500,
+      message: "Requête échouée (500)"
+    });
+  });
+
   it("retourne le JSON parsé sur succès", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ id: "1" }), { status: 200 }));
 

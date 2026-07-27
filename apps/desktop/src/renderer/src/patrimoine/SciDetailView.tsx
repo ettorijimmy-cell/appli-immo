@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createCompteBancaire, getSci, listComptesBancaires, type CompteBancaire, type Sci } from "../scis/api";
 import { archiveImmeuble, createImmeuble, listImmeubles, type Immeuble } from "./api";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 
 export function SciDetailView({
   sciId,

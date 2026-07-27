@@ -73,10 +73,18 @@ automatiquement à la création d'une SCI — voir
 | type_garantie | enum | `personne_physique` \| `garantie_visale` \| `autre` |
 
 ## baux
+Le passage du statut à `actif` (activation) et `resilie` (résiliation)
+déclenche la transition automatique du statut de l'appartement associé
+(`vacant` ↔ `loue`) — voir packages/core, `peutActiverBail` et
+`calculerStatutAppartementApresResiliation`. Ces deux transitions sont les
+seules voies pour changer `statut` : jamais via une mise à jour générique du
+bail (`apps/backend/src/baux/baux.service.ts`, `UpdateBailDto` ne porte pas
+ce champ).
 | Champ | Type | Description |
 |---|---|---|
 | type_bail | enum | `vide` \| `meuble` |
 | statut | enum | `brouillon` \| `actif` \| `preavis` \| `resilie` \| `archive` |
+| loyer_mensuel | decimal, nullable | Pré-rempli depuis `appartements.loyer_reference` à la création si non saisi explicitement (packages/core, `preremplirLoyerBail`) ; reste modifiable ensuite |
 | depot_garantie | decimal | |
 
 ## bail_locataires

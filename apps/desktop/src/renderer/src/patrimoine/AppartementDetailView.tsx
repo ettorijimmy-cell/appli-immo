@@ -12,14 +12,15 @@ import {
   type Equipement,
   type EquipementType
 } from "./api";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
 // "archive" en est exclu : l'archivage a son propre bouton dédié.
 const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
 
-type Tab = "infos" | "equipements";
+type Tab = "infos" | "equipements" | "bail" | "historique";
 
 export function AppartementDetailView({
   appartementId,
@@ -117,9 +118,41 @@ export function AppartementDetailView({
         >
           Équipements
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setIsEditing(false);
+            setTab("bail");
+          }}
+          className={`border-b-2 px-1 pb-2 text-sm font-medium ${
+            tab === "bail"
+              ? "border-indigo-700 text-indigo-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Bail actuel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setIsEditing(false);
+            setTab("historique");
+          }}
+          className={`border-b-2 px-1 pb-2 text-sm font-medium ${
+            tab === "historique"
+              ? "border-indigo-700 text-indigo-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Historique des baux
+        </button>
       </div>
 
-      {tab === "infos" ? (
+      {tab === "bail" ? (
+        <BailActuelTab appartement={appartement} />
+      ) : tab === "historique" ? (
+        <HistoriqueBauxTab appartement={appartement} />
+      ) : tab === "infos" ? (
         isEditing ? (
           <EditAppartementForm
             appartement={appartement}

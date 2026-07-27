@@ -2,8 +2,28 @@ import { authEvents, TOKEN_STORAGE_KEY, UNAUTHORIZED_EVENT } from "../auth/auth-
 import { API_BASE_URL } from "./api-config";
 
 export class ApiError extends Error {
-  constructor(public readonly status: number) {
-    super(`Requête échouée (${status})`);
+  constructor(
+    public readonly status: number,
+    message?: string
+  ) {
+    super(message ?? `Requête échouée (${status})`);
+  }
+}
+
+// NestJS renvoie {statusCode, message, error} sur une exception — on
+// remonte ce message (ex. "l'appartement n'est pas vacant") plutôt qu'un
+// message générique, utile pour les règles métier qui refusent une action
+// (activation/résiliation de bail notamment).
+async function extraireMessageErreur(response: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object" && "message" in body) {
+      const { message } = body as { message: unknown };
+      return typeof message === "string" ? message : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -26,7 +46,7 @@ export async function authenticatedFetch<T>(path: string, init: RequestInit = {}
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status);
+    throw new ApiError(response.status, await extraireMessageErreur(response));
   }
   if (response.status === 204) {
     return undefined as T;

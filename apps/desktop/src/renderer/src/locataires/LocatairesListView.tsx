@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { archiveSci, createSci, listScis, type CreateSciInput, type Sci } from "../scis/api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { archiveLocataire, createLocataire, listLocataires, type Locataire } from "./api";
 
-export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }): React.JSX.Element {
-  const [scis, setScis] = useState<Sci[]>([]);
+export function LocatairesListView({
+  onSelect
+}: {
+  onSelect: (locataireId: string) => void;
+}): React.JSX.Element {
+  const [locataires, setLocataires] = useState<Locataire[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -12,10 +16,10 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      setScis(await listScis());
+      setLocataires(await listLocataires());
       setError(null);
     } catch {
-      setError("Impossible de charger les SCI");
+      setError("Impossible de charger les locataires");
     } finally {
       setIsLoading(false);
     }
@@ -26,14 +30,14 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
   }, [refresh]);
 
   async function handleArchive(id: string): Promise<void> {
-    await archiveSci(id);
+    await archiveLocataire(id);
     await refresh();
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Patrimoine</h1>
+        <h1 className="text-lg font-semibold">Locataires</h1>
         <div className="flex items-center gap-4">
           <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((value) => !value)} />
           <button
@@ -41,13 +45,13 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
             onClick={() => setShowForm((value) => !value)}
             className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
           >
-            {showForm ? "Annuler" : "Nouvelle SCI"}
+            {showForm ? "Annuler" : "Nouveau locataire"}
           </button>
         </div>
       </div>
 
       {showForm && (
-        <NewSciForm
+        <NewLocataireForm
           onCreated={() => {
             setShowForm(false);
             void refresh();
@@ -62,45 +66,49 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
       )}
 
       {(() => {
-        const visibleScis = showArchived ? scis : scis.filter((sci) => sci.statut !== "archive");
+        const visibleLocataires = showArchived
+          ? locataires
+          : locataires.filter((locataire) => locataire.statut !== "archive");
         return isLoading ? (
           <p className="text-sm text-slate-500">Chargement…</p>
-        ) : visibleScis.length === 0 ? (
-          <p className="text-sm text-slate-500">Aucune SCI pour le moment.</p>
+        ) : visibleLocataires.length === 0 ? (
+          <p className="text-sm text-slate-500">Aucun locataire pour le moment.</p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500">
                 <th className="py-2 font-medium">Nom</th>
-                <th className="py-2 font-medium">Régime fiscal</th>
+                <th className="py-2 font-medium">Email</th>
                 <th className="py-2 font-medium">Statut</th>
                 <th className="py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
-              {visibleScis.map((sci) => (
+              {visibleLocataires.map((locataire) => (
                 <tr
-                  key={sci.id}
-                  className={`border-b border-slate-100 ${sci.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  key={locataire.id}
+                  className={`border-b border-slate-100 ${
+                    locataire.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""
+                  }`}
                 >
                   <td className="py-2">
                     <button
                       type="button"
-                      onClick={() => onSelect(sci.id)}
+                      onClick={() => onSelect(locataire.id)}
                       className="text-indigo-700 hover:underline"
                     >
-                      {sci.nom}
+                      {locataire.prenom} {locataire.nom}
                     </button>
-                    {sci.statut === "archive" && <ArchiveBadge />}
+                    {locataire.statut === "archive" && <ArchiveBadge />}
                   </td>
-                  <td className="py-2">{sci.regimeFiscal}</td>
-                  <td className="py-2">{sci.statut}</td>
+                  <td className="py-2">{locataire.email ?? "—"}</td>
+                  <td className="py-2">{locataire.statut}</td>
                   <td className="py-2 text-right">
-                    {sci.statut === "active" && (
+                    {locataire.statut !== "archive" && (
                       <button
                         type="button"
                         onClick={() => {
-                          void handleArchive(sci.id);
+                          void handleArchive(locataire.id);
                         }}
                         className="text-sm text-slate-500 hover:text-red-600"
                       >
@@ -118,11 +126,11 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
   );
 }
 
-function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element {
+function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.Element {
   const [nom, setNom] = useState("");
-  const [regimeFiscal, setRegimeFiscal] = useState<CreateSciInput["regimeFiscal"]>("IR");
-  const [formeJuridique, setFormeJuridique] = useState("");
-  const [siret, setSiret] = useState("");
+  const [prenom, setPrenom] = useState("");
+  const [email, setEmail] = useState("");
+  const [telephone, setTelephone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -131,15 +139,19 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
     setError(null);
     setIsSubmitting(true);
     try {
-      await createSci({
+      await createLocataire({
         nom,
-        regimeFiscal,
-        ...(formeJuridique && { formeJuridique }),
-        ...(siret && { siret })
+        prenom,
+        ...(email && { email }),
+        ...(telephone && { telephone })
       });
+      setNom("");
+      setPrenom("");
+      setEmail("");
+      setTelephone("");
       onCreated();
     } catch {
-      setError("Impossible de créer la SCI");
+      setError("Impossible de créer le locataire");
     } finally {
       setIsSubmitting(false);
     }
@@ -154,11 +166,11 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
     >
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label htmlFor="nom" className="text-sm font-medium text-slate-700">
+          <label htmlFor="locataire-nom" className="text-sm font-medium text-slate-700">
             Nom
           </label>
           <input
-            id="nom"
+            id="locataire-nom"
             required
             value={nom}
             onChange={(event) => setNom(event.target.value)}
@@ -167,40 +179,39 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="regimeFiscal" className="text-sm font-medium text-slate-700">
-            Régime fiscal
-          </label>
-          <select
-            id="regimeFiscal"
-            value={regimeFiscal}
-            onChange={(event) => setRegimeFiscal(event.target.value as CreateSciInput["regimeFiscal"])}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="IR">IR</option>
-            <option value="IS">IS</option>
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="formeJuridique" className="text-sm font-medium text-slate-700">
-            Forme juridique
+          <label htmlFor="locataire-prenom" className="text-sm font-medium text-slate-700">
+            Prénom
           </label>
           <input
-            id="formeJuridique"
-            value={formeJuridique}
-            onChange={(event) => setFormeJuridique(event.target.value)}
+            id="locataire-prenom"
+            required
+            value={prenom}
+            onChange={(event) => setPrenom(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="siret" className="text-sm font-medium text-slate-700">
-            SIRET
+          <label htmlFor="locataire-email" className="text-sm font-medium text-slate-700">
+            Email
           </label>
           <input
-            id="siret"
-            value={siret}
-            onChange={(event) => setSiret(event.target.value)}
+            id="locataire-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-telephone" className="text-sm font-medium text-slate-700">
+            Téléphone
+          </label>
+          <input
+            id="locataire-telephone"
+            value={telephone}
+            onChange={(event) => setTelephone(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -217,7 +228,7 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
         disabled={isSubmitting}
         className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
       >
-        {isSubmitting ? "Création…" : "Créer la SCI"}
+        {isSubmitting ? "Création…" : "Créer le locataire"}
       </button>
     </form>
   );
