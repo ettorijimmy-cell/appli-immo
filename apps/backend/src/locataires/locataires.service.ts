@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { locataires, type Database } from "db";
+import { locataires, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateLocataireDto } from "./dto/create-locataire.dto";
 import type { UpdateLocataireDto } from "./dto/update-locataire.dto";
 
 @Injectable()
 export class LocatairesService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateLocataireDto) {
     const [locataire] = await this.db
@@ -35,11 +39,13 @@ export class LocatairesService {
   }
 
   async update(id: string, dto: UpdateLocataireDto) {
-    const [locataire] = await this.db
-      .update(locataires)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(eq(locataires.id, id))
-      .returning();
+    const [locataire] = await mettreAJourAvecAudit(
+      this.db,
+      locataires,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
     if (!locataire) {
       throw new NotFoundException("Locataire introuvable");
     }
@@ -47,11 +53,13 @@ export class LocatairesService {
   }
 
   async archive(id: string) {
-    const [locataire] = await this.db
-      .update(locataires)
-      .set({ statut: "archive", archivedAt: new Date() })
-      .where(eq(locataires.id, id))
-      .returning();
+    const [locataire] = await mettreAJourAvecAudit(
+      this.db,
+      locataires,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!locataire) {
       throw new NotFoundException("Locataire introuvable");
     }

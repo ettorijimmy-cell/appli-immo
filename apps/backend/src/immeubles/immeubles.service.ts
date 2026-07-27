@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { immeubles, type Database } from "db";
+import { immeubles, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateImmeubleDto } from "./dto/create-immeuble.dto";
 import type { UpdateImmeubleDto } from "./dto/update-immeuble.dto";
 
 @Injectable()
 export class ImmeublesService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateImmeubleDto) {
     const [immeuble] = await this.db
@@ -39,11 +43,13 @@ export class ImmeublesService {
   }
 
   async update(id: string, dto: UpdateImmeubleDto) {
-    const [immeuble] = await this.db
-      .update(immeubles)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(eq(immeubles.id, id))
-      .returning();
+    const [immeuble] = await mettreAJourAvecAudit(
+      this.db,
+      immeubles,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
     if (!immeuble) {
       throw new NotFoundException("Immeuble introuvable");
     }
@@ -51,11 +57,13 @@ export class ImmeublesService {
   }
 
   async archive(id: string) {
-    const [immeuble] = await this.db
-      .update(immeubles)
-      .set({ statut: "archive", archivedAt: new Date() })
-      .where(eq(immeubles.id, id))
-      .returning();
+    const [immeuble] = await mettreAJourAvecAudit(
+      this.db,
+      immeubles,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!immeuble) {
       throw new NotFoundException("Immeuble introuvable");
     }

@@ -1,7 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { creerRattachementProprietaire } from "core";
-import { organisationSci, scis, type Database } from "db";
+import { mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateSciDto } from "./dto/create-sci.dto";
@@ -10,7 +11,8 @@ import type { CreateSciDto } from "./dto/create-sci.dto";
 export class ScisService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly requestContext: RequestContextService
   ) {}
 
   async create(userId: string, dto: CreateSciDto) {
@@ -55,11 +57,13 @@ export class ScisService {
   }
 
   async archive(id: string) {
-    const [sci] = await this.db
-      .update(scis)
-      .set({ statut: "archive", archivedAt: new Date() })
-      .where(eq(scis.id, id))
-      .returning();
+    const [sci] = await mettreAJourAvecAudit(
+      this.db,
+      scis,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
     }

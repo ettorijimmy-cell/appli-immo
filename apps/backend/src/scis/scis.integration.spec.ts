@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
+import { CommonModule } from "../common/common.module";
 import { ComptesBancairesSciModule } from "../comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { ComptesBancairesSciService } from "../comptes-bancaires-sci/comptes-bancaires-sci.service";
 import { EncryptionModule } from "../crypto/encryption.module";
@@ -49,6 +50,7 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
         DatabaseModule,
         EncryptionModule,
         AuditModule,

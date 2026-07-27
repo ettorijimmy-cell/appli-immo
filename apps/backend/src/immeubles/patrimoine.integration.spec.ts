@@ -16,6 +16,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
+import { CommonModule } from "../common/common.module";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { EquipementsModule } from "../equipements/equipements.module";
 import { EquipementsService } from "../equipements/equipements.service";
@@ -44,6 +46,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
   let immeublesService: ImmeublesService;
   let appartementsService: AppartementsService;
   let equipementsService: EquipementsService;
+  let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
 
@@ -53,6 +56,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
         DatabaseModule,
         UsersModule,
         AuthModule,
@@ -70,6 +74,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     immeublesService = moduleRef.get(ImmeublesService);
     appartementsService = moduleRef.get(AppartementsService);
     equipementsService = moduleRef.get(EquipementsService);
+    requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -230,5 +235,50 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
 
     const [rowEnBase] = await db.select().from(equipements).where(eq(equipements.id, equipement.id));
     expect(rowEnBase?.archivedAt).not.toBeNull();
+  });
+
+  // Vérifie l'infrastructure de timbrage audit centralisée (docs/backlog.md,
+  // entrée "version/updated_by jamais posés") : quand un utilisateur est
+  // présent dans le contexte requête (simulé ici via
+  // RequestContextService.executerAvecContexte, normalement posé par
+  // UserContextInterceptor pour chaque requête HTTP réelle),
+  // mettreAJourAvecAudit doit le reporter sur updated_by et incrémenter
+  // version — sans qu'AppartementsService/ImmeublesService y pensent.
+  it("timbre updated_by et incrémente version quand un utilisateur est présent dans le contexte requête", async () => {
+    const sci = await scisService.create(userId, { nom: "SCI Audit Stamp", regimeFiscal: "IR" });
+    const immeuble = await immeublesService.create({
+      sciId: sci.id,
+      nom: "Immeuble Audit Stamp",
+      adresse: "6 rue de Test"
+    });
+    expect(immeuble.version).toBe(1);
+    expect(immeuble.updatedBy).toBeNull();
+
+    const misAJour = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId },
+      () => immeublesService.update(immeuble.id, { ville: "Lyon" })
+    );
+    expect(misAJour.updatedBy).toBe(userId);
+    expect(misAJour.version).toBe(2);
+
+    const archive = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId },
+      () => immeublesService.archive(immeuble.id)
+    );
+    expect(archive.updatedBy).toBe(userId);
+    expect(archive.version).toBe(3);
+
+    // Hors contexte (comme tous les autres tests de ce fichier) :
+    // updated_by reste null plutôt que de faire échouer l'écriture — pas de
+    // contexte requête possible en dehors d'une vraie requête HTTP (scripts,
+    // tests directs).
+    const appartement = await appartementsService.create({
+      immeubleId: immeuble.id,
+      numero: "6",
+      type: "T2"
+    });
+    const misAJourSansContexte = await appartementsService.update(appartement.id, { statut: "travaux" });
+    expect(misAJourSansContexte.updatedBy).toBeNull();
+    expect(misAJourSansContexte.version).toBe(2);
   });
 });

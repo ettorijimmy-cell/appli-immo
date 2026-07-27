@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { equipements, type Database } from "db";
+import { equipements, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateEquipementDto } from "./dto/create-equipement.dto";
 import type { UpdateEquipementDto } from "./dto/update-equipement.dto";
 
 @Injectable()
 export class EquipementsService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateEquipementDto) {
     const [equipement] = await this.db
@@ -41,11 +45,13 @@ export class EquipementsService {
   }
 
   async update(id: string, dto: UpdateEquipementDto) {
-    const [equipement] = await this.db
-      .update(equipements)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(eq(equipements.id, id))
-      .returning();
+    const [equipement] = await mettreAJourAvecAudit(
+      this.db,
+      equipements,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
     if (!equipement) {
       throw new NotFoundException("Équipement introuvable");
     }
@@ -55,11 +61,13 @@ export class EquipementsService {
   // Pas de colonne `statut` dédiée (voir docs/data-dictionary.md) :
   // archivedAt seul suffit, pas de cycle de vie à états multiples ici.
   async archive(id: string) {
-    const [equipement] = await this.db
-      .update(equipements)
-      .set({ archivedAt: new Date() })
-      .where(eq(equipements.id, id))
-      .returning();
+    const [equipement] = await mettreAJourAvecAudit(
+      this.db,
+      equipements,
+      id,
+      { archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!equipement) {
       throw new NotFoundException("Équipement introuvable");
     }

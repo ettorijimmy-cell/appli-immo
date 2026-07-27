@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, type Database } from "db";
+import { appartements, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateAppartementDto } from "./dto/create-appartement.dto";
 import type { UpdateAppartementDto } from "./dto/update-appartement.dto";
 
 @Injectable()
 export class AppartementsService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateAppartementDto) {
     const [appartement] = await this.db
@@ -43,11 +47,13 @@ export class AppartementsService {
   }
 
   async update(id: string, dto: UpdateAppartementDto) {
-    const [appartement] = await this.db
-      .update(appartements)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(eq(appartements.id, id))
-      .returning();
+    const [appartement] = await mettreAJourAvecAudit(
+      this.db,
+      appartements,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }
@@ -55,11 +61,13 @@ export class AppartementsService {
   }
 
   async archive(id: string) {
-    const [appartement] = await this.db
-      .update(appartements)
-      .set({ statut: "archive", archivedAt: new Date() })
-      .where(eq(appartements.id, id))
-      .returning();
+    const [appartement] = await mettreAJourAvecAudit(
+      this.db,
+      appartements,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }

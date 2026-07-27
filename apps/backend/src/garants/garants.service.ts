@@ -1,13 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { garants, type Database } from "db";
+import { garants, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateGarantDto } from "./dto/create-garant.dto";
 import type { UpdateGarantDto } from "./dto/update-garant.dto";
 
 @Injectable()
 export class GarantsService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateGarantDto) {
     const [garant] = await this.db
@@ -40,11 +44,13 @@ export class GarantsService {
   }
 
   async update(id: string, dto: UpdateGarantDto) {
-    const [garant] = await this.db
-      .update(garants)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(eq(garants.id, id))
-      .returning();
+    const [garant] = await mettreAJourAvecAudit(
+      this.db,
+      garants,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
     if (!garant) {
       throw new NotFoundException("Garant introuvable");
     }
@@ -52,11 +58,13 @@ export class GarantsService {
   }
 
   async archive(id: string) {
-    const [garant] = await this.db
-      .update(garants)
-      .set({ archivedAt: new Date() })
-      .where(eq(garants.id, id))
-      .returning();
+    const [garant] = await mettreAJourAvecAudit(
+      this.db,
+      garants,
+      id,
+      { archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!garant) {
       throw new NotFoundException("Garant introuvable");
     }

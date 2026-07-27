@@ -9,6 +9,8 @@ import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
 import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module";
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
+import { CommonModule } from "../common/common.module";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { GarantsModule } from "../garants/garants.module";
 import { GarantsService } from "../garants/garants.service";
@@ -40,6 +42,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
   let garantsService: GarantsService;
   let bauxService: BauxService;
   let bailLocatairesService: BailLocatairesService;
+  let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
   let appartementId: string;
@@ -50,6 +53,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
         DatabaseModule,
         UsersModule,
         AuthModule,
@@ -73,6 +77,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     garantsService = moduleRef.get(GarantsService);
     bauxService = moduleRef.get(BauxService);
     bailLocatairesService = moduleRef.get(BailLocatairesService);
+    requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -293,5 +298,24 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     const garantEnBase = await garantsService.findById(garant.id);
     expect(garantEnBase).not.toBeNull();
     expect(garantEnBase?.archivedAt).not.toBeNull();
+  });
+
+  // Vérifie que mettreAJourAvecAudit (packages/db) fonctionne aussi bien
+  // avec la transaction (`tx`) utilisée par activer()/resilier() qu'avec
+  // `this.db` directement — les deux écritures de la même transaction
+  // (bail ET appartement) doivent être timbrées.
+  it("timbre updated_by/version sur les deux écritures d'une transaction (activer un bail)", async () => {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01" });
+
+    const bailActive = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId },
+      () => bauxService.activer(bail.id)
+    );
+    expect(bailActive.updatedBy).toBe(userId);
+    expect(bailActive.version).toBe(2);
+
+    const appartementLoue = await appartementsService.findById(appartementId);
+    expect(appartementLoue?.updatedBy).toBe(userId);
+    expect(appartementLoue?.version).toBe(2);
   });
 });

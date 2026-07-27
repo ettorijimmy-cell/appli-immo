@@ -4,8 +4,9 @@ import {
   peutActiverBail,
   preremplirLoyerBail
 } from "core";
-import { appartements, baux, type Database } from "db";
+import { appartements, baux, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq, inArray, ne } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
 import type { ResilierBailDto } from "./dto/resilier-bail.dto";
@@ -13,7 +14,10 @@ import type { UpdateBailDto } from "./dto/update-bail.dto";
 
 @Injectable()
 export class BauxService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateBailDto) {
     const [appartement] = await this.db
@@ -61,18 +65,19 @@ export class BauxService {
     // `statut` parvenait un jour jusqu'ici (bug ailleurs, contournement du
     // typage), il ne serait jamais écrit — la seule voie pour changer le
     // statut d'un bail reste activer() / resilier() / archive() ci-dessous.
-    const [bail] = await this.db
-      .update(baux)
-      .set({
+    const [bail] = await mettreAJourAvecAudit(
+      this.db,
+      baux,
+      id,
+      {
         typeBail: dto.typeBail,
         dateDebut: dto.dateDebut,
         dateFin: dto.dateFin,
         loyerMensuel: dto.loyerMensuel,
-        depotGarantie: dto.depotGarantie,
-        updatedAt: new Date()
-      })
-      .where(eq(baux.id, id))
-      .returning();
+        depotGarantie: dto.depotGarantie
+      },
+      this.requestContext.getUtilisateurId()
+    );
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
     }
@@ -128,19 +133,19 @@ export class BauxService {
         throw new ConflictException(verification.raison);
       }
 
-      const [bailActive] = await tx
-        .update(baux)
-        .set({ statut: "actif", updatedAt: new Date() })
-        .where(eq(baux.id, id))
-        .returning();
+      const utilisateurId = this.requestContext.getUtilisateurId();
+      const [bailActive] = await mettreAJourAvecAudit(tx, baux, id, { statut: "actif" }, utilisateurId);
       if (!bailActive) {
         throw new Error("Échec de l'activation du bail");
       }
 
-      await tx
-        .update(appartements)
-        .set({ statut: "loue", updatedAt: new Date() })
-        .where(eq(appartements.id, bail.appartementId));
+      await mettreAJourAvecAudit(
+        tx,
+        appartements,
+        bail.appartementId,
+        { statut: "loue" },
+        utilisateurId
+      );
 
       return bailActive;
     });
@@ -171,20 +176,26 @@ export class BauxService {
         throw new NotFoundException("Appartement introuvable");
       }
 
-      const [bailResilie] = await tx
-        .update(baux)
-        .set({ statut: "resilie", dateFin: dto.dateFin, updatedAt: new Date() })
-        .where(eq(baux.id, id))
-        .returning();
+      const utilisateurId = this.requestContext.getUtilisateurId();
+      const [bailResilie] = await mettreAJourAvecAudit(
+        tx,
+        baux,
+        id,
+        { statut: "resilie", dateFin: dto.dateFin },
+        utilisateurId
+      );
       if (!bailResilie) {
         throw new Error("Échec de la résiliation du bail");
       }
 
       const nouveauStatutAppartement = calculerStatutAppartementApresResiliation(appartement.statut);
-      await tx
-        .update(appartements)
-        .set({ statut: nouveauStatutAppartement, updatedAt: new Date() })
-        .where(eq(appartements.id, bail.appartementId));
+      await mettreAJourAvecAudit(
+        tx,
+        appartements,
+        bail.appartementId,
+        { statut: nouveauStatutAppartement },
+        utilisateurId
+      );
 
       return bailResilie;
     });
@@ -201,11 +212,13 @@ export class BauxService {
       );
     }
 
-    const [bailArchive] = await this.db
-      .update(baux)
-      .set({ statut: "archive", archivedAt: new Date() })
-      .where(eq(baux.id, id))
-      .returning();
+    const [bailArchive] = await mettreAJourAvecAudit(
+      this.db,
+      baux,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!bailArchive) {
       throw new NotFoundException("Bail introuvable");
     }

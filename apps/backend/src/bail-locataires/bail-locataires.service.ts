@@ -1,12 +1,16 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bailLocataires, type Database } from "db";
+import { bailLocataires, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailLocataireDto } from "./dto/create-bail-locataire.dto";
 
 @Injectable()
 export class BailLocatairesService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
   async create(dto: CreateBailLocataireDto) {
     const [lien] = await this.db
@@ -40,11 +44,13 @@ export class BailLocatairesService {
   // Retire un locataire d'un bail — archive le lien, ne le supprime jamais
   // physiquement (CLAUDE.md).
   async archive(id: string) {
-    const [lien] = await this.db
-      .update(bailLocataires)
-      .set({ archivedAt: new Date() })
-      .where(eq(bailLocataires.id, id))
-      .returning();
+    const [lien] = await mettreAJourAvecAudit(
+      this.db,
+      bailLocataires,
+      id,
+      { archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
     if (!lien) {
       throw new NotFoundException("Rattachement introuvable");
     }
