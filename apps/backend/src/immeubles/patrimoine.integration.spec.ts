@@ -165,6 +165,27 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     expect(rowEnBase?.statut).toBe("archive");
   });
 
+  it("permet le passage manuel vacant -> travaux, indépendamment de tout bail", async () => {
+    const sci = await scisService.create(userId, { nom: "SCI Appt Travaux", regimeFiscal: "IR" });
+    const immeuble = await immeublesService.create({
+      sciId: sci.id,
+      nom: "Immeuble Appt Travaux",
+      adresse: "5 rue de Test"
+    });
+    const appartement = await appartementsService.create({
+      immeubleId: immeuble.id,
+      numero: "5",
+      type: "T2"
+    });
+    expect(appartement.statut).toBe("vacant");
+
+    const enTravaux = await appartementsService.update(appartement.id, { statut: "travaux" });
+    expect(enTravaux.statut).toBe("travaux");
+
+    const revenuVacant = await appartementsService.update(appartement.id, { statut: "vacant" });
+    expect(revenuVacant.statut).toBe("vacant");
+  });
+
   it("un appartement archivé passe par statut='archive', jamais supprimé", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Appt Archive", regimeFiscal: "IR" });
     const immeuble = await immeublesService.create({

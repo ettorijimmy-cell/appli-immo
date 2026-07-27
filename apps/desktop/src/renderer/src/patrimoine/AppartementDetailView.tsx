@@ -7,6 +7,7 @@ import {
   updateAppartement,
   updateEquipement,
   type Appartement,
+  type AppartementStatutModifiable,
   type AppartementType,
   type Equipement,
   type EquipementType
@@ -14,6 +15,8 @@ import {
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
+// "archive" en est exclu : l'archivage a son propre bouton dédié.
+const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
 
 type Tab = "infos" | "equipements";
 
@@ -322,6 +325,9 @@ function EditAppartementForm({
   const [type, setType] = useState<AppartementType>(appartement.type);
   const [surface, setSurface] = useState(appartement.surface ?? "");
   const [loyerReference, setLoyerReference] = useState(appartement.loyerReference ?? "");
+  const [statut, setStatut] = useState<AppartementStatutModifiable>(
+    appartement.statut === "archive" ? "vacant" : appartement.statut
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -333,6 +339,7 @@ function EditAppartementForm({
       await updateAppartement(appartement.id, {
         numero,
         type,
+        statut,
         ...(surface && { surface }),
         ...(loyerReference && { loyerReference })
       });
@@ -405,6 +412,24 @@ function EditAppartementForm({
             onChange={(event) => setLoyerReference(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-statut" className="text-sm font-medium text-slate-700">
+            Statut
+          </label>
+          <select
+            id="appartement-edit-statut"
+            value={statut}
+            onChange={(event) => setStatut(event.target.value as AppartementStatutModifiable)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            {APPARTEMENT_STATUTS_MODIFIABLES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

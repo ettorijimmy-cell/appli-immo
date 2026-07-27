@@ -46,11 +46,14 @@ export interface CreateAppartementInput {
   loyerReference?: string;
 }
 
+export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
+
 export interface UpdateAppartementInput {
   numero?: string;
   type?: AppartementType;
   surface?: string;
   loyerReference?: string;
+  statut?: AppartementStatutModifiable;
 }
 
 export type EquipementType = "chaudiere" | "ballon_eau_chaude" | "autre";
