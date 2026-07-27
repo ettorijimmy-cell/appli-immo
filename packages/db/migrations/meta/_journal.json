@@ -22,6 +22,13 @@
       "when": 1784931116517,
       "tag": "0002_charming_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785095818179,
+      "tag": "0003_quiet_magma",
+      "breakpoints": true
     }
   ]
 }
