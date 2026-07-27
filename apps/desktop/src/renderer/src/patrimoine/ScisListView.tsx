@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { archiveSci, createSci, listScis, type CreateSciInput, type Sci } from "../scis/api";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
 
 export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }): React.JSX.Element {
   const [scis, setScis] = useState<Sci[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -32,13 +34,16 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Patrimoine</h1>
-        <button
-          type="button"
-          onClick={() => setShowForm((value) => !value)}
-          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-        >
-          {showForm ? "Annuler" : "Nouvelle SCI"}
-        </button>
+        <div className="flex items-center gap-4">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((value) => !value)} />
+          <button
+            type="button"
+            onClick={() => setShowForm((value) => !value)}
+            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+          >
+            {showForm ? "Annuler" : "Nouvelle SCI"}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -56,52 +61,59 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
         </p>
       )}
 
-      {isLoading ? (
-        <p className="text-sm text-slate-500">Chargement…</p>
-      ) : scis.length === 0 ? (
-        <p className="text-sm text-slate-500">Aucune SCI pour le moment.</p>
-      ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 font-medium">Nom</th>
-              <th className="py-2 font-medium">Régime fiscal</th>
-              <th className="py-2 font-medium">Statut</th>
-              <th className="py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {scis.map((sci) => (
-              <tr key={sci.id} className="border-b border-slate-100">
-                <td className="py-2">
-                  <button
-                    type="button"
-                    onClick={() => onSelect(sci.id)}
-                    className="text-indigo-700 hover:underline"
-                  >
-                    {sci.nom}
-                  </button>
-                </td>
-                <td className="py-2">{sci.regimeFiscal}</td>
-                <td className="py-2">{sci.statut}</td>
-                <td className="py-2 text-right">
-                  {sci.statut === "active" && (
+      {(() => {
+        const visibleScis = showArchived ? scis : scis.filter((sci) => sci.statut !== "archive");
+        return isLoading ? (
+          <p className="text-sm text-slate-500">Chargement…</p>
+        ) : visibleScis.length === 0 ? (
+          <p className="text-sm text-slate-500">Aucune SCI pour le moment.</p>
+        ) : (
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="py-2 font-medium">Nom</th>
+                <th className="py-2 font-medium">Régime fiscal</th>
+                <th className="py-2 font-medium">Statut</th>
+                <th className="py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleScis.map((sci) => (
+                <tr
+                  key={sci.id}
+                  className={`border-b border-slate-100 ${sci.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                >
+                  <td className="py-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        void handleArchive(sci.id);
-                      }}
-                      className="text-sm text-slate-500 hover:text-red-600"
+                      onClick={() => onSelect(sci.id)}
+                      className="text-indigo-700 hover:underline"
                     >
-                      Archiver
+                      {sci.nom}
                     </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+                    {sci.statut === "archive" && <ArchiveBadge />}
+                  </td>
+                  <td className="py-2">{sci.regimeFiscal}</td>
+                  <td className="py-2">{sci.statut}</td>
+                  <td className="py-2 text-right">
+                    {sci.statut === "active" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleArchive(sci.id);
+                        }}
+                        className="text-sm text-slate-500 hover:text-red-600"
+                      >
+                        Archiver
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })()}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   type AppartementType,
   type Immeuble
 } from "./api";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
 
@@ -26,6 +27,7 @@ export function ImmeubleDetailView({
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showArchivedAppartements, setShowArchivedAppartements] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -113,13 +115,19 @@ export function ImmeubleDetailView({
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Appartements</h2>
-          <button
-            type="button"
-            onClick={() => setShowForm((value) => !value)}
-            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-          >
-            {showForm ? "Annuler" : "Nouvel appartement"}
-          </button>
+          <div className="flex items-center gap-4">
+            <ArchiveToggle
+              show={showArchivedAppartements}
+              onToggle={() => setShowArchivedAppartements((value) => !value)}
+            />
+            <button
+              type="button"
+              onClick={() => setShowForm((value) => !value)}
+              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+            >
+              {showForm ? "Annuler" : "Nouvel appartement"}
+            </button>
+          </div>
         </div>
 
         {showForm && (
@@ -132,50 +140,59 @@ export function ImmeubleDetailView({
           />
         )}
 
-        {appartements.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">Aucun appartement pour le moment.</p>
-        ) : (
-          <table className="mt-2 w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 font-medium">Numéro</th>
-                <th className="py-2 font-medium">Type</th>
-                <th className="py-2 font-medium">Statut</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {appartements.map((appartement) => (
-                <tr key={appartement.id} className="border-b border-slate-100">
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectAppartement(appartement.id)}
-                      className="text-indigo-700 hover:underline"
-                    >
-                      {appartement.numero}
-                    </button>
-                  </td>
-                  <td className="py-2">{appartement.type}</td>
-                  <td className="py-2">{appartement.statut}</td>
-                  <td className="py-2 text-right">
-                    {appartement.statut !== "archive" && (
+        {(() => {
+          const visibleAppartements = showArchivedAppartements
+            ? appartements
+            : appartements.filter((appartement) => appartement.statut !== "archive");
+          return visibleAppartements.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Aucun appartement pour le moment.</p>
+          ) : (
+            <table className="mt-2 w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 font-medium">Numéro</th>
+                  <th className="py-2 font-medium">Type</th>
+                  <th className="py-2 font-medium">Statut</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleAppartements.map((appartement) => (
+                  <tr
+                    key={appartement.id}
+                    className={`border-b border-slate-100 ${appartement.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  >
+                    <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          void handleArchive(appartement.id);
-                        }}
-                        className="text-sm text-slate-500 hover:text-red-600"
+                        onClick={() => onSelectAppartement(appartement.id)}
+                        className="text-indigo-700 hover:underline"
                       >
-                        Archiver
+                        {appartement.numero}
                       </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                      {appartement.statut === "archive" && <ArchiveBadge />}
+                    </td>
+                    <td className="py-2">{appartement.type}</td>
+                    <td className="py-2">{appartement.statut}</td>
+                    <td className="py-2 text-right">
+                      {appartement.statut !== "archive" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleArchive(appartement.id);
+                          }}
+                          className="text-sm text-slate-500 hover:text-red-600"
+                        >
+                          Archiver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
       </div>
     </div>
   );

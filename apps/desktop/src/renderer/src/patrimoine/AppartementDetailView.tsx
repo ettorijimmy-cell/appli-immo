@@ -12,6 +12,7 @@ import {
   type Equipement,
   type EquipementType
 } from "./api";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
@@ -34,6 +35,7 @@ export function AppartementDetailView({
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingEquipementId, setEditingEquipementId] = useState<string | null>(null);
+  const [showArchivedEquipements, setShowArchivedEquipements] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -150,13 +152,19 @@ export function AppartementDetailView({
         <div>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700">Équipements</h2>
-            <button
-              type="button"
-              onClick={() => setShowForm((value) => !value)}
-              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-            >
-              {showForm ? "Annuler" : "Nouvel équipement"}
-            </button>
+            <div className="flex items-center gap-4">
+              <ArchiveToggle
+                show={showArchivedEquipements}
+                onToggle={() => setShowArchivedEquipements((value) => !value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowForm((value) => !value)}
+                className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+              >
+                {showForm ? "Annuler" : "Nouvel équipement"}
+              </button>
+            </div>
           </div>
 
           {showForm && (
@@ -169,57 +177,70 @@ export function AppartementDetailView({
             />
           )}
 
-          {equipements.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">Aucun équipement pour le moment.</p>
-          ) : (
-            <table className="mt-2 w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="py-2 font-medium">Type</th>
-                  <th className="py-2 font-medium">Dernier entretien</th>
-                  <th className="py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {equipements.map((equipement) =>
-                  editingEquipementId === equipement.id ? (
-                    <EditEquipementRow
-                      key={equipement.id}
-                      equipement={equipement}
-                      onSaved={() => {
-                        setEditingEquipementId(null);
-                        void refresh();
-                      }}
-                      onCancel={() => setEditingEquipementId(null)}
-                    />
-                  ) : (
-                    <tr key={equipement.id} className="border-b border-slate-100">
-                      <td className="py-2">{equipement.type}</td>
-                      <td className="py-2">{equipement.dateDernierEntretien ?? "—"}</td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setEditingEquipementId(equipement.id)}
-                          className="mr-4 text-sm text-slate-500 hover:text-slate-700"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleArchive(equipement.id);
-                          }}
-                          className="text-sm text-slate-500 hover:text-red-600"
-                        >
-                          Archiver
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                )}
-              </tbody>
-            </table>
-          )}
+          {(() => {
+            const visibleEquipements = showArchivedEquipements
+              ? equipements
+              : equipements.filter((equipement) => equipement.archivedAt === null);
+            return visibleEquipements.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">Aucun équipement pour le moment.</p>
+            ) : (
+              <table className="mt-2 w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="py-2 font-medium">Type</th>
+                    <th className="py-2 font-medium">Dernier entretien</th>
+                    <th className="py-2 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleEquipements.map((equipement) =>
+                    editingEquipementId === equipement.id ? (
+                      <EditEquipementRow
+                        key={equipement.id}
+                        equipement={equipement}
+                        onSaved={() => {
+                          setEditingEquipementId(null);
+                          void refresh();
+                        }}
+                        onCancel={() => setEditingEquipementId(null)}
+                      />
+                    ) : (
+                      <tr
+                        key={equipement.id}
+                        className={`border-b border-slate-100 ${equipement.archivedAt !== null ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                      >
+                        <td className="py-2">
+                          {equipement.type}
+                          {equipement.archivedAt !== null && <ArchiveBadge />}
+                        </td>
+                        <td className="py-2">{equipement.dateDernierEntretien ?? "—"}</td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setEditingEquipementId(equipement.id)}
+                            className="mr-4 text-sm text-slate-500 hover:text-slate-700"
+                          >
+                            Modifier
+                          </button>
+                          {equipement.archivedAt === null && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleArchive(equipement.id);
+                              }}
+                              className="text-sm text-slate-500 hover:text-red-600"
+                            >
+                              Archiver
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       )}
     </div>

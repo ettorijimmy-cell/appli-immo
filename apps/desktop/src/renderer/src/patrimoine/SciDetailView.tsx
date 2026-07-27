@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createCompteBancaire, getSci, listComptesBancaires, type CompteBancaire, type Sci } from "../scis/api";
 import { archiveImmeuble, createImmeuble, listImmeubles, type Immeuble } from "./api";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "./ArchiveFilter";
 
 export function SciDetailView({
   sciId,
@@ -17,6 +18,7 @@ export function SciDetailView({
   const [error, setError] = useState<string | null>(null);
   const [showCompteForm, setShowCompteForm] = useState(false);
   const [showImmeubleForm, setShowImmeubleForm] = useState(false);
+  const [showArchivedImmeubles, setShowArchivedImmeubles] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -88,13 +90,19 @@ export function SciDetailView({
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Immeubles</h2>
-          <button
-            type="button"
-            onClick={() => setShowImmeubleForm((value) => !value)}
-            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-          >
-            {showImmeubleForm ? "Annuler" : "Nouvel immeuble"}
-          </button>
+          <div className="flex items-center gap-4">
+            <ArchiveToggle
+              show={showArchivedImmeubles}
+              onToggle={() => setShowArchivedImmeubles((value) => !value)}
+            />
+            <button
+              type="button"
+              onClick={() => setShowImmeubleForm((value) => !value)}
+              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+            >
+              {showImmeubleForm ? "Annuler" : "Nouvel immeuble"}
+            </button>
+          </div>
         </div>
 
         {showImmeubleForm && (
@@ -107,53 +115,62 @@ export function SciDetailView({
           />
         )}
 
-        {immeubles.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">Aucun immeuble pour le moment.</p>
-        ) : (
-          <table className="mt-2 w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 font-medium">Nom</th>
-                <th className="py-2 font-medium">Adresse</th>
-                <th className="py-2 font-medium">Statut</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {immeubles.map((immeuble) => (
-                <tr key={immeuble.id} className="border-b border-slate-100">
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectImmeuble(immeuble.id)}
-                      className="text-indigo-700 hover:underline"
-                    >
-                      {immeuble.nom}
-                    </button>
-                  </td>
-                  <td className="py-2">
-                    {immeuble.adresse}
-                    {immeuble.ville ? `, ${immeuble.ville}` : ""}
-                  </td>
-                  <td className="py-2">{immeuble.statut}</td>
-                  <td className="py-2 text-right">
-                    {immeuble.statut === "actif" && (
+        {(() => {
+          const visibleImmeubles = showArchivedImmeubles
+            ? immeubles
+            : immeubles.filter((immeuble) => immeuble.statut !== "archive");
+          return visibleImmeubles.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Aucun immeuble pour le moment.</p>
+          ) : (
+            <table className="mt-2 w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 font-medium">Nom</th>
+                  <th className="py-2 font-medium">Adresse</th>
+                  <th className="py-2 font-medium">Statut</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleImmeubles.map((immeuble) => (
+                  <tr
+                    key={immeuble.id}
+                    className={`border-b border-slate-100 ${immeuble.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  >
+                    <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          void handleArchiveImmeuble(immeuble.id);
-                        }}
-                        className="text-sm text-slate-500 hover:text-red-600"
+                        onClick={() => onSelectImmeuble(immeuble.id)}
+                        className="text-indigo-700 hover:underline"
                       >
-                        Archiver
+                        {immeuble.nom}
                       </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                      {immeuble.statut === "archive" && <ArchiveBadge />}
+                    </td>
+                    <td className="py-2">
+                      {immeuble.adresse}
+                      {immeuble.ville ? `, ${immeuble.ville}` : ""}
+                    </td>
+                    <td className="py-2">{immeuble.statut}</td>
+                    <td className="py-2 text-right">
+                      {immeuble.statut === "actif" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleArchiveImmeuble(immeuble.id);
+                          }}
+                          className="text-sm text-slate-500 hover:text-red-600"
+                        >
+                          Archiver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
       </div>
 
       <div>
