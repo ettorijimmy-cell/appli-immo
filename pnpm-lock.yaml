@@ -108,6 +108,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      core:
+        specifier: workspace:*
+        version: link:../../packages/core
       lucide-react:
         specifier: ^1.26.0
         version: 1.26.0(react@18.3.1)

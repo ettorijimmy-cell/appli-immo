@@ -11,3 +11,4 @@ export * from "./locataires";
 export * from "./baux";
 export * from "./garants";
 export * from "./bail-locataires";
+export * from "./paiements";

@@ -102,12 +102,39 @@ Table de liaison pour gérer la colocation.
 | date_expiration | date, nullable | Alimente le moteur d'alertes |
 
 ## paiements
+Rattaché à un bail (`baux`, Module 3). `montant` est la somme attendue à
+l'échéance ; `montant_paye` / `mode` / `date_paiement` ne sont renseignés
+qu'une fois le paiement effectivement enregistré. `statut` est calculé,
+jamais saisi directement (packages/core, `calculerStatutPaiement`) :
+`impaye` si `montant_paye` est nul, `paye` si `montant_paye >= montant`,
+`partiel` sinon.
 | Champ | Type | Description |
 |---|---|---|
 | type | enum | `loyer` \| `charges` \| `depot_garantie` |
-| mode | enum | `virement` \| `cheque` \| `especes` \| `caf` |
+| mode | enum, nullable | `virement` \| `cheque` \| `especes` \| `caf` |
 | statut | enum | `paye` \| `impaye` \| `partiel` |
-| reference_rapprochement | text, nullable | Utilisée par le rapprochement bancaire semi-automatique (import CSV) |
+| montant | decimal | Somme attendue à l'échéance |
+| montant_paye | decimal, nullable | Somme réellement reçue |
+| date_echeance | date | |
+| date_paiement | date, nullable | |
+| reference_rapprochement | text, nullable | Renseigné après un rapprochement confirmé (import CSV) : la référence/le libellé de la ligne de relevé retenue. Jamais comparé en amont à une valeur attendue — voir la décision ci-dessous sur le critère "référence" du rapprochement. |
+
+**Décision produit (Module 5, tranchée avec l'utilisateur)** : le critère
+"référence" du rapprochement bancaire (`packages/core`,
+`proposerRapprochements`) compare le libellé d'une ligne de relevé CSV au
+nom/prénom du ou des locataires du bail concerné (correspondance partielle,
+insensible à la casse et aux accents — tolère troncatures/abréviations
+bancaires). Deux règles non négociables, à ne jamais régresser :
+1. Un rapprochement n'est **jamais appliqué automatiquement**, même en cas
+   de correspondance apparemment évidente sur les trois critères — le
+   moteur ne fait que proposer, une confirmation humaine explicite est
+   requise pour écrire quoi que ce soit (cohérent avec "semi-automatique",
+   docs/backlog.md Module 5).
+2. En cas d'ambiguïté (plusieurs baux candidats à montant/date identiques
+   sans que le nom ne départage clairement, ou aucun nom ne correspond),
+   **tous** les candidats sont présentés à l'utilisateur — jamais de choix
+   silencieux, jamais de paiement laissé sans suggestion visible s'il y a
+   au moins un candidat montant+date.
 
 ## alertes
 | Champ | Type | Description |

@@ -33,6 +33,53 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-07-27] Confirmation d'un rapprochement CSV échouait en 400 (virgule décimale)
+
+**Symptôme** : cliquer sur "Confirmer ce rapprochement" (import CSV,
+Finances) échouait systématiquement avec `ApiError: Requête échouée (400)`
+— aucun détail affiché dans l'app.
+
+**Contexte** : Module 5 (Finances), écran de rapprochement bancaire, test
+manuel réel avec un fichier CSV au format bancaire français (virgule
+décimale, ex. `850,00`).
+
+**Cause** : `EnregistrerPaiementDto.montantPaye` portait `@IsNumberString()`
+sans option de locale — `validator.isNumeric` n'accepte par défaut que le
+point comme séparateur décimal, jamais la virgule (vérifié empiriquement :
+`isNumeric("850,00")` → `false`, `isNumeric("850,00", {locale:"fr-FR"})` →
+`true`). `RapprochementCsvView.tsx` transmettait le montant de la ligne CSV
+tel quel, sans normalisation — le format français bancaire que le parseur
+CSV est censé absorber n'était en réalité jamais converti sur le chemin
+`montantPaye`. Effet de bord découvert au passage : `authenticated-fetch.ts`
+(`extraireMessageErreur`) ne gérait que `message` en tant que chaîne, alors
+que NestJS renvoie un tableau de chaînes par défaut sur un rejet de
+`ValidationPipe` — d'où l'absence totale de détail dans l'app.
+
+**Solution** : extraire la normalisation virgule/point/espaces déjà
+présente dans `montantEnCentimes` en une fonction exportée
+`normaliserMontant` (`packages/core`), seule définition de "comment
+interpréter un montant en euros" dans tout le code. Appelée aux deux
+endroits où un montant entre dans le système : `RapprochementCsvView.tsx`
+avant l'appel à `enregistrerPaiement`, et un `@Transform` (class-transformer)
+sur les 3 DTO paiements (`create`/`update`/`enregistrer`), exécuté avant
+`@IsNumberString()`. `apps/desktop` dépend désormais de `packages/core`
+(`workspace:*`) — première consommation directe du package par le
+renderer, jusqu'ici uniquement utilisé par `apps/backend`.
+
+**Fichiers concernés** : `packages/core/src/paiements/montant.ts`,
+`apps/backend/src/paiements/dto/{create,update,enregistrer}-paiement.dto.ts`,
+`apps/desktop/src/renderer/src/finances/RapprochementCsvView.tsx`,
+`apps/desktop/package.json`.
+
+**À surveiller** : tout futur champ montant (Charges, Travaux...) doit
+passer par `normaliserMontant` des deux côtés (DTO + tout appelant
+frontend qui construit lui-même la valeur, pas juste un champ de
+formulaire HTML `type="number"` qui produit toujours un point). Par
+ailleurs, `authenticated-fetch.ts` ne remonte toujours pas un `message`
+sous forme de tableau (cas `ValidationPipe`) — un futur bug de validation
+DTO redonnera le même symptôme trompeur ("Requête échouée (4xx)" sans
+détail) tant que ce n'est pas corrigé séparément.
+
 ### [2026-07-26] CSP bloquait le login Electron ("Identifiants invalides" trompeur)
 
 **Symptôme** : le login échouait systématiquement avec "Identifiants

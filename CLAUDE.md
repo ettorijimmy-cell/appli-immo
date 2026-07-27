@@ -38,7 +38,10 @@ syndics). Architecture offline-first avec synchronisation cloud.
 apps/desktop     → application Electron (interface utilisateur)
 apps/backend     → API NestJS (cloud)
 packages/core    → logique métier partagée (calculs, règles de gestion)
-                   TypeScript pur, sans dépendance Node ni navigateur
+                   TypeScript pur, sans dépendance Node ni navigateur —
+                   consommé aussi bien par apps/backend que apps/desktop
+                   (confirmé Module 5 : premier import direct côté renderer,
+                   apps/desktop/src/renderer/src/finances/RapprochementCsvView.tsx)
 packages/db      → schéma Drizzle + migrations (Postgres uniquement)
 packages/ui      → composants React partagés
 ```
@@ -52,7 +55,8 @@ packages/ui      → composants React partagés
   Voir docs/data-dictionary.md pour les valeurs de statut valides par table.
 - La logique métier (calculs financiers, révision de loyer, règles de gestion)
   vit exclusivement dans packages/core — jamais dupliquée dans apps/desktop
-  ou apps/backend.
+  ou apps/backend. Importable directement depuis les deux (apps/desktop en
+  dépend réellement depuis le Module 5).
 - Toute modification du schéma doit être répercutée dans
   docs/data-dictionary.md dans le même commit.
 - Commits au format conventionnel : feat:, fix:, refactor:, docs:, test:
