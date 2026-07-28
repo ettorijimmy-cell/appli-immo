@@ -31,48 +31,29 @@ export function calculerMontantEcheanceLoyer(loyerMensuel: string, provisionsCha
 }
 
 /**
- * Date de la première échéance de loyer à l'activation d'un bail
- * (docs/data-dictionary.md, section baux, "Décision produit — génération
- * des échéances à l'activation") : le jour d'activation est comparé à
- * `jourEcheance` avec un ≤ — encore inférieur ou égal, l'échéance tombe ce
- * mois-ci ; sinon le mois suivant. L'égalité est traitée comme "pas encore
- * passé" pour ne jamais faire sauter un mois entier d'obligation de loyer
- * pile le jour de l'échéance.
- */
-export function calculerDatePremiereEcheance(dateActivation: string, jourEcheance: number): string {
-  const [anneeStr, moisStr, jourStr] = dateActivation.split("-");
-  const annee = Number(anneeStr);
-  const mois = Number(moisStr);
-  const jourActivation = Number(jourStr);
-
-  if (jourActivation <= jourEcheance) {
-    return formaterDateIso(annee, mois, jourEcheance);
-  }
-  const moisSuivant = mois === 12 ? 1 : mois + 1;
-  const anneeMoisSuivant = mois === 12 ? annee + 1 : annee;
-  return formaterDateIso(anneeMoisSuivant, moisSuivant, jourEcheance);
-}
-
-/**
- * Prorata temporis de l'échéance de loyer du mois de résiliation
- * (docs/data-dictionary.md, section baux, "Décision produit — prorata à la
- * résiliation") : jours_occupes / jours_du_mois, jours_occupes comptant du
- * début du mois calendaire jusqu'à `dateFin` INCLUS (le jour du départ est
- * facturé en entier). Troncature à deux décimales, jamais d'arrondi
- * flottant — même convention que montantEnCentimes.
+ * Prorata temporis d'un mois calendaire partiellement occupé
+ * (docs/data-dictionary.md, section baux) : jours_occupes / jours_du_mois,
+ * jours_occupes comptant du début du mois calendaire jusqu'à `dateFin`
+ * INCLUS (le dernier jour occupé est facturé en entier). Troncature à deux
+ * décimales, jamais d'arrondi flottant — même convention que
+ * montantEnCentimes.
+ *
+ * Utilisée à la fois pour la fin d'occupation (résiliation) et,
+ * indirectement via `calculerMontantEcheanceEntree`, pour le début
+ * d'occupation (entrée dans les lieux) — d'où son nom générique plutôt que
+ * limité à la résiliation.
  *
  * `dateDebutOccupation` (optionnel) permet de proratiser aussi le DÉBUT du
  * mois occupé, pas seulement sa fin : nécessaire quand aucune échéance
- * n'a encore été générée pour ce mois (le bail a été activé — ou a
- * commencé — en cours de mois, voir BauxService.resilier(), "Cas B").
- * Si `dateDebutOccupation` tombe dans un mois calendaire ANTÉRIEUR à
- * `dateFin`, le mois de `dateFin` est considéré occupé depuis son premier
- * jour (comportement identique à l'appel à deux arguments). Si le nombre de
- * jours occupés calculé est négatif (dateDebutOccupation postérieure à
- * dateFin dans le même mois), il est ramené à 0 plutôt que de produire un
- * montant négatif.
+ * n'a encore été générée pour ce mois (voir BauxService.resilier(),
+ * "Cas B"). Si `dateDebutOccupation` tombe dans un mois calendaire
+ * ANTÉRIEUR à `dateFin`, le mois de `dateFin` est considéré occupé depuis
+ * son premier jour (comportement identique à l'appel à deux arguments). Si
+ * le nombre de jours occupés calculé est négatif (dateDebutOccupation
+ * postérieure à dateFin dans le même mois), il est ramené à 0 plutôt que de
+ * produire un montant négatif.
  */
-export function calculerProrataResiliation(
+export function calculerProrataOccupationPartielle(
   montantMensuel: string,
   dateFin: string,
   dateDebutOccupation?: string
@@ -97,6 +78,43 @@ export function calculerProrataResiliation(
   const centimesMensuel = montantEnCentimes(montantMensuel);
   const centimesProrata = Math.trunc((centimesMensuel * joursOccupes) / joursDansLeMois(annee, mois));
   return centimesVersMontant(centimesProrata);
+}
+
+/**
+ * Dernier jour calendaire du mois contenant `date` (ex. "2026-02-15" ->
+ * "2026-02-28"), pour proratiser une échéance d'entrée qui se termine à la
+ * fin du mois de date_debut.
+ */
+export function calculerDernierJourDuMois(date: string): string {
+  const [anneeStr, moisStr] = date.split("-");
+  const annee = Number(anneeStr);
+  const mois = Number(moisStr);
+  return formaterDateIso(annee, mois, joursDansLeMois(annee, mois));
+}
+
+/**
+ * Montant de la première échéance de loyer à l'activation d'un bail
+ * (docs/data-dictionary.md, section baux, "Décision produit — génération
+ * des échéances à l'activation") : chaque échéance correspond à un mois
+ * calendaire complet ; seule la première est proratisée si `dateDebut` ne
+ * tombe pas le 1er du mois, du 1er jour d'occupation jusqu'à la fin de ce
+ * mois calendaire. Si `dateDebut` est le 1er, le mois est dû en entier —
+ * `calculerProrataOccupationPartielle` produit ce résultat sans branche
+ * spéciale (jours_occupes = jours_du_mois exactement).
+ *
+ * `jourEcheance` n'intervient JAMAIS dans ce calcul (ni le montant, ni la
+ * date d'exigibilité, qui est `dateDebut` lui-même) : son seul rôle est
+ * d'ancrer les échéances RÉCURRENTES futures, une fois le job du Module 6
+ * construit — jamais la toute première.
+ */
+export function calculerMontantEcheanceEntree(
+  loyerMensuel: string,
+  provisionsCharges: string | null,
+  dateDebut: string
+): string {
+  const montantPlein = calculerMontantEcheanceLoyer(loyerMensuel, provisionsCharges);
+  const dernierJourDuMois = calculerDernierJourDuMois(dateDebut);
+  return calculerProrataOccupationPartielle(montantPlein, dernierJourDuMois, dateDebut);
 }
 
 /**

@@ -129,11 +129,7 @@ describe("Paiements — enregistrement, calcul de statut, rapprochement CSV (int
     bailId = bail.id;
 
     // activer() génère désormais automatiquement la première échéance de
-    // loyer (docs/data-dictionary.md) — sa date dépend de la date réelle
-    // d'exécution du test (calculerDatePremiereEcheance part d'aujourd'hui),
-    // ce qui rendrait les tests ci-dessous non déterministes s'ils la
-    // laissaient traîner (elle pourrait un jour tomber dans la fenêtre de
-    // tolérance ±5 jours des dates de test fixes ci-dessous). Ces tests
+    // loyer (docs/data-dictionary.md), datée sur date_debut. Ces tests
     // portent sur des scénarios où le paiement est créé explicitement par
     // le test — l'échéance auto-générée par l'activation est hors sujet
     // ici et a ses propres tests dédiés (locataires-baux.integration.spec.ts).

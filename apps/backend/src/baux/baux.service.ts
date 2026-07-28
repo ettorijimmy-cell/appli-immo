@@ -1,9 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   calculerBornesMoisCalendaire,
-  calculerDatePremiereEcheance,
+  calculerMontantEcheanceEntree,
   calculerMontantEcheanceLoyer,
-  calculerProrataResiliation,
+  calculerProrataOccupationPartielle,
   calculerStatutAppartementApresResiliation,
   calculerStatutPaiement,
   montantEnCentimes,
@@ -143,8 +143,11 @@ export class BauxService {
         throw new ConflictException(verification.raison);
       }
 
-      // Requis pour générer la première échéance (docs/data-dictionary.md,
-      // section baux) — jamais silencieusement défaillant à l'activation.
+      // jour_echeance n'intervient jamais sur la première échéance (voir
+      // calculerMontantEcheanceEntree, packages/core) — il reste requis ici
+      // uniquement pour ne jamais activer un bail qui ne pourrait plus
+      // jamais être facturé une fois le job récurrent du Module 6
+      // construit (docs/data-dictionary.md, section baux).
       if (bail.jourEcheance === null) {
         throw new ConflictException(
           "Impossible d'activer ce bail : le jour d'échéance doit être renseigné au préalable."
@@ -157,10 +160,9 @@ export class BauxService {
       }
 
       const utilisateurId = this.requestContext.getUtilisateurId();
-      // Posée ici, jamais modifiée ensuite (pas dans UpdateBailDto) :
-      // resilier() s'en sert pour déterminer le début réel d'occupation
-      // quand aucune échéance n'a encore été générée pour le mois de
-      // résiliation (docs/data-dictionary.md).
+      // Posée ici, jamais modifiée ensuite (pas dans UpdateBailDto) — trace
+      // historique du moment administratif de l'activation, mais n'entre
+      // plus dans aucun calcul financier (docs/data-dictionary.md).
       const dateActivation = new Date().toISOString().slice(0, 10);
       const [bailActive] = await mettreAJourAvecAudit(
         tx,
@@ -184,22 +186,24 @@ export class BauxService {
       // Génération des échéances à l'activation (docs/data-dictionary.md,
       // "Décision produit — génération des échéances à l'activation") :
       // seules la caution (si due) et la toute première échéance de loyer
-      // sont créées ici. Les échéances suivantes seront produites par le
-      // job planifié quotidien du Module 6 — jamais toutes générées
-      // d'avance.
+      // sont créées ici, toutes deux exigibles à date_debut — l'entrée
+      // réelle dans les lieux, jamais la date d'activation administrative
+      // (qui peut lui être largement postérieure). Les échéances suivantes
+      // seront produites par le job planifié quotidien du Module 6 —
+      // jamais toutes générées d'avance.
       if (bail.depotGarantie && montantEnCentimes(bail.depotGarantie) > 0) {
         await tx.insert(paiements).values({
           bailId: id,
           type: "depot_garantie",
           montant: bail.depotGarantie,
-          dateEcheance: dateActivation
+          dateEcheance: bail.dateDebut
         });
       }
       await tx.insert(paiements).values({
         bailId: id,
         type: "loyer",
-        montant: calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges),
-        dateEcheance: calculerDatePremiereEcheance(dateActivation, bail.jourEcheance)
+        montant: calculerMontantEcheanceEntree(bail.loyerMensuel, bail.provisionsCharges, bail.dateDebut),
+        dateEcheance: bail.dateDebut
       });
 
       return bailActive;
@@ -278,7 +282,7 @@ export class BauxService {
           // intégralement, sinon on n'y touche pas (trop-perçu non traité,
           // voir docs/backlog.md, dette technique).
           if (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel") {
-            const montantProratise = calculerProrataResiliation(echeanceDuMois.montant, dto.dateFin);
+            const montantProratise = calculerProrataOccupationPartielle(echeanceDuMois.montant, dto.dateFin);
             await mettreAJourAvecAudit(
               tx,
               paiements,
@@ -293,22 +297,15 @@ export class BauxService {
         } else if (bail.loyerMensuel) {
           // Cas B : aucune échéance ne couvre ce mois — ne jamais laisser
           // une période d'occupation sans ligne de paiement
-          // correspondante, qu'une échéance ait été pré-générée ou non
-          // (ex. jour_echeance très antérieur au jour d'activation,
-          // poussant la première échéance au mois suivant : la
-          // résiliation peut survenir avant que ce mois-là n'arrive).
-          // Début d'occupation réel : la date d'activation si elle est
-          // postérieure à la date de début contractuelle (un bail peut
-          // rester en brouillon après sa date de début) — repli sur
-          // date_debut si date_activation est absente (baux passés à
-          // actif avant l'introduction de cette colonne, migration 0007) :
-          // jamais de garde silencieuse qui reproduirait l'oubli d'origine
-          // pour les baux déjà existants.
-          const dateActivationEffective = bail.dateActivation ?? bail.dateDebut;
-          const debutOccupation =
-            dateActivationEffective > bail.dateDebut ? dateActivationEffective : bail.dateDebut;
+          // correspondante. Toujours depuis le 1er jour du mois de
+          // dateFin : le mois de date_debut est exclusivement traité par
+          // le Cas A (l'échéance d'entrée, toujours générée pour ce mois
+          // précis dès l'activation — voir calculerMontantEcheanceEntree),
+          // donc tout mois que le Cas B doit encore combler est
+          // nécessairement postérieur, occupé en continu depuis son 1er
+          // jour (docs/data-dictionary.md, section baux).
           const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
-          const montantProratise = calculerProrataResiliation(montantPlein, dto.dateFin, debutOccupation);
+          const montantProratise = calculerProrataOccupationPartielle(montantPlein, dto.dateFin);
           if (montantEnCentimes(montantProratise) > 0) {
             await tx.insert(paiements).values({
               bailId: id,

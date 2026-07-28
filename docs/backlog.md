@@ -252,15 +252,15 @@ un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
   de paiement supplémentaire, implique une décision de calcul distincte du
   prorata de loyer déjà en place.
 
-- **Aucune validation que `date_fin` ≥ `date_debut`/`date_activation` à la
-  résiliation** (identifié par financial-logic-reviewer lors du correctif
-  "Cas B" de `BauxService.resilier()`, gap préexistant dans le code
-  d'origine du Module 5 — pas introduit par ce correctif).
+- **Aucune validation que `date_fin` ≥ `date_debut` à la résiliation**
+  (identifié par financial-logic-reviewer lors du correctif "Cas B" de
+  `BauxService.resilier()`, gap préexistant dans le code d'origine du
+  Module 5 — pas introduit par ce correctif).
   `ResilierBailDto` ne valide que le format de `dateFin` (`@IsDateString()`),
   jamais son ordre chronologique par rapport au début réel d'occupation du
-  bail. Si `dateFin` est antérieure à `date_debut`/`date_activation`,
-  `calculerProrataResiliation` ramène le nombre de jours occupés à 0 plutôt
-  que de produire un montant négatif — le prorata (Cas A comme Cas B)
+  bail. Si `dateFin` est antérieure à `date_debut`,
+  `calculerProrataOccupationPartielle` ramène le nombre de jours occupés à 0
+  plutôt que de produire un montant négatif — le prorata (Cas A comme Cas B)
   produit alors silencieusement une ligne à 0,00 € (ou ne crée aucune ligne
   en Cas B, via le garde `montantEnCentimes(...) > 0`) au lieu de rejeter
   explicitement une résiliation antérieure au début d'occupation. Pas de
