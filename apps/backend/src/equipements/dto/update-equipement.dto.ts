@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional } from "class-validator";
+import { IsDateString, IsIn, IsInt, IsOptional, Min } from "class-validator";
 
 const EQUIPEMENT_TYPES = ["chaudiere", "ballon_eau_chaude", "autre"] as const;
 
@@ -10,4 +10,9 @@ export class UpdateEquipementDto {
   @IsOptional()
   @IsDateString()
   dateDernierEntretien?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  intervalleEntretienMois?: number;
 }

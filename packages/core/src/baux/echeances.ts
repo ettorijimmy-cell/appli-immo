@@ -1,24 +1,5 @@
+import { formaterDateIso, joursDansLeMois } from "../dates/calendrier";
 import { centimesVersMontant, montantEnCentimes } from "../paiements/montant";
-
-const JOURS_PAR_MOIS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-function estBissextile(annee: number): boolean {
-  return (annee % 4 === 0 && annee % 100 !== 0) || annee % 400 === 0;
-}
-
-// Calcul purement arithmétique (pas de Date native) : packages/core reste
-// TypeScript pur, et les fuseaux horaires de Date introduiraient un
-// comportement dépendant de la machine sur un calcul qui n'en a pas besoin.
-function joursDansLeMois(annee: number, mois: number): number {
-  if (mois === 2 && estBissextile(annee)) {
-    return 29;
-  }
-  return JOURS_PAR_MOIS[mois - 1] as number;
-}
-
-function formaterDateIso(annee: number, mois: number, jour: number): string {
-  return `${annee.toString().padStart(4, "0")}-${mois.toString().padStart(2, "0")}-${jour.toString().padStart(2, "0")}`;
-}
 
 /**
  * Montant de l'échéance de loyer : loyer hors charges + provisions pour
@@ -136,4 +117,16 @@ export function calculerBornesMoisCalendaire(dateReference: string): {
     debutMoisInclus: formaterDateIso(annee, mois, 1),
     debutMoisSuivantExclusif: formaterDateIso(anneeMoisSuivant, moisSuivant, 1)
   };
+}
+
+/**
+ * Date d'exigibilité de l'échéance de loyer RÉCURRENTE (2e mois et
+ * suivants) du mois calendaire contenant `dateReference` — Module 6,
+ * job planifié. `jourEcheance` est borné 1-28 à la saisie (voir
+ * docs/data-dictionary.md), donc toujours valide dans n'importe quel mois,
+ * jamais besoin de le ramener au dernier jour du mois.
+ */
+export function calculerDateEcheanceRecurrente(dateReference: string, jourEcheance: number): string {
+  const [anneeStr, moisStr] = dateReference.split("-");
+  return formaterDateIso(Number(anneeStr), Number(moisStr), jourEcheance);
 }

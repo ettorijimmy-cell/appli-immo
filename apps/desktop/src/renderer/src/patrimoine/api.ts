@@ -63,6 +63,9 @@ export interface Equipement {
   appartementId: string;
   type: EquipementType;
   dateDernierEntretien: string | null;
+  // Périodicité attendue en mois. Absent = pas d'alerte entretien_equipement
+  // (Module 6) pour cet équipement, voir data-dictionary.md.
+  intervalleEntretienMois: number | null;
   // Pas de `statut` dédié pour les équipements (voir data-dictionary.md) :
   // archivedAt seul indique l'archivage.
   archivedAt: string | null;
@@ -72,11 +75,13 @@ export interface CreateEquipementInput {
   appartementId: string;
   type: EquipementType;
   dateDernierEntretien?: string;
+  intervalleEntretienMois?: number;
 }
 
 export interface UpdateEquipementInput {
   type?: EquipementType;
   dateDernierEntretien?: string;
+  intervalleEntretienMois?: number;
 }
 
 export function listImmeubles(sciId: string): Promise<Immeuble[]> {

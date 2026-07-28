@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculerBornesMoisCalendaire,
+  calculerDateEcheanceRecurrente,
   calculerDernierJourDuMois,
   calculerMontantEcheanceEntree,
   calculerMontantEcheanceLoyer,
@@ -120,5 +121,32 @@ describe("calculerBornesMoisCalendaire", () => {
       debutMoisInclus: "2026-12-01",
       debutMoisSuivantExclusif: "2027-01-01"
     });
+  });
+});
+
+describe("calculerDateEcheanceRecurrente", () => {
+  it("construit la date d'échéance du mois de dateReference avec jourEcheance", () => {
+    expect(calculerDateEcheanceRecurrente("2026-07-20", 5)).toBe("2026-07-05");
+  });
+
+  it("fonctionne avec un jourEcheance à un seul chiffre (jamais sauté)", () => {
+    expect(calculerDateEcheanceRecurrente("2026-01-15", 1)).toBe("2026-01-01");
+  });
+
+  it("fonctionne avec jourEcheance en fin de plage autorisée (28)", () => {
+    expect(calculerDateEcheanceRecurrente("2026-02-10", 28)).toBe("2026-02-28");
+  });
+
+  it("reste dans le mois de dateReference même en passage décembre-janvier", () => {
+    expect(calculerDateEcheanceRecurrente("2026-12-31", 5)).toBe("2026-12-05");
+    expect(calculerDateEcheanceRecurrente("2027-01-01", 5)).toBe("2027-01-05");
+  });
+
+  it("ne dépend jamais du jour de dateReference (déjà dépassé ou non dans le mois)", () => {
+    // Le mois courant n'est jamais sauté même si jourEcheance y est déjà
+    // dépassé (docs/data-dictionary.md, section baux) : la fonction ne
+    // regarde que l'année/mois de dateReference, jamais son jour.
+    expect(calculerDateEcheanceRecurrente("2026-07-01", 20)).toBe("2026-07-20");
+    expect(calculerDateEcheanceRecurrente("2026-07-31", 20)).toBe("2026-07-20");
   });
 });

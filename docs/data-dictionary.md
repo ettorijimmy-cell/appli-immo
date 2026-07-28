@@ -59,7 +59,8 @@ automatiquement à la création d'une SCI — voir
 | Champ | Type | Description |
 |---|---|---|
 | type | enum | `chaudiere` \| `ballon_eau_chaude` \| `autre` (extensible) |
-| date_dernier_entretien | date | Sert de base au calcul d'alerte d'entretien |
+| date_dernier_entretien | date, nullable | Sert de base au calcul de l'alerte entretien_equipement (Module 6) |
+| intervalle_entretien_mois | integer, nullable | Périodicité attendue en mois, saisie librement (pas de valeur par défaut par type d'équipement) — l'alerte entretien_equipement ne se déclenche **jamais** tant que ce champ ou `date_dernier_entretien` est absent |
 
 ## locataires
 | Champ | Type | Description |
@@ -106,6 +107,42 @@ ce champ).
     Si cette échéance est déjà réglée intégralement (`statut=paye`) au moment de la résiliation, elle **n'est pas touchée automatiquement** — voir `docs/backlog.md`, dette technique, pour le cas du trop-perçu non traité.
   - **Cas B — aucune échéance ne couvre ce mois** : `resilier()` **génère la ligne manquante**, toujours proratisée **depuis le 1er jour** du mois de `date_fin` (jamais depuis `date_activation` ni `date_debut`) — règle sans ambiguïté : le mois de `date_debut` est **exclusivement** traité par le Cas A (l'échéance d'entrée, toujours générée pour ce mois précis dès l'activation, voir décision ci-dessus), donc tout mois que le Cas B doit encore combler est nécessairement postérieur, occupé en continu depuis son 1er jour. `date_echeance=date_fin`, statut `impaye` par défaut. Aucune ligne n'est créée si le montant proratisé est nul.
     **Portée volontairement limitée** : seul le mois de `date_fin` est comblé. Si plusieurs mois consécutifs n'ont jamais eu d'échéance générée (écart de plusieurs mois entre l'activation et la résiliation, en l'absence du job du Module 6), les mois intermédiaires restent non facturés — un rattrapage multi-mois n'est pas traité ici, c'est le rôle du Module 6 une fois construit (voir `docs/backlog.md`, prérequis de conception posé sur ce module).
+
+**Décision produit (génération récurrente des échéances, Module 6, tranchée
+avec l'utilisateur — prérequis posé lors du Module 5)** :
+- Le job planifié quotidien (`docs/backlog.md`, Module 6) génère, pour tout
+  bail `actif`/`preavis`, l'échéance de loyer du **mois calendaire
+  courant** si elle n'existe pas déjà (même critère d'existence que Cas A/B
+  ci-dessus : une échéance `type=loyer` dont `date_echeance` tombe dans ce
+  mois, peu importe sa source — `activer()`, `resilier()`, ou une
+  exécution antérieure du job — rend l'opération naturellement idempotente
+  sans état supplémentaire à suivre). Montant = `loyer_mensuel +
+  (provisions_charges ?? 0)` (`calculerMontantEcheanceLoyer`),
+  `date_echeance = <mois-courant>-jour_echeance`, statut `impaye`.
+- **Aucun rattrapage automatique des mois déjà écoulés avant la première
+  exécution du job.** Si un bail actif depuis plusieurs mois n'a aucune
+  échéance pour les mois antérieurs (aucun job n'existait encore pour les
+  générer), ces mois-là ne sont **jamais** comblés automatiquement — ni au
+  premier passage du job, ni plus tard. Raison : la quasi-totalité des
+  loyers concernés (usage réel de l'application) ont très probablement déjà
+  été perçus hors logiciel, faute d'outil pour les tracer plus tôt ; les
+  facturer automatiquement créerait de fausses lignes `impaye` et de
+  fausses alertes. Le rattrapage de ces mois-là reste une action
+  **manuelle et explicite** de l'utilisateur, via le formulaire de création
+  de paiement existant (Module 5), avec le statut qu'il sait être le bon
+  (`paye` ou `impaye`) — jamais une décision automatique du système.
+- **Le mois courant, lui, n'est jamais sauté** — y compris à la toute
+  première exécution du job, même si `jour_echeance` est déjà dépassé dans
+  ce mois (ex. job déployé le 20 avec `jour_echeance=5`) : l'échéance du
+  mois courant est générée quand même, datée du `jour_echeance` déjà passé
+  (donc immédiatement visible comme en retard) — seuls les mois
+  **antérieurs** au mois courant au moment de la première exécution sont
+  concernés par la règle de non-rattrapage ci-dessus, jamais le mois en
+  cours.
+- Garde-fou : le job ne génère jamais une échéance pour un mois antérieur
+  au mois de `date_debut` du bail (n'a de sens que si un bail est passé
+  `actif` avec une `date_debut` future — cas normalement inexistant en
+  usage correct, mais évite une échéance absurde le cas échéant).
 
 ## bail_locataires
 Table de liaison pour gérer la colocation.
@@ -204,8 +241,72 @@ bancaires). Deux règles non négociables, à ne jamais régresser :
 | Champ | Type | Description |
 |---|---|---|
 | type | enum | `bail_fin_proche` \| `document_expire` \| `document_expire_proche` \| `entretien_equipement` \| `impaye` |
-| statut | enum | `active` \| `traitee` \| `ignoree` |
-| seuil_jours_avant | integer | Configurable par type d'alerte dans Paramètres |
+| entite_id | uuid | Id de la ligne concernée — la table cible se déduit de `type` (bail pour bail_fin_proche, paiement pour impaye, document pour document_expire(_proche), equipement pour entretien_equipement). Pas de FK possible (cibles différentes selon le type), même principe que `documents.entite_id` |
+| statut | enum | `active` \| `traitee` \| `ignoree` \| `resolue` — voir cycle de vie ci-dessous |
+| message | text | Résumé lisible, généré à la création de l'alerte |
+| date_reference | date | Date métier à laquelle l'alerte se rapporte (`date_fin` du bail, `date_expiration` du document, prochaine date d'entretien calculée, ou `date_echeance` du paiement en retard) |
+| derniere_condition_vraie | boolean | **Champ interne, jamais exposé à l'utilisateur** — voir ci-dessous |
+
+**Cycle de vie complet (tranché avec l'utilisateur, prérequis du Module 6,
+révisé après la revue financial-logic-reviewer qui a signalé le risque
+d'"alerte impayé fantôme" — un paiement réglé après coup dont l'alerte
+restait active indéfiniment)** :
+
+- `active` : problème en cours, pas encore traité par l'utilisateur.
+- `resolue` : le **job** a constaté que la condition déclenchante n'est
+  plus vraie et a fermé l'alerte lui-même — distinct de `traitee`/`ignoree`
+  (décisions humaines explicites), pour que le Module 7 puisse un jour
+  distinguer "l'utilisateur a agi" de "le système a constaté que ce n'est
+  plus un problème".
+- `traitee` / `ignoree` : décision humaine, **définitive pour cette
+  occurrence précise** — le job ne réécrit **jamais** ce statut.
+
+**Réouverture (comportement volontairement différent selon le statut)** :
+une alerte `resolue` peut se **rouvrir en place** (même ligne, repasse à
+`active`) si la condition redevient vraie. Une alerte `traitee`/`ignoree`,
+elle, ne se rouvre jamais — si la condition redevient vraie après avoir
+été observée fausse, le job crée une **nouvelle ligne** (nouvelle
+occurrence), sans jamais toucher à l'ancienne. Résultat : plusieurs lignes
+peuvent exister dans le temps pour un même `(type, entite_id)` — l'index
+unique ne porte donc que sur les lignes `active`
+(`WHERE statut = 'active'`), jamais un unique permanent par entité.
+
+**`derniere_condition_vraie` (champ interne)** : mémorise si la condition
+déclenchante était vraie au dernier passage du job, y compris pour une
+alerte `traitee`/`ignoree` dont le `statut`, lui, ne bouge jamais. Sert
+uniquement à distinguer une condition restée vraie sans interruption
+depuis le traitement (aucune action : sinon une alerte `bail_fin_proche`
+déjà traitée, dont la condition reste vraie indéfiniment par construction,
+se dupliquerait chaque jour) d'une vraie transition faux→vrai qui justifie
+une nouvelle occurrence (ex. un paiement repassé `impaye` via
+`PaiementsService.annulerEnregistrement()` après avoir été marqué payé).
+Défaut `true` pour les lignes existantes lors de la migration d'ajout de
+cette colonne — comportement sûr (aucune duplication intempestive au
+premier passage suivant la migration).
+
+## parametres_alertes
+Une ligne par type d'alerte configurable, créée avec une valeur par défaut
+au premier accès si absente (`AlertesConfigService`) — jamais par une
+migration de données écrite à la main (CLAUDE.md).
+| Champ | Type | Description |
+|---|---|---|
+| type | enum | Les 4 types configurables : `bail_fin_proche`, `document_expire_proche`, `entretien_equipement`, `impaye`. **`document_expire` n'a volontairement pas de ligne** : c'est un statut déjà calculé (`calculerStatutDocument`), pas une fenêtre d'anticipation — rien à configurer |
+| seuil_jours_avant | integer | **Le sens dépend du type, tranché avec l'utilisateur** — voir ci-dessous |
+
+**Décision produit (sens contextuel de `seuil_jours_avant`, tranchée avec
+l'utilisateur)** : pour `bail_fin_proche`, `document_expire_proche` et
+`entretien_equipement`, c'est un délai d'**anticipation avant** l'échéance
+(ex. seuil=30 : l'alerte apparaît 30 jours avant `date_fin`/`date_expiration`/
+la prochaine date d'entretien, et le reste indéfiniment tant que non
+traitée). Pour `impaye`, la colonne change de sens : c'est un délai de
+**grâce après** `date_echeance` (ex. seuil=5 : un loyer en retard n'est
+signalé qu'à partir du 6e jour de retard, jamais le jour même de
+l'échéance ni pendant le délai de grâce — même convention que
+`calculerStatutDocument`, le dernier jour du délai est encore toléré).
+Valeurs par défaut : 30 jours (bail_fin_proche, document_expire_proche,
+entretien_equipement), 5 jours (impaye). **Un futur type d'alerte devra
+préciser explicitement dans quel sens il utilise ce champ** — ne jamais
+supposer "avant" par défaut.
 
 ## journal_audit
 Table transverse, append-only — capture toute création/modification/archivage

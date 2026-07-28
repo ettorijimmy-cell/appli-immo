@@ -276,6 +276,32 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     expect(resultat.dateFin).toBe("2026-12-31");
   });
 
+  it("update() autorise de corriger date_debut tant que le bail est en brouillon", async () => {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+
+    const resultat = await bauxService.update(bail.id, { dateDebut: "2026-08-15" });
+
+    expect(resultat.dateDebut).toBe("2026-08-15");
+  });
+
+  it("update() refuse de modifier date_debut une fois le bail activé, avec un message explicite", async () => {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      loyerMensuel: "800.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+
+    await expect(bauxService.update(bail.id, { dateDebut: "2026-09-01" })).rejects.toThrow(
+      "Impossible de modifier la date de début d'un bail qui n'est plus en brouillon."
+    );
+
+    const [rowEnBase] = await db.select().from(baux).where(eq(baux.id, bail.id));
+    expect(rowEnBase?.dateDebut).toBe("2026-08-01");
+  });
+
   it("une mise à jour partielle ne touche pas aux autres champs du bail", async () => {
     const bail = await bauxService.create({
       appartementId,

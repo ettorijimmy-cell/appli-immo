@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
+import { AlertesModule } from "./alertes/alertes.module";
 import { AppartementsModule } from "./appartements/appartements.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
@@ -20,6 +22,7 @@ import { ScisModule } from "./scis/scis.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     CommonModule,
     DatabaseModule,
     EncryptionModule,
@@ -35,7 +38,8 @@ import { ScisModule } from "./scis/scis.module";
     GarantsModule,
     BailLocatairesModule,
     PaiementsModule,
-    DocumentsModule
+    DocumentsModule,
+    AlertesModule
   ]
 })
 export class AppModule {}

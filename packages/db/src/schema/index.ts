@@ -13,3 +13,5 @@ export * from "./garants";
 export * from "./bail-locataires";
 export * from "./paiements";
 export * from "./documents";
+export * from "./alertes";
+export * from "./parametres-alertes";

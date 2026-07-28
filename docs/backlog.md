@@ -169,26 +169,28 @@ rapprochement incorrect.
 - Action "traiter une alerte" (statut → `traitee`)
 - Tests packages/core sur chaque règle de génération, en particulier
   l'idempotence (le job ne doit jamais dupliquer une alerte)
-- **Prérequis de conception, à valider avant de considérer ce module
-  terminé** (identifié lors du correctif "Cas B" de `BauxService.resilier()`,
-  `docs/data-dictionary.md` section `baux`) : ce module introduit la
-  génération récurrente des échéances de loyer (une par mois, via le job
-  planifié) — jusqu'ici, seule la toute première échéance était générée à
-  l'activation d'un bail (`BauxService.activer()`). Avant de livrer ce job,
-  décider explicitement comment traiter le **rattrapage des mois déjà
-  écoulés sans échéance** pour tout bail actif AVANT la mise en service de
-  ce job (plusieurs mois consécutifs ont pu s'écouler sans qu'aucune ligne
-  de paiement n'existe pour eux, y compris au-delà du seul mois de
-  résiliation que corrige déjà `resilier()` "Cas B") : facturer chaque mois
-  manquant à taux plein ? les fusionner en une seule ligne de rattrapage ?
-  Ce n'est volontairement PAS tranché aujourd'hui — le correctif "Cas B" ne
-  couvre que le mois de résiliation lui-même, jamais un rattrapage
-  multi-mois (limite de scope explicitement acceptée par l'utilisateur).
+- **Prérequis de conception (identifié lors du correctif "Cas B" de
+  `BauxService.resilier()`, Module 5) — tranché avec l'utilisateur avant
+  tout code de ce module** : ce module introduit la génération récurrente
+  des échéances de loyer (une par mois, via le job planifié) — jusqu'ici,
+  seule la toute première échéance était générée à l'activation d'un bail.
+  Décision (voir `docs/data-dictionary.md`, section `baux`, "Décision
+  produit — génération récurrente des échéances") : **aucun rattrapage
+  automatique** des mois déjà écoulés avant la toute première exécution du
+  job — celui-ci ne génère jamais un mois antérieur au mois courant au
+  moment où il tourne, seulement le mois courant (jamais sauté, même si
+  `jour_echeance` y est déjà dépassé) et les mois suivants. Raison : la
+  quasi-totalité des loyers concernés (usage réel de l'application) ont
+  très probablement déjà été perçus hors logiciel ; les facturer
+  automatiquement créerait de fausses lignes `impaye` et de fausses
+  alertes. Le rattrapage de ces mois-là reste une action manuelle et
+  explicite de l'utilisateur (formulaire de paiement existant, Module 5).
 
 **Critère de complétion** : faire tourner le job deux fois de suite sur les
-mêmes données, vérifier qu'aucune alerte n'est dupliquée — ET la décision
-de rattrapage multi-mois ci-dessus explicitement tranchée et documentée
-avant de considérer le module livré (pas seulement codé).
+mêmes données, vérifier qu'aucune alerte n'est dupliquée (vérifié par test
+d'intégration Postgres réel, `apps/backend/src/alertes/alertes.integration.spec.ts`)
+— la décision de non-rattrapage ci-dessus étant explicitement tranchée et
+documentée, le module est considéré livré.
 
 ---
 

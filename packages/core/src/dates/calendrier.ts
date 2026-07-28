@@ -1,0 +1,67 @@
+const JOURS_PAR_MOIS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+export function estBissextile(annee: number): boolean {
+  return (annee % 4 === 0 && annee % 100 !== 0) || annee % 400 === 0;
+}
+
+// Calcul purement arithmétique (pas de Date native) : packages/core reste
+// TypeScript pur, et les fuseaux horaires de Date introduiraient un
+// comportement dépendant de la machine sur un calcul qui n'en a pas besoin.
+export function joursDansLeMois(annee: number, mois: number): number {
+  if (mois === 2 && estBissextile(annee)) {
+    return 29;
+  }
+  return JOURS_PAR_MOIS[mois - 1] as number;
+}
+
+export function formaterDateIso(annee: number, mois: number, jour: number): string {
+  return `${annee.toString().padStart(4, "0")}-${mois.toString().padStart(2, "0")}-${jour.toString().padStart(2, "0")}`;
+}
+
+function decomposerDate(date: string): { annee: number; mois: number; jour: number } {
+  const [anneeStr, moisStr, jourStr] = date.split("-");
+  return { annee: Number(anneeStr), mois: Number(moisStr), jour: Number(jourStr) };
+}
+
+/**
+ * Ajoute (ou retranche, si négatif) un nombre de jours à une date ISO,
+ * sans `Date` native (voir joursDansLeMois ci-dessus). Utilisé pour le
+ * délai de grâce de l'alerte `impaye` (Module 6, docs/backlog.md).
+ */
+export function ajouterJours(date: string, jours: number): string {
+  let { annee, mois, jour } = decomposerDate(date);
+  jour += jours;
+  while (jour > joursDansLeMois(annee, mois)) {
+    jour -= joursDansLeMois(annee, mois);
+    mois += 1;
+    if (mois > 12) {
+      mois = 1;
+      annee += 1;
+    }
+  }
+  while (jour < 1) {
+    mois -= 1;
+    if (mois < 1) {
+      mois = 12;
+      annee -= 1;
+    }
+    jour += joursDansLeMois(annee, mois);
+  }
+  return formaterDateIso(annee, mois, jour);
+}
+
+/**
+ * Ajoute un nombre de mois à une date ISO. Le jour du mois est conservé
+ * tel quel s'il existe dans le mois cible, sinon ramené à son dernier jour
+ * (ex. 2026-01-31 + 1 mois -> 2026-02-28, jamais 2026-03-03). Utilisé pour
+ * la prochaine date d'entretien d'un équipement (Module 6,
+ * `date_dernier_entretien + intervalle_entretien_mois`).
+ */
+export function ajouterMois(date: string, mois: number): string {
+  const decomposed = decomposerDate(date);
+  const totalMois = decomposed.mois - 1 + mois;
+  const anneeCible = decomposed.annee + Math.floor(totalMois / 12);
+  const moisCible = (((totalMois % 12) + 12) % 12) + 1;
+  const jourCible = Math.min(decomposed.jour, joursDansLeMois(anneeCible, moisCible));
+  return formaterDateIso(anneeCible, moisCible, jourCible);
+}

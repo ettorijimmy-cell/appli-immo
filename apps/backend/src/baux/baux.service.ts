@@ -69,6 +69,23 @@ export class BauxService {
   }
 
   async update(id: string, dto: UpdateBailDto) {
+    // date_debut devient figée dès qu'un bail sort de `brouillon` — même
+    // principe que date_activation, jamais modifiable après coup
+    // (docs/data-dictionary.md, section baux). Sans cette règle, le job
+    // récurrent (Module 6) pourrait sauter silencieusement l'échéance du
+    // mois courant si date_debut est repoussée après activation.
+    if (dto.dateDebut !== undefined) {
+      const [bailExistant] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
+      if (!bailExistant) {
+        throw new NotFoundException("Bail introuvable");
+      }
+      if (bailExistant.statut !== "brouillon") {
+        throw new ConflictException(
+          "Impossible de modifier la date de début d'un bail qui n'est plus en brouillon."
+        );
+      }
+    }
+
     // Champs listés explicitement plutôt qu'un `...dto` : même si un champ
     // `statut` parvenait un jour jusqu'ici (bug ailleurs, contournement du
     // typage), il ne serait jamais écrit — la seule voie pour changer le

@@ -19,7 +19,8 @@ export class EquipementsService {
       .values({
         appartementId: dto.appartementId,
         type: dto.type,
-        dateDernierEntretien: dto.dateDernierEntretien
+        dateDernierEntretien: dto.dateDernierEntretien,
+        intervalleEntretienMois: dto.intervalleEntretienMois
       })
       .returning();
     if (!equipement) {

@@ -239,6 +239,7 @@ export function AppartementDetailView({
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 font-medium">Type</th>
                     <th className="py-2 font-medium">Dernier entretien</th>
+                    <th className="py-2 font-medium">Intervalle (mois)</th>
                     <th className="py-2 font-medium" />
                   </tr>
                 </thead>
@@ -264,6 +265,7 @@ export function AppartementDetailView({
                           {equipement.archivedAt !== null && <ArchiveBadge />}
                         </td>
                         <td className="py-2">{equipement.dateDernierEntretien ?? "—"}</td>
+                        <td className="py-2">{equipement.intervalleEntretienMois ?? "—"}</td>
                         <td className="py-2 text-right">
                           <button
                             type="button"
@@ -306,6 +308,7 @@ function NewEquipementForm({
 }): React.JSX.Element {
   const [type, setType] = useState<EquipementType>("chaudiere");
   const [dateDernierEntretien, setDateDernierEntretien] = useState("");
+  const [intervalleEntretienMois, setIntervalleEntretienMois] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -317,9 +320,11 @@ function NewEquipementForm({
       await createEquipement({
         appartementId,
         type,
-        ...(dateDernierEntretien && { dateDernierEntretien })
+        ...(dateDernierEntretien && { dateDernierEntretien }),
+        ...(intervalleEntretienMois && { intervalleEntretienMois: Number(intervalleEntretienMois) })
       });
       setDateDernierEntretien("");
+      setIntervalleEntretienMois("");
       onCreated();
     } catch {
       setError("Impossible de créer l'équipement");
@@ -363,6 +368,20 @@ function NewEquipementForm({
             type="date"
             value={dateDernierEntretien}
             onChange={(event) => setDateDernierEntretien(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="equipement-intervalle" className="text-sm font-medium text-slate-700">
+            Intervalle d'entretien (mois)
+          </label>
+          <input
+            id="equipement-intervalle"
+            type="number"
+            min={1}
+            value={intervalleEntretienMois}
+            onChange={(event) => setIntervalleEntretienMois(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -532,6 +551,9 @@ function EditEquipementRow({
 }): React.JSX.Element {
   const [type, setType] = useState<EquipementType>(equipement.type);
   const [dateDernierEntretien, setDateDernierEntretien] = useState(equipement.dateDernierEntretien ?? "");
+  const [intervalleEntretienMois, setIntervalleEntretienMois] = useState(
+    equipement.intervalleEntretienMois?.toString() ?? ""
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -541,7 +563,8 @@ function EditEquipementRow({
     try {
       await updateEquipement(equipement.id, {
         type,
-        ...(dateDernierEntretien && { dateDernierEntretien })
+        ...(dateDernierEntretien && { dateDernierEntretien }),
+        ...(intervalleEntretienMois && { intervalleEntretienMois: Number(intervalleEntretienMois) })
       });
       onSaved();
     } catch {
@@ -578,6 +601,15 @@ function EditEquipementRow({
             {error}
           </p>
         )}
+      </td>
+      <td className="py-2">
+        <input
+          type="number"
+          min={1}
+          value={intervalleEntretienMois}
+          onChange={(event) => setIntervalleEntretienMois(event.target.value)}
+          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
       </td>
       <td className="py-2 text-right">
         <button

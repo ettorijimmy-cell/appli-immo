@@ -1,0 +1,1 @@
+ALTER TABLE "alertes" ADD COLUMN "derniere_condition_vraie" boolean DEFAULT true NOT NULL;
