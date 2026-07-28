@@ -1,11 +1,17 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  calculerBornesMoisCalendaire,
+  calculerDatePremiereEcheance,
+  calculerMontantEcheanceLoyer,
+  calculerProrataResiliation,
   calculerStatutAppartementApresResiliation,
+  calculerStatutPaiement,
+  montantEnCentimes,
   peutActiverBail,
   preremplirLoyerBail
 } from "core";
-import { appartements, baux, mettreAJourAvecAudit, type Database } from "db";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { appartements, baux, mettreAJourAvecAudit, paiements, type Database } from "db";
+import { and, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
@@ -39,7 +45,9 @@ export class BauxService {
         dateDebut: dto.dateDebut,
         dateFin: dto.dateFin,
         loyerMensuel,
-        depotGarantie: dto.depotGarantie
+        depotGarantie: dto.depotGarantie,
+        provisionsCharges: dto.provisionsCharges,
+        jourEcheance: dto.jourEcheance
       })
       .returning();
     if (!bail) {
@@ -74,7 +82,9 @@ export class BauxService {
         dateDebut: dto.dateDebut,
         dateFin: dto.dateFin,
         loyerMensuel: dto.loyerMensuel,
-        depotGarantie: dto.depotGarantie
+        depotGarantie: dto.depotGarantie,
+        provisionsCharges: dto.provisionsCharges,
+        jourEcheance: dto.jourEcheance
       },
       this.requestContext.getUtilisateurId()
     );
@@ -133,6 +143,19 @@ export class BauxService {
         throw new ConflictException(verification.raison);
       }
 
+      // Requis pour générer la première échéance (docs/data-dictionary.md,
+      // section baux) — jamais silencieusement défaillant à l'activation.
+      if (bail.jourEcheance === null) {
+        throw new ConflictException(
+          "Impossible d'activer ce bail : le jour d'échéance doit être renseigné au préalable."
+        );
+      }
+      if (bail.loyerMensuel === null) {
+        throw new ConflictException(
+          "Impossible d'activer ce bail : le loyer mensuel doit être renseigné au préalable."
+        );
+      }
+
       const utilisateurId = this.requestContext.getUtilisateurId();
       const [bailActive] = await mettreAJourAvecAudit(tx, baux, id, { statut: "actif" }, utilisateurId);
       if (!bailActive) {
@@ -146,6 +169,28 @@ export class BauxService {
         { statut: "loue" },
         utilisateurId
       );
+
+      // Génération des échéances à l'activation (docs/data-dictionary.md,
+      // "Décision produit — génération des échéances à l'activation") :
+      // seules la caution (si due) et la toute première échéance de loyer
+      // sont créées ici. Les échéances suivantes seront produites par le
+      // job planifié quotidien du Module 6 — jamais toutes générées
+      // d'avance.
+      const dateActivation = new Date().toISOString().slice(0, 10);
+      if (bail.depotGarantie && montantEnCentimes(bail.depotGarantie) > 0) {
+        await tx.insert(paiements).values({
+          bailId: id,
+          type: "depot_garantie",
+          montant: bail.depotGarantie,
+          dateEcheance: dateActivation
+        });
+      }
+      await tx.insert(paiements).values({
+        bailId: id,
+        type: "loyer",
+        montant: calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges),
+        dateEcheance: calculerDatePremiereEcheance(dateActivation, bail.jourEcheance)
+      });
 
       return bailActive;
     });
@@ -196,6 +241,42 @@ export class BauxService {
         { statut: nouveauStatutAppartement },
         utilisateurId
       );
+
+      // Prorata de l'échéance de loyer du mois de résiliation
+      // (docs/data-dictionary.md, "Décision produit — prorata à la
+      // résiliation") : uniquement si elle n'est pas déjà réglée
+      // intégralement — sinon on n'y touche pas (trop-perçu non traité,
+      // voir docs/backlog.md, dette technique). Rien à proratiser sans date
+      // de fin explicite (dateFin optionnel dans ResilierBailDto).
+      if (dto.dateFin) {
+        const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(dto.dateFin);
+        const [echeanceDuMois] = await tx
+          .select()
+          .from(paiements)
+          .where(
+            and(
+              eq(paiements.bailId, id),
+              eq(paiements.type, "loyer"),
+              isNull(paiements.archivedAt),
+              gte(paiements.dateEcheance, debutMoisInclus),
+              lt(paiements.dateEcheance, debutMoisSuivantExclusif)
+            )
+          )
+          .limit(1);
+        if (echeanceDuMois && (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel")) {
+          const montantProratise = calculerProrataResiliation(echeanceDuMois.montant, dto.dateFin);
+          await mettreAJourAvecAudit(
+            tx,
+            paiements,
+            echeanceDuMois.id,
+            {
+              montant: montantProratise,
+              statut: calculerStatutPaiement(montantProratise, echeanceDuMois.montantPaye)
+            },
+            utilisateurId
+          );
+        }
+      }
 
       return bailResilie;
     });

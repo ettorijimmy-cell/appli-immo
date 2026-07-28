@@ -14,6 +14,7 @@ import {
   listGarants,
   listLocataires,
   resilierBail,
+  updateBail,
   type Bail,
   type BailLocataire,
   type BailLocataireRole,
@@ -99,6 +100,8 @@ function NewBailForm({
   const [dateDebut, setDateDebut] = useState("");
   const [loyerMensuel, setLoyerMensuel] = useState(appartement.loyerReference ?? "");
   const [depotGarantie, setDepotGarantie] = useState("");
+  const [provisionsCharges, setProvisionsCharges] = useState("");
+  const [jourEcheance, setJourEcheance] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -112,7 +115,9 @@ function NewBailForm({
         typeBail,
         dateDebut,
         ...(loyerMensuel && { loyerMensuel }),
-        ...(depotGarantie && { depotGarantie })
+        ...(depotGarantie && { depotGarantie }),
+        ...(provisionsCharges && { provisionsCharges }),
+        ...(jourEcheance && { jourEcheance: Number(jourEcheance) })
       });
       onCreated();
     } catch {
@@ -185,6 +190,33 @@ function NewBailForm({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-provisions-charges" className="text-sm font-medium text-slate-700">
+            Provisions pour charges
+          </label>
+          <input
+            id="bail-provisions-charges"
+            value={provisionsCharges}
+            onChange={(event) => setProvisionsCharges(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-jour-echeance" className="text-sm font-medium text-slate-700">
+            Jour d'échéance (1-28)
+          </label>
+          <input
+            id="bail-jour-echeance"
+            type="number"
+            min={1}
+            max={28}
+            value={jourEcheance}
+            onChange={(event) => setJourEcheance(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
       </div>
 
       {error && (
@@ -214,6 +246,7 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
   const [actionError, setActionError] = useState<string | null>(null);
   const [showAttachForm, setShowAttachForm] = useState(false);
   const [showGarantForm, setShowGarantForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [dateFinResiliation, setDateFinResiliation] = useState("");
   const [isActionInProgress, setIsActionInProgress] = useState(false);
 
@@ -294,32 +327,61 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
 
   return (
     <div className="space-y-6">
-      <dl className="grid grid-cols-2 gap-x-8 text-sm">
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Statut</dt>
-          <dd>{bail.statut}</dd>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Type</dt>
-          <dd>{bail.typeBail}</dd>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Loyer</dt>
-          <dd>{bail.loyerMensuel ? `${bail.loyerMensuel} €` : "—"}</dd>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Dépôt de garantie</dt>
-          <dd>{bail.depotGarantie ? `${bail.depotGarantie} €` : "—"}</dd>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Début</dt>
-          <dd>{bail.dateDebut}</dd>
-        </div>
-        <div className="flex justify-between border-b border-slate-100 py-1">
-          <dt className="text-slate-500">Fin</dt>
-          <dd>{bail.dateFin ?? "—"}</dd>
-        </div>
-      </dl>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Détail du bail</h3>
+        <button
+          type="button"
+          onClick={() => setShowEditForm((value) => !value)}
+          className="text-sm text-slate-500 hover:text-slate-700"
+        >
+          {showEditForm ? "Annuler" : "Modifier"}
+        </button>
+      </div>
+
+      {showEditForm ? (
+        <EditBailForm
+          bail={bail}
+          onSaved={() => {
+            setShowEditForm(false);
+            onChanged();
+          }}
+        />
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-8 text-sm">
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Statut</dt>
+            <dd>{bail.statut}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Type</dt>
+            <dd>{bail.typeBail}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Loyer</dt>
+            <dd>{bail.loyerMensuel ? `${bail.loyerMensuel} €` : "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Dépôt de garantie</dt>
+            <dd>{bail.depotGarantie ? `${bail.depotGarantie} €` : "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Provisions pour charges</dt>
+            <dd>{bail.provisionsCharges ? `${bail.provisionsCharges} €` : "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Jour d'échéance</dt>
+            <dd>{bail.jourEcheance ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Début</dt>
+            <dd>{bail.dateDebut}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Fin</dt>
+            <dd>{bail.dateFin ?? "—"}</dd>
+          </div>
+        </dl>
+      )}
 
       {actionError && (
         <p role="alert" className="text-sm text-red-600">
@@ -462,6 +524,161 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
         )}
       </div>
     </div>
+  );
+}
+
+function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): React.JSX.Element {
+  const [typeBail, setTypeBail] = useState<BailTypeBail>(bail.typeBail);
+  const [dateDebut, setDateDebut] = useState(bail.dateDebut);
+  const [dateFin, setDateFin] = useState(bail.dateFin ?? "");
+  const [loyerMensuel, setLoyerMensuel] = useState(bail.loyerMensuel ?? "");
+  const [depotGarantie, setDepotGarantie] = useState(bail.depotGarantie ?? "");
+  const [provisionsCharges, setProvisionsCharges] = useState(bail.provisionsCharges ?? "");
+  const [jourEcheance, setJourEcheance] = useState(bail.jourEcheance?.toString() ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await updateBail(bail.id, {
+        typeBail,
+        dateDebut,
+        ...(dateFin && { dateFin }),
+        ...(loyerMensuel && { loyerMensuel }),
+        ...(depotGarantie && { depotGarantie }),
+        ...(provisionsCharges && { provisionsCharges }),
+        ...(jourEcheance && { jourEcheance: Number(jourEcheance) })
+      });
+      onSaved();
+    } catch {
+      setError("Impossible de modifier le bail");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        void handleSubmit(event);
+      }}
+      className="space-y-4 rounded-lg border border-slate-200 p-4"
+    >
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-type" className="text-sm font-medium text-slate-700">
+            Type
+          </label>
+          <select
+            id="bail-edit-type"
+            value={typeBail}
+            onChange={(event) => setTypeBail(event.target.value as BailTypeBail)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            {BAIL_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-date-debut" className="text-sm font-medium text-slate-700">
+            Date de début
+          </label>
+          <input
+            id="bail-edit-date-debut"
+            type="date"
+            required
+            value={dateDebut}
+            onChange={(event) => setDateDebut(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-date-fin" className="text-sm font-medium text-slate-700">
+            Date de fin
+          </label>
+          <input
+            id="bail-edit-date-fin"
+            type="date"
+            value={dateFin}
+            onChange={(event) => setDateFin(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-loyer" className="text-sm font-medium text-slate-700">
+            Loyer mensuel
+          </label>
+          <input
+            id="bail-edit-loyer"
+            value={loyerMensuel}
+            onChange={(event) => setLoyerMensuel(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-depot" className="text-sm font-medium text-slate-700">
+            Dépôt de garantie
+          </label>
+          <input
+            id="bail-edit-depot"
+            value={depotGarantie}
+            onChange={(event) => setDepotGarantie(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-provisions-charges" className="text-sm font-medium text-slate-700">
+            Provisions pour charges
+          </label>
+          <input
+            id="bail-edit-provisions-charges"
+            value={provisionsCharges}
+            onChange={(event) => setProvisionsCharges(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-jour-echeance" className="text-sm font-medium text-slate-700">
+            Jour d'échéance (1-28)
+          </label>
+          <input
+            id="bail-edit-jour-echeance"
+            type="number"
+            min={1}
+            max={28}
+            value={jourEcheance}
+            onChange={(event) => setJourEcheance(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+      >
+        {isSubmitting ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </form>
   );
 }
 

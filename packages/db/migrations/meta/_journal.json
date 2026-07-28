@@ -43,6 +43,13 @@
       "when": 1785166582444,
       "tag": "0005_aromatic_virginia_dare",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785234755562,
+      "tag": "0006_lonely_the_fallen",
+      "breakpoints": true
     }
   ]
 }

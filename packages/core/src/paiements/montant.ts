@@ -32,3 +32,16 @@ export function montantEnCentimes(montant: string): number {
   const centimes = parseInt(partieEntiere, 10) * 100 + parseInt(decimalDeuxChiffres, 10);
   return negatif ? -centimes : centimes;
 }
+
+/**
+ * Conversion inverse de montantEnCentimes — formate des centimes entiers en
+ * chaîne décimale à point (jamais de division flottante : les centimes
+ * restent des entiers jusqu'au tout dernier formatage textuel).
+ */
+export function centimesVersMontant(centimes: number): string {
+  const negatif = centimes < 0;
+  const valeurAbsolue = Math.abs(centimes);
+  const partieEntiere = Math.trunc(valeurAbsolue / 100);
+  const partieDecimale = valeurAbsolue % 100;
+  return `${negatif ? "-" : ""}${partieEntiere}.${partieDecimale.toString().padStart(2, "0")}`;
+}

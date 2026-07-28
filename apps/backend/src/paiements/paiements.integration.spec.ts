@@ -122,10 +122,24 @@ describe("Paiements — enregistrement, calcul de statut, rapprochement CSV (int
     const bail = await bauxService.create({
       appartementId: appartement.id,
       typeBail: "vide",
-      dateDebut: "2026-08-01"
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
     });
     await bauxService.activer(bail.id);
     bailId = bail.id;
+
+    // activer() génère désormais automatiquement la première échéance de
+    // loyer (docs/data-dictionary.md) — sa date dépend de la date réelle
+    // d'exécution du test (calculerDatePremiereEcheance part d'aujourd'hui),
+    // ce qui rendrait les tests ci-dessous non déterministes s'ils la
+    // laissaient traîner (elle pourrait un jour tomber dans la fenêtre de
+    // tolérance ±5 jours des dates de test fixes ci-dessous). Ces tests
+    // portent sur des scénarios où le paiement est créé explicitement par
+    // le test — l'échéance auto-générée par l'activation est hors sujet
+    // ici et a ses propres tests dédiés (locataires-baux.integration.spec.ts).
+    for (const echeanceGeneree of await paiementsService.findAll(bailId)) {
+      await paiementsService.archive(echeanceGeneree.id);
+    }
   });
 
   afterEach(async () => {
@@ -341,9 +355,15 @@ describe("Paiements — enregistrement, calcul de statut, rapprochement CSV (int
     const bail2 = await bauxService.create({
       appartementId: appartement2.id,
       typeBail: "vide",
-      dateDebut: "2026-08-01"
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
     });
     await bauxService.activer(bail2.id);
+    // Même raison que dans le beforeEach : neutraliser l'échéance
+    // auto-générée par l'activation, hors sujet pour ce test.
+    for (const echeanceGeneree of await paiementsService.findAll(bail2.id)) {
+      await paiementsService.archive(echeanceGeneree.id);
+    }
     const locataireB = await locatairesService.create({ nom: "Martin", prenom: "Bob" });
     await bailLocatairesService.create({ bailId: bail2.id, locataireId: locataireB.id, role: "titulaire" });
     const paiementB = await paiementsService.create({

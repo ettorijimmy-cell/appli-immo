@@ -38,6 +38,8 @@ export interface Bail {
   statut: BailStatut;
   loyerMensuel: string | null;
   depotGarantie: string | null;
+  provisionsCharges: string | null;
+  jourEcheance: number | null;
   dateDebut: string;
   dateFin: string | null;
 }
@@ -49,6 +51,8 @@ export interface CreateBailInput {
   dateFin?: string;
   loyerMensuel?: string;
   depotGarantie?: string;
+  provisionsCharges?: string;
+  jourEcheance?: number;
 }
 
 export interface UpdateBailInput {
@@ -57,6 +61,8 @@ export interface UpdateBailInput {
   dateFin?: string;
   loyerMensuel?: string;
   depotGarantie?: string;
+  provisionsCharges?: string;
+  jourEcheance?: number;
 }
 
 export type GarantTypeGarantie = "personne_physique" | "garantie_visale" | "autre";

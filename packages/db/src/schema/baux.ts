@@ -1,4 +1,4 @@
-import { date, decimal, pgEnum, pgTable, uuid } from "drizzle-orm/pg-core";
+import { date, decimal, integer, pgEnum, pgTable, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -28,6 +28,14 @@ export const baux = pgTable("baux", {
   // modifiable ensuite, un bail peut différer de la référence.
   loyerMensuel: decimal("loyer_mensuel", { precision: 10, scale: 2 }),
   depotGarantie: decimal("depot_garantie", { precision: 10, scale: 2 }),
+  // Provisions mensuelles pour charges, en plus du loyer HC (loyer_mensuel).
+  // null traité comme 0 dans tout calcul (docs/data-dictionary.md).
+  provisionsCharges: decimal("provisions_charges", { precision: 10, scale: 2 }),
+  // Jour du mois de l'échéance de loyer, borné à 28 pour rester valide sur
+  // tous les mois. Renseignable progressivement, mais requis pour activer()
+  // (voir docs/data-dictionary.md — sans lui, impossible de générer la
+  // première échéance).
+  jourEcheance: integer("jour_echeance"),
   dateDebut: date("date_debut").notNull(),
   dateFin: date("date_fin")
 });

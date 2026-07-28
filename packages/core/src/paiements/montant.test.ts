@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { montantEnCentimes, normaliserMontant } from "./montant";
+import { centimesVersMontant, montantEnCentimes, normaliserMontant } from "./montant";
 
 describe("normaliserMontant", () => {
   it("laisse un montant à point décimal inchangé", () => {
@@ -58,5 +58,23 @@ describe("montantEnCentimes", () => {
     expect(montantEnCentimes("0.10")).toBe(10);
     expect(montantEnCentimes("0.20")).toBe(20);
     expect(montantEnCentimes("1000000.29")).toBe(100000029);
+  });
+});
+
+describe("centimesVersMontant", () => {
+  it("formate des centimes en montant à deux décimales", () => {
+    expect(centimesVersMontant(85000)).toBe("850.00");
+  });
+
+  it("complète par un zéro les centimes à un seul chiffre", () => {
+    expect(centimesVersMontant(85005)).toBe("850.05");
+  });
+
+  it("gère les montants négatifs", () => {
+    expect(centimesVersMontant(-85000)).toBe("-850.00");
+  });
+
+  it("est l'inverse exact de montantEnCentimes sur des cas connus", () => {
+    expect(centimesVersMontant(montantEnCentimes("1234.56"))).toBe("1234.56");
   });
 });

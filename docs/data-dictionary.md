@@ -84,8 +84,23 @@ ce champ).
 |---|---|---|
 | type_bail | enum | `vide` \| `meuble` |
 | statut | enum | `brouillon` \| `actif` \| `preavis` \| `resilie` \| `archive` |
-| loyer_mensuel | decimal, nullable | Pré-rempli depuis `appartements.loyer_reference` à la création si non saisi explicitement (packages/core, `preremplirLoyerBail`) ; reste modifiable ensuite |
-| depot_garantie | decimal | |
+| loyer_mensuel | decimal, nullable | Loyer **hors charges** (HC) — pré-rempli depuis `appartements.loyer_reference` à la création si non saisi explicitement (packages/core, `preremplirLoyerBail`) ; reste modifiable ensuite |
+| depot_garantie | decimal, nullable | |
+| provisions_charges | decimal, nullable | Provisions mensuelles pour charges, en plus du loyer HC. `null` traité comme `0` dans tout calcul (jamais de distinction "pas de charges" vs "charges non renseignées" au niveau calcul, seulement au niveau saisie) |
+| jour_echeance | integer, nullable, 1-28 | Jour du mois auquel l'échéance de loyer tombe chaque mois. Borné à 28 pour rester valide sur tous les mois (pas de mois à 29/30/31 jours à gérer). Renseignable progressivement comme `loyer_mensuel`/`depot_garantie`, mais **obligatoire pour activer** un bail (`BauxService.activer()` refuse si `null` — impossible de générer la première échéance sans lui) |
+
+**Décision produit (génération des échéances à l'activation, tranchée avec l'utilisateur)** :
+- À l'activation d'un bail (`BauxService.activer()`), deux lignes de `paiements` sont générées dans la même transaction que le passage à `actif` :
+  1. Dépôt de garantie, si `depot_garantie > 0` : `type=depot_garantie`, `montant=depot_garantie`, `date_echeance` = date d'activation (immédiate).
+  2. Première échéance de loyer : `type=loyer`, `montant = loyer_mensuel + (provisions_charges ?? 0)`. Date : le jour courant est comparé à `jour_echeance` avec un **`≤`** (pas un `<`) — si le jour courant est encore inférieur ou égal à `jour_echeance`, l'échéance tombe dans le **mois en cours** ; sinon dans le mois suivant. Traiter l'égalité comme "pas encore passé" évite de faire sauter un mois entier d'obligation de loyer pile le jour de l'échéance.
+  - Les échéances suivantes ne sont **jamais** générées d'avance : elles seront produites par le job planifié quotidien du Module 6 (moteur d'alertes, `docs/backlog.md`), qui n'existe pas encore au moment de cette décision.
+- Le dépôt de garantie (`type=depot_garantie`) ne compte **jamais** comme un impayé au sens des futures alertes/indicateurs (Module 6/7) — seules les échéances `type=loyer` (et `charges`) sont concernées par cette notion.
+
+**Décision produit (prorata à la résiliation, tranchée avec l'utilisateur)** :
+- À la résiliation (`BauxService.resilier()`), l'échéance de loyer déjà générée dont `date_echeance` tombe dans le mois calendaire de `date_fin` est recalculée au prorata, **uniquement si son statut est encore `impaye` ou `partiel`** :
+  `nouveau_montant = (loyer_mensuel + provisions_charges) × jours_occupes / jours_du_mois`, tronqué à deux décimales (jamais d'arrondi flottant, même convention que `montantEnCentimes`).
+  **Convention légale à valeur de prorata temporis, non négociable sans nouvelle décision** : `jours_occupes` compte les jours **du début du mois jusqu'à `date_fin` inclus** — le jour du départ est facturé en entier, pas exclu.
+- Si cette échéance est déjà réglée intégralement (`statut=paye`) au moment de la résiliation, elle **n'est pas touchée automatiquement** — voir `docs/backlog.md`, dette technique, pour le cas du trop-perçu non traité.
 
 ## bail_locataires
 Table de liaison pour gérer la colocation.
