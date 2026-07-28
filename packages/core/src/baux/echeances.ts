@@ -60,13 +60,40 @@ export function calculerDatePremiereEcheance(dateActivation: string, jourEcheanc
  * début du mois calendaire jusqu'à `dateFin` INCLUS (le jour du départ est
  * facturé en entier). Troncature à deux décimales, jamais d'arrondi
  * flottant — même convention que montantEnCentimes.
+ *
+ * `dateDebutOccupation` (optionnel) permet de proratiser aussi le DÉBUT du
+ * mois occupé, pas seulement sa fin : nécessaire quand aucune échéance
+ * n'a encore été générée pour ce mois (le bail a été activé — ou a
+ * commencé — en cours de mois, voir BauxService.resilier(), "Cas B").
+ * Si `dateDebutOccupation` tombe dans un mois calendaire ANTÉRIEUR à
+ * `dateFin`, le mois de `dateFin` est considéré occupé depuis son premier
+ * jour (comportement identique à l'appel à deux arguments). Si le nombre de
+ * jours occupés calculé est négatif (dateDebutOccupation postérieure à
+ * dateFin dans le même mois), il est ramené à 0 plutôt que de produire un
+ * montant négatif.
  */
-export function calculerProrataResiliation(montantMensuel: string, dateFin: string): string {
+export function calculerProrataResiliation(
+  montantMensuel: string,
+  dateFin: string,
+  dateDebutOccupation?: string
+): string {
   const [anneeStr, moisStr, jourStr] = dateFin.split("-");
   const annee = Number(anneeStr);
   const mois = Number(moisStr);
-  const joursOccupes = Number(jourStr);
+  const jourFin = Number(jourStr);
 
+  let jourDebut = 1;
+  if (dateDebutOccupation) {
+    const [anneeDebutStr, moisDebutStr, jourDebutStr] = dateDebutOccupation.split("-");
+    // Ne s'applique que si le début d'occupation tombe dans le MÊME mois
+    // calendaire que dateFin : sinon (mois antérieur), ce mois-ci a été
+    // occupé depuis son premier jour, comme avant.
+    if (Number(anneeDebutStr) === annee && Number(moisDebutStr) === mois) {
+      jourDebut = Number(jourDebutStr);
+    }
+  }
+
+  const joursOccupes = Math.max(0, jourFin - jourDebut + 1);
   const centimesMensuel = montantEnCentimes(montantMensuel);
   const centimesProrata = Math.trunc((centimesMensuel * joursOccupes) / joursDansLeMois(annee, mois));
   return centimesVersMontant(centimesProrata);

@@ -88,6 +88,7 @@ ce champ).
 | depot_garantie | decimal, nullable | |
 | provisions_charges | decimal, nullable | Provisions mensuelles pour charges, en plus du loyer HC. `null` traité comme `0` dans tout calcul (jamais de distinction "pas de charges" vs "charges non renseignées" au niveau calcul, seulement au niveau saisie) |
 | jour_echeance | integer, nullable, 1-28 | Jour du mois auquel l'échéance de loyer tombe chaque mois. Borné à 28 pour rester valide sur tous les mois (pas de mois à 29/30/31 jours à gérer). Renseignable progressivement comme `loyer_mensuel`/`depot_garantie`, mais **obligatoire pour activer** un bail (`BauxService.activer()` refuse si `null` — impossible de générer la première échéance sans lui) |
+| date_activation | date, nullable | Posée une seule fois par `BauxService.activer()`, jamais modifiée ensuite (absente d'`UpdateBailDto`). Distincte de `date_debut` : un bail peut rester en `brouillon` après sa date de début contractuelle — l'occupation réelle ne commence qu'à l'activation si celle-ci est postérieure. `null` pour les baux passés à `actif` avant l'introduction de cette colonne (migration 0007, sans backfill) : `resilier()` se rabat alors sur `date_debut` |
 
 **Décision produit (génération des échéances à l'activation, tranchée avec l'utilisateur)** :
 - À l'activation d'un bail (`BauxService.activer()`), deux lignes de `paiements` sont générées dans la même transaction que le passage à `actif` :
@@ -97,10 +98,13 @@ ce champ).
 - Le dépôt de garantie (`type=depot_garantie`) ne compte **jamais** comme un impayé au sens des futures alertes/indicateurs (Module 6/7) — seules les échéances `type=loyer` (et `charges`) sont concernées par cette notion.
 
 **Décision produit (prorata à la résiliation, tranchée avec l'utilisateur)** :
-- À la résiliation (`BauxService.resilier()`), l'échéance de loyer déjà générée dont `date_echeance` tombe dans le mois calendaire de `date_fin` est recalculée au prorata, **uniquement si son statut est encore `impaye` ou `partiel`** :
-  `nouveau_montant = (loyer_mensuel + provisions_charges) × jours_occupes / jours_du_mois`, tronqué à deux décimales (jamais d'arrondi flottant, même convention que `montantEnCentimes`).
-  **Convention légale à valeur de prorata temporis, non négociable sans nouvelle décision** : `jours_occupes` compte les jours **du début du mois jusqu'à `date_fin` inclus** — le jour du départ est facturé en entier, pas exclu.
-- Si cette échéance est déjà réglée intégralement (`statut=paye`) au moment de la résiliation, elle **n'est pas touchée automatiquement** — voir `docs/backlog.md`, dette technique, pour le cas du trop-perçu non traité.
+- À la résiliation (`BauxService.resilier()`), deux cas selon qu'une échéance de loyer couvre déjà ou non le mois calendaire de `date_fin` :
+  - **Cas A — une échéance existe déjà pour ce mois** : elle est recalculée au prorata, **uniquement si son statut est encore `impaye` ou `partiel`** :
+    `nouveau_montant = (loyer_mensuel + provisions_charges) × jours_occupes / jours_du_mois`, tronqué à deux décimales (jamais d'arrondi flottant, même convention que `montantEnCentimes`).
+    **Convention légale à valeur de prorata temporis, non négociable sans nouvelle décision** : `jours_occupes` compte les jours **du début du mois jusqu'à `date_fin` inclus** — le jour du départ est facturé en entier, pas exclu.
+    Si cette échéance est déjà réglée intégralement (`statut=paye`) au moment de la résiliation, elle **n'est pas touchée automatiquement** — voir `docs/backlog.md`, dette technique, pour le cas du trop-perçu non traité.
+  - **Cas B — aucune échéance ne couvre ce mois** (constaté après coup, en production : arrive couramment dès que `jour_echeance` est nettement antérieur au jour d'activation, ce qui pousse la première échéance au mois suivant — une résiliation avant l'arrivée de ce mois-là laissait alors le loyer non facturé, sans aucune ligne). `resilier()` **génère la ligne manquante** : `montant = (loyer_mensuel + provisions_charges)` proratisé sur les jours réellement occupés dans le mois de `date_fin`, à partir du début d'occupation réel (`date_activation`, ou `date_debut` si `date_activation` est postérieure à `date_debut`, ou si `date_activation` est absente). `date_echeance = date_fin`, statut `impaye` par défaut. Aucune ligne n'est créée si le montant proratisé est nul.
+    **Portée volontairement limitée** : seul le mois de `date_fin` est comblé. Si plusieurs mois consécutifs n'ont jamais eu d'échéance générée (écart de plusieurs mois entre l'activation et la résiliation, en l'absence du job du Module 6), les mois intermédiaires restent non facturés — un rattrapage multi-mois n'est pas traité ici, c'est le rôle du Module 6 une fois construit.
 
 ## bail_locataires
 Table de liaison pour gérer la colocation.

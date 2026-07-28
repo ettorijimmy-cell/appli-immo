@@ -37,5 +37,12 @@ export const baux = pgTable("baux", {
   // première échéance).
   jourEcheance: integer("jour_echeance"),
   dateDebut: date("date_debut").notNull(),
-  dateFin: date("date_fin")
+  dateFin: date("date_fin"),
+  // Posée une seule fois par activer(), jamais modifiée ensuite (pas dans
+  // UpdateBailDto). Distincte de date_debut : un bail peut rester en
+  // brouillon après sa date de début contractuelle, l'occupation réelle ne
+  // commence qu'à l'activation si celle-ci est postérieure — utilisé par
+  // resilier() pour déterminer le début réel d'occupation à proratiser
+  // (docs/data-dictionary.md).
+  dateActivation: date("date_activation")
 });

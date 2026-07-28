@@ -169,9 +169,26 @@ rapprochement incorrect.
 - Action "traiter une alerte" (statut → `traitee`)
 - Tests packages/core sur chaque règle de génération, en particulier
   l'idempotence (le job ne doit jamais dupliquer une alerte)
+- **Prérequis de conception, à valider avant de considérer ce module
+  terminé** (identifié lors du correctif "Cas B" de `BauxService.resilier()`,
+  `docs/data-dictionary.md` section `baux`) : ce module introduit la
+  génération récurrente des échéances de loyer (une par mois, via le job
+  planifié) — jusqu'ici, seule la toute première échéance était générée à
+  l'activation d'un bail (`BauxService.activer()`). Avant de livrer ce job,
+  décider explicitement comment traiter le **rattrapage des mois déjà
+  écoulés sans échéance** pour tout bail actif AVANT la mise en service de
+  ce job (plusieurs mois consécutifs ont pu s'écouler sans qu'aucune ligne
+  de paiement n'existe pour eux, y compris au-delà du seul mois de
+  résiliation que corrige déjà `resilier()` "Cas B") : facturer chaque mois
+  manquant à taux plein ? les fusionner en une seule ligne de rattrapage ?
+  Ce n'est volontairement PAS tranché aujourd'hui — le correctif "Cas B" ne
+  couvre que le mois de résiliation lui-même, jamais un rattrapage
+  multi-mois (limite de scope explicitement acceptée par l'utilisateur).
 
 **Critère de complétion** : faire tourner le job deux fois de suite sur les
-mêmes données, vérifier qu'aucune alerte n'est dupliquée.
+mêmes données, vérifier qu'aucune alerte n'est dupliquée — ET la décision
+de rattrapage multi-mois ci-dessus explicitement tranchée et documentée
+avant de considérer le module livré (pas seulement codé).
 
 ---
 
@@ -226,6 +243,32 @@ un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
   actuel (le dépôt de garantie mis à part). Candidat probable pour le
   Module 7 (régularisation) ou une extension ultérieure du modèle
   `paiements` — décision volontairement différée, pas un oubli.
+
+- **Remboursement du dépôt de garantie — non modélisé.** Dépend de l'état
+  des lieux de sortie (Module 4, Documents) et d'une logique de retenue sur
+  dégradations constatées, proche d'une régularisation (esprit du Module 6
+  du cahier des charges initial). À concevoir comme un vrai sujet à part
+  entière avant l'ouverture du module correspondant — pas une simple ligne
+  de paiement supplémentaire, implique une décision de calcul distincte du
+  prorata de loyer déjà en place.
+
+- **Aucune validation que `date_fin` ≥ `date_debut`/`date_activation` à la
+  résiliation** (identifié par financial-logic-reviewer lors du correctif
+  "Cas B" de `BauxService.resilier()`, gap préexistant dans le code
+  d'origine du Module 5 — pas introduit par ce correctif).
+  `ResilierBailDto` ne valide que le format de `dateFin` (`@IsDateString()`),
+  jamais son ordre chronologique par rapport au début réel d'occupation du
+  bail. Si `dateFin` est antérieure à `date_debut`/`date_activation`,
+  `calculerProrataResiliation` ramène le nombre de jours occupés à 0 plutôt
+  que de produire un montant négatif — le prorata (Cas A comme Cas B)
+  produit alors silencieusement une ligne à 0,00 € (ou ne crée aucune ligne
+  en Cas B, via le garde `montantEnCentimes(...) > 0`) au lieu de rejeter
+  explicitement une résiliation antérieure au début d'occupation. Pas de
+  perte financière constatée (aucun montant erroné positif), mais un
+  comportement silencieux là où une erreur explicite serait plus sûre.
+  À corriger : rejeter (`ConflictException`) une résiliation dont `dateFin`
+  précède le début réel d'occupation, plutôt que de laisser le calcul
+  absorber silencieusement l'incohérence.
 
 ---
 

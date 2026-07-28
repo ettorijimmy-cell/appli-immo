@@ -1,0 +1,1 @@
+ALTER TABLE "baux" ADD COLUMN "date_activation" date;

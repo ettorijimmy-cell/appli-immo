@@ -475,6 +475,87 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       expect(echeanceApresResiliation?.statut).toBe("impaye");
     });
 
+    // Cas B (docs/data-dictionary.md) : reproduit exactement le scénario qui
+    // a révélé le trou — jour_echeance antérieur au jour d'activation
+    // (poussant la première échéance au mois suivant), résiliation avant
+    // que ce mois-là n'arrive. Aucune échéance ne couvre donc le mois de
+    // dateFin : resilier() doit en générer une, proratisée sur les jours
+    // réellement occupés, plutôt que de laisser le montant plein affiché
+    // sans aucune ligne pour ce mois.
+    it("Cas B : génère l'échéance manquante quand jour_echeance antérieur au jour d'activation pousse la première échéance au mois suivant", async () => {
+      const aujourdHui = new Date().toISOString().slice(0, 10);
+      // jour_echeance=1 : toujours strictement antérieur au jour du mois en
+      // cours, sauf si le test tourne exactement le 1er du mois (limite
+      // acceptée, comme pour les autres tests de ce fichier qui dépendent
+      // de la date réelle).
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: aujourdHui,
+        loyerMensuel: "930.00",
+        jourEcheance: 1
+      });
+
+      const bailActive = await bauxService.activer(bail.id);
+      expect(bailActive.dateActivation).toBe(aujourdHui);
+
+      // La première échéance est poussée au mois SUIVANT (jour du mois
+      // courant > 1), donc rien ne couvre le mois en cours.
+      const [echeanceGeneree] = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
+      expect(echeanceGeneree?.dateEcheance.slice(0, 7)).not.toBe(aujourdHui.slice(0, 7));
+
+      // Résiliation dans le mois EN COURS (aujourd'hui même), avant que
+      // l'échéance du mois suivant n'arrive.
+      await bauxService.resilier(bail.id, { dateFin: aujourdHui });
+
+      const toutesLesLignes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
+      const ligneDuMoisCourant = toutesLesLignes.find(
+        (ligne) => ligne.dateEcheance.slice(0, 7) === aujourdHui.slice(0, 7)
+      );
+      expect(ligneDuMoisCourant).toBeDefined();
+      expect(ligneDuMoisCourant?.type).toBe("loyer");
+      expect(ligneDuMoisCourant?.statut).toBe("impaye");
+      // dateDebut = dateActivation = dateFin = aujourd'hui : un seul jour
+      // occupé dans ce mois.
+      expect(ligneDuMoisCourant?.montant).toBe(
+        calculerProrataResiliation("930.00", aujourdHui, aujourdHui)
+      );
+
+      // L'échéance générée à l'activation (mois suivant), elle, reste
+      // intacte — hors périmètre de cette résiliation.
+      const ligneMoisSuivant = toutesLesLignes.find((ligne) => ligne.id === echeanceGeneree?.id);
+      expect(ligneMoisSuivant?.montant).toBe("930.00");
+    });
+
+    // Trouvé par financial-logic-reviewer : sans repli, un bail déjà actif
+    // AVANT l'introduction de date_activation (migration 0007, colonne
+    // nullable sans backfill) aurait date_activation=null pour toujours —
+    // le Cas B se serait alors tu silencieusement pour ces baux, reproduisant
+    // exactement le bug d'origine. Simule cet état en effaçant
+    // date_activation après activation, comme le ferait un bail préexistant.
+    it("Cas B : se rabat sur date_debut si date_activation est absente (baux déjà actifs avant la migration 0007)", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-07-01",
+        loyerMensuel: "930.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      await db.update(baux).set({ dateActivation: null }).where(eq(baux.id, bail.id));
+
+      await bauxService.resilier(bail.id, { dateFin: "2026-07-20" });
+
+      const toutesLesLignes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
+      const ligneJuillet = toutesLesLignes.find((ligne) => ligne.dateEcheance.slice(0, 7) === "2026-07");
+      expect(ligneJuillet).toBeDefined();
+      // Repli sur date_debut (2026-07-01) : juillet = 31 jours, 20 jours
+      // occupés (1er au 20 inclus).
+      expect(ligneJuillet?.montant).toBe(calculerProrataResiliation("930.00", "2026-07-20"));
+      expect(ligneJuillet?.montant).toBe("600.00");
+    });
+
     it("ne touche pas à l'échéance du mois de résiliation si elle est déjà réglée intégralement", async () => {
       const bail = await bauxService.create({
         appartementId,
@@ -512,7 +593,13 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       expect(echeanceApresResiliation?.statut).toBe("paye");
     });
 
-    it("ne proratise rien si aucune échéance n'existe pour le mois de résiliation", async () => {
+    // Cas B (docs/data-dictionary.md) : même très longtemps après
+    // l'activation (aucun job Module 6 pour générer les mois
+    // intermédiaires), le mois de la résiliation elle-même ne doit jamais
+    // rester sans ligne de paiement — même si la période inoccupée-mais-
+    // non-facturée entre l'activation et ce mois-là reste un vrai trou
+    // (hors périmètre : backfill de plusieurs mois, jamais demandé ici).
+    it("génère l'échéance manquante du mois de résiliation même après un long délai sans échéance intermédiaire", async () => {
       const bail = await bauxService.create({
         appartementId,
         typeBail: "vide",
@@ -523,14 +610,21 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       await bauxService.activer(bail.id);
 
       // Résiliation avec date de fin loin dans le futur : aucune échéance
-      // n'a encore été générée pour ce mois-là (job Module 6 pas implémenté).
-      await expect(bauxService.resilier(bail.id, { dateFin: "2028-01-15" })).resolves.toBeDefined();
+      // n'a jamais été générée pour ce mois-là (job Module 6 pas
+      // implémenté), mais le mois de dateFin lui-même doit être facturé.
+      await bauxService.resilier(bail.id, { dateFin: "2028-01-15" });
 
       const toutesLesLignes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
-      const lignesModifieesPourJanvier2028 = toutesLesLignes.filter(
+      const lignesJanvier2028 = toutesLesLignes.filter(
         (ligne) => ligne.dateEcheance >= "2028-01-01" && ligne.dateEcheance < "2028-02-01"
       );
-      expect(lignesModifieesPourJanvier2028).toHaveLength(0);
+      expect(lignesJanvier2028).toHaveLength(1);
+      // Le début d'occupation (activation, mi-2026) est bien antérieur au
+      // mois de dateFin : le mois est donc facturé depuis son 1er jour.
+      // Janvier = 31 jours, 15 jours occupés (1er au 15 inclus).
+      expect(lignesJanvier2028[0]?.montant).toBe(calculerProrataResiliation("900.00", "2028-01-15"));
+      expect(lignesJanvier2028[0]?.montant).toBe("435.48");
+      expect(lignesJanvier2028[0]?.statut).toBe("impaye");
     });
   });
 });

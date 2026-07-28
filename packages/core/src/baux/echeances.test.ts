@@ -68,6 +68,29 @@ describe("calculerProrataResiliation", () => {
     // juin = 30 jours : 1000.00 / 30 * 1 jour = 33.333... -> tronqué à 33.33
     expect(calculerProrataResiliation("1000.00", "2026-06-01")).toBe("33.33");
   });
+
+  describe("avec dateDebutOccupation (Cas B — aucune échéance pré-générée)", () => {
+    it("proratise depuis le début d'occupation quand il tombe dans le même mois que dateFin", () => {
+      // juillet = 31 jours : occupation du 10 au 20 inclus = 11 jours
+      // 930.00 / 31 * 11 jours = 330.00 exactement
+      expect(calculerProrataResiliation("930.00", "2026-07-20", "2026-07-10")).toBe("330.00");
+    });
+
+    it("traite un début d'occupation dans un mois antérieur comme le 1er du mois de dateFin (comportement identique à l'appel à 2 arguments)", () => {
+      expect(calculerProrataResiliation("930.00", "2026-07-20", "2026-06-15")).toBe(
+        calculerProrataResiliation("930.00", "2026-07-20")
+      );
+    });
+
+    it("ramène à 0 si le début d'occupation calculé est postérieur à dateFin dans le même mois", () => {
+      expect(calculerProrataResiliation("930.00", "2026-07-10", "2026-07-20")).toBe("0.00");
+    });
+
+    it("facture le jour de début d'occupation en entier (inclusif)", () => {
+      // même jour de début et de fin -> 1 seul jour occupé
+      expect(calculerProrataResiliation("310.00", "2026-08-15", "2026-08-15")).toBe("10.00");
+    });
+  });
 });
 
 describe("calculerBornesMoisCalendaire", () => {

@@ -157,7 +157,18 @@ export class BauxService {
       }
 
       const utilisateurId = this.requestContext.getUtilisateurId();
-      const [bailActive] = await mettreAJourAvecAudit(tx, baux, id, { statut: "actif" }, utilisateurId);
+      // Posée ici, jamais modifiée ensuite (pas dans UpdateBailDto) :
+      // resilier() s'en sert pour déterminer le début réel d'occupation
+      // quand aucune échéance n'a encore été générée pour le mois de
+      // résiliation (docs/data-dictionary.md).
+      const dateActivation = new Date().toISOString().slice(0, 10);
+      const [bailActive] = await mettreAJourAvecAudit(
+        tx,
+        baux,
+        id,
+        { statut: "actif", dateActivation },
+        utilisateurId
+      );
       if (!bailActive) {
         throw new Error("Échec de l'activation du bail");
       }
@@ -176,7 +187,6 @@ export class BauxService {
       // sont créées ici. Les échéances suivantes seront produites par le
       // job planifié quotidien du Module 6 — jamais toutes générées
       // d'avance.
-      const dateActivation = new Date().toISOString().slice(0, 10);
       if (bail.depotGarantie && montantEnCentimes(bail.depotGarantie) > 0) {
         await tx.insert(paiements).values({
           bailId: id,
@@ -244,10 +254,8 @@ export class BauxService {
 
       // Prorata de l'échéance de loyer du mois de résiliation
       // (docs/data-dictionary.md, "Décision produit — prorata à la
-      // résiliation") : uniquement si elle n'est pas déjà réglée
-      // intégralement — sinon on n'y touche pas (trop-perçu non traité,
-      // voir docs/backlog.md, dette technique). Rien à proratiser sans date
-      // de fin explicite (dateFin optionnel dans ResilierBailDto).
+      // résiliation"). Rien à proratiser sans date de fin explicite
+      // (dateFin optionnel dans ResilierBailDto).
       if (dto.dateFin) {
         const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(dto.dateFin);
         const [echeanceDuMois] = await tx
@@ -263,18 +271,52 @@ export class BauxService {
             )
           )
           .limit(1);
-        if (echeanceDuMois && (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel")) {
-          const montantProratise = calculerProrataResiliation(echeanceDuMois.montant, dto.dateFin);
-          await mettreAJourAvecAudit(
-            tx,
-            paiements,
-            echeanceDuMois.id,
-            {
+
+        if (echeanceDuMois) {
+          // Cas A : une échéance couvre déjà ce mois — comportement
+          // inchangé. Uniquement si elle n'est pas déjà réglée
+          // intégralement, sinon on n'y touche pas (trop-perçu non traité,
+          // voir docs/backlog.md, dette technique).
+          if (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel") {
+            const montantProratise = calculerProrataResiliation(echeanceDuMois.montant, dto.dateFin);
+            await mettreAJourAvecAudit(
+              tx,
+              paiements,
+              echeanceDuMois.id,
+              {
+                montant: montantProratise,
+                statut: calculerStatutPaiement(montantProratise, echeanceDuMois.montantPaye)
+              },
+              utilisateurId
+            );
+          }
+        } else if (bail.loyerMensuel) {
+          // Cas B : aucune échéance ne couvre ce mois — ne jamais laisser
+          // une période d'occupation sans ligne de paiement
+          // correspondante, qu'une échéance ait été pré-générée ou non
+          // (ex. jour_echeance très antérieur au jour d'activation,
+          // poussant la première échéance au mois suivant : la
+          // résiliation peut survenir avant que ce mois-là n'arrive).
+          // Début d'occupation réel : la date d'activation si elle est
+          // postérieure à la date de début contractuelle (un bail peut
+          // rester en brouillon après sa date de début) — repli sur
+          // date_debut si date_activation est absente (baux passés à
+          // actif avant l'introduction de cette colonne, migration 0007) :
+          // jamais de garde silencieuse qui reproduirait l'oubli d'origine
+          // pour les baux déjà existants.
+          const dateActivationEffective = bail.dateActivation ?? bail.dateDebut;
+          const debutOccupation =
+            dateActivationEffective > bail.dateDebut ? dateActivationEffective : bail.dateDebut;
+          const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
+          const montantProratise = calculerProrataResiliation(montantPlein, dto.dateFin, debutOccupation);
+          if (montantEnCentimes(montantProratise) > 0) {
+            await tx.insert(paiements).values({
+              bailId: id,
+              type: "loyer",
               montant: montantProratise,
-              statut: calculerStatutPaiement(montantProratise, echeanceDuMois.montantPaye)
-            },
-            utilisateurId
-          );
+              dateEcheance: dto.dateFin
+            });
+          }
         }
       }
 
