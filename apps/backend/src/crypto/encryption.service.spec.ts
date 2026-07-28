@@ -33,4 +33,30 @@ describe("EncryptionService", () => {
 
     expect(() => service.decrypt(tampered)).toThrow();
   });
+
+  it("encryptBuffer puis decryptBuffer retrouve le buffer d'origine (binaire quelconque)", () => {
+    const service = buildService();
+    const plaintext = Buffer.from([0, 1, 2, 255, 254, 253, 10, 13, 0]);
+
+    const ciphertext = service.encryptBuffer(plaintext);
+
+    expect(ciphertext.equals(plaintext)).toBe(false);
+    expect(service.decryptBuffer(ciphertext).equals(plaintext)).toBe(true);
+  });
+
+  it("encryptBuffer produit un chiffré différent à chaque appel (IV aléatoire)", () => {
+    const service = buildService();
+    const plaintext = Buffer.from("contenu de fichier");
+
+    expect(service.encryptBuffer(plaintext).equals(service.encryptBuffer(plaintext))).toBe(false);
+  });
+
+  it("decryptBuffer échoue si le contenu chiffré est altéré", () => {
+    const service = buildService();
+    const ciphertext = service.encryptBuffer(Buffer.from("contenu de fichier"));
+    const tampered = Buffer.from(ciphertext);
+    tampered[tampered.length - 1] = (tampered[tampered.length - 1]! ^ 0xff) & 0xff;
+
+    expect(() => service.decryptBuffer(tampered)).toThrow();
+  });
 });

@@ -27,10 +27,14 @@ async function extraireMessageErreur(response: Response): Promise<string | undef
   }
 }
 
-export async function authenticatedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requeteAuthentifiee(path: string, init: RequestInit): Promise<Response> {
   const token = localStorage.getItem(TOKEN_STORAGE_KEY);
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  // FormData (upload de fichier, voir documents/api.ts) : ne jamais fixer
+  // Content-Type nous-mêmes — fetch doit poser le boundary multipart lui-même.
+  if (!(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -48,8 +52,26 @@ export async function authenticatedFetch<T>(path: string, init: RequestInit = {}
   if (!response.ok) {
     throw new ApiError(response.status, await extraireMessageErreur(response));
   }
+  return response;
+}
+
+export async function authenticatedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await requeteAuthentifiee(path, init);
   if (response.status === 204) {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+// Téléchargement de contenu binaire (Module 4, Documents) — jamais de
+// parsing JSON, le corps de la réponse est le fichier déchiffré tel quel
+// (voir GET /documents/:id/contenu, apps/backend/src/documents).
+export async function authenticatedFetchBlob(
+  path: string,
+  init: RequestInit = {}
+): Promise<{ blob: Blob; nomFichier: string | null }> {
+  const response = await requeteAuthentifiee(path, init);
+  const disposition = response.headers.get("Content-Disposition");
+  const nomFichier = disposition ? decodeURIComponent(/filename="(.+)"/.exec(disposition)?.[1] ?? "") : null;
+  return { blob: await response.blob(), nomFichier: nomFichier || null };
 }

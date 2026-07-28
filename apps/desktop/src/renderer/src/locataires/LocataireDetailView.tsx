@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { ArchiveBadge } from "../components/ArchiveFilter";
+import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
   archiveGarant,
@@ -183,6 +184,10 @@ export function LocataireDetailView({
               ))}
             </div>
           )}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Documents">
+          <DocumentsForEntite entiteType="locataire" entiteId={locataireId} />
         </CollapsibleSection>
       </div>
     </div>

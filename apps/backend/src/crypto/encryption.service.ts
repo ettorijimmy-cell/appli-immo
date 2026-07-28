@@ -51,4 +51,32 @@ export class EncryptionService {
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return plaintext.toString("utf8");
   }
+
+  /**
+   * Équivalent binaire de encrypt()/decrypt(), pour les fichiers (Module 4,
+   * Documents) — évite le gonflement de taille d'un double passage par
+   * base64 (encoder le buffer en base64 avant de le faire transiter par
+   * encrypt(), qui base64-encode déjà sa sortie). Même clé, même algorithme,
+   * IV en tête du buffer plutôt qu'un format `iv:authTag:ciphertext` textuel.
+   */
+  encryptBuffer(plaintext: Buffer): Buffer {
+    const iv = randomBytes(IV_LENGTH);
+    const cipher = createCipheriv(ALGORITHM, this.key, iv);
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return Buffer.concat([iv, authTag, ciphertext]);
+  }
+
+  decryptBuffer(payload: Buffer): Buffer {
+    const AUTH_TAG_LENGTH = 16;
+    if (payload.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+      throw new Error("Payload chiffré malformé");
+    }
+    const iv = payload.subarray(0, IV_LENGTH);
+    const authTag = payload.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+    const ciphertext = payload.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+    const decipher = createDecipheriv(ALGORITHM, this.key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  }
 }

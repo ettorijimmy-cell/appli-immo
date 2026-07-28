@@ -116,10 +116,54 @@ Table de liaison pour gérer la colocation.
 ## documents
 | Champ | Type | Description |
 |---|---|---|
-| entite_type | enum | `sci` \| `immeuble` \| `appartement` \| `locataire` \| `bail` — lien polymorphe |
+| entite_type | enum | `sci` \| `immeuble` \| `appartement` \| `locataire` \| `bail` — lien polymorphe. Pas de contrainte de clé étrangère possible (5 tables cibles) : `DocumentsService.upload()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer |
+| entite_id | uuid | Voir `entite_type` ci-dessus |
 | categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` |
-| statut | enum | `valide` \| `expire` \| `archive` |
-| date_expiration | date, nullable | Alimente le moteur d'alertes |
+| statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
+| date_expiration | date, nullable | Alimente le moteur d'alertes (Module 6) et le calcul de `statut` |
+| nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |
+| mime_type | text | Type MIME déclaré à l'upload, renvoyé tel quel au téléchargement (`Content-Type`) |
+| taille_octets | integer | Taille du fichier original (avant chiffrement) |
+| chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — jamais exposé au frontend, uniquement interne à `DocumentsService`/`DocumentStorageService` |
+
+**Décision produit (stockage, tranchée avec l'utilisateur)** : Scaleway Object
+Storage n'est pas provisionné (Module 0, différé). Repli temporaire : chaque
+document est chiffré (AES-256-GCM, `EncryptionService.encryptBuffer` —
+`apps/backend/src/crypto`, mêmes clé/algorithme que l'IBAN/BIC) puis écrit
+sur disque local sous un nom opaque (UUID aléatoire, indépendant de l'id de
+la ligne `documents`), dans un dossier configurable
+(`DOCUMENTS_STORAGE_DIR`, repli par défaut sur `storage/documents` relatif
+au dossier `apps/backend` — voir `.env.example`). **Ceci est un repli
+temporaire explicitement identifié comme tel, à migrer vers Scaleway Object
+Storage une fois provisionné — pas une solution finale.** Le contenu en
+clair n'est accessible que via `GET /documents/:id/contenu`, route
+authentifiée qui journalise l'accès dans `journal_audit`
+(`AuditService.logAccesDocumentSensible`, même mécanisme que l'IBAN/BIC),
+jamais via une URL publique ou un chemin de fichier exposé au frontend
+(CLAUDE.md, section Règles importantes).
+
+**Décision produit (statut `expire`, tranchée avec l'utilisateur)** : le job
+planifié quotidien qui fera de `expire` un fait réellement persisté n'existe
+pas encore (Module 6). En attendant, `documents.statut` en base ne contient
+jamais `expire` : seule sa valeur par défaut `valide` et la valeur explicite
+`archive` (écrite par `DocumentsService.archiver()`) y sont réellement
+écrites. `valide`/`expire` sont calculés à chaque lecture par
+`calculerStatutDocument` (packages/core, pure, sans effet de bord) à partir
+de `date_expiration` comparée à la date du jour — `archive` prime toujours
+sur ce calcul. Le Module 4 satisfait ainsi son critère de complétion
+("vérifier qu'un document expiré change bien de statut") via l'API, sans
+qu'aucune écriture ne soit nécessaire ; le Module 6 réutilisera cette même
+fonction telle quelle pour, lui, réellement persister `expire` via son job
+quotidien. Convention de bord : le jour de `date_expiration` lui-même est
+encore valide (expiration en fin de journée) — `expire` seulement à partir
+du lendemain.
+
+**Écart connu (identifié au démarrage du Module 4)** : le versioning des
+documents (historique des versions) était prévu au cahier des charges
+initial mais n'a jamais été retranscrit dans `docs/backlog.md` lors de la
+rédaction détaillée du Module 4 — absent du MVP construit. Voir
+`docs/backlog.md`, section dette technique, pour la proposition déjà
+validée (`document_precedent_id`) si/quand implémenté.
 
 ## paiements
 Rattaché à un bail (`baux`, Module 3). `montant` est la somme attendue à

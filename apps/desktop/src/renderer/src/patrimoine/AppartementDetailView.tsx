@@ -13,6 +13,7 @@ import {
   type EquipementType
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
@@ -20,7 +21,7 @@ const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
 // "archive" en est exclu : l'archivage a son propre bouton dédié.
 const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
 
-type Tab = "infos" | "equipements" | "bail" | "historique";
+type Tab = "infos" | "equipements" | "bail" | "historique" | "documents";
 
 export function AppartementDetailView({
   appartementId,
@@ -146,12 +147,28 @@ export function AppartementDetailView({
         >
           Historique des baux
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setIsEditing(false);
+            setTab("documents");
+          }}
+          className={`border-b-2 px-1 pb-2 text-sm font-medium ${
+            tab === "documents"
+              ? "border-indigo-700 text-indigo-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Documents
+        </button>
       </div>
 
       {tab === "bail" ? (
         <BailActuelTab appartement={appartement} />
       ) : tab === "historique" ? (
         <HistoriqueBauxTab appartement={appartement} />
+      ) : tab === "documents" ? (
+        <DocumentsForEntite entiteType="appartement" entiteId={appartement.id} />
       ) : tab === "infos" ? (
         isEditing ? (
           <EditAppartementForm

@@ -25,6 +25,7 @@
     "core": "workspace:*",
     "db": "workspace:*",
     "drizzle-orm": "^0.38.4",
+    "multer": "^2.2.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
@@ -33,6 +34,7 @@
     "@nestjs/testing": "^11.1.28",
     "@swc/core": "^1.15.46",
     "@types/express": "^5.0.6",
+    "@types/multer": "^1.4.13",
     "@types/node": "^26.1.1",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",

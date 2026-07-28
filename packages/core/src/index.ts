@@ -8,3 +8,4 @@ export * from "./paiements/montant";
 export * from "./paiements/calculer-statut-paiement";
 export * from "./paiements/parser-releve-csv";
 export * from "./paiements/proposer-rapprochements";
+export * from "./documents/calculer-statut-document";

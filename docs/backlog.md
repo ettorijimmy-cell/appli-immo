@@ -270,6 +270,18 @@ un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
   précède le début réel d'occupation, plutôt que de laisser le calcul
   absorber silencieusement l'incohérence.
 
+- **Versioning des documents (historique des versions) — absent du MVP
+  construit.** Prévu au cahier des charges initial, jamais retranscrit dans
+  le backlog détaillé du Module 4 lors de la Phase 10 — un écart de
+  transcription Phase 1 → Phase 10, pas une décision de scope délibérée à
+  l'origine. Identifié lors du démarrage du Module 4 (docs/backlog.md),
+  avant tout code : confirmé hors périmètre du Module 4 MVP tel que
+  construit. Proposition déjà validée si/quand implémenté :
+  `document_precedent_id` (auto-référence nullable vers `documents.id`),
+  chaînant un nouvel upload à la version qu'il remplace — la version
+  courante restant la seule non chaînée par une version plus récente,
+  jamais de suppression physique de l'ancienne (cohérent avec CLAUDE.md).
+
 ---
 
 ## Hors backlog MVP (rappel, voir docs/app-spec.md section 5)

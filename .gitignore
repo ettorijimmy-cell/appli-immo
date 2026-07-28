@@ -13,6 +13,7 @@ build/
 *.sqlite-journal
 
 backups/
+storage/
 
 .vscode/*
 !.vscode/extensions.json

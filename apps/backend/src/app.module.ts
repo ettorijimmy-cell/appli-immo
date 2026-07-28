@@ -9,6 +9,7 @@ import { CommonModule } from "./common/common.module";
 import { ComptesBancairesSciModule } from "./comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { EncryptionModule } from "./crypto/encryption.module";
 import { DatabaseModule } from "./database/database.module";
+import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { GarantsModule } from "./garants/garants.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
@@ -33,7 +34,8 @@ import { ScisModule } from "./scis/scis.module";
     BauxModule,
     GarantsModule,
     BailLocatairesModule,
-    PaiementsModule
+    PaiementsModule,
+    DocumentsModule
   ]
 })
 export class AppModule {}
