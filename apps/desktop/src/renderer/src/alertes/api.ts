@@ -32,6 +32,13 @@ export function listAlertes(filtres: { statut?: AlerteStatut; type?: AlerteType 
   return authenticatedFetch<Alerte[]>(`/alertes${query ? `?${query}` : ""}`);
 }
 
+// Déclenchement manuel du job quotidien (même code que le @Cron réel,
+// apps/backend/src/alertes/alertes-job.service.ts) — pour vérifier le
+// comportement sans attendre la prochaine exécution planifiée.
+export function executerJobAlertes(): Promise<Alerte[]> {
+  return authenticatedFetch<Alerte[]>("/alertes/executer-job", { method: "POST" });
+}
+
 export function traiterAlerte(id: string): Promise<Alerte> {
   return authenticatedFetch<Alerte>(`/alertes/${id}/traiter`, { method: "PATCH" });
 }

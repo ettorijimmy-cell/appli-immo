@@ -207,6 +207,21 @@ documentée, le module est considéré livré.
 s'il y a un impayé ou une échéance urgente, sans clic (parcours cible
 Phase 6).
 
+**Point à trancher explicitement à l'ouverture de ce module** : le Module 6
+a posé une vue minimale (`apps/desktop/src/renderer/src/alertes/
+AlertesListView.tsx`, montée sur `TableauDeBordPage.tsx`) — liste des
+alertes actives + traiter/ignorer + un bouton "Exécuter le job
+maintenant" (`POST /alertes/executer-job`) — uniquement pour satisfaire
+son propre critère de complétion ("action traiter une alerte" testable
+dans l'app) et permettre une vérification manuelle sans attendre le cron
+quotidien (1h du matin). **Ce n'est pas issu d'une conception Module 7** :
+à décider explicitement en démarrant ce module — garder le bouton
+(utilité réelle : forcer une vérification immédiate après une correction
+manuelle), le déplacer dans Paramètres/Diagnostics, ou le retirer au
+profit du seul cron automatique une fois le tableau de bord réel construit
+— pour ne jamais laisser deux façons différentes et non réconciliées
+d'interagir avec les alertes dans l'app.
+
 ---
 
 ## Module 8 — Palette de commandes (Ctrl+K)
