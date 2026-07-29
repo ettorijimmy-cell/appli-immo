@@ -654,5 +654,68 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       expect(lignesJanvier2028[0]?.montant).toBe("435.48");
       expect(lignesJanvier2028[0]?.statut).toBe("impaye");
     });
+
+    it("rejette explicitement une résiliation dont dateFin précède dateDebut, sans rien modifier", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-08-15",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      // dateFin antérieure à dateDebut (date_activation, purement
+      // administrative, n'entre jamais dans cette comparaison — voir
+      // activer() : ici elle serait "aujourd'hui", largement postérieure
+      // aux deux, ce qui ne doit avoir aucune incidence).
+      await expect(bauxService.resilier(bail.id, { dateFin: "2026-08-01" })).rejects.toThrow(
+        /date de fin ne peut pas précéder/i
+      );
+
+      // Rien n'a été modifié : le bail reste actif, jamais passé à "résilié".
+      const bailInchange = await bauxService.findById(bail.id);
+      expect(bailInchange?.statut).toBe("actif");
+      expect(bailInchange?.dateFin).toBeNull();
+
+      // Et l'appartement reste "loué", jamais repassé à un autre statut.
+      const [appartementInchange] = await db
+        .select()
+        .from(appartements)
+        .where(eq(appartements.id, appartementId));
+      expect(appartementInchange?.statut).toBe("loue");
+    });
+
+    it("accepte une résiliation dont dateFin est exactement dateDebut (un seul jour occupé), avec le bon montant", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-08-15",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      const bailResilie = await bauxService.resilier(bail.id, { dateFin: "2026-08-15" });
+      expect(bailResilie.statut).toBe("resilie");
+      expect(bailResilie.dateFin).toBe("2026-08-15");
+
+      // Un seul jour réellement occupé (le 15 août, dateDebut = dateFin) :
+      // 900.00 / 31 jours * 1 jour = 29.03 (tronqué) — pas une seconde
+      // proratisation de l'échéance d'entrée déjà partielle (bug corrigé
+      // par ce même correctif, voir le commentaire dans resilier()).
+      const [echeanceAout] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bail.id), eq(paiements.type, "loyer")));
+      expect(echeanceAout?.dateEcheance).toBe("2026-08-15");
+      expect(echeanceAout?.montant).toBe(calculerProrataOccupationPartielle("900.00", "2026-08-15", "2026-08-15"));
+      expect(echeanceAout?.montant).toBe("29.03");
+
+      // Une seule ligne au total : l'échéance d'entrée (Cas A) mise à jour
+      // sur place, jamais une seconde ligne créée pour le même mois.
+      const toutesLesLignes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
+      expect(toutesLesLignes).toHaveLength(1);
+    });
   });
 });

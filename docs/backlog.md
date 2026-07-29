@@ -307,23 +307,36 @@ les trois parcours ci-dessus).
   de paiement supplémentaire, implique une décision de calcul distincte du
   prorata de loyer déjà en place.
 
-- **Aucune validation que `date_fin` ≥ `date_debut` à la résiliation**
-  (identifié par financial-logic-reviewer lors du correctif "Cas B" de
-  `BauxService.resilier()`, gap préexistant dans le code d'origine du
-  Module 5 — pas introduit par ce correctif).
-  `ResilierBailDto` ne valide que le format de `dateFin` (`@IsDateString()`),
-  jamais son ordre chronologique par rapport au début réel d'occupation du
-  bail. Si `dateFin` est antérieure à `date_debut`,
-  `calculerProrataOccupationPartielle` ramène le nombre de jours occupés à 0
-  plutôt que de produire un montant négatif — le prorata (Cas A comme Cas B)
-  produit alors silencieusement une ligne à 0,00 € (ou ne crée aucune ligne
-  en Cas B, via le garde `montantEnCentimes(...) > 0`) au lieu de rejeter
-  explicitement une résiliation antérieure au début d'occupation. Pas de
-  perte financière constatée (aucun montant erroné positif), mais un
-  comportement silencieux là où une erreur explicite serait plus sûre.
-  À corriger : rejeter (`ConflictException`) une résiliation dont `dateFin`
-  précède le début réel d'occupation, plutôt que de laisser le calcul
-  absorber silencieusement l'incohérence.
+- **Aucune validation que `date_fin` ≥ `date_debut` à la résiliation —
+  corrigé.** (Identifié par financial-logic-reviewer lors du correctif
+  "Cas B" de `BauxService.resilier()`, gap préexistant dans le code
+  d'origine du Module 5 — pas introduit par ce correctif.)
+  `ResilierBailDto` ne validait que le format de `dateFin`
+  (`@IsDateString()`), jamais son ordre chronologique par rapport au début
+  réel d'occupation du bail. `resilier()` rejette désormais explicitement
+  (`ConflictException`) toute `dateFin` antérieure à `bail.dateDebut`,
+  avant tout effet de bord, comparé contre `date_debut` (le vrai début
+  d'occupation) et non `date_activation` (purement administrative — voir
+  `docs/data-dictionary.md`, section baux).
+  **Bug distinct découvert au passage par cette même revue, corrigé dans le
+  même correctif** : le "Cas A" de `resilier()` (une échéance couvre déjà
+  le mois de résiliation) reproratisait `echeanceDuMois.montant` tel quel
+  plutôt que de le recalculer depuis `loyer_mensuel`/`provisions_charges`.
+  Si cette échéance était l'échéance d'**entrée** (déjà proratisée depuis
+  `date_debut`) et que la résiliation tombait dans le **même mois
+  calendaire** que `date_debut`, le montant était reproratisé une seconde
+  fois — double-décote silencieuse (~238,80 € facturés au lieu de ~29,03 €
+  dans le scénario testé : bail de 900 €/mois entré et résilié le même
+  jour). Corrigé en unifiant le calcul (une seule formule, avant la
+  branche Cas A/Cas B, avec `date_debut` systématiquement passé en repère
+  d'occupation à `calculerProrataOccupationPartielle`) plutôt qu'en
+  gardant deux formules indépendantes susceptibles de diverger à nouveau —
+  voir `docs/data-dictionary.md`, section baux, pour le détail de
+  l'exception "même mois calendaire". Testé
+  (`locataires-baux.integration.spec.ts`) : rejet explicite avec vérification
+  qu'aucun état n'est modifié, cas limite `dateFin === dateDebut` avec
+  montant exact vérifié, non-régression des 3 scénarios de prorata
+  préexistants.
 
 - **Versioning des documents (historique des versions) — absent du MVP
   construit.** Prévu au cahier des charges initial, jamais retranscrit dans

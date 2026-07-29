@@ -243,6 +243,20 @@ export class BauxService {
         );
       }
 
+      // date_debut est le vrai début d'occupation (jamais date_activation,
+      // purement administrative et absente de tout calcul financier — voir
+      // activer() ci-dessus). Sans ce garde, une dateFin antérieure à
+      // date_debut laissait calculerProrataOccupationPartielle ramener
+      // silencieusement le nombre de jours occupés à 0 (ligne à 0,00 € en
+      // Cas A, aucune ligne en Cas B) au lieu de rejeter explicitement une
+      // résiliation chronologiquement incohérente (docs/backlog.md, dette
+      // technique — corrigé).
+      if (dto.dateFin && dto.dateFin < bail.dateDebut) {
+        throw new ConflictException(
+          "La date de fin ne peut pas précéder la date de début du bail."
+        );
+      }
+
       const [appartement] = await tx
         .select()
         .from(appartements)
@@ -276,8 +290,10 @@ export class BauxService {
       // Prorata de l'échéance de loyer du mois de résiliation
       // (docs/data-dictionary.md, "Décision produit — prorata à la
       // résiliation"). Rien à proratiser sans date de fin explicite
-      // (dateFin optionnel dans ResilierBailDto).
-      if (dto.dateFin) {
+      // (dateFin optionnel dans ResilierBailDto) ni sans loyer renseigné
+      // (toujours vrai en pratique pour un bail actif/préavis — activer()
+      // l'exige déjà — mais gardé explicite plutôt que supposé).
+      if (dto.dateFin && bail.loyerMensuel) {
         const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(dto.dateFin);
         const [echeanceDuMois] = await tx
           .select()
@@ -293,13 +309,26 @@ export class BauxService {
           )
           .limit(1);
 
+        // Montant calculé une seule fois, toujours depuis le loyer/les
+        // provisions du bail — jamais depuis une échéance existante — et
+        // toujours avec dateDebut en repère de début d'occupation.
+        // dateDebut ne compte que si son mois calendaire est le MÊME que
+        // celui de dateFin (voir calculerProrataOccupationPartielle) :
+        // sinon le mois est occupé depuis son 1er jour, comme avant.
+        // Corrige un bug réel découvert par financial-logic-reviewer lors
+        // de ce même correctif : l'ancien Cas A reproratisait
+        // `echeanceDuMois.montant`, qui pouvait déjà être partiel (échéance
+        // d'entrée) si la résiliation tombe dans le même mois calendaire
+        // que dateDebut — double-décote silencieuse (docs/backlog.md,
+        // dette technique).
+        const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
+        const montantProratise = calculerProrataOccupationPartielle(montantPlein, dto.dateFin, bail.dateDebut);
+
         if (echeanceDuMois) {
-          // Cas A : une échéance couvre déjà ce mois — comportement
-          // inchangé. Uniquement si elle n'est pas déjà réglée
-          // intégralement, sinon on n'y touche pas (trop-perçu non traité,
-          // voir docs/backlog.md, dette technique).
+          // Cas A : une échéance couvre déjà ce mois. Uniquement si elle
+          // n'est pas déjà réglée intégralement, sinon on n'y touche pas
+          // (trop-perçu non traité, voir docs/backlog.md, dette technique).
           if (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel") {
-            const montantProratise = calculerProrataOccupationPartielle(echeanceDuMois.montant, dto.dateFin);
             await mettreAJourAvecAudit(
               tx,
               paiements,
@@ -311,18 +340,9 @@ export class BauxService {
               utilisateurId
             );
           }
-        } else if (bail.loyerMensuel) {
+        } else {
           // Cas B : aucune échéance ne couvre ce mois — ne jamais laisser
-          // une période d'occupation sans ligne de paiement
-          // correspondante. Toujours depuis le 1er jour du mois de
-          // dateFin : le mois de date_debut est exclusivement traité par
-          // le Cas A (l'échéance d'entrée, toujours générée pour ce mois
-          // précis dès l'activation — voir calculerMontantEcheanceEntree),
-          // donc tout mois que le Cas B doit encore combler est
-          // nécessairement postérieur, occupé en continu depuis son 1er
-          // jour (docs/data-dictionary.md, section baux).
-          const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
-          const montantProratise = calculerProrataOccupationPartielle(montantPlein, dto.dateFin);
+          // une période d'occupation sans ligne de paiement correspondante.
           if (montantEnCentimes(montantProratise) > 0) {
             await tx.insert(paiements).values({
               bailId: id,
