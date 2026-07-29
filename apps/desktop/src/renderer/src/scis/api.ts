@@ -18,6 +18,13 @@ export interface CreateSciInput {
   siret?: string;
 }
 
+export interface UpdateSciInput {
+  nom?: string;
+  regimeFiscal?: RegimeFiscal;
+  formeJuridique?: string;
+  siret?: string;
+}
+
 export interface CompteBancaire {
   id: string;
   sciId: string;
@@ -41,6 +48,10 @@ export function getSci(id: string): Promise<Sci> {
 
 export function createSci(input: CreateSciInput): Promise<Sci> {
   return authenticatedFetch<Sci>("/scis", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateSci(id: string, input: UpdateSciInput): Promise<Sci> {
+  return authenticatedFetch<Sci>(`/scis/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function archiveSci(id: string): Promise<Sci> {

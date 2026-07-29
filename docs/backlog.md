@@ -50,13 +50,16 @@ cloud fonctionne dans les deux sens sur une table de test.
 **Critère de complétion** : créer une SCI, lui associer un compte bancaire,
 vérifier que l'IBAN n'apparaît jamais en clair en base.
 
-**Écart connu** : l'endpoint "modifier" du CRUD SCI listé ci-dessus n'a
-jamais été implémenté — seuls create / findAll / findById / archiver
-existent (`apps/backend/src/scis`). Identifié lors du Module 2, qui a
-implémenté le CRUD complet (dont "modifier") pour Immeubles/Appartements/
-Équipements. Reste à corriger dans un ticket dédié (backend + bouton
-"Modifier" sur la fiche SCI) avant de considérer le Module 1 fidèle à sa
-propre définition.
+**Écart connu — corrigé.** L'endpoint "modifier" du CRUD SCI listé
+ci-dessus n'avait jamais été implémenté — seuls create / findAll /
+findById / archiver existaient (`apps/backend/src/scis`). Identifié lors
+du Module 2, qui avait implémenté le CRUD complet (dont "modifier") pour
+Immeubles/Appartements/Équipements. Corrigé après coup (hors chronologie
+des modules) : `PATCH /scis/:id` (`UpdateSciDto`, même pattern que
+`UpdateImmeubleDto`) + bouton "Modifier" sur `SciDetailView.tsx`, testé
+par un test d'intégration Postgres réel
+(`scis.integration.spec.ts`). Le Module 1 est désormais fidèle à sa propre
+définition.
 
 ---
 

@@ -121,6 +121,31 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     expect(rattachement?.dateFin).toBeNull();
   });
 
+  it("modifie une SCI existante (nom, régime fiscal, forme juridique, SIRET)", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI À Corriger",
+      regimeFiscal: "IR"
+    });
+
+    const modifiee = await scisService.update(sci.id, {
+      nom: "SCI Corrigée",
+      regimeFiscal: "IS",
+      formeJuridique: "SARL de famille",
+      siret: "12345678900012"
+    });
+
+    expect(modifiee).toMatchObject({
+      id: sci.id,
+      nom: "SCI Corrigée",
+      regimeFiscal: "IS",
+      formeJuridique: "SARL de famille",
+      siret: "12345678900012"
+    });
+
+    const relue = await scisService.findById(sci.id);
+    expect(relue).toMatchObject({ nom: "SCI Corrigée", regimeFiscal: "IS" });
+  });
+
   it("chiffre l'IBAN/BIC en base et les déchiffre uniquement via l'endpoint dédié", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Le Chêne",

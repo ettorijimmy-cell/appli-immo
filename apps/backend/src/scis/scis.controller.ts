@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nest
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateSciDto } from "./dto/create-sci.dto";
+import { UpdateSciDto } from "./dto/update-sci.dto";
 import { ScisService } from "./scis.service";
 
 @UseGuards(JwtAuthGuard)
@@ -22,6 +23,11 @@ export class ScisController {
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.scisService.findById(id);
+  }
+
+  @Patch(":id")
+  update(@Param("id") id: string, @Body() dto: UpdateSciDto) {
+    return this.scisService.update(id, dto);
   }
 
   @Patch(":id/archiver")

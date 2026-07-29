@@ -6,6 +6,7 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateSciDto } from "./dto/create-sci.dto";
+import type { UpdateSciDto } from "./dto/update-sci.dto";
 
 @Injectable()
 export class ScisService {
@@ -54,6 +55,20 @@ export class ScisService {
   async findById(id: string) {
     const [sci] = await this.db.select().from(scis).where(eq(scis.id, id)).limit(1);
     return sci ?? null;
+  }
+
+  async update(id: string, dto: UpdateSciDto) {
+    const [sci] = await mettreAJourAvecAudit(
+      this.db,
+      scis,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!sci) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    return sci;
   }
 
   async archive(id: string) {

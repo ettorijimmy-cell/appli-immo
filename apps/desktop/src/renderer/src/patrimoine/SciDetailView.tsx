@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { createCompteBancaire, getSci, listComptesBancaires, type CompteBancaire, type Sci } from "../scis/api";
+import {
+  createCompteBancaire,
+  getSci,
+  listComptesBancaires,
+  updateSci,
+  type CompteBancaire,
+  type RegimeFiscal,
+  type Sci
+} from "../scis/api";
 import { archiveImmeuble, createImmeuble, listImmeubles, type Immeuble } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
@@ -20,6 +28,7 @@ export function SciDetailView({
   const [showCompteForm, setShowCompteForm] = useState(false);
   const [showImmeubleForm, setShowImmeubleForm] = useState(false);
   const [showArchivedImmeubles, setShowArchivedImmeubles] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,25 +78,45 @@ export function SciDetailView({
       </button>
 
       <div>
-        <h1 className="text-lg font-semibold">{sci.nom}</h1>
-        <dl className="mt-2 grid grid-cols-2 gap-x-8 text-sm">
-          <div className="flex justify-between border-b border-slate-100 py-1">
-            <dt className="text-slate-500">Régime fiscal</dt>
-            <dd>{sci.regimeFiscal}</dd>
-          </div>
-          <div className="flex justify-between border-b border-slate-100 py-1">
-            <dt className="text-slate-500">Statut</dt>
-            <dd>{sci.statut}</dd>
-          </div>
-          <div className="flex justify-between border-b border-slate-100 py-1">
-            <dt className="text-slate-500">Forme juridique</dt>
-            <dd>{sci.formeJuridique ?? "—"}</dd>
-          </div>
-          <div className="flex justify-between border-b border-slate-100 py-1">
-            <dt className="text-slate-500">SIRET</dt>
-            <dd>{sci.siret ?? "—"}</dd>
-          </div>
-        </dl>
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold">{sci.nom}</h1>
+          <button
+            type="button"
+            onClick={() => setIsEditing((value) => !value)}
+            className="text-sm text-slate-500 hover:text-slate-700"
+          >
+            {isEditing ? "Annuler" : "Modifier"}
+          </button>
+        </div>
+
+        {isEditing ? (
+          <EditSciForm
+            sci={sci}
+            onSaved={() => {
+              setIsEditing(false);
+              void refresh();
+            }}
+          />
+        ) : (
+          <dl className="mt-2 grid grid-cols-2 gap-x-8 text-sm">
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Régime fiscal</dt>
+              <dd>{sci.regimeFiscal}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Statut</dt>
+              <dd>{sci.statut}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Forme juridique</dt>
+              <dd>{sci.formeJuridique ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">SIRET</dt>
+              <dd>{sci.siret ?? "—"}</dd>
+            </div>
+          </dl>
+        )}
       </div>
 
       <div>
@@ -220,6 +249,116 @@ export function SciDetailView({
         )}
       </div>
     </div>
+  );
+}
+
+const REGIMES_FISCAUX: RegimeFiscal[] = ["IS", "IR"];
+
+function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React.JSX.Element {
+  const [nom, setNom] = useState(sci.nom);
+  const [regimeFiscal, setRegimeFiscal] = useState<RegimeFiscal>(sci.regimeFiscal);
+  const [formeJuridique, setFormeJuridique] = useState(sci.formeJuridique ?? "");
+  const [siret, setSiret] = useState(sci.siret ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await updateSci(sci.id, {
+        nom,
+        regimeFiscal,
+        ...(formeJuridique && { formeJuridique }),
+        ...(siret && { siret })
+      });
+      onSaved();
+    } catch {
+      setError("Impossible d'enregistrer les modifications");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        void handleSubmit(event);
+      }}
+      className="mt-2 space-y-4 rounded-lg border border-slate-200 p-4"
+    >
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-nom" className="text-sm font-medium text-slate-700">
+            Nom
+          </label>
+          <input
+            id="sci-edit-nom"
+            required
+            value={nom}
+            onChange={(event) => setNom(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-regime" className="text-sm font-medium text-slate-700">
+            Régime fiscal
+          </label>
+          <select
+            id="sci-edit-regime"
+            value={regimeFiscal}
+            onChange={(event) => setRegimeFiscal(event.target.value as RegimeFiscal)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            {REGIMES_FISCAUX.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-forme-juridique" className="text-sm font-medium text-slate-700">
+            Forme juridique
+          </label>
+          <input
+            id="sci-edit-forme-juridique"
+            value={formeJuridique}
+            onChange={(event) => setFormeJuridique(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-siret" className="text-sm font-medium text-slate-700">
+            SIRET
+          </label>
+          <input
+            id="sci-edit-siret"
+            value={siret}
+            onChange={(event) => setSiret(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+      >
+        {isSubmitting ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </form>
   );
 }
 
