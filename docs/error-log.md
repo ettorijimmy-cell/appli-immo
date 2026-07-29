@@ -33,6 +33,43 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-07-29] Navigation sidebar bloquée depuis une fiche profonde (Patrimoine, Locataires)
+
+**Symptôme** : depuis une fiche imbriquée (SCI → Immeuble → Appartement, ou
+fiche Locataire), cliquer sur une autre entrée de la sidebar (ex. Tableau
+de bord) ne déclenchait aucune navigation. Il fallait remonter
+manuellement la hiérarchie jusqu'au niveau liste avant qu'un changement de
+section fonctionne à nouveau. Confirmé systémique : touchait tout écran
+avec un état de navigation en profondeur (pas seulement Patrimoine).
+
+**Contexte** : Module 7, finalisation du fil d'Ariane
+(`breadcrumb-context.tsx`) sur les fiches `SciDetailView`,
+`ImmeubleDetailView`, `AppartementDetailView`, `LocataireDetailView`.
+
+**Cause** : boucle de rendu infinie dans `useBreadcrumbSegments`. Son effet
+dépendait de `ctx` (l'objet de contexte entier), que `BreadcrumbProvider`
+recrée (`useMemo`) à chaque changement de `segments`. Séquence : l'effet
+appelle `setSegments(segments)` → nouvel objet `ctx` → la fiche se re-rend
+avec ce nouveau `ctx` → dépendance d'effet changée → nettoyage
+(`setSegments([])`) → nouvel objet `ctx` → effet redéclenché →
+`setSegments(segments)` → … Boucle continue tant qu'une fiche appelant ce
+hook restait montée, saturant le thread JS au point de rendre les clics
+(y compris sidebar) pratiquement impossibles à faire aboutir. La boucle ne
+s'arrêtait que quand le composant se démontait — donc uniquement en
+remontant jusqu'au niveau liste, seul niveau qui n'appelle pas ce hook.
+
+**Solution** : dépendre de `ctx?.setSegments` (identité stable, issue de
+`useState`) plutôt que de `ctx` lui-même dans le tableau de dépendances de
+l'effet.
+
+**Fichiers concernés** :
+`apps/desktop/src/renderer/src/layout/breadcrumb-context.tsx`
+
+**À surveiller** : tout futur hook consommant `BreadcrumbContext` (ou tout
+autre contexte dont la valeur est recréée via `useMemo` sur un état qu'un
+effet consommateur modifie lui-même) doit dépendre des fonctions stables
+extraites du contexte, jamais de l'objet de contexte entier.
+
 ### [2026-07-27] Confirmation d'un rapprochement CSV échouait en 400 (virgule décimale)
 
 **Symptôme** : cliquer sur "Confirmer ce rapprochement" (import CSV,

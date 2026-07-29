@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { ArchiveBadge } from "../components/ArchiveFilter";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
+import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
   archiveGarant,
@@ -83,6 +84,8 @@ export function LocataireDetailView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useBreadcrumbSegments(locataire ? [`${locataire.prenom} ${locataire.nom}`] : []);
 
   async function handleArchiveLocataire(): Promise<void> {
     await archiveLocataire(locataireId);

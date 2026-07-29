@@ -10,6 +10,7 @@ import {
   type Immeuble
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
 
@@ -46,6 +47,8 @@ export function ImmeubleDetailView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useBreadcrumbSegments(immeuble ? [immeuble.nom] : []);
 
   async function handleArchive(id: string): Promise<void> {
     await archiveAppartement(id);

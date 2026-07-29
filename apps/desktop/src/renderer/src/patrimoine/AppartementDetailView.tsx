@@ -14,6 +14,7 @@ import {
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
+import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
@@ -56,6 +57,8 @@ export function AppartementDetailView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useBreadcrumbSegments(appartement ? [`Appartement ${appartement.numero}`] : []);
 
   async function handleArchive(id: string): Promise<void> {
     await archiveEquipement(id);

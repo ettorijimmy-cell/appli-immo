@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createCompteBancaire, getSci, listComptesBancaires, type CompteBancaire, type Sci } from "../scis/api";
 import { archiveImmeuble, createImmeuble, listImmeubles, type Immeuble } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
 export function SciDetailView({
   sciId,
@@ -41,6 +42,8 @@ export function SciDetailView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useBreadcrumbSegments(sci ? [sci.nom] : []);
 
   async function handleArchiveImmeuble(id: string): Promise<void> {
     await archiveImmeuble(id);
