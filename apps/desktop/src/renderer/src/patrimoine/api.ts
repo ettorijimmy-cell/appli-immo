@@ -84,8 +84,8 @@ export interface UpdateEquipementInput {
   intervalleEntretienMois?: number;
 }
 
-export function listImmeubles(sciId: string): Promise<Immeuble[]> {
-  return authenticatedFetch<Immeuble[]>(`/immeubles?sciId=${encodeURIComponent(sciId)}`);
+export function listImmeubles(sciId?: string): Promise<Immeuble[]> {
+  return authenticatedFetch<Immeuble[]>(sciId ? `/immeubles?sciId=${encodeURIComponent(sciId)}` : "/immeubles");
 }
 
 export function getImmeuble(id: string): Promise<Immeuble> {
@@ -104,9 +104,9 @@ export function archiveImmeuble(id: string): Promise<Immeuble> {
   return authenticatedFetch<Immeuble>(`/immeubles/${id}/archiver`, { method: "PATCH" });
 }
 
-export function listAppartements(immeubleId: string): Promise<Appartement[]> {
+export function listAppartements(immeubleId?: string): Promise<Appartement[]> {
   return authenticatedFetch<Appartement[]>(
-    `/appartements?immeubleId=${encodeURIComponent(immeubleId)}`
+    immeubleId ? `/appartements?immeubleId=${encodeURIComponent(immeubleId)}` : "/appartements"
   );
 }
 

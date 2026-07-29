@@ -22,7 +22,15 @@ interface PaiementAffichable extends Paiement {
   contexte: ContexteBail;
 }
 
-export function FinancesListView(): React.JSX.Element {
+export function FinancesListView({
+  bailIdFiltre = null
+}: {
+  // Deep-link depuis la palette de commandes (Module 8) : ne montre que les
+  // paiements du bail choisi. L'utilisateur peut toujours revenir à la
+  // liste complète (lien "Voir tous les paiements") — filtre purement côté
+  // affichage, ne change rien à ce qui est chargé ni aux totaux ailleurs.
+  bailIdFiltre?: string | null;
+} = {}): React.JSX.Element {
   const [paiements, setPaiements] = useState<PaiementAffichable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +39,7 @@ export function FinancesListView(): React.JSX.Element {
   const [filtreStatut, setFiltreStatut] = useState<PaiementStatut | "tous">("tous");
   const [groupement, setGroupement] = useState<"aucun" | "sci" | "echeance">("echeance");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filtreBailActif, setFiltreBailActif] = useState(bailIdFiltre);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -63,7 +72,8 @@ export function FinancesListView(): React.JSX.Element {
 
   const visibles = paiements
     .filter((p) => (showArchived ? true : p.archivedAt === null))
-    .filter((p) => (filtreStatut === "tous" ? true : p.statut === filtreStatut));
+    .filter((p) => (filtreStatut === "tous" ? true : p.statut === filtreStatut))
+    .filter((p) => (filtreBailActif ? p.bailId === filtreBailActif : true));
 
   const groupes = grouperPaiements(visibles, groupement);
 
@@ -82,6 +92,19 @@ export function FinancesListView(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {filtreBailActif && (
+        <div className="flex items-center gap-2 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+          <span>Filtré sur un bail précis.</span>
+          <button
+            type="button"
+            onClick={() => setFiltreBailActif(null)}
+            className="font-medium underline hover:no-underline"
+          >
+            Voir tous les paiements
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-6 text-sm">
         <label className="flex items-center gap-2">

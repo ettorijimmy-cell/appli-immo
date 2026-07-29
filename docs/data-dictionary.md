@@ -482,6 +482,51 @@ tranchées avec l'utilisateur :
   un appartement témoin à 100 % d'occupation et un appartement archivé
   avant la période donnent un taux d'immeuble de 100 %, pas 50 %.
 
+## Palette de commandes (Module 8)
+
+Aucune nouvelle table : ce module est purement frontend, il réutilise les
+endpoints de listing existants (`GET /scis`, `/immeubles`, `/appartements`,
+`/locataires`, `/baux`, tous déjà capables de renvoyer la liste complète
+sans filtre parent — `sciId`/`immeubleId` sont des query params optionnels
+côté `ImmeublesController`/`AppartementsController`, inchangés).
+
+- **Champs recherchés par entité** (vérifiés dans le schéma, pas supposés) :
+  SCI → `nom` ; immeuble → `nom` **et** `adresse` (les deux existent) ;
+  appartement → `numero` (il n'existe pas de champ `numero_lot` — libellé
+  affiché avec le nom de l'immeuble parent pour désambiguïser deux
+  appartements de même numéro dans des immeubles différents) ; locataire →
+  `nom` + `prenom`. Les entités archivées (`statut === "archive"`) sont
+  exclues de la recherche, comme partout ailleurs dans l'app.
+- **Registre d'actions** volontairement limité à ce qui existe déjà :
+  navigation vers les 6 écrans, plus deux actions contextuelles à
+  recherche en 2 étapes ("Nouveau bail" cherche un appartement, "Nouveau
+  paiement" cherche un bail actif/préavis — même filtre de statut que
+  `NewPaiementForm`). Pas de "Nouvelle SCI"/"Nouveau locataire" autonomes :
+  aucun des 5 parcours cibles de la Phase 6 (voir `docs/backlog.md`,
+  Module 8) ne les requiert.
+- **Contrat des query params de deep-link**, consommés au montage par les
+  pages qui gèrent leur profondeur en état local (Patrimoine, Locataires —
+  décision Phase 6/Module 2, jamais migrée en routes URL) :
+  - `/patrimoine?sciId=...` / `?immeubleId=...` / `?appartementId=...`
+    (le plus spécifique gagne) — `PatrimoinePage` résout la chaîne
+    d'ancêtres manquante via `getAppartement`/`getImmeuble` avant
+    d'initialiser son état de profondeur.
+  - `/patrimoine?appartementId=...&nouveauBail=1` — ouvre en plus
+    directement l'onglet "Bail actuel" avec le formulaire de création
+    pré-ouvert (sans effet si un bail est déjà en cours : la fiche affiche
+    alors simplement le bail actuel, comme d'habitude).
+  - `/locataires?locataireId=...` — deep-link direct, pas de résolution
+    d'ancêtres nécessaire (hiérarchie à un seul niveau).
+  - `/finances?bailId=...` — filtre l'écran Finances sur ce bail
+    uniquement (bandeau "Voir tous les paiements" pour lever le filtre) ;
+    filtre purement d'affichage, ne modifie aucun total.
+  Chaque page dépend de la représentation texte des query params
+  (`searchParams.toString()`), jamais de l'objet `URLSearchParams` lui-même
+  (recréé à chaque rendu) — même principe que le correctif du fil d'Ariane
+  (`docs/error-log.md`, [2026-07-29]) : dépendre d'un objet recréé à chaque
+  rendu quand seule sa valeur importe est la cause exacte de la boucle de
+  rendu infinie corrigée ce jour-là.
+
 ## journal_audit
 Table transverse, append-only — capture toute création/modification/archivage
 sur n'importe quelle entité, ainsi que les événements de sécurité (connexions,

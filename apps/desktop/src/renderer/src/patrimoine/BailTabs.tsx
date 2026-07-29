@@ -31,10 +31,19 @@ const ROLES: BailLocataireRole[] = ["titulaire", "colocataire"];
 
 const STATUTS_BAIL_EN_COURS = new Set(["brouillon", "actif", "preavis"]);
 
-export function BailActuelTab({ appartement }: { appartement: Appartement }): React.JSX.Element {
+export function BailActuelTab({
+  appartement,
+  ouvrirFormulaireInitial = false
+}: {
+  appartement: Appartement;
+  // Pré-ouvre le formulaire de création (parcours "Nouveau bail" de la
+  // palette de commandes, Module 8) quand il n'y a pas déjà de bail en
+  // cours — sans effet sinon, la fiche affiche simplement le bail actuel.
+  ouvrirFormulaireInitial?: boolean;
+}): React.JSX.Element {
   const [baux, setBaux] = useState<Bail[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(ouvrirFormulaireInitial);
 
   const refresh = useCallback(async () => {
     try {

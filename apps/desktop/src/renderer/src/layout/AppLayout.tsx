@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { CommandPalette } from "../command-palette/CommandPalette";
 import { Breadcrumb } from "./Breadcrumb";
 import { BreadcrumbProvider } from "./breadcrumb-context";
 import { Sidebar } from "./Sidebar";
@@ -17,6 +18,7 @@ export function AppLayout(): React.JSX.Element {
           </main>
         </div>
       </div>
+      <CommandPalette />
     </BreadcrumbProvider>
   );
 }

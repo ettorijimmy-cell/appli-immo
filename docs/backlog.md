@@ -237,6 +237,38 @@ d'interagir avec les alertes dans l'app.
 **Critère de complétion** : depuis n'importe quel écran, Ctrl+K puis taper
 un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
 
+**Cibles chiffrées de la Phase 6** — posées à la conception, jamais
+transcrites avant ce module (retrouvées et consignées ici lors du Module 8) :
+
+| Parcours | Cible |
+| --- | --- |
+| Enregistrer un paiement reçu | 3 clics + 1 raccourci clavier |
+| Créer un nouveau bail (locataire existant) | 3 clics + formulaire |
+| Consulter le dossier d'un locataire | 1 raccourci + 1 frappe + Entrée |
+| Ajouter un document à un dossier | 2 actions |
+| Voir les impayés du mois | 0 clic |
+
+Réalisé par la palette de commandes (`apps/desktop/src/renderer/src/command-palette/`) :
+- **Enregistrer un paiement reçu** : Ctrl+K → "nouveau paiement" (action) →
+  recherche du bail (nom de locataire/immeuble) → sélection → atterrit sur
+  Finances filtré sur ce bail (`?bailId=`) → clic "Enregistrer" → clic
+  "Enregistrer" (valeurs par défaut pré-remplies). Raccourci + 2 sélections
+  dans la palette + 2 clics sur l'écran Finances.
+- **Créer un nouveau bail** : Ctrl+K → "nouveau bail" (action) → recherche
+  d'un appartement → sélection → atterrit directement sur l'onglet "Bail
+  actuel" de cet appartement, formulaire de création déjà ouvert
+  (`?appartementId=...&nouveauBail=1`).
+- **Consulter le dossier d'un locataire** : Ctrl+K → nom → Entrée →
+  `?locataireId=...` (LocatairesPage) → fiche complète directement, sans
+  passer par la liste.
+- **Ajouter un document / voir les impayés** : déjà satisfaits par
+  l'existant (Module 4 glisser-déposer, Module 7 carte "Impayés" du
+  tableau de bord dès l'écran d'accueil) — aucun changement nécessaire côté
+  Module 8, seulement vérifiés à cette occasion.
+
+Vérifié manuellement dans Electron (SCI, immeuble, appartement, locataire,
+les trois parcours ci-dessus).
+
 ---
 
 ## Dette technique

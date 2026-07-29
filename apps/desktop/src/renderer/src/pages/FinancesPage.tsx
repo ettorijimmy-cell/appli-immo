@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { FinancesListView } from "../finances/FinancesListView";
 import { RapprochementCsvView } from "../finances/RapprochementCsvView";
 
@@ -6,6 +7,11 @@ type Vue = "liste" | "import-csv";
 
 export function FinancesPage(): React.JSX.Element {
   const [vue, setVue] = useState<Vue>("liste");
+  const [searchParams] = useSearchParams();
+  // Deep-link depuis la palette de commandes (Module 8, parcours "Nouveau
+  // paiement") : filtre la liste sur le bail choisi en étape 2 de
+  // recherche, plutôt que d'obliger à le retrouver dans la liste complète.
+  const bailIdFiltre = searchParams.get("bailId");
 
   return (
     <div className="space-y-4">
@@ -34,7 +40,7 @@ export function FinancesPage(): React.JSX.Element {
         </button>
       </div>
 
-      {vue === "liste" ? <FinancesListView /> : <RapprochementCsvView />}
+      {vue === "liste" ? <FinancesListView bailIdFiltre={bailIdFiltre} /> : <RapprochementCsvView />}
     </div>
   );
 }

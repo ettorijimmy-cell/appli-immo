@@ -26,15 +26,22 @@ type Tab = "infos" | "equipements" | "bail" | "historique" | "documents";
 
 export function AppartementDetailView({
   appartementId,
-  onBack
+  onBack,
+  ongletInitial = "infos",
+  ouvrirNouveauBailInitial = false
 }: {
   appartementId: string;
   onBack: () => void;
+  // Deep-link depuis la palette de commandes (Module 8) : ouvre directement
+  // l'onglet "Bail actuel" avec le formulaire de création prêt, plutôt que
+  // l'onglet "Infos" par défaut.
+  ongletInitial?: Tab;
+  ouvrirNouveauBailInitial?: boolean;
 }): React.JSX.Element {
   const [appartement, setAppartement] = useState<Appartement | null>(null);
   const [equipements, setEquipements] = useState<Equipement[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("infos");
+  const [tab, setTab] = useState<Tab>(ongletInitial);
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingEquipementId, setEditingEquipementId] = useState<string | null>(null);
@@ -167,7 +174,7 @@ export function AppartementDetailView({
       </div>
 
       {tab === "bail" ? (
-        <BailActuelTab appartement={appartement} />
+        <BailActuelTab appartement={appartement} ouvrirFormulaireInitial={ouvrirNouveauBailInitial} />
       ) : tab === "historique" ? (
         <HistoriqueBauxTab appartement={appartement} />
       ) : tab === "documents" ? (
