@@ -18,6 +18,7 @@ import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { LocatairesModule } from "./locataires/locataires.module";
 import { PaiementsModule } from "./paiements/paiements.module";
 import { ScisModule } from "./scis/scis.module";
+import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
 
 @Module({
   imports: [
@@ -39,7 +40,8 @@ import { ScisModule } from "./scis/scis.module";
     BailLocatairesModule,
     PaiementsModule,
     DocumentsModule,
-    AlertesModule
+    AlertesModule,
+    TableauDeBordModule
   ]
 })
 export class AppModule {}

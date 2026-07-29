@@ -144,6 +144,36 @@ avec l'utilisateur — prérequis posé lors du Module 5)** :
   `actif` avec une `date_debut` future — cas normalement inexistant en
   usage correct, mais évite une échéance absurde le cas échéant).
 
+**Décision produit (taux d'occupation, Module 7, tranchée avec
+l'utilisateur)** : pour un appartement, sur une période donnée,
+`calculerTauxOccupation`/`calculerJoursOccupes` (packages/core)
+reconstituent l'occupation réelle depuis l'historique complet des baux
+(pas seulement le bail courant) :
+- Un bail ne contribue que si `date_activation` n'est pas `null` — un bail
+  jamais activé (`brouillon`, y compris archivé directement depuis
+  `brouillon`) n'a jamais été réellement occupé, quel que soit son
+  `statut` actuel.
+- Un bail contributeur occupe `[date_debut, date_fin]` — un bail `preavis`
+  compte occupé jusqu'à sa `date_fin` **exactement comme n'importe quel
+  bail dont `date_fin` est renseignée**, jamais tronqué à la date du jour
+  (aucun traitement spécial par statut n'est nécessaire, ni souhaitable).
+  Si `date_fin` est absente (bail encore `actif`/`preavis` en cours, ou
+  cas rare d'un bail déjà `resilie`/`archive` sans `date_fin` renseignée —
+  `ResilierBailDto.dateFin` est optionnel), l'occupation est considérée se
+  prolonger au moins jusqu'à la fin de la période demandée : exact pour un
+  bail réellement en cours, **approximation optimiste assumée** pour le
+  cas rare d'une résiliation sans date renseignée (voir `docs/backlog.md`,
+  dette technique sur l'absence de validation `date_fin`).
+- Les intervalles de tous les baux contributeurs sont fusionnés en une
+  **vraie union** (jamais une simple somme des durées) avant de compter les
+  jours : deux baux qui se chevaucheraient dans les données (saisie
+  erronée, ou chevauchement volontaire lors d'une transition de locataire)
+  ne comptent jamais deux fois le même jour occupé.
+- Agrégation SCI/immeuble : moyenne des taux d'occupation par appartement,
+  pondérée par le nombre de jours de la période (identique pour tous les
+  appartements dans la pratique, puisque tous calculés sur la même
+  période demandée).
+
 ## bail_locataires
 Table de liaison pour gérer la colocation.
 | Champ | Type | Description |
@@ -237,6 +267,73 @@ bancaires). Deux règles non négociables, à ne jamais régresser :
    silencieux, jamais de paiement laissé sans suggestion visible s'il y a
    au moins un candidat montant+date.
 
+**Décision produit ("Provisions collectées" du Module 7, tranchée avec
+l'utilisateur)** : `montant`/`montant_paye` ne distinguent **jamais** loyer
+et provisions_charges pour une échéance `type=loyer` — une seule colonne,
+les deux parts y sont fondues dès la génération (`calculerMontantEcheanceLoyer`).
+Le montant de provisions réellement perçu est donc une **estimation
+dérivée**, jamais une valeur stockée, calculée par
+`calculerProvisionsRecuesEcheance` (packages/core) :
+`provisions_reçues = montant_reçu × (provisions_charges / (loyer_mensuel + provisions_charges))`,
+appliquée à `montant_paye` (ou `montant` si l'échéance est intégralement
+payée) pour chaque paiement `type=loyer` de la période. Cette formule
+proportionnelle règle complètement deux limites d'une approche forfaitaire
+(`provisions_charges × nombre d'échéances payées`) :
+- **Échéances proratisées** (entrée, résiliation) : la proportion s'applique
+  au montant réellement dû sur le mois partiel, jamais à un forfait mensuel
+  plein qui surestimerait la part provisions d'un mois incomplet.
+- **Paiements partiels** : la part provisions est calculée sur ce qui a été
+  réellement reçu, pas sur le montant total dû.
+
+**Limite résiduelle, non réduite par cette formule — à ne jamais présenter
+comme résolue** : `loyer_mensuel`/`provisions_charges` utilisés sont les
+valeurs **actuelles** du bail (`baux`), jamais un instantané historique de
+ce qu'elles valaient au moment où chaque échéance a été générée (non
+stocké). Si ces valeurs ont été révisées en cours de bail, le ratio
+appliqué à une échéance antérieure à la révision est **tout aussi faux**
+qu'un montant forfaitaire l'aurait été — l'amélioration apportée par la
+formule proportionnelle ne porte que sur le prorata et les paiements
+partiels, pas sur ce point, qui reste entier.
+
+**Hors périmètre de ce calcul** : les paiements manuels `type=charges`
+(distincts des échéances `type=loyer` groupées) existent dans le modèle
+(`CreatePaiementDto` les autorise) mais ne sont **jamais** additionnés à
+"Provisions collectées" — pas parce qu'ils sont sans intérêt, mais parce
+qu'ils appartiennent au futur module "Suivi des charges et fiscalité"
+(voir `docs/backlog.md`, section Modules futurs) qui leur donnera un vrai
+traitement, pas une simple addition à une estimation dérivée d'une autre
+nature.
+
+**Décision produit ("Revenus locatifs" du Module 7, tranchée avec
+l'utilisateur)** : le graphique principal du tableau de bord affiche le
+**loyer net** (`calculerLoyerNetRecuEcheance`, packages/core — part
+provisions exclue), jamais le montant brut total encaissé. Les
+"Provisions collectées" (décision ci-dessus) sont affichées **séparément**
+: les deux sections ne se recoupent jamais, leur somme reconstitue
+exactement le montant total réellement encaissé (`loyerNet + provisions =
+montantRecu`, garanti par construction — les deux fonctions partagent la
+même soustraction en centimes entiers, jamais deux ratios indépendants qui
+pourraient dériver l'un de l'autre par arrondi).
+
+Base de calcul : **date d'encaissement réel** (`date_paiement`), pas
+`date_echeance` — seul l'argent réellement reçu compte, cohérent avec le
+libellé "encaissés". Un paiement encore `impaye`/`partiel` non réglé ne
+contribue que pour la part effectivement reçue (`montant_paye`), jamais le
+montant dû.
+
+**Limite préexistante du modèle, non introduite par ce module — à ne
+jamais présenter comme une précision jour-par-jour fiable** : `paiements`
+ne porte qu'**un seul** couple (`montant_paye`, `date_paiement`) par ligne
+— un règlement en plusieurs versements sur des dates différentes n'est
+**pas représentable tel quel**. Chaque appel à `PaiementsService.enregistrer()`
+**écrase** la valeur précédente plutôt que de l'additionner : si un
+versement de 400 € est enregistré le 5 puis un second de 400 € le 20 (pour
+une échéance de 800 €), la ligne ne conserve que `date_paiement=20` avec
+`montant_paye=800` — le graphique attribuerait les 800 € au 20, alors que
+la moitié a réellement été perçue le 5. Corriger ce point nécessiterait une
+table d'historique des versements, hors périmètre d'un module tableau de
+bord (voir `docs/backlog.md`, dette technique).
+
 ## alertes
 | Champ | Type | Description |
 |---|---|---|
@@ -307,6 +404,83 @@ Valeurs par défaut : 30 jours (bail_fin_proche, document_expire_proche,
 entretien_equipement), 5 jours (impaye). **Un futur type d'alerte devra
 préciser explicitement dans quel sens il utilise ce champ** — ne jamais
 supposer "avant" par défaut.
+
+## Tableau de bord (Module 7)
+
+N'introduit aucune nouvelle table — uniquement des agrégations en lecture
+sur les tables existantes. Décisions produit spécifiques à l'affichage,
+tranchées avec l'utilisateur :
+
+- **Carte "Documents expirés"** (jamais "Documents expirés/manquants") :
+  n'affiche que les documents dont `calculerStatutDocument` renvoie
+  `expire` — un champ déjà calculé, bien défini. "Manquants" impliquerait
+  une checklist de catégories attendues par bail/appartement, absente du
+  modèle actuel — voir `docs/backlog.md`, section Modules futurs, pour la
+  checklist documentaire à concevoir séparément.
+- **Carte "Échéances à venir"** : limitée aux paiements `impaye`/`partiel`
+  dont `date_echeance` est **encore à venir** (`>= aujourd'hui`), séparation
+  stricte avec la carte "Impayés" (`date_echeance < aujourd'hui`) — chaque
+  échéance n'apparaît jamais dans les deux cartes à la fois. Comme le
+  Module 6 ne génère jamais d'échéance à l'avance (seulement le mois
+  courant), cette carte ne montre jamais qu'un rappel sur ce qui existe
+  déjà en base pour le mois courant — jamais une projection des mois
+  futurs qui n'existent pas encore.
+- **En-tête** : "valeur locative des biens loués" = somme de
+  `loyer_reference` (appartements) pour les appartements au statut `loue`
+  uniquement — une estimation de référence, pas le loyer réellement
+  contractualisé (`baux.loyer_mensuel` peut différer de `loyer_reference`,
+  voir section `appartements`/`baux`).
+- **Synthèse par SCI/immeuble/appartement** : "revenu total" est un revenu
+  **brut** (loyer net, voir décision "Revenus locatifs" ci-dessus — jamais
+  une "rentabilité nette", puisqu'aucune dépense n'est trackée dans le MVP
+  actuel). Voir `docs/backlog.md`, dette technique, sur cette limite et le
+  futur module qui la lèvera.
+- **Les totaux SCI/immeuble n'excluent jamais un appartement archivé
+  depuis** (corrigé après un premier écart identifié par
+  financial-logic-reviewer, initialement documenté comme "divergence
+  assumée" avant d'être reconnu comme une vraie erreur de calcul à
+  corriger) : `getSynthese` (`apps/backend/src/tableau-de-bord`) n'applique
+  **aucun** filtre `archived_at` sur `scis`/`immeubles`/`appartements` — le
+  revenu perçu sur une période est un fait historique, jamais invalidé par
+  un archivage survenu après coup (bien vendu, démoli, retiré du
+  portefeuille). Sans cette règle, un appartement ayant perçu un loyer puis
+  archivé disparaissait silencieusement de la ventilation SCI/immeuble tout
+  en restant compté dans le total global "Revenus locatifs" — un écart de
+  calcul, pas une différence de nature entre les deux écrans.
+  Chaque niveau (SCI/immeuble/appartement) porte un champ `archive`
+  (booléen) : le frontend l'utilise uniquement pour masquer par défaut la
+  **ligne de détail** d'un appartement archivé (`ArchiveToggle`/
+  `ArchiveBadge`, même convention que Patrimoine/Locataires/Finances) —
+  masquer une ligne ne change **jamais** le total affiché au niveau
+  immeuble ou SCI au-dessus. Testé explicitement
+  (`tableau-de-bord.integration.spec.ts`, scénario "A102" : loyer perçu en
+  juin, appartement archivé en juillet, tableau de bord consulté après
+  coup — le graphique "Revenus locatifs" et la synthèse par immeuble
+  affichent désormais exactement le même total pour juin).
+- **Le taux d'occupation moyen d'un immeuble/SCI exclut un appartement
+  archivé AVANT le début de la période interrogée** — nuance distincte de
+  la règle sur le revenu ci-dessus, identifiée par financial-logic-reviewer
+  lors de la revue du fix précédent : le revenu est une **somme** (un
+  appartement hors périmètre y contribue naturellement 0 €, ce qui est
+  correct), mais le taux d'occupation est une **moyenne divisée par un
+  effectif**. Sans cette exclusion, un appartement archivé (vendu, démoli,
+  retiré du portefeuille) continuerait à compter dans le dénominateur pour
+  toute période future interrogée — où son occupation réelle est
+  nécessairement 0 % puisqu'aucun bail ne peut plus s'y rattacher — tirant
+  ainsi indéfiniment la moyenne de l'immeuble/SCI vers le bas alors que le
+  bien n'appartient plus au parc à cette date. Concrètement :
+  `appartement.archived_at` (converti en date, `YYYY-MM-DD`) comparé à
+  `periodeDebut` ; si antérieur, l'appartement est retiré du dénominateur
+  de la moyenne (immeuble et SCI) mais reste listé dans le détail par
+  appartement (`archive: true`, `tauxOccupation: 0`) — seul l'agrégat
+  change, jamais la liste. Un appartement archivé **pendant** la période
+  (comme le scénario "A102" ci-dessus) reste inclus dans le dénominateur :
+  son occupation réelle sur la partie de la période où il était encore
+  actif est correctement calculée par `calculerJoursOccupes`, ce n'est que
+  pour une période entièrement postérieure à l'archivage que l'exclusion
+  s'applique. Testé explicitement (`tableau-de-bord.integration.spec.ts`) :
+  un appartement témoin à 100 % d'occupation et un appartement archivé
+  avant la période donnent un taux d'immeuble de 100 %, pas 50 %.
 
 ## journal_audit
 Table transverse, append-only — capture toute création/modification/archivage

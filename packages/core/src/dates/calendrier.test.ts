@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ajouterJours, ajouterMois, estBissextile, joursDansLeMois } from "./calendrier";
+import { ajouterJours, ajouterMois, dateVersJourOrdinal, estBissextile, joursDansLeMois } from "./calendrier";
 
 describe("estBissextile", () => {
   it("2024 est bissextile (divisible par 4, pas par 100)", () => {
@@ -61,5 +61,26 @@ describe("ajouterMois", () => {
   });
   it("ajoute 0 mois : identité", () => {
     expect(ajouterMois("2026-06-15", 0)).toBe("2026-06-15");
+  });
+});
+
+describe("dateVersJourOrdinal", () => {
+  it("croît strictement d'un jour à l'autre", () => {
+    expect(dateVersJourOrdinal("2026-07-11")).toBe(dateVersJourOrdinal("2026-07-10") + 1);
+  });
+  it("est cohérent avec ajouterJours sur un franchissement de mois", () => {
+    const debut = "2026-07-28";
+    const fin = ajouterJours(debut, 10);
+    expect(dateVersJourOrdinal(fin) - dateVersJourOrdinal(debut)).toBe(10);
+  });
+  it("est cohérent avec ajouterJours sur un franchissement d'année bissextile", () => {
+    const debut = "2024-02-20";
+    const fin = ajouterJours(debut, 15);
+    expect(dateVersJourOrdinal(fin) - dateVersJourOrdinal(debut)).toBe(15);
+  });
+  it("est cohérent avec ajouterJours sur plusieurs années", () => {
+    const debut = "2023-01-01";
+    const fin = ajouterJours(debut, 800);
+    expect(dateVersJourOrdinal(fin) - dateVersJourOrdinal(debut)).toBe(800);
   });
 });

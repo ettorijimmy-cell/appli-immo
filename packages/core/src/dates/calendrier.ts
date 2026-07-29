@@ -18,9 +18,28 @@ export function formaterDateIso(annee: number, mois: number, jour: number): stri
   return `${annee.toString().padStart(4, "0")}-${mois.toString().padStart(2, "0")}-${jour.toString().padStart(2, "0")}`;
 }
 
-function decomposerDate(date: string): { annee: number; mois: number; jour: number } {
+export function decomposerDate(date: string): { annee: number; mois: number; jour: number } {
   const [anneeStr, moisStr, jourStr] = date.split("-");
   return { annee: Number(anneeStr), mois: Number(moisStr), jour: Number(jourStr) };
+}
+
+/**
+ * Numéro de jour ordinal (arithmétique pure, aucun `Date` natif) — jours
+ * écoulés depuis une origine arbitraire (l'an 1), croissant strictement
+ * avec la date. Ne sert jamais à afficher une date, uniquement à comparer
+ * ou soustraire deux dates ISO (ex. compter des jours occupés sur une
+ * période, Module 7).
+ */
+export function dateVersJourOrdinal(date: string): number {
+  const { annee, mois, jour } = decomposerDate(date);
+  let jours = jour - 1;
+  for (let m = 1; m < mois; m++) {
+    jours += joursDansLeMois(annee, m);
+  }
+  for (let a = 1; a < annee; a++) {
+    jours += estBissextile(a) ? 366 : 365;
+  }
+  return jours;
 }
 
 /**

@@ -299,6 +299,44 @@ un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
   courante restant la seule non chaînée par une version plus récente,
   jamais de suppression physique de l'ancienne (cohérent avec CLAUDE.md).
 
+- **Tableau de bord — dépenses réelles, rentabilité nette et comparaison
+  provisions/charges réelles impossibles** tant qu'aucun module de suivi
+  des charges/travaux n'existe (Modules 6/9 du cahier des charges initial,
+  jamais construits en MVP). Le Module 7 affiche donc un revenu **brut**
+  (aucune dépense déduite) et des "provisions collectées" sans comparaison
+  aux charges réelles, explicitement étiquetés comme tels pour ne pas
+  laisser croire à une rentabilité nette ou une régularisation qui
+  n'existent pas. À réévaluer une fois le futur module "Suivi des charges
+  et fiscalité" construit (voir section "Modules futurs" ci-dessous).
+
+- **Paiement réglé en plusieurs versements — non représentable tel quel**
+  (identifié lors de la conception du graphique "Revenus locatifs", Module
+  7 ; limite préexistante du modèle `paiements`, pas introduite par ce
+  module). Une ligne `paiements` ne porte qu'un seul couple
+  (`montant_paye`, `date_paiement`) — chaque appel à
+  `PaiementsService.enregistrer()` écrase la valeur précédente plutôt que
+  de l'additionner. Un règlement en deux versements sur des dates
+  différentes (ex. 400 € le 5, puis 400 € le 20 pour une échéance de
+  800 €) ne conserve que le dernier appel (`date_paiement=20`,
+  `montant_paye=800`) : tout graphique basé sur `date_paiement` attribue
+  alors la totalité à la dernière date, pas à la répartition réelle dans
+  le temps. Corriger nécessiterait une table d'historique des versements
+  (un paiement pouvant avoir plusieurs lignes de règlement), un
+  changement de modèle de données plus large qu'un module tableau de
+  bord — à concevoir séparément si le besoin se confirme.
+
+- **Checklist documentaire — non construite.** Prévue au cahier des
+  charges initial ("checklist documentaire", "indicateur visuel documents
+  manquants"), jamais implémentée : identifié en concevant la carte
+  "Documents expirés" du Module 7, qui n'affiche donc que les documents
+  expirés (statut déjà calculé), jamais "manquants" (aucune notion de
+  documents attendus par entité n'existe dans le modèle). Nécessite de
+  définir explicitement quelles catégories de documents sont attendues par
+  type d'entité (bail, appartement, locataire) et si elles sont
+  obligatoires ou simplement recommandées — mérite sa propre réflexion
+  avant développement, pas une règle improvisée dans un module tableau de
+  bord.
+
 ---
 
 ## Hors backlog MVP (rappel, voir docs/app-spec.md section 5)
@@ -306,3 +344,30 @@ un nom de locataire atteint sa fiche en une frappe + une touche Entrée.
 Charges, Révision INSEE, Travaux, IA, envoi automatique d'emails,
 connexion bancaire automatique — feront l'objet de backlogs dédiés au
 moment de leur développement, une fois le MVP livré.
+
+---
+
+## Modules futurs (post-MVP)
+
+### Suivi des charges et fiscalité (futur module)
+
+Objectif : suivi des dépenses par SCI, pour exploiter le régime fiscal
+(IS/IR) déjà en base (Module 1) — actuellement décoratif sans ce module.
+
+Portée envisagée :
+- Import CSV des dépenses, réutilisant le moteur de rapprochement du
+  Module 5 (`parserReleveCsv`, `proposerRapprochements`) plutôt qu'une
+  nouvelle intégration bancaire — la synchronisation automatique via
+  agrégateur DSP2 (Powens/Bridge) a été écartée en Phase 4 pour coût et
+  complexité ; à reconsidérer consciemment si besoin, pas par défaut.
+- Catégorisation : suggestion par règles simples (mots-clés sur libellé)
+  avec confirmation manuelle obligatoire — même principe que le
+  rapprochement des loyers, jamais d'application automatique silencieuse.
+- Pièce jointe par dépense, via le lien polymorphe déjà existant du
+  Module 4 (Documents).
+- Objectif final : dashboard recettes vs dépenses, rentabilité nette par
+  bien (actuellement affichés en revenu brut uniquement, Module 7).
+
+Ce module mérite sa propre phase de conception dédiée (comme les Phases
+1-12 initiales) avant d'être développé — pas à traiter comme un ticket
+parmi d'autres du backlog MVP.
