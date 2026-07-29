@@ -210,20 +210,23 @@ documentée, le module est considéré livré.
 s'il y a un impayé ou une échéance urgente, sans clic (parcours cible
 Phase 6).
 
-**Point à trancher explicitement à l'ouverture de ce module** : le Module 6
-a posé une vue minimale (`apps/desktop/src/renderer/src/alertes/
-AlertesListView.tsx`, montée sur `TableauDeBordPage.tsx`) — liste des
-alertes actives + traiter/ignorer + un bouton "Exécuter le job
-maintenant" (`POST /alertes/executer-job`) — uniquement pour satisfaire
-son propre critère de complétion ("action traiter une alerte" testable
-dans l'app) et permettre une vérification manuelle sans attendre le cron
-quotidien (1h du matin). **Ce n'est pas issu d'une conception Module 7** :
-à décider explicitement en démarrant ce module — garder le bouton
-(utilité réelle : forcer une vérification immédiate après une correction
-manuelle), le déplacer dans Paramètres/Diagnostics, ou le retirer au
-profit du seul cron automatique une fois le tableau de bord réel construit
-— pour ne jamais laisser deux façons différentes et non réconciliées
-d'interagir avec les alertes dans l'app.
+**Point laissé en suspens à l'ouverture de ce module, tranché après coup.**
+Le Module 6 avait posé une vue minimale
+(`apps/desktop/src/renderer/src/alertes/AlertesListView.tsx`, montée sur
+`TableauDeBordPage.tsx`) — liste des alertes actives + traiter/ignorer +
+un bouton "Exécuter le job maintenant" (`POST /alertes/executer-job`) —
+uniquement pour satisfaire son propre critère de complétion et permettre
+une vérification manuelle sans attendre le cron quotidien (1h du matin).
+Ce n'était pas issu d'une conception Module 7, et la décision "garder /
+déplacer / retirer" n'avait en réalité jamais été prise au moment de
+construire ce module (le bouton et son commentaire "à trancher" sont
+restés inchangés jusqu'à un audit de dette technique ultérieur). Tranché
+depuis : le bouton est déplacé dans Paramètres
+(`apps/desktop/src/renderer/src/alertes/ExecuterJobDiagnostic.tsx`),
+étiqueté explicitement comme outil de diagnostic manuel — pas une action
+courante de consultation du tableau de bord. La liste "Alertes actives"
+avec traiter/ignorer reste sur le tableau de bord : rien dans les cartes
+de synthèse du Module 7 (compteur seul, non interactif) ne la remplace.
 
 ---
 

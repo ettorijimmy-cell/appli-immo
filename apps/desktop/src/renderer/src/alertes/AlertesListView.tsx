@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { executerJobAlertes, ignorerAlerte, listAlertes, traiterAlerte, type Alerte, type AlerteType } from "./api";
+import { ignorerAlerte, listAlertes, traiterAlerte, type Alerte, type AlerteType } from "./api";
 
 const LABELS: Record<AlerteType, string> = {
   bail_fin_proche: "Fin de bail proche",
@@ -10,21 +10,18 @@ const LABELS: Record<AlerteType, string> = {
 };
 
 // Vue minimale pour ce module (docs/backlog.md, Module 6 : "action traiter
-// une alerte"). Une vraie présentation (tri, regroupement, accès rapides)
-// arrive avec le Module 7 — Tableau de bord.
+// une alerte"). Montée sur le Tableau de bord (Module 7) : la carte de
+// synthèse "Alertes actives" n'affiche qu'un compteur, jamais d'action —
+// cette liste reste le seul endroit où traiter/ignorer une alerte.
 //
-// Le bouton "Exécuter le job maintenant" N'EST PAS une conception Module 7 :
-// posé uniquement pour satisfaire le critère de complétion du Module 6 et
-// permettre une vérification manuelle sans attendre le cron quotidien
-// (1h du matin, voir AlertesJobService). À trancher explicitement à
-// l'ouverture du Module 7 (docs/backlog.md, section correspondante) — le
-// garder, le déplacer dans Paramètres/Diagnostics, ou le retirer au profit
-// du seul cron — pour ne pas laisser deux façons différentes d'interagir
-// avec les alertes dans l'app.
+// Le bouton "Exécuter le job maintenant", qui vivait ici, a été déplacé
+// dans Paramètres (ParametresPage.tsx, ExecuterJobDiagnostic.tsx) — décision
+// tranchée après avoir été laissée en suspens depuis le Module 6 (voir
+// docs/backlog.md, Module 6). Un déclenchement manuel du job n'est pas une
+// action courante de consultation du tableau de bord.
 export function AlertesListView(): React.JSX.Element {
   const [alertes, setAlertes] = useState<Alerte[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -53,33 +50,9 @@ export function AlertesListView(): React.JSX.Element {
     await refresh();
   }
 
-  async function handleExecuterJob(): Promise<void> {
-    setIsRunning(true);
-    try {
-      await executerJobAlertes();
-      await refresh();
-    } catch {
-      setError("Impossible d'exécuter le job");
-    } finally {
-      setIsRunning(false);
-    }
-  }
-
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">Alertes actives</h2>
-        <button
-          type="button"
-          onClick={() => {
-            void handleExecuterJob();
-          }}
-          disabled={isRunning}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {isRunning ? "Exécution…" : "Exécuter le job maintenant"}
-        </button>
-      </div>
+      <h2 className="text-sm font-semibold text-slate-700">Alertes actives</h2>
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
       ) : error ? (
