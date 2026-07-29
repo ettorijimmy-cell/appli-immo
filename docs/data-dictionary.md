@@ -334,6 +334,78 @@ la moitié a réellement été perçue le 5. Corriger ce point nécessiterait un
 table d'historique des versements, hors périmètre d'un module tableau de
 bord (voir `docs/backlog.md`, dette technique).
 
+## versements & remboursements — décisions de conception (chantier en cours)
+
+Corrige la limite ci-dessus (versements multiples non représentables) et
+modélise pour la première fois le remboursement (trop-perçu à la
+résiliation, dépôt de garantie) — absent jusqu'ici. Décisions tranchées
+avec l'utilisateur avant tout code :
+
+- **`versements`** (nouvelle table, liée à `paiements`) : un `paiement`
+  reste "ce qui est dû à une échéance", un `versement` devient "un
+  encaissement réel" — plusieurs par paiement, y compris plusieurs le même
+  jour. `montant_paye`/`mode`/`date_paiement`/`reference_rapprochement`
+  quittent `paiements` pour `versements` ; `paiements.statut` reste, mais
+  recalculé en sommant les versements actifs.
+- **`remboursements`** (nouvelle table générique, liée à `baux` et
+  optionnellement à `paiements`) : couvre à la fois le trop-perçu à la
+  résiliation et le remboursement du dépôt de garantie via un champ
+  `type`, plutôt que deux tables spécifiques. Jamais un `paiements.type`
+  négatif — un remboursement inverse le sens du flux (propriétaire →
+  locataire), une table à part rend cette direction structurellement
+  impossible à confondre avec un encaissement.
+- **Rapprochement CSV** (Module 5) : matche désormais sur le **solde
+  restant** d'un paiement (montant dû − versements actifs), pas son
+  montant total — un second versement partiel redevient proposable au
+  rapprochement. Ambiguïté (une ligne CSV correspond par coïncidence à
+  plusieurs critères de paiements différents) gérée par la règle déjà en
+  place, inchangée : tous les candidats sont présentés, jamais de choix
+  silencieux.
+- **Annulation d'un versement** : `annulerVersement(versementId)` cible un
+  versement précis (archivé directement sur la table `versements`, jamais
+  une action groupée qui en archive plusieurs sans identification
+  individuelle). Traçabilité déjà garantie par les colonnes d'audit du
+  row lui-même (`updated_at`/`updated_by`/`version` sur ce `versement`
+  précis) — `journal_audit` n'intervient pas ici : cette table est
+  réservée aux événements d'**accès** à une donnée sensible (déchiffrement
+  IBAN/BIC, action `acces`, voir `AuditService`), jamais à la trace
+  générale des créations/modifications/archivages des tables métier.
+- **Trop-perçu à la résiliation** : `resilier()` calcule et expose le
+  trop-perçu (`somme des versements actifs − nouveau montant proratisé`,
+  si positif), mais ne crée **jamais** de ligne `remboursements`
+  automatiquement — cohérent avec la règle "jamais d'automatisation
+  silencieuse" déjà appliquée au rapprochement et aux alertes. La création
+  du remboursement reste un acte humain explicite.
+- **Visibilité durable du trop-perçu, indépendante de tout archivage
+  ultérieur** — même principe que le correctif Module 7 sur les
+  revenus/le taux d'occupation (`docs/backlog.md`, "Les totaux
+  SCI/immeuble n'excluent jamais un appartement archivé depuis") :
+  l'indicateur "Remboursements en attente" (carte du tableau de bord,
+  calculée à la volée plutôt que stockée comme une alerte du Module 6) ne
+  filtre **jamais** par statut archivé de l'appartement, de l'immeuble ou
+  du bail concerné. Un trop-perçu réel reste une obligation financière
+  réelle même si le bien a été vendu, l'appartement archivé, ou le bail
+  lui-même archivé après sa résiliation — l'archivage d'une entité ne doit
+  jamais faire disparaître silencieusement une créance/dette financière
+  qui la concerne. L'indicateur ne disparaît que lorsqu'un `remboursement`
+  couvrant ce paiement existe réellement, jamais par effet de bord d'un
+  archivage sans rapport.
+- **Remboursements multiples sur un même dépôt de garantie** : autorisés
+  (partiel maintenant, reste plus tard), validés à la création — rejet
+  strict (`ConflictException`, sans exception) si
+  `somme(montant_rembourse) > montant reçu`.
+- **Migration en 3 phases (expand → migrate → contract)**, sans perte
+  d'historique : (1) nouvelle migration Drizzle ajoutant `versements`/
+  `remboursements` sans toucher aux colonnes existantes de `paiements` ;
+  script de backfill (pas une migration générée) créant un `versement`
+  par paiement déjà réglé (`montant_paye`→`montant`,
+  `date_paiement`→`date_versement`, `mode`, `reference_rapprochement`
+  repris tels quels), vérifié avant de continuer ; (2) bascule du code
+  listé ci-dessus vers `versements`/`remboursements` ; (3) nouvelle
+  migration supprimant `montant_paye`/`mode`/`date_paiement`/
+  `reference_rapprochement` de `paiements` une fois plus aucun code ne
+  les lisant/écrivant.
+
 ## alertes
 | Champ | Type | Description |
 |---|---|---|
