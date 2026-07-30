@@ -35,6 +35,10 @@ import { UsersModule } from "../users/users.module";
 import { DerniereSauvegardeService } from "./derniere-sauvegarde.service";
 import { TableauDeBordModule } from "./tableau-de-bord.module";
 import { TableauDeBordService } from "./tableau-de-bord.service";
+import { VersementsModule } from "../versements/versements.module";
+import { VersementsService } from "../versements/versements.service";
+import { RemboursementsModule } from "../remboursements/remboursements.module";
+import { RemboursementsService } from "../remboursements/remboursements.service";
 
 // Vérifie le critère de complétion du Module 7 (docs/backlog.md) : voir en
 // un coup d'œil s'il y a un impayé ou une échéance urgente, sans clic.
@@ -48,6 +52,8 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let paiementsService: PaiementsService;
+  let versementsService: VersementsService;
+  let remboursementsService: RemboursementsService;
   let tableauDeBordService: TableauDeBordService;
   let db: Database;
   let sciId: string;
@@ -70,6 +76,8 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         AppartementsModule,
         BauxModule,
         PaiementsModule,
+        VersementsModule,
+        RemboursementsModule,
         TableauDeBordModule
       ]
     })
@@ -82,6 +90,8 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     paiementsService = moduleRef.get(PaiementsService);
+    versementsService = moduleRef.get(VersementsService);
+    remboursementsService = moduleRef.get(RemboursementsService);
     tableauDeBordService = moduleRef.get(TableauDeBordService);
 
     const [organisation] = await db
@@ -281,10 +291,11 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         montant: "1000.00",
         dateEcheance: "2026-07-05"
       });
-      await paiementsService.enregistrer(paiementJuillet.id, {
-        montantPaye: "1000.00",
+      await versementsService.ajouter({
+        paiementId: paiementJuillet.id,
+        montant: "1000.00",
         mode: "virement",
-        datePaiement: "2026-07-05"
+        dateVersement: "2026-07-05"
       });
 
       const paiementAout = await paiementsService.create({
@@ -293,10 +304,11 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         montant: "1000.00",
         dateEcheance: "2026-08-05"
       });
-      await paiementsService.enregistrer(paiementAout.id, {
-        montantPaye: "1000.00",
+      await versementsService.ajouter({
+        paiementId: paiementAout.id,
+        montant: "1000.00",
         mode: "virement",
-        datePaiement: "2026-08-05"
+        dateVersement: "2026-08-05"
       });
 
       const apres = await tableauDeBordService.getRevenusLocatifs("2026-07-01", "2026-08-31");
@@ -347,10 +359,11 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         montant: "800.00",
         dateEcheance: "2026-01-05"
       });
-      await paiementsService.enregistrer(paiement.id, {
-        montantPaye: "800.00",
+      await versementsService.ajouter({
+        paiementId: paiement.id,
+        montant: "800.00",
         mode: "virement",
-        datePaiement: "2026-01-10"
+        dateVersement: "2026-01-10"
       });
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
@@ -439,10 +452,11 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         montant: "800.00",
         dateEcheance: "2026-06-05"
       });
-      await paiementsService.enregistrer(paiementJuin.id, {
-        montantPaye: "800.00",
+      await versementsService.ajouter({
+        paiementId: paiementJuin.id,
+        montant: "800.00",
         mode: "virement",
-        datePaiement: "2026-06-10"
+        dateVersement: "2026-06-10"
       });
 
       // Puis, APRÈS cet encaissement : le locataire part, le bail est
@@ -524,6 +538,146 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // (ni de la SCI).
       expect(immeuble.tauxOccupation).toBe(1);
       expect(sci.tauxOccupation).toBe(1);
+    });
+  });
+
+  describe("getRemboursementsEnAttente", () => {
+    it("signale un trop-perçu tant qu'aucun remboursement ne le couvre", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "40",
+        type: "T2",
+        loyerReference: "900.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+      const [echeanceEntree] = await paiementsService.findAll(bail.id);
+      if (!echeanceEntree) {
+        throw new Error("Échéance d'entrée introuvable");
+      }
+      // Échéance d'entrée réglée intégralement, puis résiliation le même
+      // mois (même mois calendaire) : 900 reçus pour 900/31*15 = ~435
+      // vraiment dus -> trop-perçu.
+      await versementsService.ajouter({
+        paiementId: echeanceEntree.id,
+        montant: "900.00",
+        mode: "virement",
+        dateVersement: "2026-08-01"
+      });
+      const resiliation = await bauxService.resilier(bail.id, { dateFin: "2026-08-15" });
+      expect(resiliation.tropPercu).not.toBeNull();
+
+      const enAttente = await tableauDeBordService.getRemboursementsEnAttente();
+      const pourCeBail = enAttente.find((r) => r.bailId === bail.id);
+      expect(pourCeBail).toBeDefined();
+      expect(pourCeBail?.montant).toBe(resiliation.tropPercu?.montant);
+    });
+
+    it("disparaît une fois qu'un remboursement couvre intégralement le trop-perçu", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "41",
+        type: "T2",
+        loyerReference: "900.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+      const [echeanceEntree] = await paiementsService.findAll(bail.id);
+      if (!echeanceEntree) {
+        throw new Error("Échéance d'entrée introuvable");
+      }
+      await versementsService.ajouter({
+        paiementId: echeanceEntree.id,
+        montant: "900.00",
+        mode: "virement",
+        dateVersement: "2026-08-01"
+      });
+      const resiliation = await bauxService.resilier(bail.id, { dateFin: "2026-08-15" });
+      if (!resiliation.tropPercu) {
+        throw new Error("Trop-perçu attendu pour ce scénario");
+      }
+
+      await remboursementsService.create({
+        bailId: bail.id,
+        paiementId: resiliation.tropPercu.paiementId,
+        type: "trop_percu",
+        montantOrigine: resiliation.tropPercu.montant,
+        montantRembourse: resiliation.tropPercu.montant,
+        dateRemboursement: "2026-09-01",
+        mode: "virement"
+      });
+
+      const enAttente = await tableauDeBordService.getRemboursementsEnAttente();
+      expect(enAttente.find((r) => r.bailId === bail.id)).toBeUndefined();
+    });
+
+    it("reste visible même si l'appartement est archivé après la résiliation (même principe que le fix Module 7)", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "42",
+        type: "T2",
+        loyerReference: "900.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+      const [echeanceEntree] = await paiementsService.findAll(bail.id);
+      if (!echeanceEntree) {
+        throw new Error("Échéance d'entrée introuvable");
+      }
+      await versementsService.ajouter({
+        paiementId: echeanceEntree.id,
+        montant: "900.00",
+        mode: "virement",
+        dateVersement: "2026-08-01"
+      });
+      await bauxService.resilier(bail.id, { dateFin: "2026-08-15" });
+
+      // Archivage APRÈS la résiliation : le trop-perçu doit rester visible.
+      await appartementsService.archive(appartement.id);
+      await bauxService.archive(bail.id);
+
+      const enAttente = await tableauDeBordService.getRemboursementsEnAttente();
+      expect(enAttente.find((r) => r.bailId === bail.id)).toBeDefined();
+    });
+
+    it("ne signale rien pour un bail résilié sans trop-perçu", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "43",
+        type: "T2",
+        loyerReference: "900.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+      // Aucun versement : rien n'a été reçu, donc aucun trop-perçu possible.
+      await bauxService.resilier(bail.id, { dateFin: "2026-08-15" });
+
+      const enAttente = await tableauDeBordService.getRemboursementsEnAttente();
+      expect(enAttente.find((r) => r.bailId === bail.id)).toBeUndefined();
     });
   });
 

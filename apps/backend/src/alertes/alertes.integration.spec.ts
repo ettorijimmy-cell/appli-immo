@@ -27,11 +27,12 @@ import { EquipementsModule } from "../equipements/equipements.module";
 import { ImmeublesModule } from "../immeubles/immeubles.module";
 import { ImmeublesService } from "../immeubles/immeubles.service";
 import { PaiementsModule } from "../paiements/paiements.module";
-import { PaiementsService } from "../paiements/paiements.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { VersementsModule } from "../versements/versements.module";
+import { VersementsService } from "../versements/versements.service";
 import { AlertesConfigService } from "./alertes-config.service";
 import { AlertesJobService } from "./alertes-job.service";
 import { AlertesModule } from "./alertes.module";
@@ -50,7 +51,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
   let immeublesService: ImmeublesService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
-  let paiementsService: PaiementsService;
+  let versementsService: VersementsService;
   let alertesJobService: AlertesJobService;
   let alertesService: AlertesService;
   let alertesConfigService: AlertesConfigService;
@@ -74,6 +75,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
         AppartementsModule,
         BauxModule,
         PaiementsModule,
+        VersementsModule,
         DocumentsModule,
         EquipementsModule,
         AlertesModule
@@ -87,7 +89,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
     immeublesService = moduleRef.get(ImmeublesService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
-    paiementsService = moduleRef.get(PaiementsService);
+    versementsService = moduleRef.get(VersementsService);
     alertesJobService = moduleRef.get(AlertesJobService);
     alertesService = moduleRef.get(AlertesService);
     alertesConfigService = moduleRef.get(AlertesConfigService);
@@ -325,7 +327,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       expect(pourCePaiement).toHaveLength(1);
     });
 
-    it("impaye : scénario bout-en-bout impaye -> payé -> impaye à nouveau (annulerEnregistrement), sans alerte fantôme ni doublon", async () => {
+    it("impaye : scénario bout-en-bout impaye -> payé -> impaye à nouveau (annulation du versement), sans alerte fantôme ni doublon", async () => {
       const bail = await bauxService.create({
         appartementId,
         typeBail: "vide",
@@ -358,10 +360,11 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       // Le paiement est réglé : le job suivant doit refermer l'alerte,
       // jamais la laisser active indéfiniment (le bug "fantôme" signalé
       // par financial-logic-reviewer).
-      await paiementsService.enregistrer(paiement.id, {
-        montantPaye: "800.00",
+      const versement = await versementsService.ajouter({
+        paiementId: paiement.id,
+        montant: "800.00",
         mode: "virement",
-        datePaiement: "2026-06-12"
+        dateVersement: "2026-06-12"
       });
       await alertesJobService.genererAlertes("2026-06-12");
       const fermee = (await alertesService.findAll({ type: "impaye" })).find((a) => a.entiteId === paiement.id);
@@ -369,8 +372,8 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       expect(fermee?.statut).toBe("resolue");
 
       // Rapprochement erroné détecté après coup : le paiement redevient
-      // impaye (PaiementsService.annulerEnregistrement()).
-      await paiementsService.annulerEnregistrement(paiement.id);
+      // impaye en annulant CE versement précis (VersementsService.annuler()).
+      await versementsService.annuler(versement.id);
       await alertesJobService.genererAlertes("2026-06-20");
 
       const toutes = (await alertesService.findAll({ type: "impaye" })).filter((a) => a.entiteId === paiement.id);

@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
+  calculerBornesMoisCalendaire,
   calculerJoursOccupes,
   calculerLoyerNetRecuEcheance,
+  calculerMontantEcheanceLoyer,
+  calculerMontantRecuTotal,
+  calculerProrataOccupationPartielle,
   calculerProvisionsRecuesEcheance,
   calculerStatutDocument,
   centimesVersMontant,
@@ -9,8 +13,19 @@ import {
   montantEnCentimes,
   type IntervalleOccupationBail
 } from "core";
-import { alertes, appartements, baux, documents, immeubles, paiements, scis, type Database } from "db";
-import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import {
+  alertes,
+  appartements,
+  baux,
+  documents,
+  immeubles,
+  paiements,
+  remboursements,
+  scis,
+  versements,
+  type Database
+} from "db";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, lte } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
 
 function dateDuJour(): string {
@@ -76,10 +91,24 @@ export class TableauDeBordService {
 
     const impayes = paiementsEnRetardOuAVenir.filter((p) => p.dateEcheance < dateReference);
     const aVenir = paiementsEnRetardOuAVenir.filter((p) => p.dateEcheance >= dateReference);
-    const montantRestantImpayesCentimes = impayes.reduce(
-      (total, p) => total + (montantEnCentimes(p.montant) - (p.montantPaye ? montantEnCentimes(p.montantPaye) : 0)),
-      0
-    );
+
+    const paiementIds = impayes.map((p) => p.id);
+    const versementsDesImpayes = paiementIds.length
+      ? await this.db
+          .select()
+          .from(versements)
+          .where(and(inArray(versements.paiementId, paiementIds), isNull(versements.archivedAt)))
+      : [];
+    const versementsParPaiement = new Map<string, typeof versementsDesImpayes>();
+    for (const versement of versementsDesImpayes) {
+      const liste = versementsParPaiement.get(versement.paiementId) ?? [];
+      liste.push(versement);
+      versementsParPaiement.set(versement.paiementId, liste);
+    }
+    const montantRestantImpayesCentimes = impayes.reduce((total, p) => {
+      const montantRecu = calculerMontantRecuTotal(versementsParPaiement.get(p.id) ?? []);
+      return total + (montantEnCentimes(p.montant) - montantEnCentimes(montantRecu));
+    }, 0);
 
     const tousLesDocuments = await this.db.select().from(documents).where(isNull(documents.archivedAt));
     const documentsExpires = tousLesDocuments.filter(
@@ -96,20 +125,34 @@ export class TableauDeBordService {
     };
   }
 
+  // Itère sur les VERSEMENTS (docs/data-dictionary.md, section "versements
+  // & remboursements"), jamais sur un unique paiement.montant_paye/
+  // date_paiement — chaque versement est attribué au mois de sa PROPRE
+  // date_versement. Corrige en effet de bord la limite documentée "paiement
+  // en plusieurs versements non représentable" (docs/backlog.md, dette
+  // technique) : un versement du 5 et un second du 20 comptent désormais
+  // chacun dans le bon mois, jamais tous les deux attribués au dernier.
   async getRevenusLocatifs(periodeDebut: string, periodeFin: string) {
-    const paiementsPeriode = await this.db
-      .select()
-      .from(paiements)
+    const versementsPeriode = await this.db
+      .select({
+        id: versements.id,
+        montant: versements.montant,
+        dateVersement: versements.dateVersement,
+        bailId: paiements.bailId
+      })
+      .from(versements)
+      .innerJoin(paiements, eq(versements.paiementId, paiements.id))
       .where(
         and(
           eq(paiements.type, "loyer"),
-          gte(paiements.datePaiement, periodeDebut),
-          lte(paiements.datePaiement, periodeFin),
+          gte(versements.dateVersement, periodeDebut),
+          lte(versements.dateVersement, periodeFin),
+          isNull(versements.archivedAt),
           isNull(paiements.archivedAt)
         )
       );
 
-    const bailIds = [...new Set(paiementsPeriode.map((p) => p.bailId))];
+    const bailIds = [...new Set(versementsPeriode.map((v) => v.bailId))];
     const bauxConcernes = bailIds.length
       ? await this.db.select().from(baux).where(inArray(baux.id, bailIds))
       : [];
@@ -120,31 +163,30 @@ export class TableauDeBordService {
       parMoisCentimes.set(mois, { loyerNet: 0, provisions: 0 });
     }
 
-    for (const paiement of paiementsPeriode) {
-      const bail = bauxParId.get(paiement.bailId);
-      // montant_paye est toujours renseigné dès lors que date_paiement
-      // l'est (PaiementsService.enregistrer() pose les deux ensemble), et
-      // bail_id est une FK NOT NULL (packages/db/src/schema/paiements.ts) —
-      // ce garde-fou ne devrait donc jamais se déclencher en usage normal.
-      // Averti plutôt que silencieux : si une évolution future (migration,
-      // insertion manuelle) le rend atteignable, un paiement disparaîtrait
-      // sinon d'un total financier sans aucune trace.
-      if (!bail || !paiement.montantPaye || !bail.loyerMensuel || !paiement.datePaiement) {
+    for (const versement of versementsPeriode) {
+      const bail = bauxParId.get(versement.bailId);
+      // bail_id est une FK NOT NULL (paiements), et un versement porte
+      // toujours montant/date_versement (colonnes NOT NULL, versements.ts)
+      // — ce garde-fou ne devrait donc jamais se déclencher en usage
+      // normal. Averti plutôt que silencieux : si une évolution future
+      // (migration, insertion manuelle) le rend atteignable, un versement
+      // disparaîtrait sinon d'un total financier sans aucune trace.
+      if (!bail || !bail.loyerMensuel) {
         this.logger.warn(
-          `Paiement ${paiement.id} exclu du calcul des revenus locatifs (bail introuvable ou données incomplètes) — vérifier l'intégrité des données.`
+          `Versement ${versement.id} exclu du calcul des revenus locatifs (bail introuvable ou loyer non renseigné) — vérifier l'intégrité des données.`
         );
         continue;
       }
-      const mois = paiement.datePaiement.slice(0, 7);
+      const mois = versement.dateVersement.slice(0, 7);
       const cumul = parMoisCentimes.get(mois);
       if (!cumul) {
         continue;
       }
       cumul.loyerNet += montantEnCentimes(
-        calculerLoyerNetRecuEcheance(paiement.montantPaye, bail.loyerMensuel, bail.provisionsCharges)
+        calculerLoyerNetRecuEcheance(versement.montant, bail.loyerMensuel, bail.provisionsCharges)
       );
       cumul.provisions += montantEnCentimes(
-        calculerProvisionsRecuesEcheance(paiement.montantPaye, bail.loyerMensuel, bail.provisionsCharges)
+        calculerProvisionsRecuesEcheance(versement.montant, bail.loyerMensuel, bail.provisionsCharges)
       );
     }
 
@@ -166,6 +208,78 @@ export class TableauDeBordService {
     };
   }
 
+  // Carte "Remboursements en attente" (docs/data-dictionary.md, section
+  // "versements & remboursements") : calculée à la volée, jamais stockée —
+  // BauxService.resilier() ne fait qu'exposer le trop-perçu au moment de
+  // la résiliation (décision D3, jamais écrit en base), donc ce calcul
+  // doit être reproduit ici pour rester visible tant qu'aucun remboursement
+  // ne le couvre. Ne filtre JAMAIS par statut archivé de l'appartement, de
+  // l'immeuble ou du bail concerné (même principe que le correctif Module 7
+  // sur les revenus/le taux d'occupation) : un trop-perçu réel reste une
+  // obligation financière réelle même après un archivage ultérieur.
+  async getRemboursementsEnAttente() {
+    const bauxResilies = await this.db.select().from(baux).where(isNotNull(baux.dateFin));
+    const resultats: Array<{ bailId: string; paiementId: string; montant: string }> = [];
+
+    for (const bail of bauxResilies) {
+      if (!bail.loyerMensuel || !bail.dateFin) {
+        continue;
+      }
+
+      const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(bail.dateFin);
+      const [echeanceDuMois] = await this.db
+        .select()
+        .from(paiements)
+        .where(
+          and(
+            eq(paiements.bailId, bail.id),
+            eq(paiements.type, "loyer"),
+            isNull(paiements.archivedAt),
+            gte(paiements.dateEcheance, debutMoisInclus),
+            lt(paiements.dateEcheance, debutMoisSuivantExclusif)
+          )
+        )
+        .limit(1);
+      if (!echeanceDuMois) {
+        continue;
+      }
+
+      const versementsActifs = await this.db
+        .select()
+        .from(versements)
+        .where(and(eq(versements.paiementId, echeanceDuMois.id), isNull(versements.archivedAt)));
+      const montantRecu = calculerMontantRecuTotal(versementsActifs);
+
+      const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
+      const montantProratise = calculerProrataOccupationPartielle(montantPlein, bail.dateFin, bail.dateDebut);
+
+      const centimesTropPercu = montantEnCentimes(montantRecu) - montantEnCentimes(montantProratise);
+      if (centimesTropPercu <= 0) {
+        continue;
+      }
+
+      const remboursementsExistants = await this.db
+        .select()
+        .from(remboursements)
+        .where(and(eq(remboursements.paiementId, echeanceDuMois.id), isNull(remboursements.archivedAt)));
+      const centimesDejaRembourses = remboursementsExistants.reduce(
+        (total, r) => total + montantEnCentimes(r.montantRembourse),
+        0
+      );
+      if (centimesDejaRembourses >= centimesTropPercu) {
+        continue;
+      }
+
+      resultats.push({
+        bailId: bail.id,
+        paiementId: echeanceDuMois.id,
+        montant: centimesVersMontant(centimesTropPercu - centimesDejaRembourses)
+      });
+    }
+
+    return resultats;
+  }
+
   async getSynthese(periodeDebut: string, periodeFin: string) {
     // Volontairement AUCUN filtre archivedAt sur scis/immeubles/appartements
     // ici : le revenu perçu sur la période est un fait historique, jamais
@@ -176,19 +290,21 @@ export class TableauDeBordService {
     // Le statut archivé est renvoyé (`archive: boolean`) pour permettre au
     // frontend de masquer la LIGNE de détail par défaut (ArchiveToggle,
     // comme ailleurs dans l'app), sans jamais faire varier les totaux.
-    const [tousLesScis, tousLesImmeubles, tousLesAppartements, tousLesBaux, paiementsPeriode] = await Promise.all([
+    const [tousLesScis, tousLesImmeubles, tousLesAppartements, tousLesBaux, versementsPeriode] = await Promise.all([
       this.db.select().from(scis),
       this.db.select().from(immeubles),
       this.db.select().from(appartements),
       this.db.select().from(baux),
       this.db
-        .select()
-        .from(paiements)
+        .select({ id: versements.id, montant: versements.montant, bailId: paiements.bailId })
+        .from(versements)
+        .innerJoin(paiements, eq(versements.paiementId, paiements.id))
         .where(
           and(
             eq(paiements.type, "loyer"),
-            gte(paiements.datePaiement, periodeDebut),
-            lte(paiements.datePaiement, periodeFin),
+            gte(versements.dateVersement, periodeDebut),
+            lte(versements.dateVersement, periodeFin),
+            isNull(versements.archivedAt),
             isNull(paiements.archivedAt)
           )
         )
@@ -197,16 +313,16 @@ export class TableauDeBordService {
     const bauxParId = new Map(tousLesBaux.map((b) => [b.id, b]));
 
     const revenuNetCentimesParAppartement = new Map<string, number>();
-    for (const paiement of paiementsPeriode) {
-      const bail = bauxParId.get(paiement.bailId);
-      if (!bail || !paiement.montantPaye || !bail.loyerMensuel) {
+    for (const versement of versementsPeriode) {
+      const bail = bauxParId.get(versement.bailId);
+      if (!bail || !bail.loyerMensuel) {
         this.logger.warn(
-          `Paiement ${paiement.id} exclu de la synthèse par appartement (bail introuvable ou données incomplètes) — vérifier l'intégrité des données.`
+          `Versement ${versement.id} exclu de la synthèse par appartement (bail introuvable ou loyer non renseigné) — vérifier l'intégrité des données.`
         );
         continue;
       }
       const revenuNet = montantEnCentimes(
-        calculerLoyerNetRecuEcheance(paiement.montantPaye, bail.loyerMensuel, bail.provisionsCharges)
+        calculerLoyerNetRecuEcheance(versement.montant, bail.loyerMensuel, bail.provisionsCharges)
       );
       revenuNetCentimesParAppartement.set(
         bail.appartementId,

@@ -3,14 +3,16 @@ import {
   calculerBornesMoisCalendaire,
   calculerMontantEcheanceEntree,
   calculerMontantEcheanceLoyer,
+  calculerMontantRecuTotal,
   calculerProrataOccupationPartielle,
   calculerStatutAppartementApresResiliation,
   calculerStatutPaiement,
+  centimesVersMontant,
   montantEnCentimes,
   peutActiverBail,
   preremplirLoyerBail
 } from "core";
-import { appartements, baux, mettreAJourAvecAudit, paiements, type Database } from "db";
+import { appartements, baux, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -287,6 +289,11 @@ export class BauxService {
         utilisateurId
       );
 
+      // Exposé dans la réponse si un trop-perçu est détecté ci-dessous
+      // (Cas A uniquement) — jamais écrit en base ici (docs/data-dictionary.md,
+      // section "versements & remboursements").
+      let tropPercu: { paiementId: string; montant: string } | null = null;
+
       // Prorata de l'échéance de loyer du mois de résiliation
       // (docs/data-dictionary.md, "Décision produit — prorata à la
       // résiliation"). Rien à proratiser sans date de fin explicite
@@ -325,9 +332,21 @@ export class BauxService {
         const montantProratise = calculerProrataOccupationPartielle(montantPlein, dto.dateFin, bail.dateDebut);
 
         if (echeanceDuMois) {
-          // Cas A : une échéance couvre déjà ce mois. Uniquement si elle
-          // n'est pas déjà réglée intégralement, sinon on n'y touche pas
-          // (trop-perçu non traité, voir docs/backlog.md, dette technique).
+          // Cas A : une échéance couvre déjà ce mois. Le statut est
+          // toujours recalculé depuis les versements ACTIFS (docs/data-
+          // dictionary.md, section "versements & remboursements"), jamais
+          // depuis un unique montant_paye.
+          const versementsActifs = await tx
+            .select()
+            .from(versements)
+            .where(and(eq(versements.paiementId, echeanceDuMois.id), isNull(versements.archivedAt)));
+          const montantRecu = calculerMontantRecuTotal(versementsActifs);
+
+          // Le champ `montant` en base n'est mis à jour que si l'échéance
+          // n'est pas déjà réglée intégralement (trop-perçu non traité par
+          // CE chemin précis — voir juste après — docs/backlog.md, dette
+          // technique) : sinon, le montant stocké reste sciemment
+          // inchangé.
           if (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel") {
             await mettreAJourAvecAudit(
               tx,
@@ -335,14 +354,32 @@ export class BauxService {
               echeanceDuMois.id,
               {
                 montant: montantProratise,
-                statut: calculerStatutPaiement(montantProratise, echeanceDuMois.montantPaye)
+                statut: calculerStatutPaiement(montantProratise, montantRecu)
               },
               utilisateurId
             );
           }
+
+          // Trop-perçu (docs/data-dictionary.md, docs/backlog.md, dette
+          // technique) : toujours comparé au montant VRAIMENT dû
+          // (montantProratise), que le champ stocké ait été mis à jour ou
+          // non ci-dessus — les deux scénarios documentés du trop-perçu
+          // (échéance déjà payée intégralement, ou partiel dépassant le
+          // nouveau prorata) sont ainsi détectés de la même façon. Signalé
+          // seulement, jamais créé automatiquement en `remboursements` —
+          // un acte humain explicite reste requis
+          // (RemboursementsService.create()), cohérent avec la règle
+          // "jamais d'automatisation silencieuse" déjà appliquée au
+          // rapprochement et aux alertes.
+          const centimesTropPercu = montantEnCentimes(montantRecu) - montantEnCentimes(montantProratise);
+          if (centimesTropPercu > 0) {
+            tropPercu = { paiementId: echeanceDuMois.id, montant: centimesVersMontant(centimesTropPercu) };
+          }
         } else {
           // Cas B : aucune échéance ne couvre ce mois — ne jamais laisser
           // une période d'occupation sans ligne de paiement correspondante.
+          // Jamais de trop-perçu possible ici : une échéance nouvellement
+          // créée n'a par construction aucun versement préexistant.
           if (montantEnCentimes(montantProratise) > 0) {
             await tx.insert(paiements).values({
               bailId: id,
@@ -354,7 +391,7 @@ export class BauxService {
         }
       }
 
-      return bailResilie;
+      return { ...bailResilie, tropPercu };
     });
   }
 

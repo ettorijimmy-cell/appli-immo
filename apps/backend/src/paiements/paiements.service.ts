@@ -1,17 +1,19 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  calculerMontantRecuTotal,
   calculerStatutPaiement,
+  centimesVersMontant,
+  montantEnCentimes,
   parserReleveCsv,
   proposerRapprochements,
   type LigneReleveCsvAvecId,
   type PaiementARapprocher
 } from "core";
-import { bailLocataires, locataires, mettreAJourAvecAudit, paiements, type Database } from "db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { bailLocataires, locataires, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreatePaiementDto } from "./dto/create-paiement.dto";
-import type { EnregistrerPaiementDto } from "./dto/enregistrer-paiement.dto";
 import type { RapprocherCsvDto } from "./dto/rapprocher-csv.dto";
 import type { UpdatePaiementDto } from "./dto/update-paiement.dto";
 
@@ -50,9 +52,9 @@ export class PaiementsService {
     return paiement ?? null;
   }
 
-  // Ne touche jamais à montant_paye/mode/date_paiement/reference_rapprochement
-  // (voir UpdatePaiementDto), mais si `montant` change, le statut doit être
-  // recalculé contre le montant déjà reçu — jamais laissé périmé.
+  // Ne touche jamais aux versements (voir VersementsService), mais si
+  // `montant` (dû) change, le statut doit être recalculé contre le montant
+  // déjà reçu — jamais laissé périmé.
   async update(id: string, dto: UpdatePaiementDto) {
     const [existant] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
     if (!existant) {
@@ -60,7 +62,12 @@ export class PaiementsService {
     }
 
     const nouveauMontant = dto.montant ?? existant.montant;
-    const statutRecalcule = calculerStatutPaiement(nouveauMontant, existant.montantPaye);
+    const versementsActifs = await this.db
+      .select()
+      .from(versements)
+      .where(and(eq(versements.paiementId, id), isNull(versements.archivedAt)));
+    const montantRecu = calculerMontantRecuTotal(versementsActifs);
+    const statutRecalcule = calculerStatutPaiement(nouveauMontant, montantRecu);
 
     const [paiement] = await mettreAJourAvecAudit(
       this.db,
@@ -80,79 +87,42 @@ export class PaiementsService {
     return paiement;
   }
 
-  // Seule voie d'écriture pour montant_paye/mode/date_paiement/
-  // reference_rapprochement — utilisée aussi bien pour l'enregistrement
-  // manuel en ligne (Finances) que pour la confirmation d'un rapprochement
-  // CSV (le frontend fournit alors referenceRapprochement = libellé de la
-  // ligne retenue). Le statut est toujours recalculé ici, jamais saisi.
-  async enregistrer(id: string, dto: EnregistrerPaiementDto) {
-    const [existant] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
-    if (!existant) {
-      throw new NotFoundException("Paiement introuvable");
-    }
-
-    const statut = calculerStatutPaiement(existant.montant, dto.montantPaye);
-
-    const [paiement] = await mettreAJourAvecAudit(
-      this.db,
-      paiements,
-      id,
-      {
-        montantPaye: dto.montantPaye,
-        mode: dto.mode,
-        datePaiement: dto.datePaiement,
-        referenceRapprochement: dto.referenceRapprochement ?? null,
-        statut
-      },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!paiement) {
-      throw new NotFoundException("Paiement introuvable");
-    }
-    return paiement;
-  }
-
-  // Corrige un rapprochement incorrect (docs/backlog.md, critère de
-  // complétion du Module 5) : remet le paiement à impaye pour permettre un
-  // nouvel enregistrement avec les bonnes données.
-  async annulerEnregistrement(id: string) {
-    const [paiement] = await mettreAJourAvecAudit(
-      this.db,
-      paiements,
-      id,
-      {
-        montantPaye: null,
-        mode: null,
-        datePaiement: null,
-        referenceRapprochement: null,
-        statut: "impaye"
-      },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!paiement) {
-      throw new NotFoundException("Paiement introuvable");
-    }
-    return paiement;
-  }
-
+  // Cascade vers les versements actifs (docs/data-dictionary.md) : un
+  // paiement archivé ne doit jamais laisser des versements "actifs"
+  // visibles ailleurs, sans jamais les supprimer physiquement.
   async archive(id: string) {
-    const [paiement] = await mettreAJourAvecAudit(
-      this.db,
-      paiements,
-      id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!paiement) {
-      throw new NotFoundException("Paiement introuvable");
-    }
-    return paiement;
+    return this.db.transaction(async (tx) => {
+      const utilisateurId = this.requestContext.getUtilisateurId();
+
+      await tx
+        .update(versements)
+        .set({
+          archivedAt: new Date(),
+          updatedAt: new Date(),
+          updatedBy: utilisateurId,
+          version: sql`${versements.version} + 1`
+        })
+        .where(and(eq(versements.paiementId, id), isNull(versements.archivedAt)));
+
+      const [paiement] = await mettreAJourAvecAudit(
+        tx,
+        paiements,
+        id,
+        { archivedAt: new Date() },
+        utilisateurId
+      );
+      if (!paiement) {
+        throw new NotFoundException("Paiement introuvable");
+      }
+      return paiement;
+    });
   }
 
   // Ne fait QUE proposer (packages/core, proposerRapprochements) — aucune
-  // écriture. La confirmation d'un candidat passe par enregistrer(), un
-  // acte explicite distinct (voir docs/data-dictionary.md, section
-  // paiements, pour la décision produit sur ce point).
+  // écriture. La confirmation d'un candidat ajoute un versement
+  // (VersementsService.ajouter), un acte explicite distinct (voir
+  // docs/data-dictionary.md, section paiements, pour la décision produit
+  // sur ce point).
   async rapprocherCsv(dto: RapprocherCsvDto) {
     const lignesBrutes = parserReleveCsv(dto.contenuCsv);
     const lignes: LigneReleveCsvAvecId[] = lignesBrutes.map((ligne, index) => ({
@@ -168,12 +138,38 @@ export class PaiementsService {
     const bailIds = [...new Set(paiementsCandidats.map((paiement) => paiement.bailId))];
     const nomsParBail = await this.recupererNomsLocatairesParBail(bailIds);
 
-    const paiementsARapprocher: PaiementARapprocher[] = paiementsCandidats.map((paiement) => ({
-      id: paiement.id,
-      montant: paiement.montant,
-      dateEcheance: paiement.dateEcheance,
-      nomsLocataires: nomsParBail.get(paiement.bailId) ?? []
-    }));
+    // Matche sur le SOLDE RESTANT (montant dû - versements actifs), pas le
+    // montant total dû : un paiement déjà partiellement réglé redevient
+    // proposable au rapprochement pour son solde (docs/data-dictionary.md,
+    // section "versements & remboursements"). L'ambiguïté (une ligne CSV
+    // correspond par coïncidence à plusieurs critères de paiements
+    // différents) reste gérée par la règle déjà en place dans
+    // proposerRapprochements, inchangée : tous les candidats sont
+    // présentés, jamais de choix silencieux.
+    const paiementIds = paiementsCandidats.map((paiement) => paiement.id);
+    const versementsDesCandidats = paiementIds.length
+      ? await this.db
+          .select()
+          .from(versements)
+          .where(and(inArray(versements.paiementId, paiementIds), isNull(versements.archivedAt)))
+      : [];
+    const versementsParPaiement = new Map<string, typeof versementsDesCandidats>();
+    for (const versement of versementsDesCandidats) {
+      const liste = versementsParPaiement.get(versement.paiementId) ?? [];
+      liste.push(versement);
+      versementsParPaiement.set(versement.paiementId, liste);
+    }
+
+    const paiementsARapprocher: PaiementARapprocher[] = paiementsCandidats.map((paiement) => {
+      const montantRecu = calculerMontantRecuTotal(versementsParPaiement.get(paiement.id) ?? []);
+      const soldeRestant = centimesVersMontant(montantEnCentimes(paiement.montant) - montantEnCentimes(montantRecu));
+      return {
+        id: paiement.id,
+        montant: soldeRestant,
+        dateEcheance: paiement.dateEcheance,
+        nomsLocataires: nomsParBail.get(paiement.bailId) ?? []
+      };
+    });
 
     const propositions = proposerRapprochements(lignes, paiementsARapprocher);
 

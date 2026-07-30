@@ -17,8 +17,10 @@ import { GarantsModule } from "./garants/garants.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { LocatairesModule } from "./locataires/locataires.module";
 import { PaiementsModule } from "./paiements/paiements.module";
+import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
 import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
+import { VersementsModule } from "./versements/versements.module";
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
     GarantsModule,
     BailLocatairesModule,
     PaiementsModule,
+    VersementsModule,
+    RemboursementsModule,
     DocumentsModule,
     AlertesModule,
     TableauDeBordModule

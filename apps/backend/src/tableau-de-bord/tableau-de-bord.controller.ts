@@ -36,4 +36,9 @@ export class TableauDeBordController {
   getSynthese(@Query() query: PeriodeQueryDto) {
     return this.tableauDeBordService.getSynthese(query.debut, query.fin);
   }
+
+  @Get("remboursements-en-attente")
+  getRemboursementsEnAttente() {
+    return this.tableauDeBordService.getRemboursementsEnAttente();
+  }
 }

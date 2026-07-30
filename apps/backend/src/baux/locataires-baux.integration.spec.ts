@@ -12,6 +12,7 @@ import {
   organisations,
   paiements,
   utilisateurs,
+  versements,
   type Database
 } from "db";
 import { and, eq } from "drizzle-orm";
@@ -619,6 +620,103 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       // Trop-perçu non traité automatiquement (docs/backlog.md, dette
       // technique) : le montant réglé n'est jamais rétroactivement réduit.
       expect(echeanceApresResiliation?.montant).toBe("900.00");
+      expect(echeanceApresResiliation?.statut).toBe("paye");
+    });
+
+    // Les deux scénarios de trop-perçu documentés (docs/backlog.md,
+    // Financier #1) : signalé dans la réponse de resilier(), jamais créé
+    // automatiquement en `remboursements` (décision D3, docs/data-
+    // dictionary.md) — la création reste un acte humain explicite.
+    it("signale un trop-perçu quand l'échéance du mois de résiliation était déjà réglée intégralement", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      const [echeanceSeptembre] = await db
+        .insert(paiements)
+        .values({
+          bailId: bail.id,
+          type: "loyer",
+          montant: "900.00",
+          statut: "paye",
+          dateEcheance: "2026-09-01"
+        })
+        .returning();
+      if (!echeanceSeptembre) {
+        throw new Error("Échec de l'insertion de l'échéance de test");
+      }
+      await db.insert(versements).values({
+        paiementId: echeanceSeptembre.id,
+        montant: "900.00",
+        dateVersement: "2026-09-05",
+        mode: "virement"
+      });
+
+      const resultat = await bauxService.resilier(bail.id, { dateFin: "2026-09-15" });
+
+      // Septembre = 30 jours, 15 jours occupés : 900/30*15 = 450 vraiment
+      // dus, mais 900 déjà reçus -> 450 de trop-perçu.
+      expect(resultat.tropPercu).toEqual({ paiementId: echeanceSeptembre.id, montant: "450.00" });
+
+      // Le montant stocké reste inchangé (échéance "paye", jamais touchée
+      // automatiquement — comportement inchangé, voir test précédent).
+      const [echeanceApresResiliation] = await db
+        .select()
+        .from(paiements)
+        .where(eq(paiements.id, echeanceSeptembre.id));
+      expect(echeanceApresResiliation?.montant).toBe("900.00");
+      expect(echeanceApresResiliation?.statut).toBe("paye");
+    });
+
+    it("signale un trop-perçu quand un versement partiel dépasse le nouveau montant proratisé", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      const [echeanceSeptembre] = await db
+        .insert(paiements)
+        .values({
+          bailId: bail.id,
+          type: "loyer",
+          montant: "900.00",
+          statut: "partiel",
+          dateEcheance: "2026-09-01"
+        })
+        .returning();
+      if (!echeanceSeptembre) {
+        throw new Error("Échec de l'insertion de l'échéance de test");
+      }
+      // 700 € versés : moins que les 900 pleins, mais plus que les 450
+      // vraiment dus après le prorata de résiliation.
+      await db.insert(versements).values({
+        paiementId: echeanceSeptembre.id,
+        montant: "700.00",
+        dateVersement: "2026-09-05",
+        mode: "virement"
+      });
+
+      const resultat = await bauxService.resilier(bail.id, { dateFin: "2026-09-15" });
+
+      expect(resultat.tropPercu).toEqual({ paiementId: echeanceSeptembre.id, montant: "250.00" });
+
+      // Cette échéance N'ÉTAIT PAS "paye" avant résiliation (elle était
+      // "partiel") : le montant est bien reproratisé à 450, et le statut
+      // recalculé passe à "paye" (700 reçus >= 450 dus).
+      const [echeanceApresResiliation] = await db
+        .select()
+        .from(paiements)
+        .where(eq(paiements.id, echeanceSeptembre.id));
+      expect(echeanceApresResiliation?.montant).toBe("450.00");
       expect(echeanceApresResiliation?.statut).toBe("paye");
     });
 

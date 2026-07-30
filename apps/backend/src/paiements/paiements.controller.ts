@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreatePaiementDto } from "./dto/create-paiement.dto";
-import { EnregistrerPaiementDto } from "./dto/enregistrer-paiement.dto";
 import { RapprocherCsvDto } from "./dto/rapprocher-csv.dto";
 import { UpdatePaiementDto } from "./dto/update-paiement.dto";
 import { PaiementsService } from "./paiements.service";
@@ -34,16 +33,6 @@ export class PaiementsController {
   @Patch(":id")
   update(@Param("id") id: string, @Body() dto: UpdatePaiementDto) {
     return this.paiementsService.update(id, dto);
-  }
-
-  @Patch(":id/enregistrer")
-  enregistrer(@Param("id") id: string, @Body() dto: EnregistrerPaiementDto) {
-    return this.paiementsService.enregistrer(id, dto);
-  }
-
-  @Patch(":id/annuler-enregistrement")
-  annulerEnregistrement(@Param("id") id: string) {
-    return this.paiementsService.annulerEnregistrement(id);
   }
 
   @Patch(":id/archiver")
