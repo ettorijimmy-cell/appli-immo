@@ -1,7 +1,7 @@
 import { normaliserMontant } from "core";
 import { useState, type ChangeEvent } from "react";
 import { chargerContexteBail, creerCachesContexteBail } from "./contexte-bail";
-import { enregistrerPaiement, rapprocherCsv, type RapprocherCsvResult } from "./api";
+import { ajouterVersement, rapprocherCsv, type RapprocherCsvResult } from "./api";
 
 export function RapprochementCsvView(): React.JSX.Element {
   const [contenuFichier, setContenuFichier] = useState("");
@@ -59,11 +59,14 @@ export function RapprochementCsvView(): React.JSX.Element {
     // Le CSV importé peut porter une virgule décimale (format bancaire
     // français) — normaliserMontant (packages/core) est la même fonction
     // que celle appliquée côté DTO backend (défense en profondeur, pas une
-    // seconde interprétation du format).
-    await enregistrerPaiement(paiementId, {
-      montantPaye: normaliserMontant(ligne.montant),
+    // seconde interprétation du format). Confirmer un rapprochement AJOUTE
+    // un versement (docs/data-dictionary.md), jamais n'écrase les
+    // précédents.
+    await ajouterVersement({
+      paiementId,
+      montant: normaliserMontant(ligne.montant),
       mode: "virement",
-      datePaiement: ligne.date,
+      dateVersement: ligne.date,
       referenceRapprochement: ligne.libelle
     });
     setConfirmesParLigne((precedent) => new Set(precedent).add(ligneId));

@@ -149,8 +149,17 @@ export function activerBail(id: string): Promise<Bail> {
   return authenticatedFetch<Bail>(`/baux/${id}/activer`, { method: "PATCH" });
 }
 
-export function resilierBail(id: string, dateFin?: string): Promise<Bail> {
-  return authenticatedFetch<Bail>(`/baux/${id}/resilier`, {
+export interface TropPercu {
+  paiementId: string;
+  montant: string;
+}
+
+// Trop-perçu signalé (jamais écrit en base ici, docs/data-dictionary.md,
+// section "versements & remboursements") : reste visible durablement sur
+// le Tableau de bord ("Remboursements en attente") tant qu'aucun
+// remboursement ne le couvre — pas seulement au moment de cet appel.
+export function resilierBail(id: string, dateFin?: string): Promise<Bail & { tropPercu: TropPercu | null }> {
+  return authenticatedFetch<Bail & { tropPercu: TropPercu | null }>(`/baux/${id}/resilier`, {
     method: "PATCH",
     body: JSON.stringify(dateFin ? { dateFin } : {})
   });

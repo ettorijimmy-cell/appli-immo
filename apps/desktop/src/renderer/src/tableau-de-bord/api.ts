@@ -75,3 +75,17 @@ export function getSynthese(debut: string, fin: string): Promise<SyntheseSci[]> 
 export function getDerniereSauvegarde(): Promise<{ dateIso: string | null }> {
   return authenticatedFetch<{ dateIso: string | null }>("/tableau-de-bord/derniere-sauvegarde");
 }
+
+export interface RemboursementEnAttente {
+  bailId: string;
+  paiementId: string;
+  montant: string;
+}
+
+// Calculé à la volée côté backend, jamais stocké (docs/data-dictionary.md,
+// section "versements & remboursements") : reste visible tant qu'aucun
+// remboursement ne couvre le trop-perçu détecté, y compris après un
+// archivage ultérieur du bien.
+export function getRemboursementsEnAttente(): Promise<RemboursementEnAttente[]> {
+  return authenticatedFetch<RemboursementEnAttente[]>("/tableau-de-bord/remboursements-en-attente");
+}

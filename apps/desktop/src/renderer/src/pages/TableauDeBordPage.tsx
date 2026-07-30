@@ -6,6 +6,7 @@ import { CartesSyntheseView } from "../tableau-de-bord/CartesSyntheseView";
 import { DerniereSauvegardeView } from "../tableau-de-bord/DerniereSauvegardeView";
 import { EnTeteView } from "../tableau-de-bord/EnTeteView";
 import { ProvisionsCollecteesView } from "../tableau-de-bord/ProvisionsCollecteesView";
+import { RemboursementsEnAttenteView } from "../tableau-de-bord/RemboursementsEnAttenteView";
 import { moisParDefaut, RevenusLocatifsView } from "../tableau-de-bord/RevenusLocatifsView";
 import { SyntheseParEntiteView } from "../tableau-de-bord/SyntheseParEntiteView";
 
@@ -25,6 +26,7 @@ export function TableauDeBordPage(): React.JSX.Element {
       </div>
 
       <EnTeteView />
+      <RemboursementsEnAttenteView />
       <CartesSyntheseView />
 
       <div className="flex items-center gap-2 text-sm">

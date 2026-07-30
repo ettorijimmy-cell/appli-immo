@@ -1,18 +1,21 @@
+import { calculerMontantRecuTotal } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
 import { listBaux, type Bail } from "../locataires/api";
-import { chargerContexteBail, creerCachesContexteBail, type ContexteBail } from "./contexte-bail";
 import {
-  annulerEnregistrementPaiement,
+  ajouterVersement,
+  annulerVersement,
   archivePaiement,
   createPaiement,
-  enregistrerPaiement,
   listPaiements,
+  listVersements,
   type Paiement,
   type PaiementMode,
   type PaiementStatut,
-  type PaiementType
+  type PaiementType,
+  type Versement
 } from "./api";
+import { chargerContexteBail, creerCachesContexteBail, type ContexteBail } from "./contexte-bail";
 
 const PAIEMENT_TYPES: PaiementType[] = ["loyer", "charges", "depot_garantie"];
 const PAIEMENT_MODES: PaiementMode[] = ["virement", "cheque", "especes", "caf"];
@@ -20,6 +23,7 @@ const STATUTS_FILTRABLES: Array<PaiementStatut | "tous"> = ["tous", "impaye", "p
 
 interface PaiementAffichable extends Paiement {
   contexte: ContexteBail;
+  montantRecu: string;
 }
 
 export function FinancesListView({
@@ -38,18 +42,32 @@ export function FinancesListView({
   const [showArchived, setShowArchived] = useState(false);
   const [filtreStatut, setFiltreStatut] = useState<PaiementStatut | "tous">("tous");
   const [groupement, setGroupement] = useState<"aucun" | "sci" | "echeance">("echeance");
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filtreBailActif, setFiltreBailActif] = useState(bailIdFiltre);
 
+  // Un paiement peut désormais recevoir plusieurs versements (docs/data-
+  // dictionary.md, section "versements & remboursements") : le montant
+  // "reçu" affiché ici est une somme, jamais un champ unique.
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const bruts = await listPaiements();
+      const [bruts, tousLesVersements] = await Promise.all([listPaiements(), listVersements()]);
+      const versementsActifsParPaiement = new Map<string, Versement[]>();
+      for (const versement of tousLesVersements) {
+        if (versement.archivedAt !== null) {
+          continue;
+        }
+        const liste = versementsActifsParPaiement.get(versement.paiementId) ?? [];
+        liste.push(versement);
+        versementsActifsParPaiement.set(versement.paiementId, liste);
+      }
+
       const caches = creerCachesContexteBail();
       const enrichis = await Promise.all(
         bruts.map(async (paiement) => ({
           ...paiement,
-          contexte: await chargerContexteBail(paiement.bailId, caches)
+          contexte: await chargerContexteBail(paiement.bailId, caches),
+          montantRecu: calculerMontantRecuTotal(versementsActifsParPaiement.get(paiement.id) ?? [])
         }))
       );
       setPaiements(enrichis);
@@ -176,18 +194,8 @@ export function FinancesListView({
                   </tr>
                 </thead>
                 <tbody>
-                  {lignes.map((paiement) =>
-                    editingId === paiement.id ? (
-                      <EnregistrerPaiementRow
-                        key={paiement.id}
-                        paiement={paiement}
-                        onSaved={() => {
-                          setEditingId(null);
-                          void refresh();
-                        }}
-                        onCancel={() => setEditingId(null)}
-                      />
-                    ) : (
+                  {lignes.map((paiement) => (
+                    <>
                       <tr
                         key={paiement.id}
                         className={`border-b border-slate-100 ${paiement.archivedAt !== null ? "opacity-60" : ""}`}
@@ -200,35 +208,20 @@ export function FinancesListView({
                         <td className="py-2">{paiement.contexte.locatairesNoms || "—"}</td>
                         <td className="py-2">{paiement.type}</td>
                         <td className="py-2">
-                          {paiement.montant} €{paiement.montantPaye ? ` (reçu ${paiement.montantPaye} €)` : ""}
+                          {paiement.montant} €
+                          {paiement.montantRecu !== "0.00" ? ` (reçu ${paiement.montantRecu} €)` : ""}
                         </td>
                         <td className="py-2">{paiement.statut}</td>
                         <td className="py-2 text-right">
                           {paiement.archivedAt === null && (
                             <>
-                              {paiement.statut !== "paye" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingId(paiement.id)}
-                                  className="mr-3 text-sm text-indigo-700 hover:text-indigo-800"
-                                >
-                                  Enregistrer
-                                </button>
-                              )}
-                              {paiement.montantPaye !== null && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void (async () => {
-                                      await annulerEnregistrementPaiement(paiement.id);
-                                      await refresh();
-                                    })();
-                                  }}
-                                  className="mr-3 text-sm text-slate-500 hover:text-slate-700"
-                                >
-                                  Annuler l'enregistrement
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedId((v) => (v === paiement.id ? null : paiement.id))}
+                                className="mr-3 text-sm text-indigo-700 hover:text-indigo-800"
+                              >
+                                {expandedId === paiement.id ? "Fermer" : "Versements"}
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -242,8 +235,15 @@ export function FinancesListView({
                           )}
                         </td>
                       </tr>
-                    )
-                  )}
+                      {expandedId === paiement.id && (
+                        <tr key={`${paiement.id}-versements`} className="border-b border-slate-100 bg-slate-50">
+                          <td colSpan={7} className="p-3">
+                            <VersementsPanel paiement={paiement} onChanged={() => void refresh()} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -411,56 +411,171 @@ function NewPaiementForm({ onCreated }: { onCreated: () => void }): React.JSX.El
   );
 }
 
-function EnregistrerPaiementRow({
+// Un paiement peut recevoir plusieurs versements, y compris le même jour
+// (confirmé en usage réel, docs/data-dictionary.md) : cette liste montre
+// tous les versements actifs, permet d'en ajouter un nouveau (jamais
+// n'écrase les précédents) et d'en annuler un précis (jamais une action
+// groupée — décision D2).
+function VersementsPanel({
   paiement,
-  onSaved,
-  onCancel
+  onChanged
 }: {
   paiement: Paiement;
-  onSaved: () => void;
-  onCancel: () => void;
+  onChanged: () => void;
 }): React.JSX.Element {
-  const [montantPaye, setMontantPaye] = useState(paiement.montant);
+  const [versements, setVersements] = useState<Versement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      setVersements(await listVersements({ paiementId: paiement.id }));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [paiement.id]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function handleAnnuler(versementId: string): Promise<void> {
+    await annulerVersement(versementId);
+    await refresh();
+    onChanged();
+  }
+
+  const versementsActifs = versements.filter((v) => v.archivedAt === null);
+  const versementsArchives = versements.filter((v) => v.archivedAt !== null);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Versements</h3>
+        <button
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+          className="text-sm text-indigo-700 hover:text-indigo-800"
+        >
+          {showForm ? "Annuler" : "+ Ajouter un versement"}
+        </button>
+      </div>
+
+      {showForm && (
+        <NewVersementForm
+          paiement={paiement}
+          onCreated={() => {
+            setShowForm(false);
+            void refresh();
+            onChanged();
+          }}
+        />
+      )}
+
+      {isLoading ? (
+        <p className="text-sm text-slate-500">Chargement…</p>
+      ) : versements.length === 0 ? (
+        <p className="text-sm text-slate-500">Aucun versement pour le moment.</p>
+      ) : (
+        <table className="w-full max-w-lg text-left text-sm">
+          <tbody>
+            {versementsActifs.map((versement) => (
+              <tr key={versement.id} className="border-b border-slate-100">
+                <td className="py-1">{versement.dateVersement}</td>
+                <td className="py-1">{versement.montant} €</td>
+                <td className="py-1">{versement.mode}</td>
+                <td className="py-1 text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleAnnuler(versement.id);
+                    }}
+                    className="text-xs text-slate-500 hover:text-red-600"
+                  >
+                    Annuler
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {versementsArchives.map((versement) => (
+              <tr key={versement.id} className="border-b border-slate-100 opacity-50">
+                <td className="py-1">{versement.dateVersement}</td>
+                <td className="py-1">{versement.montant} €</td>
+                <td className="py-1">{versement.mode}</td>
+                <td className="py-1 text-right text-xs text-slate-400">Annulé</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function NewVersementForm({
+  paiement,
+  onCreated
+}: {
+  paiement: Paiement;
+  onCreated: () => void;
+}): React.JSX.Element {
+  const [montant, setMontant] = useState(paiement.montant);
   const [mode, setMode] = useState<PaiementMode>("virement");
-  const [datePaiement, setDatePaiement] = useState(new Date().toISOString().slice(0, 10));
+  const [dateVersement, setDateVersement] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSave(): Promise<void> {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      await enregistrerPaiement(paiement.id, { montantPaye, mode, datePaiement });
-      onSaved();
+      await ajouterVersement({ paiementId: paiement.id, montant, mode, dateVersement });
+      onCreated();
     } catch {
-      setError("Impossible d'enregistrer le paiement");
+      setError("Impossible d'ajouter le versement");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <tr className="border-b border-slate-100">
-      <td className="py-2" colSpan={2}>
+    <form
+      onSubmit={(event) => {
+        void handleSubmit(event);
+      }}
+      className="flex items-end gap-3 rounded-md border border-slate-200 bg-white p-3"
+    >
+      <div className="space-y-1">
+        <label htmlFor="versement-montant" className="text-xs font-medium text-slate-700">
+          Montant
+        </label>
         <input
-          id="finances-enregistrer-montant"
-          value={montantPaye}
-          onChange={(e) => setMontantPaye(e.target.value)}
-          className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm"
+          id="versement-montant"
+          value={montant}
+          onChange={(e) => setMontant(e.target.value)}
+          className="w-28 rounded-md border border-slate-300 px-2 py-1 text-sm"
         />
-      </td>
-      <td className="py-2">
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="versement-date" className="text-xs font-medium text-slate-700">
+          Date
+        </label>
         <input
-          id="finances-enregistrer-date"
+          id="versement-date"
           type="date"
-          value={datePaiement}
-          onChange={(e) => setDatePaiement(e.target.value)}
+          value={dateVersement}
+          onChange={(e) => setDateVersement(e.target.value)}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
         />
-      </td>
-      <td className="py-2" colSpan={2}>
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="versement-mode" className="text-xs font-medium text-slate-700">
+          Mode
+        </label>
         <select
-          id="finances-enregistrer-mode"
+          id="versement-mode"
           value={mode}
           onChange={(e) => setMode(e.target.value as PaiementMode)}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
@@ -471,27 +586,19 @@ function EnregistrerPaiementRow({
             </option>
           ))}
         </select>
-        {error && (
-          <p role="alert" className="mt-1 text-xs text-red-600">
-            {error}
-          </p>
-        )}
-      </td>
-      <td className="py-2 text-right" colSpan={2}>
-        <button
-          type="button"
-          onClick={() => {
-            void handleSave();
-          }}
-          disabled={isSubmitting}
-          className="mr-3 text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-        >
-          {isSubmitting ? "Enregistrement…" : "Enregistrer"}
-        </button>
-        <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">
-          Annuler
-        </button>
-      </td>
-    </tr>
+      </div>
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+      >
+        {isSubmitting ? "Ajout…" : "Ajouter"}
+      </button>
+      {error && (
+        <p role="alert" className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }

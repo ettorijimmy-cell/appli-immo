@@ -1,6 +1,17 @@
+import { calculerMontantRecuTotal, centimesVersMontant, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import {
+  createRemboursement,
+  listPaiements,
+  listRemboursements,
+  listVersements,
+  type Paiement,
+  type PaiementMode,
+  type Remboursement
+} from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { getRemboursementsEnAttente, type RemboursementEnAttente } from "../tableau-de-bord/api";
 import {
   activerBail,
   archiveBailLocataire,
@@ -66,7 +77,17 @@ export function BailActuelTab({
     );
   }
 
-  const bailActuel = baux.find((bail) => STATUTS_BAIL_EN_COURS.has(bail.statut)) ?? null;
+  // Un bail résilié doit aussi atteindre BailActuelDetail (et non
+  // basculer directement sur "Aucun bail en cours") : c'est ce composant
+  // qui affiche le dépôt de garantie et les remboursements restant à
+  // traiter après résiliation. Priorité au bail encore en cours s'il y
+  // en a un — un bail résilié ne doit jamais masquer un bail actif/brouillon
+  // créé depuis (STATUTS_BAIL_EN_COURS reste inchangé, réutilisé aussi par
+  // HistoriqueBauxTab).
+  const bailActuel =
+    baux.find((bail) => STATUTS_BAIL_EN_COURS.has(bail.statut)) ??
+    baux.find((bail) => bail.statut === "resilie") ??
+    null;
 
   if (!bailActuel) {
     return (
@@ -95,7 +116,41 @@ export function BailActuelTab({
     );
   }
 
-  return <BailActuelDetail bail={bailActuel} onChanged={refresh} />;
+  if (bailActuel.statut !== "resilie") {
+    return <BailActuelDetail bail={bailActuel} onChanged={refresh} />;
+  }
+
+  // Un bail résilié reste affiché (dépôt de garantie, remboursements) mais
+  // ne doit pas bloquer la création d'un nouveau bail pour le même
+  // appartement — c'était déjà possible avant ce correctif (bailActuel
+  // valait alors null), un bail résilié n'étant jamais archivé
+  // automatiquement.
+  return (
+    <div className="space-y-4">
+      <BailActuelDetail bail={bailActuel} onChanged={refresh} />
+
+      <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+        <p className="text-sm text-slate-500">Ce bail est résilié.</p>
+        <button
+          type="button"
+          onClick={() => setShowForm((value) => !value)}
+          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+        >
+          {showForm ? "Annuler" : "Nouveau bail"}
+        </button>
+      </div>
+
+      {showForm && (
+        <NewBailForm
+          appartement={appartement}
+          onCreated={() => {
+            setShowForm(false);
+            void refresh();
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 function NewBailForm({
@@ -258,6 +313,14 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
   const [showEditForm, setShowEditForm] = useState(false);
   const [dateFinResiliation, setDateFinResiliation] = useState("");
   const [isActionInProgress, setIsActionInProgress] = useState(false);
+  const [tropPercuMessage, setTropPercuMessage] = useState<string | null>(null);
+  // Un remboursement peut être créé depuis DepotGarantieSection (dépôt) ou
+  // ailleurs (carte "Remboursements en attente" du Tableau de bord, pour un
+  // trop-perçu — dans ce cas ce compteur ne bouge qu'au prochain montage de
+  // cette fiche). L'incrémenter force RemboursementsSection à se
+  // rafraîchir immédiatement après une création locale via
+  // DepotGarantieSection.
+  const [remboursementsVersion, setRemboursementsVersion] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -303,7 +366,16 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
     setActionError(null);
     setIsActionInProgress(true);
     try {
-      await resilierBail(bail.id, dateFinResiliation || undefined);
+      const resultat = await resilierBail(bail.id, dateFinResiliation || undefined);
+      // Signalé seulement, jamais créé automatiquement (décision D3,
+      // docs/data-dictionary.md) — reste visible durablement sur le
+      // Tableau de bord ("Remboursements en attente") au-delà de ce
+      // message ponctuel.
+      setTropPercuMessage(
+        resultat.tropPercu
+          ? `Trop-perçu détecté : ${resultat.tropPercu.montant} € — visible sur le Tableau de bord ("Remboursements en attente") tant qu'aucun remboursement n'est créé.`
+          : null
+      );
       onChanged();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Impossible de résilier le bail");
@@ -396,6 +468,10 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
         <p role="alert" className="text-sm text-red-600">
           {actionError}
         </p>
+      )}
+
+      {tropPercuMessage && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{tropPercuMessage}</p>
       )}
 
       <div className="flex items-center gap-4">
@@ -532,7 +608,442 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
           </ul>
         )}
       </div>
+
+      <DepotGarantieSection
+        bail={bail}
+        onRemboursementCreated={() => setRemboursementsVersion((v) => v + 1)}
+      />
+      <RemboursementsSection bail={bail} version={remboursementsVersion} />
     </div>
+  );
+}
+
+const PAIEMENT_MODES_REMBOURSEMENT: PaiementMode[] = ["virement", "cheque", "especes", "caf"];
+
+// Uniquement une fois le bail résilié (docs/data-dictionary.md, section
+// "versements & remboursements") : rembourser un dépôt encore en cours de
+// bail n'a pas de sens. Plusieurs remboursements partiels successifs sont
+// autorisés (décision D4), la somme ne pouvant jamais dépasser ce qui a
+// été réellement reçu (rejet strict côté backend).
+function DepotGarantieSection({
+  bail,
+  onRemboursementCreated
+}: {
+  bail: Bail;
+  onRemboursementCreated: () => void;
+}): React.JSX.Element | null {
+  const [paiementDepot, setPaiementDepot] = useState<Paiement | null>(null);
+  const [montantRecu, setMontantRecu] = useState("0.00");
+  const [remboursementsActifs, setRemboursementsActifs] = useState<Remboursement[]>([]);
+  const [showForm, setShowForm] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const paiements = await listPaiements({ bailId: bail.id });
+    const depot = paiements.find((p) => p.type === "depot_garantie") ?? null;
+    setPaiementDepot(depot);
+    if (!depot) {
+      return;
+    }
+    const [versementsDepot, tousLesRemboursements] = await Promise.all([
+      listVersements({ paiementId: depot.id }),
+      listRemboursements({ bailId: bail.id })
+    ]);
+    setMontantRecu(calculerMontantRecuTotal(versementsDepot.filter((v) => v.archivedAt === null)));
+    setRemboursementsActifs(
+      tousLesRemboursements.filter((r) => r.paiementId === depot.id && r.archivedAt === null)
+    );
+  }, [bail.id]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (bail.statut !== "resilie" || !paiementDepot) {
+    return null;
+  }
+
+  const centimesDejaRembourses = remboursementsActifs.reduce(
+    (total, r) => total + montantEnCentimes(r.montantRembourse),
+    0
+  );
+  const resteARembourser = centimesVersMontant(montantEnCentimes(montantRecu) - centimesDejaRembourses);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <h3 className="text-sm font-semibold text-slate-700">Dépôt de garantie</h3>
+      <p className="text-sm text-slate-500">
+        Reçu : {montantRecu} € — Déjà remboursé : {centimesVersMontant(centimesDejaRembourses)} € — Reste à
+        rembourser : {resteARembourser} €
+      </p>
+
+      {remboursementsActifs.length > 0 && (
+        <ul className="text-sm text-slate-600">
+          {remboursementsActifs.map((r) => (
+            <li key={r.id}>
+              {r.dateRemboursement} — {r.montantRembourse} € {r.commentaire ? `(${r.commentaire})` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {montantEnCentimes(resteARembourser) > 0 ? (
+        showForm ? (
+          <NewRemboursementDepotForm
+            bailId={bail.id}
+            paiementId={paiementDepot.id}
+            montantOrigine={montantRecu}
+            suggestion={resteARembourser}
+            onCreated={() => {
+              setShowForm(false);
+              void refresh();
+              onRemboursementCreated();
+            }}
+            onCancel={() => setShowForm(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+          >
+            Rembourser le dépôt de garantie
+          </button>
+        )
+      ) : montantEnCentimes(montantRecu) === 0 ? (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Dépôt non encore encaissé : aucun versement n'a été enregistré sur cette échéance. Enregistrez le
+          versement du dépôt de garantie (échéance du {paiementDepot.dateEcheance}) depuis Finances avant de
+          pouvoir le rembourser.
+        </p>
+      ) : (
+        <p className="text-sm text-slate-500">Dépôt intégralement remboursé.</p>
+      )}
+    </div>
+  );
+}
+
+// Seule trace visible, en dehors d'une requête directe en base, qu'un
+// remboursement (trop-perçu ou dépôt de garantie) a bien été créé — la
+// carte "Remboursements en attente" du Tableau de bord ne montre que ceux
+// encore NON couverts (décision D3), elle ne sert pas d'historique.
+function RemboursementsSection({ bail, version }: { bail: Bail; version: number }): React.JSX.Element | null {
+  const [remboursements, setRemboursements] = useState<Remboursement[]>([]);
+  const [enAttente, setEnAttente] = useState<RemboursementEnAttente | null>(null);
+  const [showTropPercuForm, setShowTropPercuForm] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const [tous, tousEnAttente] = await Promise.all([
+      listRemboursements({ bailId: bail.id }),
+      // Calculé à la volée côté backend, jamais stocké (décision D3) — pas
+      // d'endpoint filtré par bail, on récupère tout et on filtre ici
+      // (option A retenue, volume négligeable à l'échelle de l'app).
+      getRemboursementsEnAttente()
+    ]);
+    setRemboursements(tous.filter((r) => r.archivedAt === null));
+    setEnAttente(tousEnAttente.find((r) => r.bailId === bail.id) ?? null);
+  }, [bail.id]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, version]);
+
+  if (bail.statut !== "resilie") {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+      <h3 className="text-sm font-semibold text-slate-700">Remboursements</h3>
+
+      {enAttente &&
+        (showTropPercuForm ? (
+          <NewRemboursementTropPercuForm
+            enAttente={enAttente}
+            onCreated={() => {
+              setShowTropPercuForm(false);
+              void refresh();
+            }}
+            onCancel={() => setShowTropPercuForm(false)}
+          />
+        ) : (
+          <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+            <span className="text-amber-900">
+              <span className="mr-2 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                En attente
+              </span>
+              Trop-perçu signalé (calculé automatiquement, aucun remboursement créé) : {enAttente.montant} €
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowTropPercuForm(true)}
+              className="shrink-0 rounded-md border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Créer le remboursement
+            </button>
+          </div>
+        ))}
+
+      {remboursements.length === 0 ? (
+        <p className="text-sm text-slate-500">Aucun remboursement enregistré.</p>
+      ) : (
+        <ul className="text-sm text-slate-600">
+          {remboursements.map((r) => (
+            <li key={r.id} className="flex items-center justify-between border-b border-slate-100 py-1">
+              <span>
+                {r.dateRemboursement} — {r.type === "trop_percu" ? "Trop-perçu" : "Dépôt de garantie"}
+                {r.commentaire ? ` (${r.commentaire})` : ""}
+              </span>
+              <span className="font-medium">{r.montantRembourse} €</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const PAIEMENT_MODES_TROP_PERCU: PaiementMode[] = ["virement", "cheque", "especes", "caf"];
+
+function NewRemboursementTropPercuForm({
+  enAttente,
+  onCreated,
+  onCancel
+}: {
+  enAttente: RemboursementEnAttente;
+  onCreated: () => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  const [montantRembourse, setMontantRembourse] = useState(enAttente.montant);
+  const [dateRemboursement, setDateRemboursement] = useState(new Date().toISOString().slice(0, 10));
+  const [mode, setMode] = useState<PaiementMode>("virement");
+  const [commentaire, setCommentaire] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(): Promise<void> {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await createRemboursement({
+        bailId: enAttente.bailId,
+        paiementId: enAttente.paiementId,
+        type: "trop_percu",
+        montantOrigine: enAttente.montant,
+        montantRembourse,
+        ...(commentaire ? { commentaire } : {}),
+        dateRemboursement,
+        mode
+      });
+      onCreated();
+    } catch {
+      setError("Impossible de créer le remboursement");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-md border border-amber-300 bg-white p-2">
+      <div className="space-y-0.5">
+        <label htmlFor="trop-percu-montant" className="text-xs font-medium text-slate-700">
+          Montant remboursé
+        </label>
+        <input
+          id="trop-percu-montant"
+          value={montantRembourse}
+          onChange={(e) => setMontantRembourse(e.target.value)}
+          className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <div className="space-y-0.5">
+        <label htmlFor="trop-percu-date" className="text-xs font-medium text-slate-700">
+          Date
+        </label>
+        <input
+          id="trop-percu-date"
+          type="date"
+          value={dateRemboursement}
+          onChange={(e) => setDateRemboursement(e.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <div className="space-y-0.5">
+        <label htmlFor="trop-percu-mode" className="text-xs font-medium text-slate-700">
+          Mode
+        </label>
+        <select
+          id="trop-percu-mode"
+          value={mode}
+          onChange={(e) => setMode(e.target.value as PaiementMode)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        >
+          {PAIEMENT_MODES_TROP_PERCU.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="space-y-0.5">
+        <label htmlFor="trop-percu-commentaire" className="text-xs font-medium text-slate-700">
+          Commentaire (si écart)
+        </label>
+        <input
+          id="trop-percu-commentaire"
+          value={commentaire}
+          onChange={(e) => setCommentaire(e.target.value)}
+          placeholder="Optionnel"
+          className="w-48 rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          void handleSubmit();
+        }}
+        disabled={isSubmitting}
+        className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+      >
+        {isSubmitting ? "Création…" : "Valider"}
+      </button>
+      <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">
+        Annuler
+      </button>
+      {error && (
+        <p role="alert" className="w-full text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function NewRemboursementDepotForm({
+  bailId,
+  paiementId,
+  montantOrigine,
+  suggestion,
+  onCreated,
+  onCancel
+}: {
+  bailId: string;
+  paiementId: string;
+  montantOrigine: string;
+  suggestion: string;
+  onCreated: () => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  const [montantRembourse, setMontantRembourse] = useState(suggestion);
+  const [dateRemboursement, setDateRemboursement] = useState(new Date().toISOString().slice(0, 10));
+  const [mode, setMode] = useState<PaiementMode>("virement");
+  const [commentaire, setCommentaire] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await createRemboursement({
+        bailId,
+        paiementId,
+        type: "depot_garantie",
+        montantOrigine,
+        montantRembourse,
+        ...(commentaire ? { commentaire } : {}),
+        dateRemboursement,
+        mode
+      });
+      onCreated();
+    } catch {
+      setError("Impossible de créer le remboursement (dépasse-t-il le montant reçu ?)");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        void handleSubmit(event);
+      }}
+      className="space-y-3 rounded-md border border-slate-200 p-3"
+    >
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label htmlFor="remboursement-depot-montant" className="text-xs font-medium text-slate-700">
+            Montant remboursé
+          </label>
+          <input
+            id="remboursement-depot-montant"
+            value={montantRembourse}
+            onChange={(e) => setMontantRembourse(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="remboursement-depot-date" className="text-xs font-medium text-slate-700">
+            Date
+          </label>
+          <input
+            id="remboursement-depot-date"
+            type="date"
+            value={dateRemboursement}
+            onChange={(e) => setDateRemboursement(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="remboursement-depot-mode" className="text-xs font-medium text-slate-700">
+            Mode
+          </label>
+          <select
+            id="remboursement-depot-mode"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as PaiementMode)}
+            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+          >
+            {PAIEMENT_MODES_REMBOURSEMENT.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="remboursement-depot-commentaire" className="text-xs font-medium text-slate-700">
+            Commentaire (recommandé si écart avec le montant reçu)
+          </label>
+          <input
+            id="remboursement-depot-commentaire"
+            value={commentaire}
+            onChange={(e) => setCommentaire(e.target.value)}
+            placeholder="Ex. retenue pour dégradations constatées"
+            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+        >
+          {isSubmitting ? "Création…" : "Valider le remboursement"}
+        </button>
+        <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">
+          Annuler
+        </button>
+      </div>
+    </form>
   );
 }
 
