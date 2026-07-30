@@ -299,13 +299,25 @@ les trois parcours ci-dessus).
   Module 7 (régularisation) ou une extension ultérieure du modèle
   `paiements` — décision volontairement différée, pas un oubli.
 
-- **Remboursement du dépôt de garantie — non modélisé.** Dépend de l'état
-  des lieux de sortie (Module 4, Documents) et d'une logique de retenue sur
-  dégradations constatées, proche d'une régularisation (esprit du Module 6
-  du cahier des charges initial). À concevoir comme un vrai sujet à part
-  entière avant l'ouverture du module correspondant — pas une simple ligne
-  de paiement supplémentaire, implique une décision de calcul distincte du
-  prorata de loyer déjà en place.
+- **Remboursement du dépôt de garantie — modélisé sommairement, motif de
+  retenue toujours insuffisant.** Le chantier "versements & remboursements"
+  a modélisé le remboursement lui-même (table `remboursements`, type
+  `depot_garantie`, `docs/data-dictionary.md`), avec un simple champ
+  `commentaire` texte libre pour justifier un écart entre montant reçu et
+  montant remboursé (ex. retenue pour dégradations). **Ce champ n'est pas
+  jugé suffisant** : le besoin réel est un motif de retenue **structuré**
+  (catégorie de dégradation + pièce justificative attachée — photo,
+  devis...), pas un texte libre non catégorisé, non exploitable pour des
+  statistiques ou un futur contentieux. Rattachement naturel à un état des
+  lieux de sortie **catégorisé** (Module 4, Documents — état des lieux
+  existe comme document mais sans structure de catégories de dégradation
+  aujourd'hui) : à concevoir comme un vrai sujet à part entière avant
+  d'être codé, pas une simple extension du champ `commentaire` actuel.
+  L'utilisateur a redemandé ce point explicitement le 2026-07-30, après la
+  mise en place du remboursement sommaire — confirmant que ce n'est pas
+  une fonctionnalité accessoire, mais un gap identifié et maintenu
+  volontairement ouvert le temps de concevoir la structure de catégories
+  avec lui.
 
 - **Aucune validation que `date_fin` ≥ `date_debut` à la résiliation —
   corrigé.** (Identifié par financial-logic-reviewer lors du correctif
@@ -400,6 +412,115 @@ moment de leur développement, une fois le MVP livré.
 
 ## Modules futurs (post-MVP)
 
+**Ordre de priorité confirmé par l'utilisateur** (décision prise hors
+session Claude Code, consignée ici a posteriori) :
+1. Édition d'un bail (génération du document légal lui-même)
+2. État des lieux
+3. Charges et fiscalité (détaillé ci-dessous)
+4. Intervention (détaillé ci-dessous)
+
+### Édition d'un bail (futur module, priorité 1)
+
+État des lieux du schéma réalisé (audit + recherche des modèles-types
+officiels, vérifiés directement sur le texte de l'annexe du décret
+n° 2015-587 — pas une synthèse générale) avant tout code. Sources :
+décret n° 2015-587 du 29 mai 2015 (contrats types vide/meublé, annexes 1
+et 2) et décret n° 2015-981 du 31 juillet 2015 (liste des 11 éléments de
+mobilier obligatoires en location meublée).
+
+**Principe directeur retenu** : les nouveaux champs identifiés ci-dessous
+sont **nullables**, renseignables progressivement (même convention que
+`jour_echeance`/`surface`/`loyer_reference` déjà en base) — **jamais
+obligatoires à la création** de l'entité. C'est la **génération du bail
+elle-même** qui doit refuser explicitement de produire le document si un
+champ requis manque (message clair du type "Renseignez l'année de
+construction de l'immeuble avant de générer ce bail"), jamais une valeur
+par défaut inventée ni un champ vide laissé silencieusement dans un vrai
+document légal généré.
+
+**Champs à ajouter (schéma non encore modifié — décisions arrêtées, pas
+codées)** :
+- `organisations` : adresse, code_postal, ville (le domicile du bailleur
+  particulier est une mention obligatoire du contrat-type).
+- `scis` : adresse, code_postal, ville (siège social) + nom/prénom du
+  gérant (mention utile au bloc signature, pas une mention obligatoire du
+  contrat-type lui-même). Gérant unique confirmé avec l'utilisateur —
+  aucune SCI réelle à cogérance actuellement, donc pas de structure à
+  plusieurs représentants légaux.
+- `immeubles` : `type_habitat` (collectif/individuel), `regime_juridique`
+  (mono_propriete/copropriete), `annee_construction` (integer, nullable) —
+  ces trois mentions sont des caractéristiques du bâtiment, pas du lot,
+  contrairement à une supposition initiale. `annee_construction` en année
+  précise plutôt qu'en tranche officielle ("avant 1949", "1949-1974"...) :
+  une fonction de dérivation dans `packages/core` calculera la tranche du
+  contrat-type à l'affichage, testée sur les bornes exactes de chaque
+  tranche (à vérifier précisément avant de coder, ne pas les supposer
+  approximativement).
+- `appartements` : `identifiant_fiscal` (texte), `nombre_pieces_principales`
+  (integer, distinct du `type` T1-T5+ déjà existant qui reste une
+  catégorie commerciale, pas le décompte légal), `mode_chauffage` et
+  `mode_eau_chaude` (individuel/collectif).
+- `baux` : `travaux_realises` (texte, nullable) — mention obligatoire par
+  nature spécifique à chaque bail, sans vocabulaire fixe possible ; gardé
+  en base pour trace plutôt que non stocké du tout.
+- Nouvelle table `diagnostics`, en 1:1 avec `documents` (FK `document_id`,
+  réutilise le lien polymorphe déjà existant de `documents` plutôt que
+  d'en recréer un) : `type` (`dpe` | `crep_plomb` | `erp`) + champs
+  optionnels selon le type — `classe_dpe` (enum A-G) et
+  `depenses_theoriques_chauffage` (le DPE porte les deux) pour `dpe` ;
+  `risque_present` (boolean) pour `crep_plomb`/`erp`. Rattachement déjà
+  possible au bon niveau : `documents.entite_type` supporte déjà
+  `"immeuble"` (ERP, souvent tout le bâtiment) et `"appartement"` (DPE,
+  CREP, élec/gaz, par lot) — vérifié dans le schéma existant, aucun
+  changement nécessaire sur `documents` pour ça. **Pas de ligne
+  `diagnostics` pour l'élec/gaz** : vérifié sur le texte exact du
+  contrat-type, le DPE cite une valeur de résultat en toutes lettres
+  ("niveau de performance du logement : [classe...]") alors que l'élec/gaz
+  ne fait que renvoyer à l'annexe sans citer de résultat — `documents.
+  date_expiration` (déjà existant) suffit pour cette seule mention.
+- `garants` : adresse, code_postal, ville, profession, revenus — tous
+  confirmés mentions obligatoires de l'acte de cautionnement sous peine de
+  nullité absolue (loi ALUR), pas seulement l'adresse initialement
+  demandée. Sans risque à ajouter directement sur `garants` : contrairement
+  à `locataires`, cette table est déjà une ligne par bail (pas une entité
+  partagée), ces champs sont donc naturellement figés au moment de la
+  création du cautionnement, jamais à faire évoluer après coup.
+- **`locataires` : rien à ajouter.** Vérifié sur le texte exact du
+  contrat-type (préambule d'identification des parties) : ni date ni lieu
+  de naissance ne sont exigés, contrairement à une première affirmation
+  erronée de ma part avant vérification — seulement nom/prénom (+ email
+  facultatif).
+- **Loyer du précédent locataire (mention obligatoire si départ < 18
+  mois) : aucun champ à ajouter.** Calculable à la génération depuis
+  l'historique des baux déjà en base (loyer du bail précédent sur le même
+  appartement + sa `date_resiliation`).
+- **Destination des locaux (habitation seule/mixte) : non retenue.**
+  Non retrouvée explicitement dans le texte vérifié, et l'app ne gère que
+  du locatif résidentiel pur — à revoir seulement si un usage mixte
+  devient un besoin réel.
+- **"Autres parties du logement" et "éléments d'équipements" (mentions à
+  vocabulaire non fermé, seulement des exemples dans le texte officiel) :
+  non modélisées** — texte libre saisi une fois par bail au moment de la
+  génération, aucune réutilisation ailleurs dans l'app ne le justifie.
+
+**Inventaire de mobilier (bail meublé, liste légale fermée de 11 postes,
+décret n° 2015-981) : différé au module État des lieux** (priorité 2,
+ci-dessous) plutôt que modélisé ici — décision explicite de l'utilisateur.
+Pour ce module-ci, le bail meublé se contente de mentionner "un inventaire
+de mobilier est annexé au présent bail" sans le détailler lui-même ; le
+document réel (et sa structure de données) viendra du futur module État
+des lieux, rattaché comme document lié au bail (Module 4, `documents`).
+Voir l'entrée "État des lieux" ci-dessous pour le lien explicite entre les
+deux.
+
+### État des lieux (futur module, priorité 2)
+
+Pas encore conçu. Porte, en plus de son objet propre (constat d'entrée/
+sortie par pièce), l'inventaire de mobilier à liste légale fermée (11
+postes, décret n° 2015-981) volontairement différé depuis le module
+"Édition d'un bail" ci-dessus — les deux modules partagent ce même
+concept de données, à concevoir une seule fois ici plutôt qu'en double.
+
 ### Suivi des charges et fiscalité (futur module)
 
 Objectif : suivi des dépenses par SCI, pour exploiter le régime fiscal
@@ -422,3 +543,18 @@ Portée envisagée :
 Ce module mérite sa propre phase de conception dédiée (comme les Phases
 1-12 initiales) avant d'être développé — pas à traiter comme un ticket
 parmi d'autres du backlog MVP.
+
+### Intervention (futur module)
+
+Objectif : calendrier de rendez-vous liés à un bien (RDV locataire,
+visites, planification d'une intervention) — **sans aucun volet
+financier** (pas de devis, pas de facture, pas de suivi de rentabilité).
+
+**Distinct du Module Travaux du cahier des charges initial**
+(`docs/app-spec.md`, Module 9 — devis/factures/rentabilité des travaux,
+`docs/backlog.md`, "Hors backlog MVP") : les deux sujets sont volontairement
+tenus séparés. Intervention reste un simple calendrier ; Travaux (avec son
+volet financier) demeure hors backlog MVP, non encore priorisé.
+
+Ce module mérite sa propre phase de conception dédiée avant d'être
+développé — pas à traiter comme un ticket parmi d'autres du backlog MVP.

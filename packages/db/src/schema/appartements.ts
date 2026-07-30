@@ -1,4 +1,4 @@
-import { decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { decimal, integer, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 import { immeubles } from "./immeubles";
 
@@ -8,6 +8,16 @@ export const appartementStatutEnum = pgEnum("appartement_statut", [
   "loue",
   "travaux",
   "archive"
+]);
+// Modalités de production (chauffage / eau chaude sanitaire) — mentions du
+// contrat-type (décret n° 2015-587), au niveau du lot (contrairement à
+// type_habitat/regime_juridique qui sont au niveau immeuble) : un
+// chauffage individuel peut coexister avec un chauffage collectif dans le
+// même bâtiment selon les lots (docs/backlog.md, section "Édition d'un
+// bail").
+export const appartementModeProductionEnum = pgEnum("appartement_mode_production", [
+  "individuel",
+  "collectif"
 ]);
 
 export const appartements = pgTable("appartements", {
@@ -19,6 +29,13 @@ export const appartements = pgTable("appartements", {
   type: appartementTypeEnum("type").notNull(),
   surface: decimal("surface", { precision: 6, scale: 2 }),
   loyerReference: decimal("loyer_reference", { precision: 10, scale: 2 }),
+  // Mentions du contrat-type non couvertes par les champs ci-dessus :
+  // `type` (T1-T5+) reste une catégorie commerciale, distincte du décompte
+  // légal de pièces principales exigé dans le bail.
+  identifiantFiscal: text("identifiant_fiscal"),
+  nombrePiecesPrincipales: integer("nombre_pieces_principales"),
+  modeChauffage: appartementModeProductionEnum("mode_chauffage"),
+  modeEauChaude: appartementModeProductionEnum("mode_eau_chaude"),
   // 'vacant' par défaut : un appartement nouvellement créé n'a pas encore
   // de bail actif (règle de transition automatique vacant -> loue au
   // Module 3).

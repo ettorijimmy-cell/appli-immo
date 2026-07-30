@@ -15,5 +15,6 @@ export * from "./paiements";
 export * from "./versements";
 export * from "./remboursements";
 export * from "./documents";
+export * from "./diagnostics";
 export * from "./alertes";
 export * from "./parametres-alertes";

@@ -1,4 +1,4 @@
-import { date, decimal, integer, pgEnum, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
+import { date, decimal, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -53,5 +53,10 @@ export const baux = pgTable("baux", {
   // remboursements"). NULL pour les baux résiliés avant l'introduction de
   // cette colonne — repli documenté sur updated_at pour ces cas legacy
   // uniquement, jamais la méthode de tri normale.
-  dateResiliation: timestamp("date_resiliation", { withTimezone: true })
+  dateResiliation: timestamp("date_resiliation", { withTimezone: true }),
+  // Mention obligatoire du contrat-type ("travaux effectués depuis le
+  // dernier bail"), par nature spécifique à chaque bail et sans
+  // vocabulaire fixe possible — gardé en base pour trace plutôt que non
+  // stocké du tout (docs/backlog.md, section "Édition d'un bail").
+  travauxRealises: text("travaux_realises")
 });

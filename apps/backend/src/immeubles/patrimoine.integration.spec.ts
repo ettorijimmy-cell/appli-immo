@@ -237,6 +237,54 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     expect(rowEnBase?.archivedAt).not.toBeNull();
   });
 
+  // Non-régression de la migration "Édition d'un bail" (docs/backlog.md) :
+  // les nouveaux champs nullables (adresse SCI, type_habitat/regime_
+  // juridique/annee_construction immeuble, identifiant_fiscal/nombre_
+  // pieces_principales/mode_chauffage/mode_eau_chaude appartement) ne
+  // doivent rien casser sur le fonctionnement existant — création et
+  // mise à jour "à l'ancienne" (sans jamais renseigner ces nouveaux
+  // champs) doivent continuer à marcher exactement comme avant, et les
+  // nouvelles colonnes doivent apparaître à NULL plutôt que bloquer quoi
+  // que ce soit.
+  it("SCI/immeuble/appartement créés et modifiés à l'ancienne restent pleinement fonctionnels après la migration des champs d'édition de bail", async () => {
+    const sci = await scisService.create(userId, { nom: "SCI Migration Bail", regimeFiscal: "IR" });
+    expect(sci.adresse).toBeNull();
+    expect(sci.nomGerant).toBeNull();
+
+    const immeuble = await immeublesService.create({
+      sciId: sci.id,
+      nom: "Immeuble Migration Bail",
+      adresse: "7 rue de Test"
+    });
+    expect(immeuble.typeHabitat).toBeNull();
+    expect(immeuble.regimeJuridique).toBeNull();
+    expect(immeuble.anneeConstruction).toBeNull();
+
+    const appartement = await appartementsService.create({
+      immeubleId: immeuble.id,
+      numero: "7",
+      type: "T2"
+    });
+    expect(appartement.identifiantFiscal).toBeNull();
+    expect(appartement.nombrePiecesPrincipales).toBeNull();
+    expect(appartement.modeChauffage).toBeNull();
+    expect(appartement.modeEauChaude).toBeNull();
+
+    // Toujours consultable...
+    const relu = await appartementsService.findById(appartement.id);
+    expect(relu?.numero).toBe("7");
+
+    // ...et toujours modifiable, sur un champ préexistant, sans jamais
+    // toucher aux nouveaux champs.
+    const misAJour = await appartementsService.update(appartement.id, { surface: "42.50" });
+    expect(misAJour.surface).toBe("42.50");
+    expect(misAJour.identifiantFiscal).toBeNull();
+
+    const immeubleMisAJour = await immeublesService.update(immeuble.id, { ville: "Marseille" });
+    expect(immeubleMisAJour.ville).toBe("Marseille");
+    expect(immeubleMisAJour.typeHabitat).toBeNull();
+  });
+
   // Vérifie l'infrastructure de timbrage audit centralisée (docs/backlog.md,
   // entrée "version/updated_by jamais posés") : quand un utilisateur est
   // présent dans le contexte requête (simulé ici via
