@@ -83,11 +83,22 @@ export function BailActuelTab({
   // traiter après résiliation. Priorité au bail encore en cours s'il y
   // en a un — un bail résilié ne doit jamais masquer un bail actif/brouillon
   // créé depuis (STATUTS_BAIL_EN_COURS reste inchangé, réutilisé aussi par
-  // HistoriqueBauxTab).
+  // HistoriqueBauxTab). Un appartement peut avoir PLUSIEURS baux résiliés
+  // (historique de locataires successifs) : on prend celui dont
+  // dateResiliation est la plus récente, jamais un ordre de scan SQL non
+  // garanti (bug réel constaté : un bail résilié plus ancien pouvait
+  // s'afficher à la place de celui qu'on venait de résilier). Repli sur
+  // updatedAt UNIQUEMENT pour les baux résiliés avant l'introduction de
+  // dateResiliation (docs/data-dictionary.md) — jamais la méthode normale.
+  const bauxResilies = baux
+    .filter((bail) => bail.statut === "resilie")
+    .sort(
+      (a, b) =>
+        new Date(b.dateResiliation ?? b.updatedAt).getTime() -
+        new Date(a.dateResiliation ?? a.updatedAt).getTime()
+    );
   const bailActuel =
-    baux.find((bail) => STATUTS_BAIL_EN_COURS.has(bail.statut)) ??
-    baux.find((bail) => bail.statut === "resilie") ??
-    null;
+    baux.find((bail) => STATUTS_BAIL_EN_COURS.has(bail.statut)) ?? bauxResilies[0] ?? null;
 
   if (!bailActuel) {
     return (

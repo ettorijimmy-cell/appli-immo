@@ -42,6 +42,13 @@ export interface Bail {
   jourEcheance: number | null;
   dateDebut: string;
   dateFin: string | null;
+  // Posée une seule fois par resilier(), jamais modifiée ensuite (voir
+  // packages/db/src/schema/baux.ts). NULL pour les baux résiliés avant
+  // l'introduction de cette colonne (docs/data-dictionary.md) — dans ce
+  // cas legacy uniquement, se replier sur updatedAt pour départager
+  // plusieurs baux résiliés sur le même appartement.
+  dateResiliation: string | null;
+  updatedAt: string;
 }
 
 export interface CreateBailInput {

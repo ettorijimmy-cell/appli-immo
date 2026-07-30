@@ -524,6 +524,65 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       expect(echeanceApresResiliation?.statut).toBe("impaye");
     });
 
+    // Bug réel constaté en test manuel (frontend, BailActuelTab) : sans
+    // date_resiliation, plusieurs baux résiliés sur le même appartement ne
+    // pouvaient pas être départagés de façon fiable (date_fin peut coïncider
+    // entre deux baux différents) — le mauvais bail résilié pouvait
+    // s'afficher à la place de celui qu'on venait de résilier.
+    it("pose date_resiliation une seule fois, au moment exact de la résiliation, jamais retouchée ensuite", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-08-01",
+        loyerMensuel: "900.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(bail.id);
+
+      const [avant] = await db.select().from(baux).where(eq(baux.id, bail.id));
+      expect(avant?.dateResiliation).toBeNull();
+
+      const avantResiliation = new Date();
+      await bauxService.resilier(bail.id, { dateFin: "2026-09-15" });
+      const apresResiliation = new Date();
+
+      const [resilie] = await db.select().from(baux).where(eq(baux.id, bail.id));
+      expect(resilie?.dateResiliation).not.toBeNull();
+      const dateResiliation = resilie!.dateResiliation!.getTime();
+      expect(dateResiliation).toBeGreaterThanOrEqual(avantResiliation.getTime());
+      expect(dateResiliation).toBeLessThanOrEqual(apresResiliation.getTime());
+    });
+
+    it("deux baux résiliés successivement sur le même appartement ont des date_resiliation strictement ordonnées, même avec une date_fin identique", async () => {
+      const premierBail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(premierBail.id);
+      await bauxService.resilier(premierBail.id, { dateFin: "2026-07-15" });
+
+      const secondBail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-07-01",
+        loyerMensuel: "750.00",
+        jourEcheance: 1
+      });
+      await bauxService.activer(secondBail.id);
+      // Même date_fin que le premier bail (une simple coïncidence de
+      // calendrier, ex. deux préavis calés sur la même échéance) : seule
+      // date_resiliation permet de les départager de façon fiable.
+      await bauxService.resilier(secondBail.id, { dateFin: "2026-07-15" });
+
+      const [premier] = await db.select().from(baux).where(eq(baux.id, premierBail.id));
+      const [second] = await db.select().from(baux).where(eq(baux.id, secondBail.id));
+      expect(premier?.dateFin).toBe(second?.dateFin);
+      expect(second!.dateResiliation!.getTime()).toBeGreaterThan(premier!.dateResiliation!.getTime());
+    });
+
     // Scénario découvreur du correctif "entrée + Cas B simplifié" : un bail
     // signé mi-mois, activé administrativement bien plus tard (sans effet
     // sur aucun calcul — date_activation n'entre plus dans le prorata,

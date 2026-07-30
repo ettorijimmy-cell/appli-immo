@@ -269,11 +269,18 @@ export class BauxService {
       }
 
       const utilisateurId = this.requestContext.getUtilisateurId();
+      // dateResiliation : posée une seule fois ici, jamais retouchée ensuite
+      // (pas dans UpdateBailDto, et resilier() rejette déjà toute nouvelle
+      // résiliation via le garde-fou de statut ci-dessus). Timestamp exact
+      // de la transition, distinct de dateFin (date métier de fin
+      // d'occupation, parfois identique entre plusieurs baux) — sert à
+      // départager sans ambiguïté plusieurs baux résiliés sur un même
+      // appartement (docs/data-dictionary.md).
       const [bailResilie] = await mettreAJourAvecAudit(
         tx,
         baux,
         id,
-        { statut: "resilie", dateFin: dto.dateFin },
+        { statut: "resilie", dateFin: dto.dateFin, dateResiliation: new Date() },
         utilisateurId
       );
       if (!bailResilie) {

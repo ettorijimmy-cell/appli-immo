@@ -1,4 +1,4 @@
-import { date, decimal, integer, pgEnum, pgTable, uuid } from "drizzle-orm/pg-core";
+import { date, decimal, integer, pgEnum, pgTable, timestamp, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -44,5 +44,14 @@ export const baux = pgTable("baux", {
   // commence qu'à l'activation si celle-ci est postérieure — utilisé par
   // resilier() pour déterminer le début réel d'occupation à proratiser
   // (docs/data-dictionary.md).
-  dateActivation: date("date_activation")
+  dateActivation: date("date_activation"),
+  // Posée une seule fois par resilier(), jamais modifiée ensuite (pas dans
+  // UpdateBailDto) — même principe d'immutabilité que date_activation.
+  // Timestamp (pas juste une date) : sert à départager plusieurs baux
+  // résiliés sur un même appartement quand dateFin coïncide ou n'ordonne
+  // pas correctement (docs/data-dictionary.md, section "versements &
+  // remboursements"). NULL pour les baux résiliés avant l'introduction de
+  // cette colonne — repli documenté sur updated_at pour ces cas legacy
+  // uniquement, jamais la méthode de tri normale.
+  dateResiliation: timestamp("date_resiliation", { withTimezone: true })
 });
