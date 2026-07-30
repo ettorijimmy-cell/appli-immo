@@ -403,6 +403,30 @@ avec l'utilisateur avant tout code :
   `paiements`, après recherche exhaustive confirmant plus aucune lecture
   ni écriture de ces colonnes nulle part dans le code.
 
+**Non-régression confirmée à la clôture du chantier (Module 5 et Module 7,
+pas seulement les nouveaux tests versements/remboursements)** : nombre de
+tests d'intégration backend, par fichier, comparé entre le commit
+`14a2b8d` (dernier commit avant l'ouverture de ce chantier) et l'état
+après la Phase 3 — aucun fichier n'a perdu de test, tous ont soit
+maintenu leur nombre soit grandi :
+
+| Fichier | Avant | Après |
+|---|---|---|
+| alertes.integration.spec.ts | 12 | 12 |
+| auth.integration.spec.ts | 4 | 4 |
+| baux/locataires-baux.integration.spec.ts (Module 3, proration Module 5) | 26 | 30 |
+| documents.integration.spec.ts | 7 | 7 |
+| immeubles/patrimoine.integration.spec.ts (Module 2) | 6 | 7 |
+| paiements.integration.spec.ts (Module 5) | 10 | 12 |
+| remboursements.integration.spec.ts (nouveau) | — | 6 |
+| scis.integration.spec.ts | 5 | 5 |
+| tableau-de-bord.integration.spec.ts (Module 7) | 12 | 16 |
+| **Total** | **82** | **99** |
+
+packages/core : 183 tests, tous passants après la Phase 3 (renommage du
+paramètre `montantPaye`→`montantRecu` de `calculerStatutPaiement` sans
+impact sur les tests, positionnels).
+
 ## alertes
 | Champ | Type | Description |
 |---|---|---|
