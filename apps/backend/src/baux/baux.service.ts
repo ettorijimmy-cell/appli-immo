@@ -103,7 +103,10 @@ export class BauxService {
         loyerMensuel: dto.loyerMensuel,
         depotGarantie: dto.depotGarantie,
         provisionsCharges: dto.provisionsCharges,
-        jourEcheance: dto.jourEcheance
+        jourEcheance: dto.jourEcheance,
+        travauxRealises: dto.travauxRealises,
+        honorairesBailleur: dto.honorairesBailleur,
+        honorairesLocataire: dto.honorairesLocataire
       },
       this.requestContext.getUtilisateurId()
     );

@@ -58,5 +58,15 @@ export const baux = pgTable("baux", {
   // dernier bail"), par nature spécifique à chaque bail et sans
   // vocabulaire fixe possible — gardé en base pour trace plutôt que non
   // stocké du tout (docs/backlog.md, section "Édition d'un bail").
-  travauxRealises: text("travaux_realises")
+  travauxRealises: text("travaux_realises"),
+  // Section IX du contrat-type ("Honoraires de location") — nullable,
+  // "néant" affiché dans le document généré tant qu'aucun des deux n'est
+  // renseigné. Rattaché au bail (pas à la SCI/organisation) : les
+  // honoraires d'agence concernent une location précise, jamais un
+  // attribut permanent du bailleur (docs/backlog.md, section "Édition
+  // d'un bail"). Sans objet dans l'usage actuel (particulier/SCI gérant
+  // en direct, sans professionnel) — prêt le jour où ce cas se présente,
+  // sans changement de code à ce moment-là.
+  honorairesBailleur: decimal("honoraires_bailleur", { precision: 10, scale: 2 }),
+  honorairesLocataire: decimal("honoraires_locataire", { precision: 10, scale: 2 })
 });

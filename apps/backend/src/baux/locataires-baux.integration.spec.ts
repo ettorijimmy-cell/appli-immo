@@ -319,6 +319,30 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     expect(resultat.dateDebut).toBe("2026-08-01");
   });
 
+  // Champs "Édition d'un bail" (docs/backlog.md) : travaux_realises et
+  // honoraires_bailleur/honoraires_locataire sont modifiables via
+  // UpdateBailDto, contrairement à date_activation/date_resiliation.
+  it("met à jour travaux_realises et honoraires_bailleur/honoraires_locataire", async () => {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-08-01"
+    });
+
+    const resultat = await bauxService.update(bail.id, {
+      travauxRealises: "Réfection de la salle de bain en 2025",
+      honorairesBailleur: "150.00",
+      honorairesLocataire: "150.00"
+    });
+
+    expect(resultat.travauxRealises).toBe("Réfection de la salle de bain en 2025");
+    expect(resultat.honorairesBailleur).toBe("150.00");
+    expect(resultat.honorairesLocataire).toBe("150.00");
+
+    const [rowEnBase] = await db.select().from(baux).where(eq(baux.id, bail.id));
+    expect(rowEnBase?.honorairesBailleur).toBe("150.00");
+  });
+
   it("CRUD garants rattachés à un bail, jamais supprimés", async () => {
     const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
 

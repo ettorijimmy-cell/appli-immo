@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsInt, IsNumberString, IsOptional, Max, Min } from "class-validator";
+import { IsDateString, IsIn, IsInt, IsNumberString, IsOptional, IsString, Max, Min } from "class-validator";
 import { normaliserMontant } from "core";
 
 const BAIL_TYPES = ["vide", "meuble"] as const;
@@ -42,4 +42,18 @@ export class UpdateBailDto {
   @Min(1)
   @Max(28)
   jourEcheance?: number;
+
+  @IsOptional()
+  @IsString()
+  travauxRealises?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
+  @IsNumberString()
+  honorairesBailleur?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
+  @IsNumberString()
+  honorairesLocataire?: string;
 }
