@@ -235,21 +235,22 @@ validée (`document_precedent_id`) si/quand implémenté.
 
 ## paiements
 Rattaché à un bail (`baux`, Module 3). `montant` est la somme attendue à
-l'échéance ; `montant_paye` / `mode` / `date_paiement` ne sont renseignés
-qu'une fois le paiement effectivement enregistré. `statut` est calculé,
-jamais saisi directement (packages/core, `calculerStatutPaiement`) :
-`impaye` si `montant_paye` est nul, `paye` si `montant_paye >= montant`,
-`partiel` sinon.
+l'échéance. Depuis le chantier "versements & remboursements" (voir
+section dédiée ci-dessous), `paiements` ne porte plus lui-même ce qui a
+été effectivement réglé — `mode`/`montant_paye`/`date_paiement`/
+`reference_rapprochement` ont été retirés à la Phase 3 (contract) de ce
+chantier, remplacés par la table `versements` (un ou plusieurs
+encaissements réels par paiement). `statut` reste calculé, jamais saisi
+directement (packages/core, `calculerStatutPaiement`), mais désormais
+depuis la somme des versements actifs (`calculerMontantRecuTotal`) : `impaye`
+si aucun versement actif, `paye` si la somme couvre `montant`, `partiel`
+sinon.
 | Champ | Type | Description |
 |---|---|---|
 | type | enum | `loyer` \| `charges` \| `depot_garantie` |
-| mode | enum, nullable | `virement` \| `cheque` \| `especes` \| `caf` |
 | statut | enum | `paye` \| `impaye` \| `partiel` |
 | montant | decimal | Somme attendue à l'échéance |
-| montant_paye | decimal, nullable | Somme réellement reçue |
 | date_echeance | date | |
-| date_paiement | date, nullable | |
-| reference_rapprochement | text, nullable | Renseigné après un rapprochement confirmé (import CSV) : la référence/le libellé de la ligne de relevé retenue. Jamais comparé en amont à une valeur attendue — voir la décision ci-dessous sur le critère "référence" du rapprochement. |
 
 **Décision produit (Module 5, tranchée avec l'utilisateur)** : le critère
 "référence" du rapprochement bancaire (`packages/core`,
@@ -269,15 +270,16 @@ bancaires). Deux règles non négociables, à ne jamais régresser :
    au moins un candidat montant+date.
 
 **Décision produit ("Provisions collectées" du Module 7, tranchée avec
-l'utilisateur)** : `montant`/`montant_paye` ne distinguent **jamais** loyer
-et provisions_charges pour une échéance `type=loyer` — une seule colonne,
+l'utilisateur)** : `montant` ne distingue **jamais** loyer et
+provisions_charges pour une échéance `type=loyer` — une seule colonne,
 les deux parts y sont fondues dès la génération (`calculerMontantEcheanceLoyer`).
 Le montant de provisions réellement perçu est donc une **estimation
 dérivée**, jamais une valeur stockée, calculée par
 `calculerProvisionsRecuesEcheance` (packages/core) :
 `provisions_reçues = montant_reçu × (provisions_charges / (loyer_mensuel + provisions_charges))`,
-appliquée à `montant_paye` (ou `montant` si l'échéance est intégralement
-payée) pour chaque paiement `type=loyer` de la période. Cette formule
+appliquée à `montant_reçu` (somme des versements actifs de l'échéance,
+`calculerMontantRecuTotal`) pour chaque paiement `type=loyer` de la
+période. Cette formule
 proportionnelle règle complètement deux limites d'une approche forfaitaire
 (`provisions_charges × nombre d'échéances payées`) :
 - **Échéances proratisées** (entrée, résiliation) : la proportion s'applique
@@ -316,26 +318,18 @@ montantRecu`, garanti par construction — les deux fonctions partagent la
 même soustraction en centimes entiers, jamais deux ratios indépendants qui
 pourraient dériver l'un de l'autre par arrondi).
 
-Base de calcul : **date d'encaissement réel** (`date_paiement`), pas
-`date_echeance` — seul l'argent réellement reçu compte, cohérent avec le
-libellé "encaissés". Un paiement encore `impaye`/`partiel` non réglé ne
-contribue que pour la part effectivement reçue (`montant_paye`), jamais le
-montant dû.
+Base de calcul : **date de versement réelle** (`versements.date_versement`,
+une ligne par encaissement — voir section ci-dessous), pas `date_echeance`
+— seul l'argent réellement reçu compte, cohérent avec le libellé
+"encaissés". Un paiement encore `impaye`/`partiel` non réglé ne contribue
+que pour la part effectivement reçue, jamais le montant dû. Un règlement en
+plusieurs versements sur des dates différentes (ex. 400 € le 5, 400 € le
+20 pour une échéance de 800 €) est représenté correctement : chaque
+versement est attribué au mois de sa **propre** date, contrairement à la
+limite qui existait avant ce chantier (voir ci-dessous) où `paiements` ne
+portait qu'un seul couple montant/date par ligne.
 
-**Limite préexistante du modèle, non introduite par ce module — à ne
-jamais présenter comme une précision jour-par-jour fiable** : `paiements`
-ne porte qu'**un seul** couple (`montant_paye`, `date_paiement`) par ligne
-— un règlement en plusieurs versements sur des dates différentes n'est
-**pas représentable tel quel**. Chaque appel à `PaiementsService.enregistrer()`
-**écrase** la valeur précédente plutôt que de l'additionner : si un
-versement de 400 € est enregistré le 5 puis un second de 400 € le 20 (pour
-une échéance de 800 €), la ligne ne conserve que `date_paiement=20` avec
-`montant_paye=800` — le graphique attribuerait les 800 € au 20, alors que
-la moitié a réellement été perçue le 5. Corriger ce point nécessiterait une
-table d'historique des versements, hors périmètre d'un module tableau de
-bord (voir `docs/backlog.md`, dette technique).
-
-## versements & remboursements — décisions de conception (chantier en cours)
+## versements & remboursements — décisions de conception (chantier terminé)
 
 Corrige la limite ci-dessus (versements multiples non représentables) et
 modélise pour la première fois le remboursement (trop-perçu à la
@@ -395,17 +389,19 @@ avec l'utilisateur avant tout code :
   (partiel maintenant, reste plus tard), validés à la création — rejet
   strict (`ConflictException`, sans exception) si
   `somme(montant_rembourse) > montant reçu`.
-- **Migration en 3 phases (expand → migrate → contract)**, sans perte
-  d'historique : (1) nouvelle migration Drizzle ajoutant `versements`/
-  `remboursements` sans toucher aux colonnes existantes de `paiements` ;
-  script de backfill (pas une migration générée) créant un `versement`
-  par paiement déjà réglé (`montant_paye`→`montant`,
-  `date_paiement`→`date_versement`, `mode`, `reference_rapprochement`
-  repris tels quels), vérifié avant de continuer ; (2) bascule du code
-  listé ci-dessus vers `versements`/`remboursements` ; (3) nouvelle
-  migration supprimant `montant_paye`/`mode`/`date_paiement`/
-  `reference_rapprochement` de `paiements` une fois plus aucun code ne
-  les lisant/écrivant.
+- **Migration en 3 phases (expand → migrate → contract), sans perte
+  d'historique — les 3 terminées** : (1) migration Drizzle ajoutant
+  `versements`/`remboursements` sans toucher aux colonnes existantes de
+  `paiements` ; script de backfill (pas une migration générée, usage
+  unique et non rejouable — supprimé à la Phase 3, sans utilité une fois
+  les colonnes qu'il lisait disparues) créant un `versement` par paiement
+  déjà réglé (`montant_paye`→`montant`, `date_paiement`→`date_versement`,
+  `mode`, `reference_rapprochement` repris tels quels), vérifié avant de
+  continuer ; (2) bascule du code listé ci-dessus vers
+  `versements`/`remboursements` ; (3) migration supprimant
+  `montant_paye`/`mode`/`date_paiement`/`reference_rapprochement` de
+  `paiements`, après recherche exhaustive confirmant plus aucune lecture
+  ni écriture de ces colonnes nulle part dans le code.
 
 ## alertes
 | Champ | Type | Description |

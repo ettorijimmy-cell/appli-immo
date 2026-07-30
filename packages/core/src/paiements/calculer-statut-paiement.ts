@@ -9,12 +9,12 @@ export type StatutPaiement = "paye" | "impaye" | "partiel";
  * docs/data-dictionary.md. Comparaison en centimes entiers, jamais en
  * flottant (voir montant.ts).
  */
-export function calculerStatutPaiement(montant: string, montantPaye: string | null): StatutPaiement {
-  if (montantPaye === null) {
+export function calculerStatutPaiement(montant: string, montantRecu: string | null): StatutPaiement {
+  if (montantRecu === null) {
     return "impaye";
   }
   const centimesAttendus = montantEnCentimes(montant);
-  const centimesRecus = montantEnCentimes(montantPaye);
+  const centimesRecus = montantEnCentimes(montantRecu);
 
   if (centimesRecus <= 0) {
     return "impaye";

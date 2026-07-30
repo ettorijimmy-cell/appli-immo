@@ -661,7 +661,6 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
           bailId: bail.id,
           type: "loyer",
           montant: "900.00",
-          montantPaye: "900.00",
           statut: "paye",
           dateEcheance: "2026-09-01"
         })

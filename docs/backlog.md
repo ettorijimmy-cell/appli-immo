@@ -372,21 +372,23 @@ les trois parcours ci-dessus).
   n'existent pas. À réévaluer une fois le futur module "Suivi des charges
   et fiscalité" construit (voir section "Modules futurs" ci-dessous).
 
-- **Paiement réglé en plusieurs versements — non représentable tel quel**
-  (identifié lors de la conception du graphique "Revenus locatifs", Module
-  7 ; limite préexistante du modèle `paiements`, pas introduite par ce
-  module). Une ligne `paiements` ne porte qu'un seul couple
-  (`montant_paye`, `date_paiement`) — chaque appel à
-  `PaiementsService.enregistrer()` écrase la valeur précédente plutôt que
-  de l'additionner. Un règlement en deux versements sur des dates
-  différentes (ex. 400 € le 5, puis 400 € le 20 pour une échéance de
-  800 €) ne conserve que le dernier appel (`date_paiement=20`,
-  `montant_paye=800`) : tout graphique basé sur `date_paiement` attribue
-  alors la totalité à la dernière date, pas à la répartition réelle dans
-  le temps. Corriger nécessiterait une table d'historique des versements
-  (un paiement pouvant avoir plusieurs lignes de règlement), un
-  changement de modèle de données plus large qu'un module tableau de
-  bord — à concevoir séparément si le besoin se confirme.
+- **Paiement réglé en plusieurs versements — non représentable tel quel —
+  corrigé** (identifié lors de la conception du graphique "Revenus
+  locatifs", Module 7 ; limite préexistante du modèle `paiements`, pas
+  introduite par ce module ; résolu par le chantier "versements &
+  remboursements", `docs/data-dictionary.md"). Une ligne `paiements` ne
+  portait qu'un seul couple (`montant_paye`, `date_paiement`) — chaque
+  appel à `PaiementsService.enregistrer()` (méthode supprimée depuis)
+  écrasait la valeur précédente plutôt que de l'additionner. Un règlement
+  en deux versements sur des dates différentes (ex. 400 € le 5, puis
+  400 € le 20 pour une échéance de 800 €) ne conservait que le dernier
+  appel : tout graphique basé sur la date attribuait alors la totalité à
+  la dernière date, pas à la répartition réelle dans le temps. Résolu par
+  la table `versements` (un paiement peut désormais avoir plusieurs
+  lignes de règlement, chacune attribuée au mois de sa propre date) — les
+  colonnes legacy `montant_paye`/`mode`/`date_paiement`/
+  `reference_rapprochement` ont été retirées de `paiements` à la Phase 3
+  (contract) de ce chantier.
 
 - **Checklist documentaire — non construite.** Prévue au cahier des
   charges initial ("checklist documentaire", "indicateur visuel documents

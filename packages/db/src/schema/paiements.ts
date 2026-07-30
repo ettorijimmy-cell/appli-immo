@@ -1,8 +1,12 @@
-import { date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { decimal, pgEnum, pgTable, uuid, date } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
 
 export const paiementTypeEnum = pgEnum("paiement_type", ["loyer", "charges", "depot_garantie"]);
+// Toujours utilisé par versements/remboursements (voir versements.ts,
+// remboursements.ts) — jamais par paiements lui-même depuis le retrait de
+// montant_paye/mode/date_paiement/reference_rapprochement (Phase 3 du
+// chantier "versements & remboursements", docs/data-dictionary.md).
 export const paiementModeEnum = pgEnum("paiement_mode", ["virement", "cheque", "especes", "caf"]);
 // Calculé, jamais saisi directement (packages/core, calculerStatutPaiement)
 // — voir docs/data-dictionary.md.
@@ -14,11 +18,7 @@ export const paiements = pgTable("paiements", {
     .notNull()
     .references(() => baux.id),
   type: paiementTypeEnum("type").notNull(),
-  mode: paiementModeEnum("mode"),
   statut: paiementStatutEnum("statut").notNull().default("impaye"),
   montant: decimal("montant", { precision: 10, scale: 2 }).notNull(),
-  montantPaye: decimal("montant_paye", { precision: 10, scale: 2 }),
-  dateEcheance: date("date_echeance").notNull(),
-  datePaiement: date("date_paiement"),
-  referenceRapprochement: text("reference_rapprochement")
+  dateEcheance: date("date_echeance").notNull()
 });

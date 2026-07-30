@@ -4,11 +4,13 @@ import { normaliserMontant } from "core";
 
 const PAIEMENT_TYPES = ["loyer", "charges", "depot_garantie"] as const;
 
-// Volontairement AUCUN champ statut/montant_paye/mode/date_paiement/
-// reference_rapprochement ici : ces champs ne se modifient que via
-// enregistrerPaiement() ou annulerEnregistrement() (voir
-// PaiementsController), qui recalculent le statut à chaque écriture — même
-// principe de défense en profondeur que UpdateBailDto (Module 3).
+// Volontairement AUCUN champ statut ici : il est toujours recalculé par
+// PaiementsService depuis les versements actifs (voir VersementsService),
+// jamais saisi directement — même principe de défense en profondeur que
+// UpdateBailDto (Module 3). montant_paye/mode/date_paiement/
+// reference_rapprochement n'existent plus du tout sur paiements depuis la
+// Phase 3 du chantier "versements & remboursements"
+// (docs/data-dictionary.md).
 export class UpdatePaiementDto {
   @IsOptional()
   @IsIn(PAIEMENT_TYPES)

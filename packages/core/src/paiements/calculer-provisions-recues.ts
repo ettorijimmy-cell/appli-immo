@@ -8,8 +8,9 @@ import { centimesVersMontant, montantEnCentimes } from "./montant";
  * : ce calcul est une ESTIMATION dérivée, pas une valeur directement
  * stockée.
  *
- * `montantRecu` = `montant_paye` (ou `montant` si l'échéance est
- * intégralement payée) — pas nécessairement le montant plein mensuel :
+ * `montantRecu` = la somme des versements actifs sur l'échéance (voir
+ * calculerMontantRecuTotal, docs/data-dictionary.md, section "versements &
+ * remboursements") — pas nécessairement le montant plein mensuel :
  * fonctionne aussi bien sur une échéance proratisée (entrée, résiliation)
  * qu'un paiement partiel, puisque la proportion s'applique directement au
  * montant réellement reçu plutôt qu'à un forfait mensuel.

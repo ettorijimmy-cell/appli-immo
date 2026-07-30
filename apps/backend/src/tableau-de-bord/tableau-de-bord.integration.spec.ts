@@ -258,7 +258,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   });
 
   describe("getRevenusLocatifs", () => {
-    it("ventile loyer net et provisions par mois, base sur date_paiement, provisions exclues du loyer net", async () => {
+    it("ventile loyer net et provisions par mois, basé sur date_versement, provisions exclues du loyer net", async () => {
       // Delta plutôt que valeur absolue : la base de dev partagée contient
       // déjà de vrais paiements réglés en juillet 2026 (tests manuels
       // Electron antérieurs) qui tomberaient dans la même période.
