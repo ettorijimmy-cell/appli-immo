@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
 
 // "archive" en est exclu : l'archivage passe exclusivement par l'endpoint
 // dédié /locataires/:id/archiver (même principe que les autres entités).
@@ -22,6 +22,22 @@ export class UpdateLocataireDto {
   @IsOptional()
   @IsString()
   telephone?: string;
+
+  @IsOptional()
+  @IsString()
+  adresse?: string;
+
+  @IsOptional()
+  @IsString()
+  codePostal?: string;
+
+  @IsOptional()
+  @IsString()
+  ville?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateNaissance?: string;
 
   @IsOptional()
   @IsIn(LOCATAIRE_STATUTS_MODIFIABLES)

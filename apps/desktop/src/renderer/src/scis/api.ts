@@ -8,6 +8,10 @@ export interface Sci {
   regimeFiscal: RegimeFiscal;
   formeJuridique: string | null;
   siret: string | null;
+  telephone: string | null;
+  // null = non renseigné, distinct de false — ne jamais pré-remplir
+  // automatiquement (docs/data-dictionary.md).
+  estFamiliale: boolean | null;
   statut: "active" | "archive";
 }
 
@@ -23,6 +27,8 @@ export interface UpdateSciInput {
   regimeFiscal?: RegimeFiscal;
   formeJuridique?: string;
   siret?: string;
+  telephone?: string;
+  estFamiliale?: boolean;
 }
 
 export interface CompteBancaire {

@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString, MinLength } from "class-validator";
 
 export class UpdateSciDto {
   @IsOptional()
@@ -17,4 +17,14 @@ export class UpdateSciDto {
   @IsOptional()
   @IsString()
   siret?: string;
+
+  @IsOptional()
+  @IsString()
+  telephone?: string;
+
+  // Pas de valeur par défaut, y compris ici : un envoi explicite de
+  // `false` doit rester possible (docs/data-dictionary.md).
+  @IsOptional()
+  @IsBoolean()
+  estFamiliale?: boolean;
 }

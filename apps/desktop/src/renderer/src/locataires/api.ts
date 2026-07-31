@@ -9,6 +9,10 @@ export interface Locataire {
   prenom: string;
   email: string | null;
   telephone: string | null;
+  adresse: string | null;
+  codePostal: string | null;
+  ville: string | null;
+  dateNaissance: string | null;
   statut: LocataireStatut;
   anonymiseLe: string | null;
 }
@@ -25,6 +29,10 @@ export interface UpdateLocataireInput {
   prenom?: string;
   email?: string;
   telephone?: string;
+  adresse?: string;
+  codePostal?: string;
+  ville?: string;
+  dateNaissance?: string;
   statut?: LocataireStatutModifiable;
 }
 
@@ -82,6 +90,9 @@ export interface Garant {
   email: string | null;
   telephone: string | null;
   typeGarantie: GarantTypeGarantie;
+  dateNaissance: string | null;
+  lieuNaissance: string | null;
+  nationalite: string | null;
   archivedAt: string | null;
 }
 
@@ -92,6 +103,9 @@ export interface CreateGarantInput {
   email?: string;
   telephone?: string;
   typeGarantie: GarantTypeGarantie;
+  dateNaissance?: string;
+  lieuNaissance?: string;
+  nationalite?: string;
 }
 
 export type BailLocataireRole = "titulaire" | "colocataire";

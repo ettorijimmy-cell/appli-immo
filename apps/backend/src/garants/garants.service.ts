@@ -22,7 +22,10 @@ export class GarantsService {
         prenom: dto.prenom,
         email: dto.email,
         telephone: dto.telephone,
-        typeGarantie: dto.typeGarantie
+        typeGarantie: dto.typeGarantie,
+        dateNaissance: dto.dateNaissance,
+        lieuNaissance: dto.lieuNaissance,
+        nationalite: dto.nationalite
       })
       .returning();
     if (!garant) {

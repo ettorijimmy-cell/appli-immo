@@ -35,6 +35,8 @@ export interface Appartement {
   type: AppartementType;
   surface: string | null;
   loyerReference: string | null;
+  equipementCuisine: string | null;
+  dependancesAnnexes: string | null;
   statut: AppartementStatut;
 }
 
@@ -53,6 +55,8 @@ export interface UpdateAppartementInput {
   type?: AppartementType;
   surface?: string;
   loyerReference?: string;
+  equipementCuisine?: string;
+  dependancesAnnexes?: string;
   statut?: AppartementStatutModifiable;
 }
 

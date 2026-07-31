@@ -206,6 +206,14 @@ export function AppartementDetailView({
               <dt className="text-slate-500">Loyer de référence</dt>
               <dd>{appartement.loyerReference ? `${appartement.loyerReference} €` : "—"}</dd>
             </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Équipement de la cuisine</dt>
+              <dd>{appartement.equipementCuisine ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Dépendances et annexes</dt>
+              <dd>{appartement.dependancesAnnexes ?? "—"}</dd>
+            </div>
           </dl>
         )
       ) : (
@@ -425,6 +433,8 @@ function EditAppartementForm({
   const [type, setType] = useState<AppartementType>(appartement.type);
   const [surface, setSurface] = useState(appartement.surface ?? "");
   const [loyerReference, setLoyerReference] = useState(appartement.loyerReference ?? "");
+  const [equipementCuisine, setEquipementCuisine] = useState(appartement.equipementCuisine ?? "");
+  const [dependancesAnnexes, setDependancesAnnexes] = useState(appartement.dependancesAnnexes ?? "");
   const [statut, setStatut] = useState<AppartementStatutModifiable>(
     appartement.statut === "archive" ? "vacant" : appartement.statut
   );
@@ -441,7 +451,9 @@ function EditAppartementForm({
         type,
         statut,
         ...(surface && { surface }),
-        ...(loyerReference && { loyerReference })
+        ...(loyerReference && { loyerReference }),
+        ...(equipementCuisine && { equipementCuisine }),
+        ...(dependancesAnnexes && { dependancesAnnexes })
       });
       onSaved();
     } catch {
@@ -510,6 +522,30 @@ function EditAppartementForm({
             id="appartement-edit-loyer"
             value={loyerReference}
             onChange={(event) => setLoyerReference(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-equipement-cuisine" className="text-sm font-medium text-slate-700">
+            Équipement de la cuisine
+          </label>
+          <input
+            id="appartement-edit-equipement-cuisine"
+            value={equipementCuisine}
+            onChange={(event) => setEquipementCuisine(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-dependances" className="text-sm font-medium text-slate-700">
+            Dépendances et annexes
+          </label>
+          <input
+            id="appartement-edit-dependances"
+            value={dependancesAnnexes}
+            onChange={(event) => setDependancesAnnexes(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

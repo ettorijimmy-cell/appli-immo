@@ -24,6 +24,14 @@ export class UpdateAppartementDto {
   @IsNumberString()
   loyerReference?: string;
 
+  @IsOptional()
+  @IsString()
+  equipementCuisine?: string;
+
+  @IsOptional()
+  @IsString()
+  dependancesAnnexes?: string;
+
   // Passage manuel vacant / loue / travaux — l'automatisation vacant <-> loue
   // via la création/résiliation de bail arrive au Module 3 ; le réglage
   // manuel restera disponible pour correction de saisie, sauf décision

@@ -5,8 +5,12 @@
  *
  * - Avant le 1er octobre 2026 : clause FACULTATIVE (texte vérifié sur la
  *   version en vigueur du décret n° 2015-587, article 4 g de la loi
- *   n° 89-462) — délai d'un mois, motifs loyer/charges/dépôt de
- *   garantie/assurance regroupés dans une seule phrase.
+ *   n° 89-462) — DEUX délais distincts, jamais un seul regroupé : deux
+ *   mois pour loyer/charges/dépôt de garantie, un mois séparément pour
+ *   assurance/troubles de voisinage. Corrigé après relecture du modèle
+ *   Word du propriétaire (formule classique de la clause résolutoire),
+ *   qui avait révélé qu'une première version de cette fonction regroupait
+ *   à tort les deux motifs sous un délai unique d'un mois.
  * - À partir du 1er octobre 2026 : clause OBLIGATOIRE (décret n° 2026-596
  *   du 6 juillet 2026 modifiant le décret n° 2015-587, article 3 : "entre
  *   en vigueur le 1er octobre 2026 et s'applique aux contrats conclus ou
@@ -38,7 +42,10 @@ export function construireTexteClauseResolutoire(
   servitudeResidencePrincipale: boolean
 ): string {
   if (regime === "avant_2026_10_01") {
-    return "Le présent contrat sera résilié de plein droit un mois après la délivrance d'un commandement de payer resté infructueux, en cas de défaut de paiement du loyer, des charges ou du dépôt de garantie aux termes convenus, ou de non-souscription d'une assurance des risques locatifs.";
+    return (
+      "Le contrat de location est résilié de plein droit pour défaut de paiement du loyer ou des charges aux termes convenus ou pour non versement du dépôt de garantie. La clause de résiliation de plein droit ne produit effet que deux mois après la date d'un commandement de payer demeuré infructueux. " +
+      "Il en est de même, un mois après un commandement demeuré infructueux, en cas de non-souscription d'une assurance des risques locatifs, ou en cas de non-respect de l'obligation d'user paisiblement des locaux loués constaté par une décision de justice."
+    );
   }
 
   let texte =

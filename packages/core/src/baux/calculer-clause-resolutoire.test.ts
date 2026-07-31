@@ -18,24 +18,44 @@ describe("determinerRegimeClauseResolutoire", () => {
 });
 
 describe("construireTexteClauseResolutoire", () => {
-  it("avant le 1er octobre 2026 : texte facultatif à un mois, quatre motifs regroupés", () => {
+  it("avant le 1er octobre 2026 : deux délais distincts, jamais regroupés sous un seul", () => {
     const texte = construireTexteClauseResolutoire("avant_2026_10_01", false);
-    expect(texte).toContain("un mois");
     expect(texte).toContain("loyer");
     expect(texte).toContain("charges");
     expect(texte).toContain("dépôt de garantie");
     expect(texte).toContain("assurance");
     expect(texte).not.toContain("six semaines");
+
+    // "Il en est de même" sépare les deux phrases du texte : tout ce qui
+    // précède porte sur loyer/charges/dépôt de garantie (doit dire "deux
+    // mois", jamais "un mois"), tout ce qui suit porte sur assurance/
+    // troubles de voisinage ("un mois"). Un test qui se contente de
+    // vérifier la présence des deux délais sans vérifier leur portée
+    // respective ne détecte pas un bug de regroupement (un seul délai
+    // appliqué à tous les motifs) — c'est précisément le bug corrigé ici.
+    const indexSecondMotif = texte.indexOf("Il en est de même");
+    const premierMotif = texte.slice(0, indexSecondMotif);
+    const secondMotif = texte.slice(indexSecondMotif);
+    expect(premierMotif).toContain("deux mois");
+    expect(premierMotif).not.toContain("un mois");
+    expect(secondMotif).toContain("un mois");
   });
 
-  it("depuis le 1er octobre 2026 : délai de six semaines pour loyer/charges/dépôt, motifs facultatifs séparés", () => {
+  it("depuis le 1er octobre 2026 : deux délais distincts (six semaines / un mois), même structure qu'avant", () => {
     const texte = construireTexteClauseResolutoire("depuis_2026_10_01", false);
-    expect(texte).toContain("six semaines");
     expect(texte).toContain("loyer");
     expect(texte).toContain("charges");
     expect(texte).toContain("versement du dépôt de garantie");
     expect(texte).toContain("assurance");
     expect(texte).not.toContain("servitude");
+
+    const indexSecondMotif = texte.indexOf("Il en est de même");
+    const premierMotif = texte.slice(0, indexSecondMotif);
+    const secondMotif = texte.slice(indexSecondMotif);
+    expect(premierMotif).toContain("six semaines");
+    expect(premierMotif).not.toContain("un mois");
+    expect(secondMotif).toContain("un mois");
+    expect(secondMotif).not.toContain("six semaines");
   });
 
   it("mentionne la servitude de résidence principale uniquement si applicable", () => {

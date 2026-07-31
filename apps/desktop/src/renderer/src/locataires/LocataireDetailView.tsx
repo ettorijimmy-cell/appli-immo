@@ -150,6 +150,22 @@ export function LocataireDetailView({
                   <dd>{locataire.telephone ?? "—"}</dd>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Adresse</dt>
+                  <dd>{locataire.adresse ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Code postal</dt>
+                  <dd>{locataire.codePostal ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Ville</dt>
+                  <dd>{locataire.ville ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Date de naissance</dt>
+                  <dd>{locataire.dateNaissance ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
                   <dt className="text-slate-500">Statut</dt>
                   <dd>{locataire.statut}</dd>
                 </div>
@@ -314,6 +330,9 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
   const [nom, setNom] = useState("");
   const [prenom, setPrenom] = useState("");
   const [typeGarantie, setTypeGarantie] = useState<GarantTypeGarantie>("personne_physique");
+  const [dateNaissance, setDateNaissance] = useState("");
+  const [lieuNaissance, setLieuNaissance] = useState("");
+  const [nationalite, setNationalite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -322,7 +341,15 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
     setError(null);
     setIsSubmitting(true);
     try {
-      await createGarant({ bailId, nom, prenom, typeGarantie });
+      await createGarant({
+        bailId,
+        nom,
+        prenom,
+        typeGarantie,
+        ...(dateNaissance && { dateNaissance }),
+        ...(lieuNaissance && { lieuNaissance }),
+        ...(nationalite && { nationalite })
+      });
       onCreated();
     } catch {
       setError("Impossible d'ajouter le garant");
@@ -364,6 +391,25 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
             </option>
           ))}
         </select>
+        <input
+          type="date"
+          placeholder="Date de naissance"
+          value={dateNaissance}
+          onChange={(event) => setDateNaissance(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Lieu de naissance"
+          value={lieuNaissance}
+          onChange={(event) => setLieuNaissance(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Nationalité"
+          value={nationalite}
+          onChange={(event) => setNationalite(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
       </div>
       {error && (
         <p role="alert" className="text-xs text-red-600">
@@ -392,6 +438,10 @@ function EditLocataireForm({
   const [prenom, setPrenom] = useState(locataire.prenom);
   const [email, setEmail] = useState(locataire.email ?? "");
   const [telephone, setTelephone] = useState(locataire.telephone ?? "");
+  const [adresse, setAdresse] = useState(locataire.adresse ?? "");
+  const [codePostal, setCodePostal] = useState(locataire.codePostal ?? "");
+  const [ville, setVille] = useState(locataire.ville ?? "");
+  const [dateNaissance, setDateNaissance] = useState(locataire.dateNaissance ?? "");
   const [statut, setStatut] = useState<LocataireStatutModifiable>(
     locataire.statut === "archive" ? "actif" : locataire.statut
   );
@@ -408,7 +458,11 @@ function EditLocataireForm({
         prenom,
         statut,
         ...(email && { email }),
-        ...(telephone && { telephone })
+        ...(telephone && { telephone }),
+        ...(adresse && { adresse }),
+        ...(codePostal && { codePostal }),
+        ...(ville && { ville }),
+        ...(dateNaissance && { dateNaissance })
       });
       onSaved();
     } catch {
@@ -470,6 +524,51 @@ function EditLocataireForm({
             id="locataire-edit-telephone"
             value={telephone}
             onChange={(event) => setTelephone(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="locataire-edit-adresse" className="text-sm font-medium text-slate-700">
+            Adresse
+          </label>
+          <input
+            id="locataire-edit-adresse"
+            value={adresse}
+            onChange={(event) => setAdresse(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="locataire-edit-code-postal" className="text-sm font-medium text-slate-700">
+            Code postal
+          </label>
+          <input
+            id="locataire-edit-code-postal"
+            value={codePostal}
+            onChange={(event) => setCodePostal(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="locataire-edit-ville" className="text-sm font-medium text-slate-700">
+            Ville
+          </label>
+          <input
+            id="locataire-edit-ville"
+            value={ville}
+            onChange={(event) => setVille(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="locataire-edit-date-naissance" className="text-sm font-medium text-slate-700">
+            Date de naissance
+          </label>
+          <input
+            id="locataire-edit-date-naissance"
+            type="date"
+            value={dateNaissance}
+            onChange={(event) => setDateNaissance(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

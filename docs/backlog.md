@@ -608,6 +608,36 @@ effective** (plusieurs `bail_locataires` actifs sur le bail) — jamais sur
 un bail à un seul locataire, cette règle ne concernant que la colocation à
 bail unique.
 
+**Indice IRL (révision du loyer, art. 17-1) — infrastructure conçue, pas
+encore codée.** Point d'accès officiel confirmé par test direct (pas
+supposé) : `GET https://api.insee.fr/series/BDM/V1/data/SERIES_BDM/001515333`
+(série BDM 001515333 = "Indice de référence des loyers (IRL)"), réponse
+XML SDMX-ML, aucune authentification requise en pratique — à surveiller si
+INSEE ferme un jour cet ancien endpoint au profit du nouveau portail à clé
+(`portail-api.insee.fr`, décrit comme accès restreint pour la version
+actuelle du catalogue). Paramètre `lastNObservations=1` disponible pour ne
+récupérer que la dernière valeur trimestrielle.
+
+Architecture retenue :
+- Table `indices_irl` (trimestre, année, valeur, date_recuperation),
+  alimentée par une tâche planifiée qui vérifie périodiquement une
+  nouvelle publication — **jamais un appel API à chaque génération de
+  bail**.
+- La génération du bail lit uniquement la dernière valeur déjà stockée. Si
+  aucune valeur n'existe, ou qu'elle date de plus de 4 mois (l'IRL étant
+  trimestriel, un tel écart signale un problème de rafraîchissement), la
+  génération est **bloquée avec un message clair** — jamais de valeur
+  absente ou périmée insérée silencieusement dans un document.
+- Chaque échec de récupération par la tâche planifiée doit produire une
+  trace/log explicite (docs/error-log.md ou logs backend), pas seulement
+  un silence qui finit par déclencher le blocage à 4 mois — pour qu'un
+  échec répété (ex. endpoint indisponible, format de réponse changé) soit
+  visible avant de devenir bloquant pour un vrai bail à générer.
+
+Cette infrastructure (table + job + endpoint confirmé) sera réutilisable
+telle quelle par le futur module "Révision annuelle" du cahier des charges
+initial (`docs/app-spec.md`) — pas seulement pour l'édition du bail.
+
 ### État des lieux (futur module, priorité 2)
 
 Pas encore conçu. Porte, en plus de son objet propre (constat d'entrée/
