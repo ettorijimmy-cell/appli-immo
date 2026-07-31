@@ -14,6 +14,7 @@ build/
 
 backups/
 storage/
+tmp/
 
 .vscode/*
 !.vscode/extensions.json

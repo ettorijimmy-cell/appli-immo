@@ -15,3 +15,7 @@ export * from "./dates/calendrier";
 export * from "./alertes/regles-alertes";
 export * from "./alertes/calculer-action-alerte";
 export * from "./baux/calculer-taux-occupation";
+export * from "./baux/calculer-tranche-construction";
+export * from "./baux/calculer-clause-resolutoire";
+export * from "./baux/calculer-duree-bail";
+export * from "./paiements/calculer-loyer-precedent-locataire";

@@ -480,6 +480,22 @@ codées)** :
   ("niveau de performance du logement : [classe...]") alors que l'élec/gaz
   ne fait que renvoyer à l'annexe sans citer de résultat — `documents.
   date_expiration` (déjà existant) suffit pour cette seule mention.
+
+  **Écart réel découvert à l'implémentation de la section XI (annexes) du
+  document généré** : `documents.categorie` ne porte aucune valeur dédiée à
+  l'élec/gaz — seulement `diagnostic` (générique) et `dpe` (spécifique). Un
+  document `categorie=diagnostic` sans ligne `diagnostics` associée est
+  aujourd'hui indiscernable entre "c'est l'élec/gaz" et "c'est un autre
+  diagnostic générique pas encore structuré". `BailDocumentService` ne
+  peut donc pas détecter la présence réelle de ce diagnostic — la section
+  XI l'affiche toujours "absent" par défaut (voir le commentaire dans
+  `apps/backend/src/bail-document/bail-document.service.ts`). Deux
+  solutions possibles, à trancher au moment de construire l'UI de saisie
+  des diagnostics, pas maintenant : (a) une valeur d'enum dédiée sur
+  `documents.categorie` (ex. `elec_gaz`), ou (b) élargir `diagnostics.type`
+  (actuellement `dpe` \| `crep_plomb` \| `erp`) avec une quatrième valeur,
+  même sans champ de résultat associé — juste pour permettre la
+  détection de présence.
 - `garants` : adresse, code_postal, ville, profession, revenus — tous
   confirmés mentions obligatoires de l'acte de cautionnement sous peine de
   nullité absolue (loi ALUR), pas seulement l'adresse initialement
@@ -514,6 +530,83 @@ document réel (et sa structure de données) viendra du futur module État
 des lieux, rattaché comme document lié au bail (Module 4, `documents`).
 Voir l'entrée "État des lieux" ci-dessous pour le lien explicite entre les
 deux.
+
+**Deux parties distinctes du document généré, découvertes après coup en
+comparant à un vrai bail concurrent (Rentila, fourni par l'utilisateur
+comme repère — jamais copié tel quel, uniquement utilisé pour savoir quoi
+vérifier sur les sources officielles)** :
+1. **"Conditions particulières"** — sections I à XI déjà codées et
+   vérifiées contre le décret n° 2015-587 (voir ci-dessus).
+2. **"Conditions générales"** — texte plus long, en grande partie
+   standardisé, qui **ne vient pas du décret 2015-587** contrairement à
+   une hypothèse initiale : vérifié directement sur la version en vigueur
+   de l'annexe 1 ("Ce modèle-type ne fournit que des cadres... Les
+   dispositions d'ordre public applicables figurent dans la notice
+   d'information annexée... non reproduites ici"). Deux sources
+   distinctes, **statuts différents** :
+   - **Notice d'information** (arrêté du 29 mai 2015, modifié 2023) :
+     document **fixe**, identique pour tous les baux (6 rubriques :
+     établissement du bail, droits/obligations, fin de contrat, départ
+     conjoint victime de violences, règlement des litiges, contacts
+     utiles) — **à joindre tel quel** (fichier statique stocké une fois
+     pour toutes), **jamais généré** par bail, aucun champ variable.
+   - **Loi n° 89-462 du 6 juillet 1989** elle-même (articles 3 à 24
+     environ) : substance juridique **à générer** depuis les données du
+     bail — obligations bailleur (art. 6) / locataire (art. 7), révision
+     du loyer (art. 17-1, formule IRL), charges/régularisation (art. 23),
+     dépôt de garantie (art. 22, vérifié stable depuis 2014 : plafond 1
+     mois, restitution 1 ou 2 mois selon conformité état des lieux,
+     majoration retard 10 %/mois), résiliation locataire (art. 15, préavis
+     3 mois / 1 mois dans 5 cas exhaustifs) et bailleur (art. 15, préavis 6
+     mois, motifs limitatifs), état des lieux contradictoire (art. 3-2).
+     **Pas encore implémenté** (uniquement sections VII et VIII mises à
+     jour pour l'instant, voir ci-dessous) — reste à faire section par
+     section, une fois le reste validé.
+   - **Clause pénale — jamais de section dédiée, confirmé avec
+     l'utilisateur.** Art. 4 i) de la loi 1989 interdit purement et
+     simplement toute pénalité/amende contractuelle, sans exception :
+     une section "Clause pénale" serait vide par construction. Fusionnée
+     dans la seule section "Clause résolutoire" (VIII), jamais nommée
+     séparément, pour ne pas laisser croire qu'une pénalité financière
+     existerait légalement.
+   - **Tolérances, élection de domicile** : aucun fondement légal
+     spécifique trouvé — entièrement rédactionnel, pas une exigence de la
+     loi 1989.
+
+**Clause résolutoire (section VIII) — logique conditionnelle sur la date,
+implémentée** (`packages/core`, `calculerClauseResolutoire`) : découverte
+d'un décret n° 2026-596 du 6 juillet 2026 (JO), modifiant le décret
+2015-587, **applicable aux contrats conclus ou renouvelés à compter du 1er
+octobre 2026** (article 3 du décret, vérifié texte exact) — jamais codé
+comme "un seul régime pour l'instant", les deux existent en parallèle
+selon la date :
+- **Avant le 1er octobre 2026** : clause facultative, délai d'un mois,
+  4 motifs regroupés (loyer/charges/dépôt de garantie/assurance) — texte
+  déjà vérifié et inchangé.
+- **À partir du 1er octobre 2026** : clause **obligatoire** pour
+  loyer/charges/dépôt de garantie, délai réduit à **six semaines** ;
+  assurance et troubles de voisinage traités séparément (délai d'un mois,
+  motifs facultatifs) ; motif supplémentaire si le logement est soumis à
+  une "servitude de résidence principale" (nouvelle mention, article L.
+  151-14-1 du code de l'urbanisme).
+- **Limite assumée** : la loi parle de contrats "conclus" à telle date ;
+  notre schéma n'a pas de date de signature distincte de `baux.date_debut`
+  — utilisée comme approximation, la plus proche disponible, pas une
+  certitude absolue.
+- **Servitude de résidence principale** : aucun champ en base pour
+  savoir si un logement y est soumis (désignation d'urbanisme rare,
+  propre à certaines communes) — paramètre de génération explicite
+  (`servitudeResidencePrincipale` du DTO), jamais déduit silencieusement,
+  affiché à la fois en section II.B (nouvelle mention) et en section VIII
+  (motif de résiliation supplémentaire), uniquement à partir du 1er
+  octobre 2026. À modéliser en base si le besoin se confirme.
+
+**Section VII (solidarité/indivisibilité) — complétée** : règle
+d'extinction de la solidarité à 6 mois après le congé (article 8-1 de la
+loi 1989) ajoutée, mais **uniquement affichée en cas de colocation
+effective** (plusieurs `bail_locataires` actifs sur le bail) — jamais sur
+un bail à un seul locataire, cette règle ne concernant que la colocation à
+bail unique.
 
 ### État des lieux (futur module, priorité 2)
 

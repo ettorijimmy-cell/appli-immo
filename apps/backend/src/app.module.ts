@@ -5,6 +5,7 @@ import { AlertesModule } from "./alertes/alertes.module";
 import { AppartementsModule } from "./appartements/appartements.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
+import { BailDocumentModule } from "./bail-document/bail-document.module";
 import { BailLocatairesModule } from "./bail-locataires/bail-locataires.module";
 import { BauxModule } from "./baux/baux.module";
 import { CommonModule } from "./common/common.module";
@@ -45,7 +46,8 @@ import { VersementsModule } from "./versements/versements.module";
     RemboursementsModule,
     DocumentsModule,
     AlertesModule,
-    TableauDeBordModule
+    TableauDeBordModule,
+    BailDocumentModule
   ]
 })
 export class AppModule {}
