@@ -35,6 +35,8 @@ automatiquement à la création d'une SCI — voir
 | regime_fiscal | enum | `IS` \| `IR` — jamais supposé, toujours explicite |
 | forme_juridique | text | |
 | siret | text | |
+| telephone | text, nullable | Mention "LE BAILLEUR" du modèle de bail, renseignable progressivement |
+| est_familiale | boolean, nullable | Détermine la durée légale du bail vide (3 ans si vraie, 6 ans sinon — art. 10 loi n° 89-462). **Jamais de valeur par défaut**, y compris pour une nouvelle SCI créée après l'ajout de ce champ : rester `null` tant que non renseigné explicitement. La génération du bail doit bloquer avec un message clair si ce champ est `null` sur la SCI concernée, plutôt que de deviner une valeur (docs/backlog.md, section "Édition d'un bail") |
 | statut | enum | `active` \| `archive` |
 
 ## comptes_bancaires_sci
@@ -54,6 +56,8 @@ automatiquement à la création d'une SCI — voir
 | type | enum | `T1` \| `T2` \| `T3` \| `T4` \| `T5+` |
 | statut | enum | `vacant` \| `loue` \| `travaux` \| `archive` |
 | loyer_reference | decimal | Loyer de référence hors charges, utilisé pour pré-remplir un nouveau bail |
+| equipement_cuisine | text, nullable | Mention du modèle de bail (cuisine équipée, bail meublé notamment) — texte libre |
+| dependances_annexes | text, nullable | Mention du modèle de bail (cave, parking, balcon...) — texte libre |
 
 ## equipements
 | Champ | Type | Description |
@@ -67,11 +71,14 @@ automatiquement à la création d'une SCI — voir
 |---|---|---|
 | statut | enum | `actif` \| `ancien` \| `archive` |
 | anonymise_le | timestamp, nullable | Renseigné lors d'une anonymisation RGPD — les champs identifiants sont alors neutralisés, la ligne reste |
+| adresse, code_postal, ville | text, nullable | Identité du LOCATAIRE dans le modèle de bail, renseignables progressivement |
+| date_naissance | date, nullable | Mention du modèle de bail |
 
 ## garants
 | Champ | Type | Description |
 |---|---|---|
 | type_garantie | enum | `personne_physique` \| `garantie_visale` \| `autre` |
+| date_naissance, lieu_naissance, nationalite | text/date, nullable | Mentions manuscrites de l'acte de cautionnement, sous peine de nullité absolue (loi ALUR) — figées à la création, même principe que adresse/profession/revenus |
 
 ## baux
 Le passage du statut à `actif` (activation) et `resilie` (résiliation)

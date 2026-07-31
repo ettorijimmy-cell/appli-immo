@@ -36,6 +36,10 @@ export const appartements = pgTable("appartements", {
   nombrePiecesPrincipales: integer("nombre_pieces_principales"),
   modeChauffage: appartementModeProductionEnum("mode_chauffage"),
   modeEauChaude: appartementModeProductionEnum("mode_eau_chaude"),
+  // Texte libre, mentions du modèle de bail — équipement de la cuisine
+  // (bail meublé notamment) et dépendances/annexes (cave, parking...).
+  equipementCuisine: text("equipement_cuisine"),
+  dependancesAnnexes: text("dependances_annexes"),
   // 'vacant' par défaut : un appartement nouvellement créé n'a pas encore
   // de bail actif (règle de transition automatique vacant -> loue au
   // Module 3).

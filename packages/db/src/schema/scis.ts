@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text } from "drizzle-orm/pg-core";
+import { boolean, pgEnum, pgTable, text } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 
 export const sciRegimeFiscalEnum = pgEnum("sci_regime_fiscal", ["IS", "IR"]);
@@ -23,5 +23,14 @@ export const scis = pgTable("scis", {
   // contrat-type lui-même.
   nomGerant: text("nom_gerant"),
   prenomGerant: text("prenom_gerant"),
+  // Numéro affiché dans l'en-tête "LE BAILLEUR" du modèle de bail —
+  // renseignable progressivement, même principe que adresse/ville.
+  telephone: text("telephone"),
+  // Détermine la durée légale du bail vide (3 ans si familiale, 6 ans
+  // sinon — art. 10 loi n° 89-462). Jamais de valeur par défaut, y compris
+  // pour une future SCI : la génération du bail doit bloquer explicitement
+  // tant que ce champ n'est pas renseigné, plutôt que de deviner une
+  // valeur (confirmé avec l'utilisateur — docs/data-dictionary.md).
+  estFamiliale: boolean("est_familiale"),
   statut: sciStatutEnum("statut").notNull().default("active")
 });

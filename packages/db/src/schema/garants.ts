@@ -1,4 +1,4 @@
-import { decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
 
@@ -27,5 +27,10 @@ export const garants = pgTable("garants", {
   codePostal: text("code_postal"),
   ville: text("ville"),
   profession: text("profession"),
-  revenus: decimal("revenus", { precision: 10, scale: 2 })
+  revenus: decimal("revenus", { precision: 10, scale: 2 }),
+  // Acte de cautionnement (mentions manuscrites légales) — même principe
+  // de figement à la création que les champs ci-dessus.
+  dateNaissance: date("date_naissance"),
+  lieuNaissance: text("lieu_naissance"),
+  nationalite: text("nationalite")
 });
