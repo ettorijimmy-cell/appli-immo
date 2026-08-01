@@ -45,9 +45,13 @@ import { BailDocumentDocxService } from "./bail-document-docx.service";
 // Fixture committée : copie corrigée du modèle réel du propriétaire
 // (tmp/Modèle bail.docx, hors dépôt) — les 3 balises cassées ("]" au lieu
 // de "}") corrigées, et les blocs conditionnels clauseResolutoireAvant/
-// clauseResolutoireApres/servitude ajoutés (absents du fichier réel à ce
-// jour, voir docs/backlog.md). Le vrai fichier du propriétaire nécessite
-// encore ces deux corrections avant de pouvoir être utilisé tel quel.
+// clauseResolutoireApres/servitude/aGarant/meuble ajoutés (absents du
+// fichier réel à ce jour, voir docs/backlog.md). Le vrai fichier du
+// propriétaire nécessite encore ces corrections avant de pouvoir être
+// utilisé tel quel — aGarant masque le paragraphe "caution solidaire"
+// (GARANTS SOLIDAIRES) et la ligne "Acte de caution solidaire" des
+// pièces annexées quand aucun garant n'est rattaché ; meuble masque la
+// ligne "Etat descriptif et inventaire du mobilier" pour un bail vide.
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-bail-test.docx");
 process.env["BAIL_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
 
@@ -152,11 +156,17 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // renseignés — `surcharges` permet à un test de rendre un champ précis
   // manquant ou de changer le régime, sans dupliquer tout le montage.
   async function creerDossierComplet(
-    options: { dateDebut?: string; avecGarant?: boolean; avecIrl?: boolean } = {}
+    options: {
+      dateDebut?: string;
+      avecGarant?: boolean;
+      avecIrl?: boolean;
+      typeBail?: "vide" | "meuble";
+    } = {}
   ) {
     const dateDebut = options.dateDebut ?? "2026-07-01";
     const avecGarant = options.avecGarant ?? true;
     const avecIrl = options.avecIrl ?? true;
+    const typeBail = options.typeBail ?? "vide";
 
     if (avecIrl) {
       // annee 9999 : valeur délibérément hors de toute plage réaliste,
@@ -214,7 +224,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const bail = await bauxService.create({
       appartementId: appartement.id,
-      typeBail: "vide",
+      typeBail,
       dateDebut,
       loyerMensuel: "650.00",
       depotGarantie: "650.00",
@@ -267,6 +277,16 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // Vraie valeur IRL insérée, jamais un texte à compléter.
     expect(texte).toContain("148.37");
     expect(texte).not.toContain("non disponible");
+
+    // Garant présent (avecGarant par défaut) : le paragraphe d'engagement
+    // de caution solidaire doit apparaître (phrase précise, distincte de
+    // la mention "caution solidaire" du bloc signature qui reste toujours
+    // imprimée, garant ou non).
+    expect(texte).toContain("caution solidaire du locataire");
+
+    // Bail vide (typeBail par défaut) : jamais la mention réservée au
+    // meublé (inventaire de mobilier, docs/backlog.md).
+    expect(texte).not.toContain("inventaire du mobilier");
   });
 
   it("bloque si aucune valeur IRL n'existe en base", async () => {
@@ -377,6 +397,28 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     );
 
     expect(buffer.length).toBeGreaterThan(0);
+
+    // Sans garant, le paragraphe d'engagement de caution solidaire ne
+    // doit jamais être imprimé avec des champs vides — masqué (gap réel
+    // constaté sur le bail Ilan Devos, aucun garant rattaché). La mention
+    // "caution solidaire" du bloc signature (toujours présente, garant ou
+    // non) n'est pas concernée par ce test.
+    const texte = texteDuDocx(buffer);
+    expect(texte).not.toContain("caution solidaire du locataire");
+  });
+
+  it("un bail meublé mentionne l'inventaire de mobilier, jamais un bail vide", async () => {
+    const { bail: bailVide } = await creerDossierComplet({ typeBail: "vide" });
+    const bufferVide = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bailVide.id, {})
+    );
+    expect(texteDuDocx(bufferVide)).not.toContain("inventaire du mobilier");
+
+    const { bail: bailMeuble } = await creerDossierComplet({ typeBail: "meuble", avecIrl: false });
+    const bufferMeuble = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bailMeuble.id, {})
+    );
+    expect(texteDuDocx(bufferMeuble)).toContain("inventaire du mobilier");
   });
 
   it("bloque si un garant rattaché a des champs manquants (date/lieu de naissance, nationalité)", async () => {

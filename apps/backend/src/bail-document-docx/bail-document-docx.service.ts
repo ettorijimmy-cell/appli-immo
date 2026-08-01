@@ -278,7 +278,20 @@ export class BailDocumentDocxService {
       chauffageIndividuel: appartement.modeChauffage === "individuel",
       chauffageCollectif: appartement.modeChauffage === "collectif",
       eauChaudeIndividuelle: appartement.modeEauChaude === "individuel",
-      eauChaudeCollective: appartement.modeEauChaude === "collectif"
+      eauChaudeCollective: appartement.modeEauChaude === "collectif",
+      // Section GARANTS SOLIDAIRES + ligne "Acte de caution solidaire" des
+      // pièces annexées : un bail sans garant reste valide (donnees-
+      // completude.ts ne l'exige jamais) — sans ce drapeau, les deux
+      // mentions "caution solidaire" restaient imprimées avec des champs
+      // vides plutôt que masquées, un vrai gap constaté sur le bail
+      // Ilan Devos (aucun garant).
+      aGarant: garantsDuBail.length > 0,
+      // "Etat descriptif et inventaire du mobilier" (pièces annexées) :
+      // mention meublé uniquement, décision arrêtée avant ce chantier
+      // (docs/backlog.md, "Édition d'un bail") — l'inventaire lui-même
+      // reste différé au futur module État des lieux, seule cette ligne
+      // du bail vide/meublé est concernée ici.
+      meuble: bail.typeBail === "meuble"
     });
 
     const utilisateurId = this.requestContext.getUtilisateurId();
@@ -307,6 +320,8 @@ export class BailDocumentDocxService {
       chauffageCollectif: boolean;
       eauChaudeIndividuelle: boolean;
       eauChaudeCollective: boolean;
+      aGarant: boolean;
+      meuble: boolean;
     }
   ): Buffer {
     const contenu = readFileSync(this.templatePath, "binary");
