@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
+import { ajouterMois, decomposerDate, formaterDateIso, joursDansLeMois } from "core";
 import {
   alertes,
   createDbClient,
@@ -489,6 +490,19 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     });
 
     it("un appartement archivé est exclu du dénominateur du taux d'occupation moyen pour une période postérieure à son archivage, pas compté comme 0 %", async () => {
+      // Fenêtre interrogée calculée depuis "aujourd'hui" (jamais une date
+      // fixe codée en dur, qui finit toujours par être dépassée par le
+      // temps qui passe — bug réel constaté le jour où l'horloge a
+      // rattrapé une échéance figée en 2026-08). Le mois calendaire
+      // entier commençant 2 mois après aujourd'hui est systématiquement
+      // postérieur au moment réel de l'archivage ci-dessous, quelle que
+      // soit la date d'exécution du test.
+      const aujourdhui = new Date().toISOString().slice(0, 10);
+      const { annee, mois } = decomposerDate(aujourdhui);
+      const debutPeriode = ajouterMois(formaterDateIso(annee, mois, 1), 2);
+      const { annee: anneeCible, mois: moisCible } = decomposerDate(debutPeriode);
+      const finPeriode = formaterDateIso(anneeCible, moisCible, joursDansLeMois(anneeCible, moisCible));
+
       // Appartement témoin : bail actif couvrant toute la période
       // interrogée -> occupation réelle 100 % sur cette période.
       const appartementTemoin = await appartementsService.create({
@@ -500,7 +514,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       const bailTemoin = await bauxService.create({
         appartementId: appartementTemoin.id,
         typeBail: "vide",
-        dateDebut: "2026-01-01",
+        dateDebut: aujourdhui,
         loyerMensuel: "700.00",
         jourEcheance: 5
       });
@@ -519,7 +533,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await appartementsService.archive(appartementArchive.id);
 
       // Période interrogée entièrement postérieure à l'archivage.
-      const synthese = await tableauDeBordService.getSynthese("2026-08-01", "2026-08-31");
+      const synthese = await tableauDeBordService.getSynthese(debutPeriode, finPeriode);
       const sci = synthese.find((s) => s.id === sciId)!;
       const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
 

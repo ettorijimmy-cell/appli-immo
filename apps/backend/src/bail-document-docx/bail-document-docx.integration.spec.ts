@@ -159,11 +159,15 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const avecIrl = options.avecIrl ?? true;
 
     if (avecIrl) {
-      // annee/trimestre arbitraires — chaque test tourne dans sa propre
-      // transaction isolée (rollback en afterEach), aucun risque de
-      // collision avec la contrainte d'unicité entre deux tests.
-      // date_recuperation = maintenant, jamais périmée par défaut.
-      await db.insert(indicesIrl).values({ annee: 2026, trimestre: 2, valeur: "148.37" });
+      // annee 9999 : valeur délibérément hors de toute plage réaliste,
+      // pour ne jamais entrer en collision avec une vraie ligne publiée
+      // par l'INSEE et déjà présente en base dev (contrainte d'unicité
+      // (annee, trimestre) partagée avec les données réelles, pas
+      // seulement entre transactions de test isolées — un vrai bug
+      // constaté : ce test entrait en conflit avec la ligne 2026-Q2
+      // réellement synchronisée pendant ce chantier). date_recuperation
+      // = maintenant, jamais périmée par défaut.
+      await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
     }
 
     const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR" });
@@ -262,6 +266,11 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   it("bloque si aucune valeur IRL n'existe en base", async () => {
     const { bail } = await creerDossierComplet({ avecIrl: false });
+    // Vide la table dans cette transaction (annulé au rollback) : la base
+    // de dev partagée peut déjà contenir de vraies lignes synchronisées
+    // par le job réel, indépendamment de ce test — ne jamais supposer la
+    // table vide sans le garantir explicitement.
+    await db.delete(indicesIrl);
 
     let erreur: unknown;
     try {
@@ -281,6 +290,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   it("bloque si la dernière valeur IRL connue est périmée (plus de 4 mois)", async () => {
     const { bail } = await creerDossierComplet({ avecIrl: false });
+    // Même précaution que le test précédent : ne jamais supposer la table
+    // vide, la base de dev partagée peut déjà contenir de vraies lignes.
+    await db.delete(indicesIrl);
     const dateRecuperationPerimee = new Date();
     dateRecuperationPerimee.setMonth(dateRecuperationPerimee.getMonth() - 5);
     await db.insert(indicesIrl).values({ annee: 2025, trimestre: 1, valeur: "145.00", dateRecuperation: dateRecuperationPerimee });
