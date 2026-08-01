@@ -608,35 +608,44 @@ effective** (plusieurs `bail_locataires` actifs sur le bail) — jamais sur
 un bail à un seul locataire, cette règle ne concernant que la colocation à
 bail unique.
 
-**Indice IRL (révision du loyer, art. 17-1) — infrastructure conçue, pas
-encore codée.** Point d'accès officiel confirmé par test direct (pas
+**Indice IRL (révision du loyer, art. 17-1) — infrastructure construite et
+en service.** Point d'accès officiel confirmé par test direct (pas
 supposé) : `GET https://api.insee.fr/series/BDM/V1/data/SERIES_BDM/001515333`
 (série BDM 001515333 = "Indice de référence des loyers (IRL)"), réponse
 XML SDMX-ML, aucune authentification requise en pratique — à surveiller si
 INSEE ferme un jour cet ancien endpoint au profit du nouveau portail à clé
 (`portail-api.insee.fr`, décrit comme accès restreint pour la version
-actuelle du catalogue). Paramètre `lastNObservations=1` disponible pour ne
+actuelle du catalogue). Paramètre `lastNObservations=1` utilisé pour ne
 récupérer que la dernière valeur trimestrielle.
 
-Architecture retenue :
-- Table `indices_irl` (trimestre, année, valeur, date_recuperation),
-  alimentée par une tâche planifiée qui vérifie périodiquement une
-  nouvelle publication — **jamais un appel API à chaque génération de
-  bail**.
-- La génération du bail lit uniquement la dernière valeur déjà stockée. Si
-  aucune valeur n'existe, ou qu'elle date de plus de 4 mois (l'IRL étant
-  trimestriel, un tel écart signale un problème de rafraîchissement), la
-  génération est **bloquée avec un message clair** — jamais de valeur
-  absente ou périmée insérée silencieusement dans un document.
-- Chaque échec de récupération par la tâche planifiée doit produire une
-  trace/log explicite (docs/error-log.md ou logs backend), pas seulement
-  un silence qui finit par déclencher le blocage à 4 mois — pour qu'un
-  échec répété (ex. endpoint indisponible, format de réponse changé) soit
-  visible avant de devenir bloquant pour un vrai bail à générer.
+Architecture livrée (`apps/backend/src/indices-irl/`) :
+- Table `indices_irl` (annee, trimestre, valeur, date_recuperation),
+  contrainte d'unicité (annee, trimestre) — pas de colonnes d'audit
+  standard, même principe que `journal_audit` (référence, jamais modifiée
+  après coup).
+- `IndicesIrlService.synchroniser()` : appelle l'INSEE, insère la nouvelle
+  observation si elle n'est pas déjà connue (idempotent via
+  `onConflictDoNothing`) — jamais d'appel à chaque génération de bail.
+- `IndicesIrlJobService` (`@Cron(CronExpression.EVERY_DAY_AT_3AM)`) :
+  vérification quotidienne (coût réel nul, un seul appel HTTP léger),
+  chaque échec explicitement journalisé (`Logger.error`) — jamais un
+  silence qui ne se remarque qu'au blocage 4 mois plus tard. Déclenchement
+  manuel disponible (`POST /indices-irl/executer-job`, même principe que
+  le job d'alertes du Module 6).
+- `packages/core`, `irlEstPerime(dateRecuperation, dateReference)` :
+  règle pure, testée — plus de 4 mois d'écart (l'IRL étant trimestriel, un
+  tel écart signale un problème de rafraîchissement, pas une absence
+  légitime de nouvelle publication).
+- `BailDocumentDocxService` lit uniquement la dernière valeur déjà
+  stockée ; absente ou périmée, `irlIndisponible` rejoint la liste des
+  champs manquants de `validerCompletudeGenerationBail` — la génération
+  bloque avec un message clair, **plus aucun marqueur "non disponible"
+  inséré dans le document** (l'exception temporaire posée en urgence
+  avant que cette infrastructure existe est levée).
 
-Cette infrastructure (table + job + endpoint confirmé) sera réutilisable
-telle quelle par le futur module "Révision annuelle" du cahier des charges
-initial (`docs/app-spec.md`) — pas seulement pour l'édition du bail.
+Cette infrastructure (table + job + endpoint) est directement réutilisable
+par le futur module "Révision annuelle" du cahier des charges initial
+(`docs/app-spec.md`) — pas seulement pour l'édition du bail.
 
 ### État des lieux (futur module, priorité 2)
 

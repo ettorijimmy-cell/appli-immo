@@ -511,6 +511,19 @@ entretien_equipement), 5 jours (impaye). **Un futur type d'alerte devra
 préciser explicitement dans quel sens il utilise ce champ** — ne jamais
 supposer "avant" par défaut.
 
+## indices_irl
+Table de référence (série INSEE BDM 001515333, "Indice de référence des
+loyers") — pas de colonnes d'audit standard (created_at/updated_by/version/
+archived_at), même principe que `journal_audit` : une valeur publiée n'est
+jamais modifiée après coup, seule une nouvelle ligne (nouveau trimestre)
+peut être ajoutée. Alimentée exclusivement par `IndicesIrlJobService`
+(`apps/backend/src/indices-irl/`), jamais par saisie manuelle.
+| Champ | Type | Description |
+|---|---|---|
+| annee, trimestre | integer | Contrainte d'unicité `(annee, trimestre)` — une seule ligne par trimestre publié, insertion idempotente (`onConflictDoNothing`) |
+| valeur | decimal | Valeur de l'indice telle que publiée par l'INSEE |
+| date_recuperation | timestamp with time zone | Date à laquelle la tâche planifiée a récupéré cette valeur — sert de signal de fraîcheur (`packages/core`, `irlEstPerime`) : la génération du bail bloque si la ligne la plus récente date de plus de 4 mois, ou si la table est vide. Jamais un texte "à compléter" inséré à la place (docs/backlog.md, section "Édition d'un bail") |
+
 ## Tableau de bord (Module 7)
 
 N'introduit aucune nouvelle table — uniquement des agrégations en lecture

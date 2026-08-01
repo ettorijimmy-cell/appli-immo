@@ -16,6 +16,7 @@ import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { GarantsModule } from "./garants/garants.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
+import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
 import { PaiementsModule } from "./paiements/paiements.module";
 import { RemboursementsModule } from "./remboursements/remboursements.module";
@@ -47,6 +48,7 @@ import { VersementsModule } from "./versements/versements.module";
     DocumentsModule,
     AlertesModule,
     TableauDeBordModule,
+    IndicesIrlModule,
     BailDocumentDocxModule
   ]
 })

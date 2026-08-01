@@ -18,3 +18,4 @@ export * from "./documents";
 export * from "./diagnostics";
 export * from "./alertes";
 export * from "./parametres-alertes";
+export * from "./indices-irl";

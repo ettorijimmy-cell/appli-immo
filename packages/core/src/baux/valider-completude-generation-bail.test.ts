@@ -6,7 +6,8 @@ const DONNEES_COMPLETES: DonneesCompletudeGenerationBail = {
   immeuble: { anneeConstruction: 1998 },
   appartement: { equipementCuisine: "Plaques, four, réfrigérateur", dependancesAnnexes: "Aucune" },
   locataires: [{ adresse: "1 rue Test", codePostal: "75001", ville: "Paris" }],
-  garants: []
+  garants: [],
+  irlIndisponible: false
 };
 
 describe("validerCompletudeGenerationBail", () => {
@@ -71,15 +72,21 @@ describe("validerCompletudeGenerationBail", () => {
     expect(manquantsColoc).toContain("Locataire 2 — code postal");
   });
 
+  it("signale l'IRL indisponible (absent ou périmé)", () => {
+    const manquants = validerCompletudeGenerationBail({ ...DONNEES_COMPLETES, irlIndisponible: true });
+    expect(manquants).toContain("Indice de référence des loyers (IRL) — aucune valeur récente disponible");
+  });
+
   it("cumule tous les champs manquants dans un seul appel, pas un blocage au premier trouvé", () => {
     const manquants = validerCompletudeGenerationBail({
       sci: { telephone: null, estFamiliale: null },
       immeuble: { anneeConstruction: null },
       appartement: { equipementCuisine: null, dependancesAnnexes: null },
       locataires: [{ adresse: null, codePostal: null, ville: null }],
-      garants: []
+      garants: [],
+      irlIndisponible: true
     });
-    expect(manquants.length).toBe(8);
+    expect(manquants.length).toBe(9);
   });
 
   it("un bail sans garant ne signale jamais de champ garant manquant", () => {

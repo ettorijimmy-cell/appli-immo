@@ -17,6 +17,11 @@
  * potentiellement vide plutôt qu'optionnel : l'appelant doit toujours
  * savoir explicitement s'il y a des garants ou non, pas l'omettre par
  * oubli (docs/data-dictionary.md, section "Édition d'un bail").
+ *
+ * `irlIndisponible` : calculé par l'appelant (aucune ligne en base, ou
+ * `irlEstPerime` vrai sur la plus récente) — jamais un texte à compléter
+ * inséré dans le document, la génération bloque comme pour tout autre
+ * champ manquant.
  */
 
 export interface DonneesCompletudeSci {
@@ -51,6 +56,7 @@ export interface DonneesCompletudeGenerationBail {
   appartement: DonneesCompletudeAppartement;
   locataires: DonneesCompletudeLocataire[];
   garants: DonneesCompletudeGarant[];
+  irlIndisponible: boolean;
 }
 
 export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenerationBail): string[] {
@@ -70,6 +76,9 @@ export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenera
   }
   if (donnees.appartement.dependancesAnnexes === null) {
     manquants.push("Dépendances et annexes de l'appartement");
+  }
+  if (donnees.irlIndisponible) {
+    manquants.push("Indice de référence des loyers (IRL) — aucune valeur récente disponible");
   }
 
   donnees.locataires.forEach((locataire, index) => {

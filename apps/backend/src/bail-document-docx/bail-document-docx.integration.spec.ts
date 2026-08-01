@@ -9,6 +9,7 @@ import {
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   immeubles,
+  indicesIrl,
   journalAudit,
   organisations,
   utilisateurs,
@@ -150,9 +151,20 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // bail, garant) avec TOUS les champs requis par validerCompletudeGenerationBail
   // renseignés — `surcharges` permet à un test de rendre un champ précis
   // manquant ou de changer le régime, sans dupliquer tout le montage.
-  async function creerDossierComplet(options: { dateDebut?: string; avecGarant?: boolean } = {}) {
+  async function creerDossierComplet(
+    options: { dateDebut?: string; avecGarant?: boolean; avecIrl?: boolean } = {}
+  ) {
     const dateDebut = options.dateDebut ?? "2026-07-01";
     const avecGarant = options.avecGarant ?? true;
+    const avecIrl = options.avecIrl ?? true;
+
+    if (avecIrl) {
+      // annee/trimestre arbitraires — chaque test tourne dans sa propre
+      // transaction isolée (rollback en afterEach), aucun risque de
+      // collision avec la contrainte d'unicité entre deux tests.
+      // date_recuperation = maintenant, jamais périmée par défaut.
+      await db.insert(indicesIrl).values({ annee: 2026, trimestre: 2, valeur: "148.37" });
+    }
 
     const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR" });
     await scisService.update(sci.id, { telephone: "0555555555", estFamiliale: true });
@@ -242,6 +254,51 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // Durée légale dérivée de est_familiale=true (SCI familiale, 3 ans) :
     // date de fin = 2026-07-01 + 36 mois = 2029-07-01.
     expect(texte).toContain("2029-07-01");
+
+    // Vraie valeur IRL insérée, jamais un texte à compléter.
+    expect(texte).toContain("148.37");
+    expect(texte).not.toContain("non disponible");
+  });
+
+  it("bloque si aucune valeur IRL n'existe en base", async () => {
+    const { bail } = await creerDossierComplet({ avecIrl: false });
+
+    let erreur: unknown;
+    try {
+      await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+    } catch (err) {
+      erreur = err;
+    }
+
+    expect(erreur).toBeInstanceOf(BadRequestException);
+    const reponse = (erreur as BadRequestException).getResponse() as { champsManquants: string[] };
+    expect(reponse.champsManquants).toContain(
+      "Indice de référence des loyers (IRL) — aucune valeur récente disponible"
+    );
+  });
+
+  it("bloque si la dernière valeur IRL connue est périmée (plus de 4 mois)", async () => {
+    const { bail } = await creerDossierComplet({ avecIrl: false });
+    const dateRecuperationPerimee = new Date();
+    dateRecuperationPerimee.setMonth(dateRecuperationPerimee.getMonth() - 5);
+    await db.insert(indicesIrl).values({ annee: 2025, trimestre: 1, valeur: "145.00", dateRecuperation: dateRecuperationPerimee });
+
+    let erreur: unknown;
+    try {
+      await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+    } catch (err) {
+      erreur = err;
+    }
+
+    expect(erreur).toBeInstanceOf(BadRequestException);
+    const reponse = (erreur as BadRequestException).getResponse() as { champsManquants: string[] };
+    expect(reponse.champsManquants).toContain(
+      "Indice de référence des loyers (IRL) — aucune valeur récente disponible"
+    );
   });
 
   it("régime à partir du 1er octobre 2026 avec servitude explicitement demandée", async () => {

@@ -8,6 +8,7 @@ import {
   calculerLibelleDepotGarantie,
   calculerMontantEcheanceLoyer,
   determinerRegimeClauseResolutoire,
+  irlEstPerime,
   libelleMoisDepuisDate,
   regimesDureeApplicables,
   validerCompletudeGenerationBail,
@@ -20,12 +21,13 @@ import {
   baux,
   garants,
   immeubles,
+  indicesIrl,
   locataires,
   scis,
   type Database
 } from "db";
 import Docxtemplater from "docxtemplater";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import PizZip from "pizzip";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
@@ -36,11 +38,6 @@ import type { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-doc
 // "undefined" littéral dans le document final.
 const VIDE = "";
 const NEANT = "Néant";
-// L'infrastructure IRL (table indices_irl + tâche planifiée, voir
-// docs/backlog.md) n'est pas encore implémentée : impossible d'insérer une
-// vraie valeur ici sans en inventer une — jamais silencieusement, un
-// repère visible tant que ce n'est pas construit.
-const IRL_NON_DISPONIBLE = "[Indice IRL non disponible — infrastructure à implémenter, voir docs/backlog.md]";
 
 @Injectable()
 export class BailDocumentDocxService {
@@ -108,6 +105,15 @@ export class BailDocumentDocxService {
       .from(garants)
       .where(and(eq(garants.bailId, bailId), isNull(garants.archivedAt)));
 
+    const [derniereValeurIrl] = await this.db
+      .select()
+      .from(indicesIrl)
+      .orderBy(desc(indicesIrl.annee), desc(indicesIrl.trimestre))
+      .limit(1);
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    const irlIndisponible =
+      !derniereValeurIrl || irlEstPerime(derniereValeurIrl.dateRecuperation.toISOString().slice(0, 10), aujourdhui);
+
     // Étape obligatoire AVANT toute génération : liste complète des champs
     // manquants en un seul appel, jamais un blocage au premier trouvé
     // (packages/core, validerCompletudeGenerationBail).
@@ -127,7 +133,8 @@ export class BailDocumentDocxService {
         dateNaissance: g.dateNaissance,
         lieuNaissance: g.lieuNaissance,
         nationalite: g.nationalite
-      }))
+      })),
+      irlIndisponible
     };
     const champsManquants = validerCompletudeGenerationBail(donneesCompletude);
     if (champsManquants.length > 0) {
@@ -211,8 +218,12 @@ export class BailDocumentDocxService {
       // 3 ans en dur.
       "date début bail + 3ans": dateFin,
 
-      "dernière valeur indice Insee IRL": IRL_NON_DISPONIBLE,
-      "dernier indice Insee IRL connu": IRL_NON_DISPONIBLE,
+      // `irlIndisponible` a déjà bloqué la génération plus haut si cette
+      // valeur n'était pas disponible/fraîche — jamais un texte à
+      // compléter inséré ici (docs/backlog.md, section "Édition d'un
+      // bail").
+      "dernière valeur indice Insee IRL": derniereValeurIrl?.valeur ?? VIDE,
+      "dernier indice Insee IRL connu": derniereValeurIrl?.valeur ?? VIDE,
 
       "mettre un champ à compléter le cas échéant": bail.honorairesLocataire ?? NEANT,
 
