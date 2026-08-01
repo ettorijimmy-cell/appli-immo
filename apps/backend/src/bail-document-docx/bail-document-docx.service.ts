@@ -138,9 +138,10 @@ export class BailDocumentDocxService {
     }
 
     // `dateReference` : la loi parle de contrats "conclus" à telle date —
-    // le schéma n'a pas de date de signature distincte de `dateDebut`
-    // (limite documentée, voir packages/core/calculer-clause-resolutoire.ts).
-    const dateReference = bail.dateDebut;
+    // date_signature quand elle est renseignée, repli documenté sur
+    // dateDebut sinon (baux signés avant l'introduction de ce champ, ou
+    // non encore renseigné — docs/data-dictionary.md).
+    const dateReference = bail.dateSignature ?? bail.dateDebut;
     const regime = determinerRegimeClauseResolutoire(dateReference);
     const servitudeResidencePrincipale = dto.servitudeResidencePrincipale ?? false;
     const servitudeApplicable = servitudeResidencePrincipale && regime === "depuis_2026_10_01";
@@ -232,7 +233,10 @@ export class BailDocumentDocxService {
       "montant dépôt de garantie": bail.depotGarantie ?? VIDE,
 
       "Ville de l’appartement": immeuble.ville ?? VIDE,
-      "date de début du bail": bail.dateDebut
+      // Balise du bloc signature ("Fait à ..., le ...") — malgré son nom
+      // hérité du modèle, la valeur est date_signature (repli dateDebut),
+      // jamais littéralement dateDebut (voir dateReference ci-dessus).
+      "date de début du bail": dateReference
     };
 
     const buffer = this.rendreDocument(donneesBalises, {

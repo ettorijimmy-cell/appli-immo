@@ -18,6 +18,13 @@ export class CreateBailDto {
   @IsDateString()
   dateFin?: string;
 
+  // Référence pour le régime de clause résolutoire et la mention "Fait
+  // à..., le" du document généré — repli sur dateDebut si absente
+  // (docs/data-dictionary.md).
+  @IsOptional()
+  @IsDateString()
+  dateSignature?: string;
+
   // Si absent, pré-rempli depuis appartements.loyer_reference
   // (packages/core, preremplirLoyerBail) — voir BauxService.create.
   @IsOptional()

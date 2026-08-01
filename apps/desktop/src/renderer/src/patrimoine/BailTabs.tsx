@@ -173,6 +173,7 @@ function NewBailForm({
 }): React.JSX.Element {
   const [typeBail, setTypeBail] = useState<BailTypeBail>("vide");
   const [dateDebut, setDateDebut] = useState("");
+  const [dateSignature, setDateSignature] = useState("");
   const [loyerMensuel, setLoyerMensuel] = useState(appartement.loyerReference ?? "");
   const [depotGarantie, setDepotGarantie] = useState("");
   const [provisionsCharges, setProvisionsCharges] = useState("");
@@ -189,6 +190,7 @@ function NewBailForm({
         appartementId: appartement.id,
         typeBail,
         dateDebut,
+        ...(dateSignature && { dateSignature }),
         ...(loyerMensuel && { loyerMensuel }),
         ...(depotGarantie && { depotGarantie }),
         ...(provisionsCharges && { provisionsCharges }),
@@ -238,6 +240,19 @@ function NewBailForm({
             required
             value={dateDebut}
             onChange={(event) => setDateDebut(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-date-signature" className="text-sm font-medium text-slate-700">
+            Date de signature
+          </label>
+          <input
+            id="bail-date-signature"
+            type="date"
+            value={dateSignature}
+            onChange={(event) => setDateSignature(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -471,6 +486,10 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
           <div className="flex justify-between border-b border-slate-100 py-1">
             <dt className="text-slate-500">Fin</dt>
             <dd>{bail.dateFin ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Signature</dt>
+            <dd>{bail.dateSignature ?? "—"}</dd>
           </div>
         </dl>
       )}
@@ -1062,6 +1081,7 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
   const [typeBail, setTypeBail] = useState<BailTypeBail>(bail.typeBail);
   const [dateDebut, setDateDebut] = useState(bail.dateDebut);
   const [dateFin, setDateFin] = useState(bail.dateFin ?? "");
+  const [dateSignature, setDateSignature] = useState(bail.dateSignature ?? "");
   const [loyerMensuel, setLoyerMensuel] = useState(bail.loyerMensuel ?? "");
   const [depotGarantie, setDepotGarantie] = useState(bail.depotGarantie ?? "");
   const [provisionsCharges, setProvisionsCharges] = useState(bail.provisionsCharges ?? "");
@@ -1078,6 +1098,7 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
         typeBail,
         dateDebut,
         ...(dateFin && { dateFin }),
+        ...(dateSignature && { dateSignature }),
         ...(loyerMensuel && { loyerMensuel }),
         ...(depotGarantie && { depotGarantie }),
         ...(provisionsCharges && { provisionsCharges }),
@@ -1140,6 +1161,19 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
             type="date"
             value={dateFin}
             onChange={(event) => setDateFin(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-date-signature" className="text-sm font-medium text-slate-700">
+            Date de signature
+          </label>
+          <input
+            id="bail-edit-date-signature"
+            type="date"
+            value={dateSignature}
+            onChange={(event) => setDateSignature(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

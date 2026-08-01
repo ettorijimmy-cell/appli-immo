@@ -23,6 +23,10 @@ export class UpdateBailDto {
   dateFin?: string;
 
   @IsOptional()
+  @IsDateString()
+  dateSignature?: string;
+
+  @IsOptional()
   @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
   @IsNumberString()
   loyerMensuel?: string;

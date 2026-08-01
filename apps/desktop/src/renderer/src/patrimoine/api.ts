@@ -1,5 +1,8 @@
 import { authenticatedFetch } from "../lib/authenticated-fetch";
 
+export type ImmeubleTypeHabitat = "collectif" | "individuel";
+export type ImmeubleRegimeJuridique = "mono_propriete" | "copropriete";
+
 export interface Immeuble {
   id: string;
   sciId: string;
@@ -7,6 +10,9 @@ export interface Immeuble {
   adresse: string;
   codePostal: string | null;
   ville: string | null;
+  anneeConstruction: number | null;
+  typeHabitat: ImmeubleTypeHabitat | null;
+  regimeJuridique: ImmeubleRegimeJuridique | null;
   statut: "actif" | "archive";
 }
 
@@ -23,6 +29,9 @@ export interface UpdateImmeubleInput {
   adresse?: string;
   codePostal?: string;
   ville?: string;
+  anneeConstruction?: number;
+  typeHabitat?: ImmeubleTypeHabitat;
+  regimeJuridique?: ImmeubleRegimeJuridique;
 }
 
 export type AppartementType = "T1" | "T2" | "T3" | "T4" | "T5+";

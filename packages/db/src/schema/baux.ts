@@ -45,6 +45,14 @@ export const baux = pgTable("baux", {
   // resilier() pour déterminer le début réel d'occupation à proratiser
   // (docs/data-dictionary.md).
   dateActivation: date("date_activation"),
+  // Date de signature du bail, distincte de date_debut : un bail est
+  // souvent signé plusieurs semaines avant la date de prise d'effet
+  // (confirmé avec l'utilisateur). Sert de référence pour le régime de
+  // clause résolutoire (décret n° 2026-596, la loi parle de contrats
+  // "conclus" à telle date) et pour la mention "Fait à ..., le" du
+  // document généré. Nullable — repli documenté sur date_debut tant
+  // qu'elle n'est pas renseignée (docs/data-dictionary.md).
+  dateSignature: date("date_signature"),
   // Posée une seule fois par resilier(), jamais modifiée ensuite (pas dans
   // UpdateBailDto) — même principe d'immutabilité que date_activation.
   // Timestamp (pas juste une date) : sert à départager plusieurs baux

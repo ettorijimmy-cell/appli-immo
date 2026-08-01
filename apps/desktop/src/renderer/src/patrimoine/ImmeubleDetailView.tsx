@@ -7,12 +7,16 @@ import {
   updateImmeuble,
   type Appartement,
   type AppartementType,
-  type Immeuble
+  type Immeuble,
+  type ImmeubleRegimeJuridique,
+  type ImmeubleTypeHabitat
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
+const TYPES_HABITAT: ImmeubleTypeHabitat[] = ["collectif", "individuel"];
+const REGIMES_JURIDIQUES: ImmeubleRegimeJuridique[] = ["mono_propriete", "copropriete"];
 
 export function ImmeubleDetailView({
   immeubleId,
@@ -110,6 +114,18 @@ export function ImmeubleDetailView({
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Ville</dt>
               <dd>{immeuble.ville ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Année de construction</dt>
+              <dd>{immeuble.anneeConstruction ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Type d'habitat</dt>
+              <dd>{immeuble.typeHabitat ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Régime juridique</dt>
+              <dd>{immeuble.regimeJuridique ?? "—"}</dd>
             </div>
           </dl>
         )}
@@ -330,6 +346,11 @@ function EditImmeubleForm({
   const [adresse, setAdresse] = useState(immeuble.adresse);
   const [codePostal, setCodePostal] = useState(immeuble.codePostal ?? "");
   const [ville, setVille] = useState(immeuble.ville ?? "");
+  const [anneeConstruction, setAnneeConstruction] = useState(immeuble.anneeConstruction?.toString() ?? "");
+  const [typeHabitat, setTypeHabitat] = useState<ImmeubleTypeHabitat | "">(immeuble.typeHabitat ?? "");
+  const [regimeJuridique, setRegimeJuridique] = useState<ImmeubleRegimeJuridique | "">(
+    immeuble.regimeJuridique ?? ""
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -342,7 +363,10 @@ function EditImmeubleForm({
         nom,
         adresse,
         ...(codePostal && { codePostal }),
-        ...(ville && { ville })
+        ...(ville && { ville }),
+        ...(anneeConstruction && { anneeConstruction: Number(anneeConstruction) }),
+        ...(typeHabitat && { typeHabitat }),
+        ...(regimeJuridique && { regimeJuridique })
       });
       onSaved();
     } catch {
@@ -408,6 +432,59 @@ function EditImmeubleForm({
             onChange={(event) => setVille(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="immeuble-annee-construction" className="text-sm font-medium text-slate-700">
+            Année de construction
+          </label>
+          <input
+            id="immeuble-annee-construction"
+            type="number"
+            min={1800}
+            max={2100}
+            value={anneeConstruction}
+            onChange={(event) => setAnneeConstruction(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="immeuble-type-habitat" className="text-sm font-medium text-slate-700">
+            Type d'habitat
+          </label>
+          <select
+            id="immeuble-type-habitat"
+            value={typeHabitat}
+            onChange={(event) => setTypeHabitat(event.target.value as ImmeubleTypeHabitat | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseigné</option>
+            {TYPES_HABITAT.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="immeuble-regime-juridique" className="text-sm font-medium text-slate-700">
+            Régime juridique
+          </label>
+          <select
+            id="immeuble-regime-juridique"
+            value={regimeJuridique}
+            onChange={(event) => setRegimeJuridique(event.target.value as ImmeubleRegimeJuridique | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseigné</option>
+            {REGIMES_JURIDIQUES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

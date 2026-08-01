@@ -50,6 +50,10 @@ export interface Bail {
   jourEcheance: number | null;
   dateDebut: string;
   dateFin: string | null;
+  // Référence pour le régime de clause résolutoire et la mention "Fait
+  // à..., le" du document généré — repli sur dateDebut si absente
+  // (docs/data-dictionary.md).
+  dateSignature: string | null;
   // Posée une seule fois par resilier(), jamais modifiée ensuite (voir
   // packages/db/src/schema/baux.ts). NULL pour les baux résiliés avant
   // l'introduction de cette colonne (docs/data-dictionary.md) — dans ce
@@ -64,6 +68,7 @@ export interface CreateBailInput {
   typeBail: BailTypeBail;
   dateDebut: string;
   dateFin?: string;
+  dateSignature?: string;
   loyerMensuel?: string;
   depotGarantie?: string;
   provisionsCharges?: string;
@@ -74,6 +79,7 @@ export interface UpdateBailInput {
   typeBail?: BailTypeBail;
   dateDebut?: string;
   dateFin?: string;
+  dateSignature?: string;
   loyerMensuel?: string;
   depotGarantie?: string;
   provisionsCharges?: string;
