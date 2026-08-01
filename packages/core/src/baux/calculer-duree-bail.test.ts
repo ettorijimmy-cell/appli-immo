@@ -5,6 +5,7 @@ describe("calculerDureeBail", () => {
   it("SCI familiale (vide) : trois ans, réputée personne physique", () => {
     const resultat = calculerDureeBail({ typeBail: "vide", regime: "sci_familiale" });
     expect(resultat.duree).toBe("trois ans");
+    expect(resultat.dureeMois).toBe(36);
     expect(resultat.texteLegal).toContain("réputé personne physique");
     expect(resultat.texteLegal).toContain("article 10");
   });
@@ -12,6 +13,7 @@ describe("calculerDureeBail", () => {
   it("SCI non familiale (vide) : six ans, personne morale", () => {
     const resultat = calculerDureeBail({ typeBail: "vide", regime: "sci_non_familiale" });
     expect(resultat.duree).toBe("six ans");
+    expect(resultat.dureeMois).toBe(72);
     expect(resultat.texteLegal).toContain("personne morale");
     expect(resultat.texteLegal).toContain("article 10");
   });
@@ -19,12 +21,14 @@ describe("calculerDureeBail", () => {
   it("meublé standard : un an", () => {
     const resultat = calculerDureeBail({ typeBail: "meuble", regime: "standard" });
     expect(resultat.duree).toBe("un an");
+    expect(resultat.dureeMois).toBe(12);
     expect(resultat.texteLegal).toContain("article 25-7");
   });
 
   it("meublé étudiant : neuf mois, sans reconduction tacite", () => {
     const resultat = calculerDureeBail({ typeBail: "meuble", regime: "etudiant" });
     expect(resultat.duree).toBe("neuf mois");
+    expect(resultat.dureeMois).toBe(9);
     expect(resultat.texteLegal).toContain("étudiant");
     expect(resultat.texteLegal).toContain("sans reconduction tacite");
   });

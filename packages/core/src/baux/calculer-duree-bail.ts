@@ -1,5 +1,9 @@
 export interface DureeBailLegale {
   duree: string;
+  // Nombre de mois, pour tout calcul de date (ex. date de fin = date de
+  // début + dureeMois, via `ajouterMois`) — `duree` reste un libellé
+  // textuel, jamais parsable de façon fiable pour un calcul.
+  dureeMois: number;
   texteLegal: string;
 }
 
@@ -35,11 +39,13 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
     if (choix.regime === "sci_familiale") {
       return {
         duree: "trois ans",
+        dureeMois: 36,
         texteLegal: `Le bailleur étant réputé personne physique (SCI familiale, article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`
       };
     }
     return {
       duree: "six ans",
+      dureeMois: 72,
       texteLegal: `Le bailleur étant une personne morale (article 10 de la ${LOI_1989}), la durée du contrat est fixée à six ans.`
     };
   }
@@ -47,11 +53,13 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
   if (choix.regime === "etudiant") {
     return {
       duree: "neuf mois",
+      dureeMois: 9,
       texteLegal: `Le locataire justifiant du statut d'étudiant (article 25-7 de la ${LOI_1989}), la durée du contrat est fixée à neuf mois, sans reconduction tacite.`
     };
   }
   return {
     duree: "un an",
+    dureeMois: 12,
     texteLegal: `Conformément à l'article 25-7 de la ${LOI_1989}, la durée du contrat est fixée à un an.`
   };
 }

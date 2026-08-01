@@ -25,9 +25,11 @@
     "class-validator": "^0.15.1",
     "core": "workspace:*",
     "db": "workspace:*",
+    "docxtemplater": "^3.69.3",
     "drizzle-orm": "^0.38.4",
     "multer": "^2.2.0",
     "pdfmake": "^0.3.11",
+    "pizzip": "^3.2.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },

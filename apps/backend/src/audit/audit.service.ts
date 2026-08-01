@@ -7,6 +7,12 @@ export interface LogAccesDocumentSensibleInput {
   utilisateurId: string;
 }
 
+export interface LogAccesDonneeSensibleInput {
+  entiteType: string;
+  entiteId: string;
+  utilisateurId: string;
+}
+
 /**
  * Écrit dans journal_audit (table transverse, append-only — voir
  * docs/data-dictionary.md). Point d'entrée commun pour tout futur module
@@ -17,12 +23,16 @@ export interface LogAccesDocumentSensibleInput {
 export class AuditService {
   constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
 
-  async logAccesDocumentSensible(input: LogAccesDocumentSensibleInput): Promise<void> {
+  async logAccesDonneeSensible(input: LogAccesDonneeSensibleInput): Promise<void> {
     await this.db.insert(journalAudit).values({
-      entiteType: "document_sensible",
+      entiteType: input.entiteType,
       entiteId: input.entiteId,
       action: "acces",
       utilisateurId: input.utilisateurId
     });
+  }
+
+  async logAccesDocumentSensible(input: LogAccesDocumentSensibleInput): Promise<void> {
+    await this.logAccesDonneeSensible({ ...input, entiteType: "document_sensible" });
   }
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ajouterJours, ajouterMois, dateVersJourOrdinal, estBissextile, joursDansLeMois } from "./calendrier";
+import {
+  ajouterJours,
+  ajouterMois,
+  dateVersJourOrdinal,
+  estBissextile,
+  joursDansLeMois,
+  libelleMoisDepuisDate
+} from "./calendrier";
 
 describe("estBissextile", () => {
   it("2024 est bissextile (divisible par 4, pas par 100)", () => {
@@ -82,5 +89,19 @@ describe("dateVersJourOrdinal", () => {
     const debut = "2023-01-01";
     const fin = ajouterJours(debut, 800);
     expect(dateVersJourOrdinal(fin) - dateVersJourOrdinal(debut)).toBe(800);
+  });
+});
+
+describe("libelleMoisDepuisDate", () => {
+  it("janvier pour le premier mois", () => {
+    expect(libelleMoisDepuisDate("2026-01-15")).toBe("janvier");
+  });
+
+  it("décembre pour le dernier mois", () => {
+    expect(libelleMoisDepuisDate("2026-12-01")).toBe("décembre");
+  });
+
+  it("octobre pour le mois de bascule du décret 2026-596", () => {
+    expect(libelleMoisDepuisDate("2026-10-01")).toBe("octobre");
   });
 });

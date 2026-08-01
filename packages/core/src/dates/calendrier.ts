@@ -84,3 +84,27 @@ export function ajouterMois(date: string, mois: number): string {
   const jourCible = Math.min(decomposed.jour, joursDansLeMois(anneeCible, moisCible));
   return formaterDateIso(anneeCible, moisCible, jourCible);
 }
+
+const LIBELLES_MOIS = [
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre"
+];
+
+/**
+ * Nom du mois en toutes lettres, en français — mention "chaque année le
+ * 01 {mois}" du modèle de bail (date de révision du loyer).
+ */
+export function libelleMoisDepuisDate(date: string): string {
+  const { mois } = decomposerDate(date);
+  return LIBELLES_MOIS[mois - 1] as string;
+}
