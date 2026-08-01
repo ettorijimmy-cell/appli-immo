@@ -459,7 +459,7 @@ codées)** :
   tranche (à vérifier précisément avant de coder, ne pas les supposer
   approximativement).
 - `appartements` : `identifiant_fiscal` (texte), `nombre_pieces_principales`
-  (integer, distinct du `type` T1-T5+ déjà existant qui reste une
+  (integer, distinct du `type` T1-T6 déjà existant qui reste une
   catégorie commerciale, pas le décompte légal), `mode_chauffage` et
   `mode_eau_chaude` (individuel/collectif).
 - `baux` : `travaux_realises` (texte, nullable) — mention obligatoire par

@@ -117,16 +117,21 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     }
     userId = user.id;
 
-    const sci = await scisService.create(userId, { nom: "SCI Documents Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(userId, { nom: "SCI Documents Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Documents Test",
-      adresse: "1 rue des Documents"
+      adresse: "1 rue des Documents",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
       immeubleId: immeuble.id,
       numero: "1",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "850.00"
     });
     appartementId = appartement.id;

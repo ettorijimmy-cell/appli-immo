@@ -2,7 +2,10 @@ import { decimal, integer, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-co
 import { auditColumns } from "./columns.helpers";
 import { immeubles } from "./immeubles";
 
-export const appartementTypeEnum = pgEnum("appartement_type", ["T1", "T2", "T3", "T4", "T5+"]);
+// "T5+" remplacé par des valeurs précises T5/T6 (confirmé : aucun
+// appartement réel en base n'utilisait "T5+" au moment du changement,
+// migration directe sans reclassement nécessaire).
+export const appartementTypeEnum = pgEnum("appartement_type", ["T1", "T2", "T3", "T4", "T5", "T6"]);
 export const appartementStatutEnum = pgEnum("appartement_statut", [
   "vacant",
   "loue",
@@ -30,7 +33,7 @@ export const appartements = pgTable("appartements", {
   surface: decimal("surface", { precision: 6, scale: 2 }),
   loyerReference: decimal("loyer_reference", { precision: 10, scale: 2 }),
   // Mentions du contrat-type non couvertes par les champs ci-dessus :
-  // `type` (T1-T5+) reste une catégorie commerciale, distincte du décompte
+  // `type` (T1-T6) reste une catégorie commerciale, distincte du décompte
   // légal de pièces principales exigé dans le bail.
   identifiantFiscal: text("identifiant_fiscal"),
   nombrePiecesPrincipales: integer("nombre_pieces_principales"),

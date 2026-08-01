@@ -170,7 +170,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
     }
 
-    const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     await scisService.update(sci.id, { telephone: "0555555555", estFamiliale: true });
 
     const immeuble = await immeublesService.create({
@@ -178,7 +178,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       nom: "Immeuble Docx Test",
       adresse: "17 avenue du Test",
       codePostal: "19100",
-      ville: "Brive"
+      ville: "Brive",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     // annee_construction n'est exposée par aucun DTO à ce jour (gap
     // pré-existant, voir le rapport de ce chantier) — écriture directe en
@@ -190,7 +192,10 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       numero: "rdc",
       type: "T3",
       surface: "60.00",
-      loyerReference: "650.00"
+      loyerReference: "650.00",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
     });
     await appartementsService.update(appartement.id, {
       equipementCuisine: "Plaques, four, réfrigérateur",

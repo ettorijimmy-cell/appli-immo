@@ -21,7 +21,9 @@ export class ImmeublesService {
         nom: dto.nom,
         adresse: dto.adresse,
         codePostal: dto.codePostal,
-        ville: dto.ville
+        ville: dto.ville,
+        typeHabitat: dto.typeHabitat,
+        regimeJuridique: dto.regimeJuridique
       })
       .returning();
     if (!immeuble) {

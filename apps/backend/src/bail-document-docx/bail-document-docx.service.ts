@@ -118,11 +118,24 @@ export class BailDocumentDocxService {
     // manquants en un seul appel, jamais un blocage au premier trouvé
     // (packages/core, validerCompletudeGenerationBail).
     const donneesCompletude: DonneesCompletudeGenerationBail = {
-      sci: { telephone: sci.telephone, estFamiliale: sci.estFamiliale },
-      immeuble: { anneeConstruction: immeuble.anneeConstruction },
+      sci: {
+        telephone: sci.telephone,
+        estFamiliale: sci.estFamiliale,
+        adresse: sci.adresse,
+        codePostal: sci.codePostal,
+        ville: sci.ville
+      },
+      immeuble: {
+        anneeConstruction: immeuble.anneeConstruction,
+        typeHabitat: immeuble.typeHabitat,
+        regimeJuridique: immeuble.regimeJuridique
+      },
       appartement: {
         equipementCuisine: appartement.equipementCuisine,
-        dependancesAnnexes: appartement.dependancesAnnexes
+        dependancesAnnexes: appartement.dependancesAnnexes,
+        nombrePiecesPrincipales: appartement.nombrePiecesPrincipales,
+        modeChauffage: appartement.modeChauffage,
+        modeEauChaude: appartement.modeEauChaude
       },
       locataires: locatairesDuBail.map((l) => ({
         adresse: l.adresse,
@@ -253,7 +266,19 @@ export class BailDocumentDocxService {
     const buffer = this.rendreDocument(donneesBalises, {
       clauseResolutoireAvant: regime === "avant_2026_10_01",
       clauseResolutoireApres: regime === "depuis_2026_10_01",
-      servitude: servitudeApplicable
+      servitude: servitudeApplicable,
+      // Remplacent les 4 lignes à cases à cocher du modèle (type
+      // d'habitat/régime juridique de l'immeuble, chauffage/eau chaude de
+      // l'appartement) — noms de balises confirmés avec l'utilisateur,
+      // à ne plus renommer sans le transmettre au propriétaire.
+      collectif: immeuble.typeHabitat === "collectif",
+      individuel: immeuble.typeHabitat === "individuel",
+      copropriete: immeuble.regimeJuridique === "copropriete",
+      monopropriete: immeuble.regimeJuridique === "mono_propriete",
+      chauffageIndividuel: appartement.modeChauffage === "individuel",
+      chauffageCollectif: appartement.modeChauffage === "collectif",
+      eauChaudeIndividuelle: appartement.modeEauChaude === "individuel",
+      eauChaudeCollective: appartement.modeEauChaude === "collectif"
     });
 
     const utilisateurId = this.requestContext.getUtilisateurId();
@@ -270,7 +295,19 @@ export class BailDocumentDocxService {
 
   private rendreDocument(
     donneesBalises: Record<string, string>,
-    drapeaux: { clauseResolutoireAvant: boolean; clauseResolutoireApres: boolean; servitude: boolean }
+    drapeaux: {
+      clauseResolutoireAvant: boolean;
+      clauseResolutoireApres: boolean;
+      servitude: boolean;
+      collectif: boolean;
+      individuel: boolean;
+      copropriete: boolean;
+      monopropriete: boolean;
+      chauffageIndividuel: boolean;
+      chauffageCollectif: boolean;
+      eauChaudeIndividuelle: boolean;
+      eauChaudeCollective: boolean;
+    }
   ): Buffer {
     const contenu = readFileSync(this.templatePath, "binary");
     const zip = new PizZip(contenu);

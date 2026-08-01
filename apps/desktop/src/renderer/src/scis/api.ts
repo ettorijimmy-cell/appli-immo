@@ -8,6 +8,9 @@ export interface Sci {
   regimeFiscal: RegimeFiscal;
   formeJuridique: string | null;
   siret: string | null;
+  adresse: string | null;
+  codePostal: string | null;
+  ville: string | null;
   telephone: string | null;
   // null = non renseigné, distinct de false — ne jamais pré-remplir
   // automatiquement (docs/data-dictionary.md).
@@ -20,6 +23,11 @@ export interface CreateSciInput {
   regimeFiscal: RegimeFiscal;
   formeJuridique?: string;
   siret?: string;
+  // Siège social, connu dès la création d'une SCI (docs/data-dictionary.md)
+  // — contrairement à telephone/estFamiliale, restés facultatifs.
+  adresse: string;
+  codePostal: string;
+  ville: string;
 }
 
 export interface UpdateSciInput {
@@ -27,6 +35,9 @@ export interface UpdateSciInput {
   regimeFiscal?: RegimeFiscal;
   formeJuridique?: string;
   siret?: string;
+  adresse?: string;
+  codePostal?: string;
+  ville?: string;
   telephone?: string;
   estFamiliale?: boolean;
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { deduireNombrePiecesDepuisType } from "core";
 import {
   archiveAppartement,
   createAppartement,
@@ -6,6 +7,7 @@ import {
   listAppartements,
   updateImmeuble,
   type Appartement,
+  type AppartementModeProduction,
   type AppartementType,
   type Immeuble,
   type ImmeubleRegimeJuridique,
@@ -14,7 +16,7 @@ import {
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
-const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
+const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
 const TYPES_HABITAT: ImmeubleTypeHabitat[] = ["collectif", "individuel"];
 const REGIMES_JURIDIQUES: ImmeubleRegimeJuridique[] = ["mono_propriete", "copropriete"];
 
@@ -228,8 +230,24 @@ function NewAppartementForm({
   const [type, setType] = useState<AppartementType>("T2");
   const [surface, setSurface] = useState("");
   const [loyerReference, setLoyerReference] = useState("");
+  const [nombrePiecesPrincipales, setNombrePiecesPrincipales] = useState(
+    deduireNombrePiecesDepuisType("T2")?.toString() ?? ""
+  );
+  // Suivi manuel pour ne pré-remplir/resynchroniser depuis le type QUE tant
+  // que le propriétaire n'a pas lui-même corrigé la suggestion — ne jamais
+  // écraser une saisie explicite (docs/data-dictionary.md, appartements).
+  const [nombrePiecesModifieManuellement, setNombrePiecesModifieManuellement] = useState(false);
+  const [modeChauffage, setModeChauffage] = useState<AppartementModeProduction>("individuel");
+  const [modeEauChaude, setModeEauChaude] = useState<AppartementModeProduction>("individuel");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function handleTypeChange(nouveauType: AppartementType): void {
+    setType(nouveauType);
+    if (!nombrePiecesModifieManuellement) {
+      setNombrePiecesPrincipales(deduireNombrePiecesDepuisType(nouveauType)?.toString() ?? "");
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -240,12 +258,17 @@ function NewAppartementForm({
         immeubleId,
         numero,
         type,
+        nombrePiecesPrincipales: Number(nombrePiecesPrincipales),
+        modeChauffage,
+        modeEauChaude,
         ...(surface && { surface }),
         ...(loyerReference && { loyerReference })
       });
       setNumero("");
       setSurface("");
       setLoyerReference("");
+      setNombrePiecesPrincipales(deduireNombrePiecesDepuisType(type)?.toString() ?? "");
+      setNombrePiecesModifieManuellement(false);
       onCreated();
     } catch {
       setError("Impossible de créer l'appartement");
@@ -282,7 +305,7 @@ function NewAppartementForm({
           <select
             id="appartement-type"
             value={type}
-            onChange={(event) => setType(event.target.value as AppartementType)}
+            onChange={(event) => handleTypeChange(event.target.value as AppartementType)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           >
             {APPARTEMENT_TYPES.map((value) => (
@@ -315,6 +338,54 @@ function NewAppartementForm({
             onChange={(event) => setLoyerReference(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-nombre-pieces" className="text-sm font-medium text-slate-700">
+            Nombre de pièces principales
+          </label>
+          <input
+            id="appartement-nombre-pieces"
+            type="number"
+            min={1}
+            required
+            value={nombrePiecesPrincipales}
+            onChange={(event) => {
+              setNombrePiecesModifieManuellement(true);
+              setNombrePiecesPrincipales(event.target.value);
+            }}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-chauffage" className="text-sm font-medium text-slate-700">
+            Chauffage
+          </label>
+          <select
+            id="appartement-chauffage"
+            value={modeChauffage}
+            onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="individuel">Individuel</option>
+            <option value="collectif">Collectif</option>
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-eau-chaude" className="text-sm font-medium text-slate-700">
+            Eau chaude
+          </label>
+          <select
+            id="appartement-eau-chaude"
+            value={modeEauChaude}
+            onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="individuel">Individuelle</option>
+            <option value="collectif">Collective</option>
+          </select>
         </div>
       </div>
 

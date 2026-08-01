@@ -29,7 +29,10 @@ export class ScisService {
           nom: dto.nom,
           regimeFiscal: dto.regimeFiscal,
           formeJuridique: dto.formeJuridique,
-          siret: dto.siret
+          siret: dto.siret,
+          adresse: dto.adresse,
+          codePostal: dto.codePostal,
+          ville: dto.ville
         })
         .returning();
       if (!sci) {

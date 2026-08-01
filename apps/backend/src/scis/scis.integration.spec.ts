@@ -105,7 +105,10 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
   it("rattache automatiquement l'organisation créatrice avec le rôle proprietaire", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Les Tilleuls",
-      regimeFiscal: "IR"
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
     });
 
     const [rattachement] = await db
@@ -124,7 +127,10 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
   it("modifie une SCI existante (nom, régime fiscal, forme juridique, SIRET)", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI À Corriger",
-      regimeFiscal: "IR"
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
     });
 
     const modifiee = await scisService.update(sci.id, {
@@ -149,7 +155,10 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
   it("chiffre l'IBAN/BIC en base et les déchiffre uniquement via l'endpoint dédié", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Le Chêne",
-      regimeFiscal: "IS"
+      regimeFiscal: "IS",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
     });
 
     const iban = "FR7630006000011234567890189";
@@ -178,7 +187,10 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
   it("consigne un accès à un document sensible dans journal_audit à chaque déchiffrement", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Audit",
-      regimeFiscal: "IR"
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
     });
 
     await comptesBancairesSciService.create({
@@ -207,7 +219,10 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
   it("ne consigne rien si aucun compte bancaire n'existe pour la SCI", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Sans Compte",
-      regimeFiscal: "IR"
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
     });
 
     await comptesBancairesSciService.findBySciIdDecrypted(sci.id, userId);

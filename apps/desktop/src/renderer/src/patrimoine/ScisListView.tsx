@@ -123,6 +123,9 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
   const [regimeFiscal, setRegimeFiscal] = useState<CreateSciInput["regimeFiscal"]>("IR");
   const [formeJuridique, setFormeJuridique] = useState("");
   const [siret, setSiret] = useState("");
+  const [adresse, setAdresse] = useState("");
+  const [codePostal, setCodePostal] = useState("");
+  const [ville, setVille] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -134,6 +137,9 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
       await createSci({
         nom,
         regimeFiscal,
+        adresse,
+        codePostal,
+        ville,
         ...(formeJuridique && { formeJuridique }),
         ...(siret && { siret })
       });
@@ -201,6 +207,45 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
             id="siret"
             value={siret}
             onChange={(event) => setSiret(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-adresse" className="text-sm font-medium text-slate-700">
+            Adresse (siège social)
+          </label>
+          <input
+            id="sci-adresse"
+            required
+            value={adresse}
+            onChange={(event) => setAdresse(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-code-postal" className="text-sm font-medium text-slate-700">
+            Code postal
+          </label>
+          <input
+            id="sci-code-postal"
+            required
+            value={codePostal}
+            onChange={(event) => setCodePostal(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-ville" className="text-sm font-medium text-slate-700">
+            Ville
+          </label>
+          <input
+            id="sci-ville"
+            required
+            value={ville}
+            onChange={(event) => setVille(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

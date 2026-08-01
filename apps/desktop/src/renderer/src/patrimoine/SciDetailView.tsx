@@ -8,7 +8,14 @@ import {
   type RegimeFiscal,
   type Sci
 } from "../scis/api";
-import { archiveImmeuble, createImmeuble, listImmeubles, type Immeuble } from "./api";
+import {
+  archiveImmeuble,
+  createImmeuble,
+  listImmeubles,
+  type Immeuble,
+  type ImmeubleRegimeJuridique,
+  type ImmeubleTypeHabitat
+} from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
@@ -114,6 +121,18 @@ export function SciDetailView({
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">SIRET</dt>
               <dd>{sci.siret ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Adresse</dt>
+              <dd>{sci.adresse ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Code postal</dt>
+              <dd>{sci.codePostal ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Ville</dt>
+              <dd>{sci.ville ?? "—"}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Téléphone</dt>
@@ -271,6 +290,9 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
   const [regimeFiscal, setRegimeFiscal] = useState<RegimeFiscal>(sci.regimeFiscal);
   const [formeJuridique, setFormeJuridique] = useState(sci.formeJuridique ?? "");
   const [siret, setSiret] = useState(sci.siret ?? "");
+  const [adresse, setAdresse] = useState(sci.adresse ?? "");
+  const [codePostal, setCodePostal] = useState(sci.codePostal ?? "");
+  const [ville, setVille] = useState(sci.ville ?? "");
   const [telephone, setTelephone] = useState(sci.telephone ?? "");
   const [estFamiliale, setEstFamiliale] = useState<EstFamilialeChoix>(
     sci.estFamiliale === null ? "" : sci.estFamiliale ? "true" : "false"
@@ -288,6 +310,9 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
         regimeFiscal,
         ...(formeJuridique && { formeJuridique }),
         ...(siret && { siret }),
+        ...(adresse && { adresse }),
+        ...(codePostal && { codePostal }),
+        ...(ville && { ville }),
         ...(telephone && { telephone }),
         ...(estFamiliale !== "" && { estFamiliale: estFamiliale === "true" })
       });
@@ -363,6 +388,42 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
         </div>
 
         <div className="space-y-1">
+          <label htmlFor="sci-edit-adresse" className="text-sm font-medium text-slate-700">
+            Adresse (siège social)
+          </label>
+          <input
+            id="sci-edit-adresse"
+            value={adresse}
+            onChange={(event) => setAdresse(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-code-postal" className="text-sm font-medium text-slate-700">
+            Code postal
+          </label>
+          <input
+            id="sci-edit-code-postal"
+            value={codePostal}
+            onChange={(event) => setCodePostal(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-ville" className="text-sm font-medium text-slate-700">
+            Ville
+          </label>
+          <input
+            id="sci-edit-ville"
+            value={ville}
+            onChange={(event) => setVille(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
           <label htmlFor="sci-edit-telephone" className="text-sm font-medium text-slate-700">
             Téléphone
           </label>
@@ -419,6 +480,8 @@ function NewImmeubleForm({
   const [adresse, setAdresse] = useState("");
   const [codePostal, setCodePostal] = useState("");
   const [ville, setVille] = useState("");
+  const [typeHabitat, setTypeHabitat] = useState<ImmeubleTypeHabitat>("collectif");
+  const [regimeJuridique, setRegimeJuridique] = useState<ImmeubleRegimeJuridique>("copropriete");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -431,6 +494,8 @@ function NewImmeubleForm({
         sciId,
         nom,
         adresse,
+        typeHabitat,
+        regimeJuridique,
         ...(codePostal && { codePostal }),
         ...(ville && { ville })
       });
@@ -502,6 +567,36 @@ function NewImmeubleForm({
             onChange={(event) => setVille(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="immeuble-type-habitat" className="text-sm font-medium text-slate-700">
+            Type d'habitat
+          </label>
+          <select
+            id="immeuble-type-habitat"
+            value={typeHabitat}
+            onChange={(event) => setTypeHabitat(event.target.value as ImmeubleTypeHabitat)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="collectif">Collectif</option>
+            <option value="individuel">Individuel</option>
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="immeuble-regime-juridique" className="text-sm font-medium text-slate-700">
+            Régime juridique
+          </label>
+          <select
+            id="immeuble-regime-juridique"
+            value={regimeJuridique}
+            onChange={(event) => setRegimeJuridique(event.target.value as ImmeubleRegimeJuridique)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="copropriete">Copropriété</option>
+            <option value="mono_propriete">Mono propriété</option>
+          </select>
         </div>
       </div>
 

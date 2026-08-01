@@ -141,6 +141,13 @@
       "when": 1785580959782,
       "tag": "0019_dusty_black_crow",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785592082308,
+      "tag": "0020_sour_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

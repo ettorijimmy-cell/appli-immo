@@ -22,3 +22,4 @@ export * from "./paiements/calculer-loyer-precedent-locataire";
 export * from "./baux/valider-completude-generation-bail";
 export * from "./baux/calculer-libelle-depot-garantie";
 export * from "./baux/valider-fraicheur-irl";
+export * from "./baux/deduire-nombre-pieces-depuis-type";

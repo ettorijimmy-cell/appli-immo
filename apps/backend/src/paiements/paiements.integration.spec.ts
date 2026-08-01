@@ -114,16 +114,21 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     }
     userId = user.id;
 
-    const sci = await scisService.create(userId, { nom: "SCI Paiements Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(userId, { nom: "SCI Paiements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Paiements Test",
-      adresse: "1 rue des Paiements"
+      adresse: "1 rue des Paiements",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
       immeubleId: immeuble.id,
       numero: "1",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "850.00"
     });
     const bail = await bauxService.create({
@@ -431,16 +436,21 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
 
     // Second appartement/bail avec exactement le même montant et la même
     // échéance, mais un locataire différent.
-    const sci2 = await scisService.create(userId, { nom: "SCI Paiements Test 2", regimeFiscal: "IR" });
+    const sci2 = await scisService.create(userId, { nom: "SCI Paiements Test 2", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble2 = await immeublesService.create({
       sciId: sci2.id,
       nom: "Immeuble Paiements Test 2",
-      adresse: "2 rue des Paiements"
+      adresse: "2 rue des Paiements",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement2 = await appartementsService.create({
       immeubleId: immeuble2.id,
       numero: "2",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "850.00"
     });
     const bail2 = await bauxService.create({

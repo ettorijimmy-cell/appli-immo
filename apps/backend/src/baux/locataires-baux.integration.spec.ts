@@ -117,16 +117,21 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     }
     userId = user.id;
 
-    const sci = await scisService.create(userId, { nom: "SCI Baux Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(userId, { nom: "SCI Baux Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Baux Test",
-      adresse: "1 rue du Bail"
+      adresse: "1 rue du Bail",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
       immeubleId: immeuble.id,
       numero: "1",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "800.00"
     });
     appartementId = appartement.id;
@@ -395,16 +400,21 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     it("refuse d'activer un bail si le loyer mensuel n'est pas renseigné", async () => {
       // Appartement SANS loyer_reference : preremplirLoyerBail ne peut alors
       // rien préremplir, loyer_mensuel reste null.
-      const sciSansLoyer = await scisService.create(userId, { nom: "SCI Sans Loyer", regimeFiscal: "IR" });
+      const sciSansLoyer = await scisService.create(userId, { nom: "SCI Sans Loyer", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
       const immeubleSansLoyer = await immeublesService.create({
         sciId: sciSansLoyer.id,
         nom: "Immeuble Sans Loyer",
-        adresse: "9 rue du Test"
+        adresse: "9 rue du Test",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
       });
       const appartementSansLoyer = await appartementsService.create({
         immeubleId: immeubleSansLoyer.id,
         numero: "9",
-        type: "T1"
+        type: "T1",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
       });
       const bail = await bauxService.create({
         appartementId: appartementSansLoyer.id,

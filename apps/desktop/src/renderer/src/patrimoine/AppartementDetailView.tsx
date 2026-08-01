@@ -7,6 +7,7 @@ import {
   updateAppartement,
   updateEquipement,
   type Appartement,
+  type AppartementModeProduction,
   type AppartementStatutModifiable,
   type AppartementType,
   type Equipement,
@@ -18,7 +19,8 @@ import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
-const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5+"];
+const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
+const MODES_PRODUCTION: AppartementModeProduction[] = ["individuel", "collectif"];
 // "archive" en est exclu : l'archivage a son propre bouton dédié.
 const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
 
@@ -213,6 +215,18 @@ export function AppartementDetailView({
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Dépendances et annexes</dt>
               <dd>{appartement.dependancesAnnexes ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Nombre de pièces principales</dt>
+              <dd>{appartement.nombrePiecesPrincipales ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Chauffage</dt>
+              <dd>{appartement.modeChauffage ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Eau chaude</dt>
+              <dd>{appartement.modeEauChaude ?? "—"}</dd>
             </div>
           </dl>
         )
@@ -435,6 +449,15 @@ function EditAppartementForm({
   const [loyerReference, setLoyerReference] = useState(appartement.loyerReference ?? "");
   const [equipementCuisine, setEquipementCuisine] = useState(appartement.equipementCuisine ?? "");
   const [dependancesAnnexes, setDependancesAnnexes] = useState(appartement.dependancesAnnexes ?? "");
+  const [nombrePiecesPrincipales, setNombrePiecesPrincipales] = useState(
+    appartement.nombrePiecesPrincipales?.toString() ?? ""
+  );
+  const [modeChauffage, setModeChauffage] = useState<AppartementModeProduction | "">(
+    appartement.modeChauffage ?? ""
+  );
+  const [modeEauChaude, setModeEauChaude] = useState<AppartementModeProduction | "">(
+    appartement.modeEauChaude ?? ""
+  );
   const [statut, setStatut] = useState<AppartementStatutModifiable>(
     appartement.statut === "archive" ? "vacant" : appartement.statut
   );
@@ -453,7 +476,10 @@ function EditAppartementForm({
         ...(surface && { surface }),
         ...(loyerReference && { loyerReference }),
         ...(equipementCuisine && { equipementCuisine }),
-        ...(dependancesAnnexes && { dependancesAnnexes })
+        ...(dependancesAnnexes && { dependancesAnnexes }),
+        ...(nombrePiecesPrincipales && { nombrePiecesPrincipales: Number(nombrePiecesPrincipales) }),
+        ...(modeChauffage && { modeChauffage }),
+        ...(modeEauChaude && { modeEauChaude })
       });
       onSaved();
     } catch {
@@ -548,6 +574,58 @@ function EditAppartementForm({
             onChange={(event) => setDependancesAnnexes(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-nombre-pieces" className="text-sm font-medium text-slate-700">
+            Nombre de pièces principales
+          </label>
+          <input
+            id="appartement-edit-nombre-pieces"
+            type="number"
+            min={1}
+            value={nombrePiecesPrincipales}
+            onChange={(event) => setNombrePiecesPrincipales(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-chauffage" className="text-sm font-medium text-slate-700">
+            Chauffage
+          </label>
+          <select
+            id="appartement-edit-chauffage"
+            value={modeChauffage}
+            onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseigné</option>
+            {MODES_PRODUCTION.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-eau-chaude" className="text-sm font-medium text-slate-700">
+            Eau chaude
+          </label>
+          <select
+            id="appartement-edit-eau-chaude"
+            value={modeEauChaude}
+            onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseigné</option>
+            {MODES_PRODUCTION.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-1">

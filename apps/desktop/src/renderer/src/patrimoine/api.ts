@@ -22,6 +22,10 @@ export interface CreateImmeubleInput {
   adresse: string;
   codePostal?: string;
   ville?: string;
+  // Connus dès la création de l'immeuble (docs/data-dictionary.md) —
+  // contrairement à anneeConstruction, resté facultatif.
+  typeHabitat: ImmeubleTypeHabitat;
+  regimeJuridique: ImmeubleRegimeJuridique;
 }
 
 export interface UpdateImmeubleInput {
@@ -34,8 +38,9 @@ export interface UpdateImmeubleInput {
   regimeJuridique?: ImmeubleRegimeJuridique;
 }
 
-export type AppartementType = "T1" | "T2" | "T3" | "T4" | "T5+";
+export type AppartementType = "T1" | "T2" | "T3" | "T4" | "T5" | "T6";
 export type AppartementStatut = "vacant" | "loue" | "travaux" | "archive";
+export type AppartementModeProduction = "individuel" | "collectif";
 
 export interface Appartement {
   id: string;
@@ -46,6 +51,9 @@ export interface Appartement {
   loyerReference: string | null;
   equipementCuisine: string | null;
   dependancesAnnexes: string | null;
+  nombrePiecesPrincipales: number | null;
+  modeChauffage: AppartementModeProduction | null;
+  modeEauChaude: AppartementModeProduction | null;
   statut: AppartementStatut;
 }
 
@@ -55,6 +63,12 @@ export interface CreateAppartementInput {
   type: AppartementType;
   surface?: string;
   loyerReference?: string;
+  // Connus dès la création du lot (docs/data-dictionary.md) —
+  // contrairement à identifiantFiscal/equipementCuisine/
+  // dependancesAnnexes, restés facultatifs.
+  nombrePiecesPrincipales: number;
+  modeChauffage: AppartementModeProduction;
+  modeEauChaude: AppartementModeProduction;
 }
 
 export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
@@ -66,6 +80,9 @@ export interface UpdateAppartementInput {
   loyerReference?: string;
   equipementCuisine?: string;
   dependancesAnnexes?: string;
+  nombrePiecesPrincipales?: number;
+  modeChauffage?: AppartementModeProduction;
+  modeEauChaude?: AppartementModeProduction;
   statut?: AppartementStatutModifiable;
 }
 

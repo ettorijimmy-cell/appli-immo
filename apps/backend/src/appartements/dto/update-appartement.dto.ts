@@ -1,6 +1,7 @@
-import { IsIn, IsNumberString, IsOptional, IsString, MinLength } from "class-validator";
+import { IsIn, IsInt, IsNumberString, IsOptional, IsString, Min, MinLength } from "class-validator";
 
-const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5+"] as const;
+const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
+const MODES_PRODUCTION = ["individuel", "collectif"] as const;
 // "archive" en est exclu : l'archivage passe exclusivement par l'endpoint
 // dédié /appartements/:id/archiver, qui pose aussi archivedAt — un statut
 // "archive" posé ici casserait l'invariant archive <=> archivedAt renseigné.
@@ -31,6 +32,22 @@ export class UpdateAppartementDto {
   @IsOptional()
   @IsString()
   dependancesAnnexes?: string;
+
+  // Facultatifs ici (contrairement à CreateAppartementDto) : un
+  // appartement créé avant que ces champs deviennent obligatoires à la
+  // création doit rester modifiable normalement.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  nombrePiecesPrincipales?: number;
+
+  @IsOptional()
+  @IsIn(MODES_PRODUCTION)
+  modeChauffage?: (typeof MODES_PRODUCTION)[number];
+
+  @IsOptional()
+  @IsIn(MODES_PRODUCTION)
+  modeEauChaude?: (typeof MODES_PRODUCTION)[number];
 
   // Passage manuel vacant / loue / travaux — l'automatisation vacant <-> loue
   // via la création/résiliation de bail arrive au Module 3 ; le réglage

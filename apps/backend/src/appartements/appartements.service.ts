@@ -21,7 +21,10 @@ export class AppartementsService {
         numero: dto.numero,
         type: dto.type,
         surface: dto.surface,
-        loyerReference: dto.loyerReference
+        loyerReference: dto.loyerReference,
+        nombrePiecesPrincipales: dto.nombrePiecesPrincipales,
+        modeChauffage: dto.modeChauffage,
+        modeEauChaude: dto.modeEauChaude
       })
       .returning();
     if (!appartement) {

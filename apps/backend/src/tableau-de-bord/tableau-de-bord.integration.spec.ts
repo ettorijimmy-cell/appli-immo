@@ -117,12 +117,14 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
 
-    const sci = await scisService.create(user.id, { nom: "SCI Dashboard Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(user.id, { nom: "SCI Dashboard Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     sciId = sci.id;
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Dashboard Test",
-      adresse: "1 rue du Dashboard"
+      adresse: "1 rue du Dashboard",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     immeubleId = immeuble.id;
   });
@@ -145,18 +147,40 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // bord), donc le test doit tolérer un état initial non vide.
       const avant = await tableauDeBordService.getEnTete();
 
-      await appartementsService.create({ immeubleId, numero: "1", type: "T2", loyerReference: "800.00" });
-      await appartementsService.create({ immeubleId, numero: "2", type: "T2", loyerReference: "700.00" });
+      await appartementsService.create({
+        immeubleId,
+        numero: "1",
+        type: "T2",
+        loyerReference: "800.00",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
+      await appartementsService.create({
+        immeubleId,
+        numero: "2",
+        type: "T2",
+        loyerReference: "700.00",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
       const appartementVacant = await appartementsService.create({
         immeubleId,
         numero: "3",
         type: "T1",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "500.00"
       });
       const appartementTravaux = await appartementsService.create({
         immeubleId,
         numero: "4",
         type: "T1",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "600.00"
       });
       await appartementsService.update(appartementTravaux.id, { statut: "travaux" });
@@ -193,6 +217,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "10",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "800.00"
       });
       const bail = await bauxService.create({
@@ -271,6 +298,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "20",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "900.00"
       });
       const bail = await bauxService.create({
@@ -340,6 +370,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "30",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "800.00"
       });
       const bail = await bauxService.create({
@@ -379,7 +412,15 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     });
 
     it("un appartement jamais loué a un taux d'occupation de 0 et un revenu net de 0", async () => {
-      await appartementsService.create({ immeubleId, numero: "31", type: "T1", loyerReference: "500.00" });
+      await appartementsService.create({
+        immeubleId,
+        numero: "31",
+        type: "T1",
+        loyerReference: "500.00",
+        nombrePiecesPrincipales: 2,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
       const sci = synthese.find((s) => s.id === sciId)!;
@@ -395,6 +436,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "40",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "800.00"
       });
       const bailOccupe = await bauxService.create({
@@ -409,7 +453,15 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         await paiementsService.archive(echeance.id);
       }
       // Second appartement, jamais loué sur la période (0% d'occupation).
-      await appartementsService.create({ immeubleId, numero: "41", type: "T1", loyerReference: "500.00" });
+      await appartementsService.create({
+        immeubleId,
+        numero: "41",
+        type: "T1",
+        loyerReference: "500.00",
+        nombrePiecesPrincipales: 2,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
       const sci = synthese.find((s) => s.id === sciId)!;
@@ -432,6 +484,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "A102",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "800.00"
       });
       const bail = await bauxService.create({
@@ -509,6 +564,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "A200",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "700.00"
       });
       const bailTemoin = await bauxService.create({
@@ -528,6 +586,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "A201",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "700.00"
       });
       await appartementsService.archive(appartementArchive.id);
@@ -561,6 +622,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "40",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "900.00"
       });
       const bail = await bauxService.create({
@@ -598,6 +662,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "41",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "900.00"
       });
       const bail = await bauxService.create({
@@ -642,6 +709,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "42",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "900.00"
       });
       const bail = await bauxService.create({
@@ -677,6 +747,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         immeubleId,
         numero: "43",
         type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
         loyerReference: "900.00"
       });
       const bail = await bauxService.create({

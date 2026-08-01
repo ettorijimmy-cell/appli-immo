@@ -35,6 +35,7 @@ automatiquement à la création d'une SCI — voir
 | regime_fiscal | enum | `IS` \| `IR` — jamais supposé, toujours explicite |
 | forme_juridique | text | |
 | siret | text | |
+| adresse, code_postal, ville | text, nullable | Siège social de la SCI. **Obligatoire à la création** (`CreateSciDto`) depuis l'introduction de cette règle — le propriétaire connaît ces informations dès la constitution de la SCI, contrairement à `telephone`/`est_familiale`. Le schéma reste nullable pour ne pas casser les fiches déjà créées sans ces champs (ex. GME) : celles-ci restent modifiables normalement via `UpdateSciDto` (champs optionnels), et `validerCompletudeGenerationBail` (packages/core) bloque proprement la génération du bail tant qu'un des trois est `null`, même principe que `est_familiale` ci-dessous |
 | telephone | text, nullable | Mention "LE BAILLEUR" du modèle de bail, renseignable progressivement |
 | est_familiale | boolean, nullable | Détermine la durée légale du bail vide (3 ans si vraie, 6 ans sinon — art. 10 loi n° 89-462). **Jamais de valeur par défaut**, y compris pour une nouvelle SCI créée après l'ajout de ce champ : rester `null` tant que non renseigné explicitement. La génération du bail doit bloquer avec un message clair si ce champ est `null` sur la SCI concernée, plutôt que de deviner une valeur (docs/backlog.md, section "Édition d'un bail") |
 | statut | enum | `active` \| `archive` |
@@ -50,17 +51,20 @@ automatiquement à la création d'une SCI — voir
 |---|---|---|
 | statut | enum | `actif` \| `archive` |
 | annee_construction | integer, nullable | Détermine la tranche de construction du modèle de bail (packages/core, `calculerTrancheConstruction`). Colonne présente depuis la migration 0014 mais restée sans formulaire jusqu'ici — un oubli d'exposition, pas une question de conception : sans elle, le contrôle de complétude de la génération du bail bloquait systématiquement tout bail réel. Exposée via `UpdateImmeubleDto` et le formulaire immeuble (Module 2) |
-| type_habitat | enum, nullable | `collectif` \| `individuel` — mention du contrat-type (décret n° 2015-587), même historique que `annee_construction` |
-| regime_juridique | enum, nullable | `mono_propriete` \| `copropriete` — idem |
+| type_habitat | enum, nullable | `collectif` \| `individuel` — mention du contrat-type (décret n° 2015-587), pilote aussi les blocs conditionnels `{#collectif}`/`{#individuel}` du modèle Word. **Obligatoire à la création** (`CreateImmeubleDto`) : fait connu immédiatement par le propriétaire, contrairement à `annee_construction` qui reste facultatif. Schéma nullable pour ne pas casser les immeubles déjà créés ; modifiable ensuite via `UpdateImmeubleDto` (optionnel). Bloque la génération du bail si `null` (`validerCompletudeGenerationBail`) |
+| regime_juridique | enum, nullable | `mono_propriete` \| `copropriete` — idem (obligatoire à la création, nullable en schéma, bloque la génération si `null`, pilote `{#copropriete}`/`{#monopropriete}`) |
 
 ## appartements
 | Champ | Type | Description |
 |---|---|---|
-| type | enum | `T1` \| `T2` \| `T3` \| `T4` \| `T5+` |
+| type | enum | `T1` \| `T2` \| `T3` \| `T4` \| `T5` \| `T6` — catégorie commerciale du lot, valeurs précises depuis le remplacement de `T5+` (aucun appartement réel en base n'utilisait cette valeur au moment du changement). **Distinct** de `nombre_pieces_principales` : le premier est une catégorie commerciale, le second le décompte légal de pièces — non redondants par conception, voir `packages/db/src/schema/appartements.ts` |
 | statut | enum | `vacant` \| `loue` \| `travaux` \| `archive` |
 | loyer_reference | decimal | Loyer de référence hors charges, utilisé pour pré-remplir un nouveau bail |
 | equipement_cuisine | text, nullable | Mention du modèle de bail (cuisine équipée, bail meublé notamment) — texte libre |
 | dependances_annexes | text, nullable | Mention du modèle de bail (cave, parking, balcon...) — texte libre |
+| nombre_pieces_principales | integer, nullable | Décompte légal de pièces principales du modèle de bail — distinct de `type` (voir ci-dessus). **Obligatoire à la création** (`CreateAppartementDto`) : fait connu immédiatement par le propriétaire. Schéma nullable pour ne pas casser les lots déjà créés ; modifiable ensuite via `UpdateAppartementDto` (optionnel). Bloque la génération du bail si `null` (`validerCompletudeGenerationBail`). `deduireNombrePiecesDepuisType` (packages/core) pré-remplit ce champ dans le formulaire de création à partir du `type` choisi — une suggestion que le propriétaire confirme ou corrige, resynchronisée si `type` change tant que le champ n'a pas été modifié manuellement, jamais un repli silencieux côté validation/génération : la distinction type/décompte légal reste entière, seule la saisie initiale est facilitée |
+| mode_chauffage | enum, nullable | `individuel` \| `collectif` — mention du contrat-type, pilote `{#chauffageIndividuel}`/`{#chauffageCollectif}`. Obligatoire à la création, même raisonnement que `nombre_pieces_principales`, bloque la génération si `null` |
+| mode_eau_chaude | enum, nullable | `individuel` \| `collectif` — idem, pilote `{#eauChaudeIndividuelle}`/`{#eauChaudeCollective}` |
 
 ## equipements
 | Champ | Type | Description |

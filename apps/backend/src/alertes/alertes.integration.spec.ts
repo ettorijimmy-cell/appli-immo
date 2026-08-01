@@ -116,16 +116,21 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
 
-    const sci = await scisService.create(user.id, { nom: "SCI Alertes Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(user.id, { nom: "SCI Alertes Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Alertes Test",
-      adresse: "1 rue des Alertes"
+      adresse: "1 rue des Alertes",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
       immeubleId: immeuble.id,
       numero: "1",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "800.00"
     });
     appartementId = appartement.id;

@@ -100,16 +100,21 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
 
-    const sci = await scisService.create(user.id, { nom: "SCI Remboursements Test", regimeFiscal: "IR" });
+    const sci = await scisService.create(user.id, { nom: "SCI Remboursements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const immeuble = await immeublesService.create({
       sciId: sci.id,
       nom: "Immeuble Remboursements Test",
-      adresse: "1 rue des Remboursements"
+      adresse: "1 rue des Remboursements",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
       immeubleId: immeuble.id,
       numero: "1",
       type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
       loyerReference: "800.00"
     });
     const bail = await bauxService.create({
