@@ -655,6 +655,105 @@ postes, décret n° 2015-981) volontairement différé depuis le module
 "Édition d'un bail" ci-dessus — les deux modules partagent ce même
 concept de données, à concevoir une seule fois ici plutôt qu'en double.
 
+**Insertion de photos dans le document généré — module choisi et
+vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos
+intégrées dans le document imprimé") implique un module d'insertion
+d'image pour docxtemplater, qui n'a rien de gratuit par défaut : le
+module officiel (`docxtemplater.com/modules/image/`) est payant, 500 €/an
+à l'unité ou 1250 €/an pour le plan PRO (4 modules au choix).
+
+Alternative retenue : **`docxtemplater-image-module-free`** (npm, licence
+MIT, fork communautaire maintenu de l'ancien module officiel devenu
+payant, compatible `docxtemplater ^3.0.0` — notre version installée est
+`3.69.3`). Décision prise seulement après un test d'intégration réel
+contre notre pipeline exact (pizzip + docxtemplater), pas une simple
+vérification de compatibilité déclarée :
+- Template minimal construit à la main (balise `{%photo}` dans son propre
+  paragraphe), rendu via `PizZip` + `Docxtemplater` + le module, sur une
+  vraie photo JPEG (239×178, domaine public).
+- Document `.docx` résultant converti en PDF **et** en PNG via LibreOffice
+  headless (`soffice --headless --convert-to`) — pas seulement "le zip
+  ne plante pas à la génération" : l'image est bien présente dans le PDF
+  (filtre `/DCTDecode`, XObject Image) et visuellement correcte dans le
+  rendu PNG, à la position et à la taille demandées (`getSize`).
+
+**Deux gaps réels confirmés pendant ce test, tous les deux à traiter côté
+notre code avant la conception du schéma État des lieux :**
+
+1. **L'orientation EXIF n'est jamais appliquée — ni par le module, ni par
+   le rendu.** Vérifié concrètement : une photo test réencodée avec un
+   tag EXIF `Orientation=6` (rotation 90° — cas réel d'une photo de
+   téléphone prise à la verticale) ressort et s'affiche **dans son
+   orientation brute**, sans la rotation attendue. Ce n'est pas
+   documenté dans le module (aucune mention d'EXIF dans son code ni sa
+   doc) : il transmet les octets tels quels (confirmé — le fichier média
+   intégré est strictement identique octet pour octet à la photo
+   source). Jamais compter sur Word ou un autre lecteur pour corriger
+   l'affichage automatiquement, le comportement est documenté comme non
+   standardisé et incohérent d'un logiciel à l'autre.
+2. **Bug confirmé du module : tout fichier média généré est nommé
+   `image_generated_N.png` en dur** (`js/index.js`, `name = "image_generated_"
+   + this.imageNumber + ".png"`), y compris quand les octets réels sont
+   un JPEG — le paquet OOXML déclare alors `image/png` pour un contenu
+   qui n'en est pas un. Constaté dans notre test (photo JPEG intégrée
+   sous ce nom `.png`). LibreOffice l'a toléré (rendu correct, probable
+   détection du format par les octets plutôt que par l'extension
+   déclarée) — **non vérifié dans Microsoft Word réel**, seul rendu
+   disponible dans cet environnement.
+
+**Décision : redressement + réencodage fait une seule fois, à l'upload
+de la photo (Module 4, Documents), pas à chaque génération/régénération
+du document.** Chaque photo est stockée déjà propre (PNG véritable,
+orientation EXIF déjà appliquée aux pixels, tag remis à 1/normal) — le
+service de génération État des lieux ne fait alors que lire un fichier
+déjà correct, sans jamais retraiter l'image. Réutilise le point de
+passage déjà existant pour tout document uploadé (`EncryptionService`,
+Module 4) : le pré-traitement image s'insère avant le chiffrement, une
+seule fois par photo, jamais recalculé à la génération. Règle les deux
+gaps ci-dessus d'un coup : orientation correcte + vrai PNG conforme à
+son extension déclarée.
+
+**Outil retenu pour ce pré-traitement : `sharp`, vérifié avant
+d'ajouter la dépendance (même réflexe que pour
+`docxtemplater-image-module-free`) :**
+- **Licence Apache-2.0**, confirmé via le registre npm (`sharp@0.35.3`).
+- Dépendance native `libvips`, licence **LGPL-2.1-or-later** — distribuée
+  par `sharp` sous forme de binaires précompilés séparés
+  (`node_modules/sharp/vendor`, liaison dynamique), le schéma standard qui
+  permet un usage depuis du code propriétaire fermé sans obligation de
+  publier ce code sous LGPL, tant que `libvips` lui-même n'est pas modifié.
+  Sans incidence supplémentaire dans notre cas : `sharp` vivrait dans
+  `apps/backend` (service cloud qu'on exploite nous-mêmes), jamais
+  redistribué à un tiers comme bibliothèque ou binaire — le déclenchement
+  des obligations de la LGPL suppose une distribution, absente ici.
+- Binaires précompilés disponibles pour **Windows x64** (poste de dev) et
+  **Linux x64** (déploiement Scaleway visé) — aucune compilation native
+  requise à l'installation.
+- Exige Node.js `>=20.9.0` ; le monorepo impose déjà Node `>=24`
+  (`package.json` racine) — largement compatible.
+- API exacte pour ce besoin : `sharp(buffer).rotate()` sans argument
+  appelle `autoOrient()` — applique la rotation/le miroir selon le tag
+  EXIF `Orientation` **puis supprime ce tag**, empêchant toute
+  double-correction en aval. Suivi de `.png()` pour forcer un vrai PNG
+  en sortie.
+- N'a **pas** été ajouté en dépendance à ce stade (`apps/backend` ne
+  contient encore aucun code image) — à installer au moment de construire
+  le point d'upload du module État des lieux, pas avant.
+
+**Risque du fork non maintenu par l'auteur officiel de docxtemplater —
+chemin de repli explicite.** `docxtemplater-image-module-free` est un
+fork communautaire, pas le module officiel : si une future version de
+docxtemplater casse la compatibilité, ou si le module se révèle
+insuffisant à l'usage réel (au-delà des deux gaps déjà identifiés
+ci-dessus), **la version payante officielle (500 €/an, module seul)
+reste l'option de secours** — remplacement direct au niveau de
+l'intégration (même famille de configuration `getImage`/`getSize`,
+changement d'import), pas une réécriture depuis zéro. Ne pas
+retarder cette bascule si le fork montre des signes d'abandon
+(pas de commit depuis longtemps, incompatibilité avec une montée de
+version de docxtemplater) — le coût annuel est faible comparé au risque
+de bloquer la génération de documents légaux.
+
 ### Suivi des charges et fiscalité (futur module)
 
 Objectif : suivi des dépenses par SCI, pour exploiter le régime fiscal
