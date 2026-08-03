@@ -649,11 +649,41 @@ par le futur module "Révision annuelle" du cahier des charges initial
 
 ### État des lieux (futur module, priorité 2)
 
-Pas encore conçu. Porte, en plus de son objet propre (constat d'entrée/
-sortie par pièce), l'inventaire de mobilier à liste légale fermée (11
-postes, décret n° 2015-981) volontairement différé depuis le module
-"Édition d'un bail" ci-dessus — les deux modules partagent ce même
-concept de données, à concevoir une seule fois ici plutôt qu'en double.
+Porte, en plus de son objet propre (constat d'entrée/sortie par pièce),
+l'inventaire de mobilier à liste légale fermée (décret n° 2015-981)
+volontairement différé depuis le module "Édition d'un bail" ci-dessus —
+les deux modules partagent ce même concept de données.
+
+**Schéma validé (2026-08-03), voir docs/data-dictionary.md pour le
+détail complet des tables.** Contenu vérifié contre le texte exact du
+décret n° 2016-382 (art. 2 et 3 — pas de modèle officiel annexé,
+contrairement au contrat-type de bail) et contre le modèle Word réel du
+propriétaire (`tmp/Modèle état des lieux.docx`), pas une synthèse
+générale. Trois approches de schéma comparées (catalogue de
+types/éléments en base, modélisation littérale, hybride avec règle
+métier en TypeScript) — **modélisation littérale retenue** (une table
+par groupe de pièce), le décret et le modèle du propriétaire étant
+fixes, la flexibilité des deux autres approches ne serait jamais
+exploitée.
+
+**Saisie numérique uniquement (téléphone/desktop), jamais sur papier —
+chantier d'interface à part entière, conçu après le schéma.** Parcours
+mobile en pas-à-pas pièce par pièce, M/P/B/TB en boutons tactiles larges
+(jamais un menu déroulant), une seule colonne d'état affichée à la fois
+(la valeur d'entrée en lecture seule sert de référence à la sortie),
+commentaire replié par défaut, indicateur de progression, bouton photo
+par pièce (pas par élément, réutilise l'attachement polymorphe du
+Module 4). Vues distinctes sur la même donnée : mobile en pas-à-pas
+(l'outil de capture réel sur place), desktop en tableau dense (relecture
+et correction après coup).
+
+Accès mobile : page web légère sur l'API REST d'`apps/backend`, décision
+et raisonnement complets dans `docs/app-spec.md` (section 3). Résilience
+réseau : soumission indépendante par pièce (et par photo), blocage
+explicite avec message clair et bouton "Réessayer" en cas d'échec —
+aucune file d'attente de synchronisation ni colonne de statut à
+maintenir, le problème réseau reste visible et actionnable sur place
+pendant la visite plutôt que découvert après coup.
 
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos

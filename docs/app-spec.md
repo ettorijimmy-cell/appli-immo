@@ -50,6 +50,31 @@ Le détail du raisonnement (comparatif Electron/Tauri, choix de PowerSync,
 choix de Scaleway) reste disponible dans l'historique de conception du
 projet si besoin de le retracer.
 
+**Accès mobile (module État des lieux, 2026-08-03) : page web légère,
+API REST directe sur `apps/backend`, pas de SDK PowerSync web.** Le
+besoin d'une saisie sur téléphone pendant la visite d'un logement a
+posé la question d'étendre l'architecture locale-first au mobile.
+Deux options existaient : (A) une page web mobile simple, sans base
+locale, appelant directement l'API backend ; (B) intégrer le SDK web
+de PowerSync (existe réellement — SQLite compilé en WASM, stockage
+IndexedDB/OPFS, support PWA), pour offrir le même hors-ligne complet
+qu'Electron.
+
+Option A retenue. Raison : cohérente avec la décision initiale déjà
+actée pour ce projet — `docs/integrations.md` documente explicitement
+que le SDK PowerSync utilisé est "le SDK Node.js (processus principal
+Electron) — pas le SDK web, pas le SDK Tauri", un choix déjà tranché en
+comparant Electron et Tauri au début du projet. Engager une intégration
+PowerSync jamais éprouvée ici (le SDK web est un client distinct du
+SDK Node déjà en place, pas une simple option de configuration) pour un
+module secondaire irait à l'encontre de cette prudence délibérée,
+alors qu'une alternative plus simple couvre le vrai risque identifié
+(une coupure réseau pendant la visite) : chaque pièce se soumet
+indépendamment à la validation ("Suivant"), avec blocage explicite et
+message clair en cas d'échec réseau — le problème est visible et
+actionnable sur place, sans file d'attente de synchronisation à
+construire ni colonne de statut à ajouter au schéma.
+
 ## 3bis. Navigation
 
 Sidebar à 6 entrées, dans cet ordre exact :

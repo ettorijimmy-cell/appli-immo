@@ -1,0 +1,5092 @@
+{
+  "id": "7eb3c2cd-ab0f-4c7c-a52d-8a129727e9fd",
+  "prevId": "4750743e-8815-413d-bdcf-ac64b6873e03",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.organisations": {
+      "name": "organisations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "organisation_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_contact": {
+          "name": "email_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "organisation_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'actif'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.scis": {
+      "name": "scis",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "regime_fiscal": {
+          "name": "regime_fiscal",
+          "type": "sci_regime_fiscal",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "forme_juridique": {
+          "name": "forme_juridique",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "siret": {
+          "name": "siret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nom_gerant": {
+          "name": "nom_gerant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prenom_gerant": {
+          "name": "prenom_gerant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telephone": {
+          "name": "telephone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "est_familiale": {
+          "name": "est_familiale",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "sci_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.comptes_bancaires_sci": {
+      "name": "comptes_bancaires_sci",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sci_id": {
+          "name": "sci_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iban_chiffre": {
+          "name": "iban_chiffre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bic_chiffre": {
+          "name": "bic_chiffre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "comptes_bancaires_sci_sci_id_scis_id_fk": {
+          "name": "comptes_bancaires_sci_sci_id_scis_id_fk",
+          "tableFrom": "comptes_bancaires_sci",
+          "tableTo": "scis",
+          "columnsFrom": [
+            "sci_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.organisation_sci": {
+      "name": "organisation_sci",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sci_id": {
+          "name": "sci_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "organisation_sci_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_debut": {
+          "name": "date_debut",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_fin": {
+          "name": "date_fin",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "organisation_sci_organisation_id_organisations_id_fk": {
+          "name": "organisation_sci_organisation_id_organisations_id_fk",
+          "tableFrom": "organisation_sci",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "organisation_sci_sci_id_scis_id_fk": {
+          "name": "organisation_sci_sci_id_scis_id_fk",
+          "tableFrom": "organisation_sci",
+          "tableTo": "scis",
+          "columnsFrom": [
+            "sci_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.immeubles": {
+      "name": "immeubles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sci_id": {
+          "name": "sci_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_habitat": {
+          "name": "type_habitat",
+          "type": "immeuble_type_habitat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "regime_juridique": {
+          "name": "regime_juridique",
+          "type": "immeuble_regime_juridique",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "annee_construction": {
+          "name": "annee_construction",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "immeuble_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'actif'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "immeubles_sci_id_scis_id_fk": {
+          "name": "immeubles_sci_id_scis_id_fk",
+          "tableFrom": "immeubles",
+          "tableTo": "scis",
+          "columnsFrom": [
+            "sci_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.appartements": {
+      "name": "appartements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "immeuble_id": {
+          "name": "immeuble_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "appartement_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "surface": {
+          "name": "surface",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "loyer_reference": {
+          "name": "loyer_reference",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "identifiant_fiscal": {
+          "name": "identifiant_fiscal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre_pieces_principales": {
+          "name": "nombre_pieces_principales",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mode_chauffage": {
+          "name": "mode_chauffage",
+          "type": "appartement_mode_production",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mode_eau_chaude": {
+          "name": "mode_eau_chaude",
+          "type": "appartement_mode_production",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_energie": {
+          "name": "type_energie",
+          "type": "appartement_type_energie",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "equipement_cuisine": {
+          "name": "equipement_cuisine",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dependances_annexes": {
+          "name": "dependances_annexes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "appartement_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'vacant'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "appartements_immeuble_id_immeubles_id_fk": {
+          "name": "appartements_immeuble_id_immeubles_id_fk",
+          "tableFrom": "appartements",
+          "tableTo": "immeubles",
+          "columnsFrom": [
+            "immeuble_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.equipements": {
+      "name": "equipements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "appartement_id": {
+          "name": "appartement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "equipement_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_dernier_entretien": {
+          "name": "date_dernier_entretien",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intervalle_entretien_mois": {
+          "name": "intervalle_entretien_mois",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "equipements_appartement_id_appartements_id_fk": {
+          "name": "equipements_appartement_id_appartements_id_fk",
+          "tableFrom": "equipements",
+          "tableTo": "appartements",
+          "columnsFrom": [
+            "appartement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.utilisateurs": {
+      "name": "utilisateurs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prenom": {
+          "name": "prenom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mot_de_passe_hash": {
+          "name": "mot_de_passe_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statut": {
+          "name": "statut",
+          "type": "utilisateur_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'actif'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "utilisateurs_organisation_id_organisations_id_fk": {
+          "name": "utilisateurs_organisation_id_organisations_id_fk",
+          "tableFrom": "utilisateurs",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "utilisateurs_email_unique": {
+          "name": "utilisateurs_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.journal_audit": {
+      "name": "journal_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "entite_type": {
+          "name": "entite_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entite_id": {
+          "name": "entite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "journal_audit_action",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "donnees_avant": {
+          "name": "donnees_avant",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "donnees_apres": {
+          "name": "donnees_apres",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "utilisateur_id": {
+          "name": "utilisateur_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "journal_audit_utilisateur_id_utilisateurs_id_fk": {
+          "name": "journal_audit_utilisateur_id_utilisateurs_id_fk",
+          "tableFrom": "journal_audit",
+          "tableTo": "utilisateurs",
+          "columnsFrom": [
+            "utilisateur_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.locataires": {
+      "name": "locataires",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prenom": {
+          "name": "prenom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telephone": {
+          "name": "telephone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_naissance": {
+          "name": "date_naissance",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "locataire_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'actif'"
+        },
+        "anonymise_le": {
+          "name": "anonymise_le",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.baux": {
+      "name": "baux",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "appartement_id": {
+          "name": "appartement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type_bail": {
+          "name": "type_bail",
+          "type": "bail_type_bail",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statut": {
+          "name": "statut",
+          "type": "bail_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'brouillon'"
+        },
+        "loyer_mensuel": {
+          "name": "loyer_mensuel",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "depot_garantie": {
+          "name": "depot_garantie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provisions_charges": {
+          "name": "provisions_charges",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "jour_echeance": {
+          "name": "jour_echeance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_debut": {
+          "name": "date_debut",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_fin": {
+          "name": "date_fin",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_activation": {
+          "name": "date_activation",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_signature": {
+          "name": "date_signature",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_resiliation": {
+          "name": "date_resiliation",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "travaux_realises": {
+          "name": "travaux_realises",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "honoraires_bailleur": {
+          "name": "honoraires_bailleur",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "honoraires_locataire": {
+          "name": "honoraires_locataire",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "baux_appartement_id_appartements_id_fk": {
+          "name": "baux_appartement_id_appartements_id_fk",
+          "tableFrom": "baux",
+          "tableTo": "appartements",
+          "columnsFrom": [
+            "appartement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.garants": {
+      "name": "garants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bail_id": {
+          "name": "bail_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prenom": {
+          "name": "prenom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telephone": {
+          "name": "telephone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_garantie": {
+          "name": "type_garantie",
+          "type": "garant_type_garantie",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profession": {
+          "name": "profession",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revenus": {
+          "name": "revenus",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_naissance": {
+          "name": "date_naissance",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lieu_naissance": {
+          "name": "lieu_naissance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nationalite": {
+          "name": "nationalite",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "garants_bail_id_baux_id_fk": {
+          "name": "garants_bail_id_baux_id_fk",
+          "tableFrom": "garants",
+          "tableTo": "baux",
+          "columnsFrom": [
+            "bail_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bail_locataires": {
+      "name": "bail_locataires",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bail_id": {
+          "name": "bail_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "locataire_id": {
+          "name": "locataire_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "bail_locataire_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "bail_locataires_bail_id_baux_id_fk": {
+          "name": "bail_locataires_bail_id_baux_id_fk",
+          "tableFrom": "bail_locataires",
+          "tableTo": "baux",
+          "columnsFrom": [
+            "bail_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bail_locataires_locataire_id_locataires_id_fk": {
+          "name": "bail_locataires_locataire_id_locataires_id_fk",
+          "tableFrom": "bail_locataires",
+          "tableTo": "locataires",
+          "columnsFrom": [
+            "locataire_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.paiements": {
+      "name": "paiements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bail_id": {
+          "name": "bail_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "paiement_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statut": {
+          "name": "statut",
+          "type": "paiement_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'impaye'"
+        },
+        "montant": {
+          "name": "montant",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_echeance": {
+          "name": "date_echeance",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "paiements_bail_id_baux_id_fk": {
+          "name": "paiements_bail_id_baux_id_fk",
+          "tableFrom": "paiements",
+          "tableTo": "baux",
+          "columnsFrom": [
+            "bail_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.versements": {
+      "name": "versements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paiement_id": {
+          "name": "paiement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "montant": {
+          "name": "montant",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_versement": {
+          "name": "date_versement",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "paiement_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_rapprochement": {
+          "name": "reference_rapprochement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "versements_paiement_id_paiements_id_fk": {
+          "name": "versements_paiement_id_paiements_id_fk",
+          "tableFrom": "versements",
+          "tableTo": "paiements",
+          "columnsFrom": [
+            "paiement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.remboursements": {
+      "name": "remboursements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bail_id": {
+          "name": "bail_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paiement_id": {
+          "name": "paiement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "remboursement_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "montant_origine": {
+          "name": "montant_origine",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "montant_rembourse": {
+          "name": "montant_rembourse",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commentaire": {
+          "name": "commentaire",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_remboursement": {
+          "name": "date_remboursement",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "paiement_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "remboursements_bail_id_baux_id_fk": {
+          "name": "remboursements_bail_id_baux_id_fk",
+          "tableFrom": "remboursements",
+          "tableTo": "baux",
+          "columnsFrom": [
+            "bail_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "remboursements_paiement_id_paiements_id_fk": {
+          "name": "remboursements_paiement_id_paiements_id_fk",
+          "tableFrom": "remboursements",
+          "tableTo": "paiements",
+          "columnsFrom": [
+            "paiement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.documents": {
+      "name": "documents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entite_type": {
+          "name": "entite_type",
+          "type": "document_entite_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entite_id": {
+          "name": "entite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "categorie": {
+          "name": "categorie",
+          "type": "document_categorie",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statut": {
+          "name": "statut",
+          "type": "document_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'valide'"
+        },
+        "date_expiration": {
+          "name": "date_expiration",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nom_fichier": {
+          "name": "nom_fichier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taille_octets": {
+          "name": "taille_octets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chemin_stockage": {
+          "name": "chemin_stockage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.diagnostics": {
+      "name": "diagnostics",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "diagnostic_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "classe_dpe": {
+          "name": "classe_dpe",
+          "type": "diagnostic_classe_dpe",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "depenses_theoriques_chauffage": {
+          "name": "depenses_theoriques_chauffage",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "risque_present": {
+          "name": "risque_present",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "diagnostics_document_id_documents_id_fk": {
+          "name": "diagnostics_document_id_documents_id_fk",
+          "tableFrom": "diagnostics",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.alertes": {
+      "name": "alertes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "alerte_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entite_id": {
+          "name": "entite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "statut": {
+          "name": "statut",
+          "type": "alerte_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_reference": {
+          "name": "date_reference",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "derniere_condition_vraie": {
+          "name": "derniere_condition_vraie",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {
+        "alertes_type_entite_id_active_unique": {
+          "name": "alertes_type_entite_id_active_unique",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"alertes\".\"statut\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.parametres_alertes": {
+      "name": "parametres_alertes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "alerte_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seuil_jours_avant": {
+          "name": "seuil_jours_avant",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "parametres_alertes_type_unique": {
+          "name": "parametres_alertes_type_unique",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.indices_irl": {
+      "name": "indices_irl",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "annee": {
+          "name": "annee",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trimestre": {
+          "name": "trimestre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valeur": {
+          "name": "valeur",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_recuperation": {
+          "name": "date_recuperation",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "indices_irl_annee_trimestre_unique": {
+          "name": "indices_irl_annee_trimestre_unique",
+          "columns": [
+            {
+              "expression": "annee",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "trimestre",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etats_des_lieux": {
+      "name": "etats_des_lieux",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bail_id": {
+          "name": "bail_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_entree": {
+          "name": "date_entree",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_sortie": {
+          "name": "date_sortie",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nouvelle_adresse_locataire": {
+          "name": "nouvelle_adresse_locataire",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etats_des_lieux_bail_id_baux_id_fk": {
+          "name": "etats_des_lieux_bail_id_baux_id_fk",
+          "tableFrom": "etats_des_lieux",
+          "tableTo": "baux",
+          "columnsFrom": [
+            "bail_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "etats_des_lieux_bail_id_unique": {
+          "name": "etats_des_lieux_bail_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "bail_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_compteurs": {
+      "name": "etat_des_lieux_compteurs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "electricite_numero_compteur_entree": {
+          "name": "electricite_numero_compteur_entree",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_numero_compteur_sortie": {
+          "name": "electricite_numero_compteur_sortie",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_releve_hp_entree": {
+          "name": "electricite_releve_hp_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_releve_hp_sortie": {
+          "name": "electricite_releve_hp_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_releve_hc_entree": {
+          "name": "electricite_releve_hc_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_releve_hc_sortie": {
+          "name": "electricite_releve_hc_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_ancien_occupant_entree": {
+          "name": "electricite_ancien_occupant_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electricite_ancien_occupant_sortie": {
+          "name": "electricite_ancien_occupant_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gaz_numero_compteur_entree": {
+          "name": "gaz_numero_compteur_entree",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gaz_numero_compteur_sortie": {
+          "name": "gaz_numero_compteur_sortie",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gaz_releve_entree": {
+          "name": "gaz_releve_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gaz_releve_sortie": {
+          "name": "gaz_releve_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eau_releve_froide_entree": {
+          "name": "eau_releve_froide_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eau_releve_froide_sortie": {
+          "name": "eau_releve_froide_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eau_releve_chaude_entree": {
+          "name": "eau_releve_chaude_entree",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eau_releve_chaude_sortie": {
+          "name": "eau_releve_chaude_sortie",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_compteurs_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_compteurs_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_compteurs",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "etat_des_lieux_compteurs_etat_des_lieux_id_unique": {
+          "name": "etat_des_lieux_compteurs_etat_des_lieux_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "etat_des_lieux_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_cles": {
+      "name": "etat_des_lieux_cles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type_cle": {
+          "name": "type_cle",
+          "type": "etat_des_lieux_type_cle",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "libelle_autre": {
+          "name": "libelle_autre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre_entree": {
+          "name": "nombre_entree",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre_sortie": {
+          "name": "nombre_sortie",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "commentaire": {
+          "name": "commentaire",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_cles_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_cles_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_cles",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_piece_cuisine": {
+      "name": "etat_des_lieux_piece_cuisine",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "placards_description": {
+          "name": "placards_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "placards_etat_entree": {
+          "name": "placards_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "placards_etat_sortie": {
+          "name": "placards_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evier_description": {
+          "name": "evier_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evier_etat_entree": {
+          "name": "evier_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evier_etat_sortie": {
+          "name": "evier_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plaques_cuisson_description": {
+          "name": "plaques_cuisson_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plaques_cuisson_etat_entree": {
+          "name": "plaques_cuisson_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plaques_cuisson_etat_sortie": {
+          "name": "plaques_cuisson_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hotte_description": {
+          "name": "hotte_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hotte_etat_entree": {
+          "name": "hotte_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hotte_etat_sortie": {
+          "name": "hotte_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "electromenager_description": {
+          "name": "electromenager_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_piece_cuisine_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_piece_cuisine_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_piece_cuisine",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "etat_des_lieux_piece_cuisine_etat_des_lieux_id_unique": {
+          "name": "etat_des_lieux_piece_cuisine_etat_des_lieux_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "etat_des_lieux_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_piece_entree": {
+      "name": "etat_des_lieux_piece_entree",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "porte_description": {
+          "name": "porte_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "porte_etat_entree": {
+          "name": "porte_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "porte_etat_sortie": {
+          "name": "porte_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sonnette_description": {
+          "name": "sonnette_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sonnette_etat_entree": {
+          "name": "sonnette_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sonnette_etat_sortie": {
+          "name": "sonnette_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_piece_entree_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_piece_entree_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_piece_entree",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "etat_des_lieux_piece_entree_etat_des_lieux_id_unique": {
+          "name": "etat_des_lieux_piece_entree_etat_des_lieux_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "etat_des_lieux_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_piece_sejour": {
+      "name": "etat_des_lieux_piece_sejour",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_piece_sejour_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_piece_sejour_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_piece_sejour",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "etat_des_lieux_piece_sejour_etat_des_lieux_id_unique": {
+          "name": "etat_des_lieux_piece_sejour_etat_des_lieux_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "etat_des_lieux_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_pieces_autre": {
+      "name": "etat_des_lieux_pieces_autre",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "libelle": {
+          "name": "libelle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "etat_des_lieux_pieces_autre_numero_unique": {
+          "name": "etat_des_lieux_pieces_autre_numero_unique",
+          "columns": [
+            {
+              "expression": "etat_des_lieux_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "etat_des_lieux_pieces_autre_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_pieces_autre_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_pieces_autre",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_pieces_chambre": {
+      "name": "etat_des_lieux_pieces_chambre",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "etat_des_lieux_pieces_chambre_numero_unique": {
+          "name": "etat_des_lieux_pieces_chambre_numero_unique",
+          "columns": [
+            {
+              "expression": "etat_des_lieux_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "etat_des_lieux_pieces_chambre_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_pieces_chambre_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_pieces_chambre",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_pieces_salle_de_bain": {
+      "name": "etat_des_lieux_pieces_salle_de_bain",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_description": {
+          "name": "lavabo_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_etat_entree": {
+          "name": "lavabo_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_etat_sortie": {
+          "name": "lavabo_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baignoire_description": {
+          "name": "baignoire_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baignoire_etat_entree": {
+          "name": "baignoire_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baignoire_etat_sortie": {
+          "name": "baignoire_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "etat_des_lieux_pieces_salle_de_bain_numero_unique": {
+          "name": "etat_des_lieux_pieces_salle_de_bain_numero_unique",
+          "columns": [
+            {
+              "expression": "etat_des_lieux_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "etat_des_lieux_pieces_salle_de_bain_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_pieces_salle_de_bain_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_pieces_salle_de_bain",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_pieces_wc": {
+      "name": "etat_des_lieux_pieces_wc",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mur_description": {
+          "name": "mur_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_entree": {
+          "name": "mur_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mur_etat_sortie": {
+          "name": "mur_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_description": {
+          "name": "sol_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_entree": {
+          "name": "sol_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sol_etat_sortie": {
+          "name": "sol_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_description": {
+          "name": "vitrage_volets_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_entree": {
+          "name": "vitrage_volets_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vitrage_volets_etat_sortie": {
+          "name": "vitrage_volets_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_description": {
+          "name": "plafond_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_entree": {
+          "name": "plafond_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plafond_etat_sortie": {
+          "name": "plafond_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_description": {
+          "name": "eclairage_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_entree": {
+          "name": "eclairage_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eclairage_etat_sortie": {
+          "name": "eclairage_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_description": {
+          "name": "prises_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_entree": {
+          "name": "prises_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_etat_sortie": {
+          "name": "prises_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prises_nombre": {
+          "name": "prises_nombre",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_description": {
+          "name": "lavabo_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_etat_entree": {
+          "name": "lavabo_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lavabo_etat_sortie": {
+          "name": "lavabo_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wc_description": {
+          "name": "wc_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wc_etat_entree": {
+          "name": "wc_etat_entree",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wc_etat_sortie": {
+          "name": "wc_etat_sortie",
+          "type": "etat_des_lieux_element_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "etat_des_lieux_pieces_wc_numero_unique": {
+          "name": "etat_des_lieux_pieces_wc_numero_unique",
+          "columns": [
+            {
+              "expression": "etat_des_lieux_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "etat_des_lieux_pieces_wc_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_pieces_wc_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_pieces_wc",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_equipements_divers": {
+      "name": "etat_des_lieux_equipements_divers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "libelle": {
+          "name": "libelle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nombre_entree": {
+          "name": "nombre_entree",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_entree": {
+          "name": "etat_entree",
+          "type": "etat_des_lieux_inventaire_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre_sortie": {
+          "name": "nombre_sortie",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_sortie": {
+          "name": "etat_sortie",
+          "type": "etat_des_lieux_inventaire_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "commentaire": {
+          "name": "commentaire",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "etat_des_lieux_equipements_divers_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_equipements_divers_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_equipements_divers",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.elements_inventaire_meuble": {
+      "name": "elements_inventaire_meuble",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "libelle": {
+          "name": "libelle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "categorie": {
+          "name": "categorie",
+          "type": "element_inventaire_meuble_categorie",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ordre_affichage": {
+          "name": "ordre_affichage",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "elements_inventaire_meuble_code_unique": {
+          "name": "elements_inventaire_meuble_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.etat_des_lieux_inventaire": {
+      "name": "etat_des_lieux_inventaire",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_des_lieux_id": {
+          "name": "etat_des_lieux_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "element_id": {
+          "name": "element_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nombre_entree": {
+          "name": "nombre_entree",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_entree": {
+          "name": "etat_entree",
+          "type": "etat_des_lieux_inventaire_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nombre_sortie": {
+          "name": "nombre_sortie",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etat_sortie": {
+          "name": "etat_sortie",
+          "type": "etat_des_lieux_inventaire_etat",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "commentaire": {
+          "name": "commentaire",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "etat_des_lieux_inventaire_element_unique": {
+          "name": "etat_des_lieux_inventaire_element_unique",
+          "columns": [
+            {
+              "expression": "etat_des_lieux_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "element_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "etat_des_lieux_inventaire_etat_des_lieux_id_etats_des_lieux_id_fk": {
+          "name": "etat_des_lieux_inventaire_etat_des_lieux_id_etats_des_lieux_id_fk",
+          "tableFrom": "etat_des_lieux_inventaire",
+          "tableTo": "etats_des_lieux",
+          "columnsFrom": [
+            "etat_des_lieux_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "etat_des_lieux_inventaire_element_id_elements_inventaire_meuble_id_fk": {
+          "name": "etat_des_lieux_inventaire_element_id_elements_inventaire_meuble_id_fk",
+          "tableFrom": "etat_des_lieux_inventaire",
+          "tableTo": "elements_inventaire_meuble",
+          "columnsFrom": [
+            "element_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.organisation_statut": {
+      "name": "organisation_statut",
+      "schema": "public",
+      "values": [
+        "actif",
+        "archive"
+      ]
+    },
+    "public.organisation_type": {
+      "name": "organisation_type",
+      "schema": "public",
+      "values": [
+        "particulier",
+        "syndic"
+      ]
+    },
+    "public.sci_regime_fiscal": {
+      "name": "sci_regime_fiscal",
+      "schema": "public",
+      "values": [
+        "IS",
+        "IR"
+      ]
+    },
+    "public.sci_statut": {
+      "name": "sci_statut",
+      "schema": "public",
+      "values": [
+        "active",
+        "archive"
+      ]
+    },
+    "public.organisation_sci_role": {
+      "name": "organisation_sci_role",
+      "schema": "public",
+      "values": [
+        "proprietaire",
+        "mandataire"
+      ]
+    },
+    "public.immeuble_regime_juridique": {
+      "name": "immeuble_regime_juridique",
+      "schema": "public",
+      "values": [
+        "mono_propriete",
+        "copropriete"
+      ]
+    },
+    "public.immeuble_statut": {
+      "name": "immeuble_statut",
+      "schema": "public",
+      "values": [
+        "actif",
+        "archive"
+      ]
+    },
+    "public.immeuble_type_habitat": {
+      "name": "immeuble_type_habitat",
+      "schema": "public",
+      "values": [
+        "collectif",
+        "individuel"
+      ]
+    },
+    "public.appartement_mode_production": {
+      "name": "appartement_mode_production",
+      "schema": "public",
+      "values": [
+        "individuel",
+        "collectif"
+      ]
+    },
+    "public.appartement_statut": {
+      "name": "appartement_statut",
+      "schema": "public",
+      "values": [
+        "vacant",
+        "loue",
+        "travaux",
+        "archive"
+      ]
+    },
+    "public.appartement_type_energie": {
+      "name": "appartement_type_energie",
+      "schema": "public",
+      "values": [
+        "electrique",
+        "gaz",
+        "les_deux"
+      ]
+    },
+    "public.appartement_type": {
+      "name": "appartement_type",
+      "schema": "public",
+      "values": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    "public.equipement_type": {
+      "name": "equipement_type",
+      "schema": "public",
+      "values": [
+        "chaudiere",
+        "ballon_eau_chaude",
+        "autre"
+      ]
+    },
+    "public.utilisateur_statut": {
+      "name": "utilisateur_statut",
+      "schema": "public",
+      "values": [
+        "actif",
+        "archive"
+      ]
+    },
+    "public.journal_audit_action": {
+      "name": "journal_audit_action",
+      "schema": "public",
+      "values": [
+        "creation",
+        "modification",
+        "archivage",
+        "acces"
+      ]
+    },
+    "public.locataire_statut": {
+      "name": "locataire_statut",
+      "schema": "public",
+      "values": [
+        "actif",
+        "ancien",
+        "archive"
+      ]
+    },
+    "public.bail_statut": {
+      "name": "bail_statut",
+      "schema": "public",
+      "values": [
+        "brouillon",
+        "actif",
+        "preavis",
+        "resilie",
+        "archive"
+      ]
+    },
+    "public.bail_type_bail": {
+      "name": "bail_type_bail",
+      "schema": "public",
+      "values": [
+        "vide",
+        "meuble"
+      ]
+    },
+    "public.garant_type_garantie": {
+      "name": "garant_type_garantie",
+      "schema": "public",
+      "values": [
+        "personne_physique",
+        "garantie_visale",
+        "autre"
+      ]
+    },
+    "public.bail_locataire_role": {
+      "name": "bail_locataire_role",
+      "schema": "public",
+      "values": [
+        "titulaire",
+        "colocataire"
+      ]
+    },
+    "public.paiement_mode": {
+      "name": "paiement_mode",
+      "schema": "public",
+      "values": [
+        "virement",
+        "cheque",
+        "especes",
+        "caf"
+      ]
+    },
+    "public.paiement_statut": {
+      "name": "paiement_statut",
+      "schema": "public",
+      "values": [
+        "paye",
+        "impaye",
+        "partiel"
+      ]
+    },
+    "public.paiement_type": {
+      "name": "paiement_type",
+      "schema": "public",
+      "values": [
+        "loyer",
+        "charges",
+        "depot_garantie"
+      ]
+    },
+    "public.remboursement_type": {
+      "name": "remboursement_type",
+      "schema": "public",
+      "values": [
+        "trop_percu",
+        "depot_garantie"
+      ]
+    },
+    "public.document_categorie": {
+      "name": "document_categorie",
+      "schema": "public",
+      "values": [
+        "bail",
+        "assurance",
+        "etat_des_lieux",
+        "diagnostic",
+        "dpe",
+        "piece_identite",
+        "rib",
+        "caf",
+        "quittance",
+        "courrier",
+        "photo"
+      ]
+    },
+    "public.document_entite_type": {
+      "name": "document_entite_type",
+      "schema": "public",
+      "values": [
+        "sci",
+        "immeuble",
+        "appartement",
+        "locataire",
+        "bail"
+      ]
+    },
+    "public.document_statut": {
+      "name": "document_statut",
+      "schema": "public",
+      "values": [
+        "valide",
+        "expire",
+        "archive"
+      ]
+    },
+    "public.diagnostic_classe_dpe": {
+      "name": "diagnostic_classe_dpe",
+      "schema": "public",
+      "values": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G"
+      ]
+    },
+    "public.diagnostic_type": {
+      "name": "diagnostic_type",
+      "schema": "public",
+      "values": [
+        "dpe",
+        "crep_plomb",
+        "erp"
+      ]
+    },
+    "public.alerte_statut": {
+      "name": "alerte_statut",
+      "schema": "public",
+      "values": [
+        "active",
+        "traitee",
+        "ignoree",
+        "resolue"
+      ]
+    },
+    "public.alerte_type": {
+      "name": "alerte_type",
+      "schema": "public",
+      "values": [
+        "bail_fin_proche",
+        "document_expire",
+        "document_expire_proche",
+        "entretien_equipement",
+        "impaye"
+      ]
+    },
+    "public.etat_des_lieux_element_etat": {
+      "name": "etat_des_lieux_element_etat",
+      "schema": "public",
+      "values": [
+        "M",
+        "P",
+        "B",
+        "TB"
+      ]
+    },
+    "public.etat_des_lieux_inventaire_etat": {
+      "name": "etat_des_lieux_inventaire_etat",
+      "schema": "public",
+      "values": [
+        "bon",
+        "dusage",
+        "mauvais"
+      ]
+    },
+    "public.etat_des_lieux_type_cle": {
+      "name": "etat_des_lieux_type_cle",
+      "schema": "public",
+      "values": [
+        "immeuble",
+        "porte_entree",
+        "boite_lettres",
+        "cave",
+        "badge_portail",
+        "parking",
+        "autre"
+      ]
+    },
+    "public.element_inventaire_meuble_categorie": {
+      "name": "element_inventaire_meuble_categorie",
+      "schema": "public",
+      "values": [
+        "meuble",
+        "electromenager",
+        "vaisselle_linge"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

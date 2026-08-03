@@ -65,6 +65,7 @@ automatiquement à la création d'une SCI — voir
 | nombre_pieces_principales | integer, nullable | Décompte légal de pièces principales du modèle de bail — distinct de `type` (voir ci-dessus). **Obligatoire à la création** (`CreateAppartementDto`) : fait connu immédiatement par le propriétaire. Schéma nullable pour ne pas casser les lots déjà créés ; modifiable ensuite via `UpdateAppartementDto` (optionnel). Bloque la génération du bail si `null` (`validerCompletudeGenerationBail`). `deduireNombrePiecesDepuisType` (packages/core) pré-remplit ce champ dans le formulaire de création à partir du `type` choisi — une suggestion que le propriétaire confirme ou corrige, resynchronisée si `type` change tant que le champ n'a pas été modifié manuellement, jamais un repli silencieux côté validation/génération : la distinction type/décompte légal reste entière, seule la saisie initiale est facilitée |
 | mode_chauffage | enum, nullable | `individuel` \| `collectif` — mention du contrat-type, pilote `{#chauffageIndividuel}`/`{#chauffageCollectif}`. Obligatoire à la création, même raisonnement que `nombre_pieces_principales`, bloque la génération si `null` |
 | mode_eau_chaude | enum, nullable | `individuel` \| `collectif` — idem, pilote `{#eauChaudeIndividuelle}`/`{#eauChaudeCollective}` |
+| type_energie | enum, nullable | `electrique` \| `gaz` \| `les_deux` — énergie du chauffage/eau chaude (module État des lieux, 2026-08-03). Confirmé au niveau du **lot**, pas de l'immeuble : peut varier d'un logement à l'autre même dans un immeuble à chauffage individuel — distinct de `mode_chauffage`/`mode_eau_chaude` ci-dessus, qui répond à une question différente (individuel/collectif) |
 
 ## equipements
 | Champ | Type | Description |
@@ -673,6 +674,119 @@ jamais modifiée après écriture.
 | nom / prenom | text | |
 | mot_de_passe_hash | text | Argon2, jamais un autre algorithme |
 | statut | enum | `actif` \| `archive` |
+
+---
+
+## État des lieux (module, 2026-08-03)
+
+Schéma en **modélisation littérale** (Option B, validée avec le propriétaire
+après comparaison de trois approches) : une table par groupe de pièce du
+modèle Word réel (`tmp/Modèle état des lieux.docx`), pas de catalogue de
+types de pièces/éléments en base — le décret n° 2016-382 et le modèle du
+propriétaire sont fixes, la flexibilité d'un catalogue générique ne serait
+jamais exploitée et autoriserait structurellement des combinaisons
+incohérentes (ex. "hotte" sur une "entrée").
+
+Deux échelles distinctes, jamais harmonisées (décision assumée) :
+`etat_des_lieux_element_etat` (M/P/B/TB, décret n° 2016-382 art. 2) pour les
+pièces, `etat_des_lieux_inventaire_etat` (bon/dusage/mauvais) pour
+l'inventaire meublé et pour "ÉQUIPEMENTS DIVERS".
+
+### etats_des_lieux
+Un seul enregistrement par bail (`bail_id` unique) : le même document
+couvre l'entrée et la sortie (décret, art. 3, 2° — "document unique"
+permettant la comparaison), jamais deux lignes séparées. Statut jamais
+stocké, toujours dérivé de `date_entree`/`date_sortie`
+(`calculerStatutEtatDesLieux`, packages/core), même principe que
+`calculerStatutPaiement`.
+| Champ | Type | Description |
+|---|---|---|
+| bail_id | uuid, unique | Le bail concerné |
+| date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie |
+| nouvelle_adresse_locataire | text, nullable | Seul champ "domicile" du locataire porté par ce document (décret, art. 2, 2° a) — connu uniquement à la sortie. Texte libre, décision assumée |
+
+### etat_des_lieux_compteurs (1:1 avec etats_des_lieux)
+Relevés (décret, art. 2, 1° f — "le cas échéant"). Colonne Internet
+retirée du modèle réel par le propriétaire (aucun champ structuré
+derrière). Pas de numéro de compteur pour l'eau, absent du modèle réel.
+Champs `electricite_*`/`gaz_*`/`eau_*`, chacun doublé `_entree`/`_sortie` —
+voir `packages/db/src/schema/etat-des-lieux-compteurs.ts` pour le détail
+complet (numéro de compteur, relève HP/HC, ancien occupant pour
+l'électricité ; numéro + relève pour le gaz ; relève froide/chaude pour
+l'eau).
+
+### etat_des_lieux_cles
+Une ligne par type de clé, pas des colonnes répétées.
+| Champ | Type | Description |
+|---|---|---|
+| type_cle | enum | `immeuble` \| `porte_entree` \| `boite_lettres` \| `cave` \| `badge_portail` \| `parking` \| `autre` (2 emplacements libres dans le modèle réel, distingués par une ligne chacun) |
+| libelle_autre | text, nullable | Renseigné uniquement si `type_cle = "autre"` |
+| nombre_entree, nombre_sortie | integer, nullable | |
+| commentaire | text, nullable | |
+
+### Pièces (etat_des_lieux_piece_entree / _sejour / _cuisine / _pieces_chambre / _pieces_salle_de_bain / _pieces_wc / _pieces_autre)
+Chaque élément porte trois colonnes : `..._description` (texte libre,
+colonne "Description / détails" à part entière du modèle réel, distincte
+de la lettre), `..._etat_entree`, `..._etat_sortie` (M/P/B/TB). Socle
+commun à toutes les pièces : mur, sol, **vitrage_volets** (uniforme sur
+toutes les pièces y compris le séjour — l'incohérence du modèle initial,
+"Vitrage" sans volets sur le séjour, a été corrigée par le propriétaire),
+plafond, eclairage, prises (+ `prises_nombre`, integer, non doublé
+entrée/sortie — un comptage physique, pas un état).
+
+Spécifiques par pièce :
+- `etat_des_lieux_piece_entree` (1:1, `etat_des_lieux_id` unique) : + porte, sonnette
+- `etat_des_lieux_piece_sejour` (1:1) : socle seul
+- `etat_des_lieux_piece_cuisine` (1:1) : + placards, evier, plaques_cuisson, hotte, + `electromenager_description` (texte libre, sans échelle d'état — ligne "Électroménager : ……" du modèle réel, distincte de l'inventaire meublé : un four/des plaques encastrés existent même en bail vide, décision assumée)
+- `etat_des_lieux_pieces_chambre` (jusqu'à 3 lignes, `numero` 1-3, contrainte d'unicité `(etat_des_lieux_id, numero)`) : socle seul
+- `etat_des_lieux_pieces_salle_de_bain` (jusqu'à 2 lignes, même contrainte) : + lavabo, baignoire
+- `etat_des_lieux_pieces_wc` (jusqu'à 2 lignes, même contrainte) : + lavabo, wc (la cuvette elle-même, élément distinct du lavabo)
+- `etat_des_lieux_pieces_autre` (jusqu'à 2 lignes, même contrainte + `libelle` texte libre) : socle seul — 2 emplacements libres, utilisés soit pour un dépassement (ex. "Chambre 4"), soit pour une pièce non standard
+
+### etat_des_lieux_equipements_divers
+Liste extensible, libellé saisi librement — pas de catalogue fixe
+(décision du propriétaire). Section "ÉQUIPEMENTS DIVERS" du modèle réel,
+placée **hors** du bloc `{#meublé}` : applicable à tout bail, vide ou
+meublé. Échelle bon/dusage/mauvais (comme l'inventaire meublé), pas
+M/P/B/TB.
+| Champ | Type | Description |
+|---|---|---|
+| libelle | text | Saisi librement |
+| nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
+| commentaire | text, nullable | |
+
+### elements_inventaire_meuble (catalogue de référence)
+~85 postes fixes du modèle réel (section inventaire du bail meublé),
+table seed — non modifiable en usage courant. **Seed des lignes pas
+encore fait**, à faire au moment de construire le service.
+| Champ | Type | Description |
+|---|---|---|
+| code | text, unique | |
+| libelle | text | |
+| categorie | enum | `meuble` \| `electromenager` \| `vaisselle_linge` — cette dernière regroupe les colonnes d'impression "ÉQUIPEMENT 1"/"ÉQUIPEMENT 2" du modèle réel, qui n'ont aucune signification métier (mise en page uniquement) |
+| ordre_affichage | integer | Reproduit l'ordre du modèle réel plutôt qu'un tri alphabétique |
+
+### etat_des_lieux_inventaire
+Pertinent uniquement pour un bail meublé (`bail.type_bail = "meuble"`,
+bloc `{#meublé}` du modèle Word) — règle applicative, aucune contrainte
+de schéma ne l'impose. Contrainte d'unicité `(etat_des_lieux_id,
+element_id)`. Échelle bon/dusage/mauvais, volontairement **non
+harmonisée** avec l'échelle M/P/B/TB des pièces — décision assumée avec
+le propriétaire (trop complexe à détailler pour du mobilier, la colonne
+commentaires compense).
+| Champ | Type | Description |
+|---|---|---|
+| element_id | uuid | FK vers `elements_inventaire_meuble` |
+| nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
+| commentaire | text, nullable | |
+
+**Accès mobile** : page web légère, API REST directe sur `apps/backend`,
+pas de SDK PowerSync web — voir `docs/app-spec.md`, section 3, pour le
+raisonnement complet. Chaque pièce se soumet indépendamment à la
+validation, jamais un envoi global en fin de visite : en cas d'échec
+réseau, blocage explicite avec message clair et bouton "Réessayer",
+aucune colonne de statut de synchronisation nécessaire sur les tables
+ci-dessus.
 
 ---
 

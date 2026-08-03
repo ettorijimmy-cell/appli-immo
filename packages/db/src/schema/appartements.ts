@@ -22,6 +22,16 @@ export const appartementModeProductionEnum = pgEnum("appartement_mode_production
   "individuel",
   "collectif"
 ]);
+// Énergie du chauffage/eau chaude — confirmé au niveau du lot, pas de
+// l'immeuble : peut varier d'un logement à l'autre même dans un
+// immeuble à chauffage individuel (module État des lieux, décision du
+// 2026-08-03). Distinct de mode_chauffage/mode_eau_chaude ci-dessus
+// (individuel/collectif), qui répond à une question différente.
+export const appartementTypeEnergieEnum = pgEnum("appartement_type_energie", [
+  "electrique",
+  "gaz",
+  "les_deux"
+]);
 
 export const appartements = pgTable("appartements", {
   ...auditColumns,
@@ -39,6 +49,7 @@ export const appartements = pgTable("appartements", {
   nombrePiecesPrincipales: integer("nombre_pieces_principales"),
   modeChauffage: appartementModeProductionEnum("mode_chauffage"),
   modeEauChaude: appartementModeProductionEnum("mode_eau_chaude"),
+  typeEnergie: appartementTypeEnergieEnum("type_energie"),
   // Texte libre, mentions du modèle de bail — équipement de la cuisine
   // (bail meublé notamment) et dépendances/annexes (cave, parking...).
   equipementCuisine: text("equipement_cuisine"),
