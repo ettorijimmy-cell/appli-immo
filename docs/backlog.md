@@ -685,6 +685,25 @@ aucune file d'attente de synchronisation ni colonne de statut à
 maintenir, le problème réseau reste visible et actionnable sur place
 pendant la visite plutôt que découvert après coup.
 
+**Package créé (2026-08-03) : `apps/mobile-web`, structure et routes de
+base seulement — pas encore les écrans réels de saisie.** Stack
+Vite + React + TypeScript comme `apps/desktop`, dépendance à
+`packages/core`. `VITE_API_URL` câblé dès la structure initiale, même
+mécanisme que `apps/desktop` (`vite.config.ts` échoue bruyamment à la
+construction si absent en build de production, jamais de repli
+silencieux vers `localhost` — voir docs/error-log.md). `BrowserRouter`
+(URLs propres) plutôt que `HashRouter` (utilisé côté desktop pour une
+raison propre à Electron, sans objet ici).
+
+**Hébergement définitif encore à trancher au provisionnement Scaleway
+(tâche déjà en attente).** Deux options : servir les fichiers statiques
+sur un sous-chemin d'`apps/backend`, ou un hébergement statique séparé.
+**Préférence actuelle du propriétaire : sous-chemin du backend** — notée
+ici pour ne pas repartir de zéro le moment venu, mais non figée tant que
+le provisionnement Scaleway n'a pas eu lieu. `VITE_API_URL` reste la
+seule indirection nécessaire pour ce choix : aucun autre changement de
+code attendu quelle que soit l'option retenue.
+
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos
 intégrées dans le document imprimé") implique un module d'insertion
