@@ -742,10 +742,15 @@ une ligne existante non mentionnée dans la soumission n'est **jamais**
 modifiée, et la suppression n'est **jamais** implicite — seuls les ids
 listés explicitement dans `idsASupprimer` (`elementsASupprimer` pour
 l'inventaire) sont archivés (`archived_at`, jamais de `DELETE` sur une
-table métier — CLAUDE.md). Les lectures (`findById`) filtrent
-systématiquement `archived_at IS NULL`. Vérifié par un test d'intégration
-réel reproduisant exactement ce scénario (entrée préservée après une
-soumission de sortie qui ne la mentionne pas).
+table métier — CLAUDE.md). Les lectures (`findById`/`findByBailId`)
+filtrent `archived_at IS NULL` par défaut, sauf paramètre `avecArchives`
+(ajouté le 2026-08-06 pour que la vue de relecture desktop puisse
+réafficher ces lignes via le composant `ArchiveToggle`/`ArchiveBadge`
+partagé — sans lui, une ligne archivée devenait invisible pour de bon,
+faute de tout moyen de la revoir). Vérifié par un test d'intégration réel
+reproduisant exactement ce scénario (entrée préservée après une
+soumission de sortie qui ne la mentionne pas) et un test dédié pour
+`avecArchives`.
 
 ### Pièces (etat_des_lieux_piece_entree / _sejour / _cuisine / _pieces_chambre / _pieces_salle_de_bain / _pieces_wc / _pieces_autre)
 Chaque élément porte trois colonnes : `..._description` (texte libre,

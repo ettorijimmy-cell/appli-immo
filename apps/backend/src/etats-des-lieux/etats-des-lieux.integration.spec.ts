@@ -30,9 +30,10 @@ import { EtatsDesLieuxService } from "./etats-des-lieux.service";
 
 // Vérifie le critère de complétion de l'étape 2 (backend État des lieux) :
 // création, soumission indépendante par pièce (résilience réseau du
-// parcours mobile), remplacement en bloc des listes courtes, et lecture
-// assemblée complète. Chaque test tourne dans sa propre transaction
-// annulée dans afterEach — voir test-utils/transactional-test.ts.
+// parcours mobile), upsert par id explicite des listes courtes (jamais un
+// remplacement en bloc — voir EtatsDesLieuxService.upsertEtArchiverParId),
+// et lecture assemblée complète. Chaque test tourne dans sa propre
+// transaction annulée dans afterEach — voir test-utils/transactional-test.ts.
 describe("État des lieux — soumission par pièce, listes en bloc, lecture assemblée (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
@@ -182,6 +183,16 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     expect(complet?.entree?.id).toBe(releve.id);
   });
 
+  it("getCatalogueInventaire() : les 88 lignes seedées, ordonnées par catégorie puis ordre d'affichage", async () => {
+    const catalogue = await etatsDesLieuxService.getCatalogueInventaire();
+    expect(catalogue).toHaveLength(88);
+    expect(catalogue.filter((e) => e.categorie === "meuble")).toHaveLength(21);
+    expect(catalogue.filter((e) => e.categorie === "electromenager")).toHaveLength(17);
+    expect(catalogue.filter((e) => e.categorie === "vaisselle_linge")).toHaveLength(50);
+    const premierMeuble = catalogue.find((e) => e.categorie === "meuble");
+    expect(premierMeuble?.ordreAffichage).toBe(1);
+  });
+
   it("submitPieceChambre() : une ligne par numero, clé (etat_des_lieux_id, numero)", async () => {
     const entete = await etatsDesLieuxService.create({ bailId });
 
@@ -301,6 +312,14 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     await expect(
       etatsDesLieuxService.submitCles(entete.id, { lignes: [], idsASupprimer: [randomUUID()] })
     ).rejects.toThrow(/introuvable/i);
+
+    // findById(avecArchives=true) : seul moyen de revoir la ligne archivée
+    // (ArchiveToggle/ArchiveBadge côté desktop) — masquée par défaut.
+    const sansArchives = await etatsDesLieuxService.findById(entete.id);
+    expect(sansArchives?.cles).toHaveLength(1);
+    const avecArchivesResultat = await etatsDesLieuxService.findById(entete.id, true);
+    expect(avecArchivesResultat?.cles).toHaveLength(2);
+    expect(avecArchivesResultat?.cles.find((l) => l.id === ligneCave.id)?.archivedAt).not.toBeNull();
   });
 
   it("submitEquipementsDivers() : upsert par id — une ligne non mentionnée n'est jamais touchée, suppression explicite seulement", async () => {

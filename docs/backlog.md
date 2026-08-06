@@ -685,9 +685,35 @@ le pont. Photos réutilisent le module Documents existant
 (`document_entite_type = 'etat_des_lieux'`), aucun nouveau mécanisme de
 stockage. Catalogue `elements_inventaire_meuble` seedé (88 lignes, voir
 docs/data-dictionary.md). Vérifié par un test d'intégration Postgres réel
-(14 tests, `etats-des-lieux.integration.spec.ts`), y compris le scénario
+(15 tests, `etats-des-lieux.integration.spec.ts`), y compris le scénario
 de régression exact (entrée préservée après une soumission de sortie qui
-ne la mentionne pas).
+ne la mentionne pas). Endpoint `GET /etats-des-lieux/catalogue-inventaire`
+ajouté au passage (route littérale déclarée avant `:id`), nécessaire à la
+fois à la vue de relecture desktop et au futur parcours mobile.
+
+**Desktop validé (2026-08-06) : `EtatDesLieuxSection` (`apps/desktop/src/renderer/src/etats-des-lieux`),
+intégrée dans `BailActuelDetail` (`patrimoine/BailTabs.tsx`).** Tableaux
+denses par pièce (entrée/séjour/cuisine en 1:1, chambres/salles de
+bain/wc/autres pièces en multi-instance avec bouton d'ajout jusqu'au
+maximum du modèle réel), compteurs, clés, équipements divers, inventaire
+meublé (si bail meublé). Les lignes archivées de clés/équipements/
+inventaire passent par le même `ArchiveToggle`/`ArchiveBadge` partagé que
+le reste de l'app (`components/ArchiveFilter.tsx`) — ce qui a exigé
+d'ajouter un paramètre `avecArchives` sur `findById`/`findByBailId`
+côté backend (masquées par défaut, sinon invisibles pour de bon).
+
+Bug trouvé en test manuel réel (2026-08-06) : cliquer sur "Ajouter" (une
+pièce, une clé "autre", un équipement) faisait remonter la page tout en
+haut malgré un ajout fonctionnel. Cause réelle diagnostiquée dans le code
+(pas devinée) : chaque "Ajouter"/"Enregistrer" appelle `refresh()`, qui
+posait `setIsLoading(true)` à **chaque** appel — pas seulement au premier
+montage — démontant tout le contenu dense de la section au profit d'un
+`<p>Chargement…</p>` d'une ligne, ce qui fait perdre au navigateur sa
+hauteur de défilement et ramène le scroll en haut sans jamais le
+restaurer. Corrigé en distinguant le premier chargement (seul cas
+démontant l'arbre) des rafraîchissements silencieux ultérieurs (`useRef`
+`premierChargementEffectue`) — plus de démontage, donc plus de perte de
+position de défilement, re-testé et confirmé à l'écran.
 
 **Saisie numérique uniquement (téléphone/desktop), jamais sur papier —
 chantier d'interface à part entière, conçu après le schéma.** Parcours

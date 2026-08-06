@@ -192,6 +192,13 @@ export class EtatsDesLieuxService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  async getCatalogueInventaire() {
+    return this.db
+      .select()
+      .from(elementsInventaireMeuble)
+      .orderBy(elementsInventaireMeuble.categorie, elementsInventaireMeuble.ordreAffichage);
+  }
+
   async create(dto: CreateEtatDesLieuxDto) {
     const [existant] = await this.db
       .select({ id: etatsDesLieux.id })
@@ -208,11 +215,27 @@ export class EtatsDesLieuxService {
     return this.versDto(entete);
   }
 
-  async findById(id: string) {
+  // `avecArchives` : les lignes archivées de clés/équipements
+  // divers/inventaire restent en base (jamais de DELETE, voir
+  // upsertEtArchiverParId) mais sont masquées par défaut — même principe
+  // que DocumentsService.findAll. Nécessaire pour que le composant
+  // ArchiveToggle/ArchiveBadge partagé (apps/desktop) puisse les
+  // réafficher, au lieu de les rendre définitivement invisibles.
+  async findById(id: string, avecArchives = false) {
     const [entete] = await this.db.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id)).limit(1);
     if (!entete) {
       return null;
     }
+    const filtreCles = avecArchives
+      ? eq(etatDesLieuxCles.etatDesLieuxId, id)
+      : and(eq(etatDesLieuxCles.etatDesLieuxId, id), isNull(etatDesLieuxCles.archivedAt));
+    const filtreEquipementsDivers = avecArchives
+      ? eq(etatDesLieuxEquipementsDivers.etatDesLieuxId, id)
+      : and(eq(etatDesLieuxEquipementsDivers.etatDesLieuxId, id), isNull(etatDesLieuxEquipementsDivers.archivedAt));
+    const filtreInventaire = avecArchives
+      ? eq(etatDesLieuxInventaire.etatDesLieuxId, id)
+      : and(eq(etatDesLieuxInventaire.etatDesLieuxId, id), isNull(etatDesLieuxInventaire.archivedAt));
+
     const [
       [entree],
       [sejour],
@@ -237,16 +260,8 @@ export class EtatsDesLieuxService {
       this.db.select().from(etatDesLieuxPiecesWc).where(eq(etatDesLieuxPiecesWc.etatDesLieuxId, id)),
       this.db.select().from(etatDesLieuxPiecesAutre).where(eq(etatDesLieuxPiecesAutre.etatDesLieuxId, id)),
       this.db.select().from(etatDesLieuxCompteurs).where(eq(etatDesLieuxCompteurs.etatDesLieuxId, id)).limit(1),
-      this.db
-        .select()
-        .from(etatDesLieuxCles)
-        .where(and(eq(etatDesLieuxCles.etatDesLieuxId, id), isNull(etatDesLieuxCles.archivedAt))),
-      this.db
-        .select()
-        .from(etatDesLieuxEquipementsDivers)
-        .where(
-          and(eq(etatDesLieuxEquipementsDivers.etatDesLieuxId, id), isNull(etatDesLieuxEquipementsDivers.archivedAt))
-        ),
+      this.db.select().from(etatDesLieuxCles).where(filtreCles),
+      this.db.select().from(etatDesLieuxEquipementsDivers).where(filtreEquipementsDivers),
       this.db
         .select({
           id: etatDesLieuxInventaire.id,
@@ -256,6 +271,7 @@ export class EtatsDesLieuxService {
           nombreSortie: etatDesLieuxInventaire.nombreSortie,
           etatSortie: etatDesLieuxInventaire.etatSortie,
           commentaire: etatDesLieuxInventaire.commentaire,
+          archivedAt: etatDesLieuxInventaire.archivedAt,
           elementCode: elementsInventaireMeuble.code,
           elementLibelle: elementsInventaireMeuble.libelle,
           elementCategorie: elementsInventaireMeuble.categorie,
@@ -263,7 +279,7 @@ export class EtatsDesLieuxService {
         })
         .from(etatDesLieuxInventaire)
         .innerJoin(elementsInventaireMeuble, eq(etatDesLieuxInventaire.elementId, elementsInventaireMeuble.id))
-        .where(and(eq(etatDesLieuxInventaire.etatDesLieuxId, id), isNull(etatDesLieuxInventaire.archivedAt)))
+        .where(filtreInventaire)
     ]);
 
     return {
@@ -282,7 +298,7 @@ export class EtatsDesLieuxService {
     };
   }
 
-  async findByBailId(bailId: string) {
+  async findByBailId(bailId: string, avecArchives = false) {
     const [entete] = await this.db
       .select({ id: etatsDesLieux.id })
       .from(etatsDesLieux)
@@ -291,7 +307,7 @@ export class EtatsDesLieuxService {
     if (!entete) {
       return null;
     }
-    return this.findById(entete.id);
+    return this.findById(entete.id, avecArchives);
   }
 
   async updateHeader(id: string, dto: UpdateEtatDesLieuxDto) {

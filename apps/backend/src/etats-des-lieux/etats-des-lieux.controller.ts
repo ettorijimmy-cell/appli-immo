@@ -26,13 +26,22 @@ export class EtatsDesLieuxController {
   }
 
   @Get()
-  findByBailId(@Query("bailId") bailId: string) {
-    return this.etatsDesLieuxService.findByBailId(bailId);
+  findByBailId(@Query("bailId") bailId: string, @Query("avecArchives") avecArchives?: string) {
+    return this.etatsDesLieuxService.findByBailId(bailId, avecArchives === "true");
+  }
+
+  // Route littérale déclarée avant ":id" — sinon NestJS la capturerait
+  // comme un id. Catalogue de référence pour l'inventaire meublé (88
+  // lignes), consommé par la vue de relecture desktop et par le parcours
+  // de capture mobile (étape inventaire).
+  @Get("catalogue-inventaire")
+  getCatalogueInventaire() {
+    return this.etatsDesLieuxService.getCatalogueInventaire();
   }
 
   @Get(":id")
-  findOne(@Param("id") id: string) {
-    return this.etatsDesLieuxService.findById(id);
+  findOne(@Param("id") id: string, @Query("avecArchives") avecArchives?: string) {
+    return this.etatsDesLieuxService.findById(id, avecArchives === "true");
   }
 
   @Patch(":id")
@@ -82,8 +91,10 @@ export class EtatsDesLieuxController {
     return this.etatsDesLieuxService.submitCompteurs(id, dto);
   }
 
-  // Remplacement intégral de la liste, contrairement aux pièces
-  // ci-dessus (sections courtes, pas de parcours pas-à-pas).
+  // Upsert par id explicite (voir EtatsDesLieuxService.upsertEtArchiverParId)
+  // — jamais un remplacement en bloc, pour ne pas perdre silencieusement
+  // les valeurs d'entrée à une soumission de sortie qui ne renverrait pas
+  // toute la liste.
   @Patch(":id/cles")
   submitCles(@Param("id") id: string, @Body() dto: SubmitClesDto) {
     return this.etatsDesLieuxService.submitCles(id, dto);

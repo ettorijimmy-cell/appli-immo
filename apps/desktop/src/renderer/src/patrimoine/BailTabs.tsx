@@ -1,6 +1,7 @@
 import { calculerMontantRecuTotal, centimesVersMontant, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
 import {
   createRemboursement,
   listPaiements,
@@ -638,6 +639,8 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
           </ul>
         )}
       </div>
+
+      <EtatDesLieuxSection bail={bail} />
 
       <DepotGarantieSection
         bail={bail}
