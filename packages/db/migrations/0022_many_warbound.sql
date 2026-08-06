@@ -1,0 +1,1 @@
+ALTER TYPE "public"."document_entite_type" ADD VALUE 'etat_des_lieux';

@@ -1,6 +1,13 @@
 import { IsDateString, IsIn, IsOptional, IsUUID } from "class-validator";
 
-export const DOCUMENT_ENTITE_TYPES = ["sci", "immeuble", "appartement", "locataire", "bail"] as const;
+export const DOCUMENT_ENTITE_TYPES = [
+  "sci",
+  "immeuble",
+  "appartement",
+  "locataire",
+  "bail",
+  "etat_des_lieux"
+] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 
 export const DOCUMENT_CATEGORIES = [

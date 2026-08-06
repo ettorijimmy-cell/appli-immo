@@ -11,7 +11,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json",
-    "seed:user": "tsx scripts/seed-user.ts"
+    "seed:user": "tsx scripts/seed-user.ts",
+    "seed:inventaire-meuble": "tsx scripts/seed-inventaire-meuble.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

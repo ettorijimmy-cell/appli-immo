@@ -4,6 +4,7 @@ import {
   appartements,
   baux,
   documents,
+  etatsDesLieux,
   immeubles,
   locataires,
   mettreAJourAvecAudit,
@@ -181,6 +182,12 @@ export class DocumentsService {
             .limit(1);
         case "bail":
           return this.db.select({ id: baux.id }).from(baux).where(eq(baux.id, entiteId)).limit(1);
+        case "etat_des_lieux":
+          return this.db
+            .select({ id: etatsDesLieux.id })
+            .from(etatsDesLieux)
+            .where(eq(etatsDesLieux.id, entiteId))
+            .limit(1);
       }
     })();
     if (!ligne) {

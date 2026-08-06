@@ -666,6 +666,29 @@ par groupe de pièce), le décret et le modèle du propriétaire étant
 fixes, la flexibilité des deux autres approches ne serait jamais
 exploitée.
 
+**Backend validé (2026-08-06) : `EtatsDesLieuxModule` (`apps/backend/src/etats-des-lieux`).**
+Un endpoint de soumission par pièce (`PATCH /etats-des-lieux/:id/piece-*`,
+upsert sur `etat_des_lieux_id` seul pour entrée/séjour/cuisine/compteurs,
+sur `(etat_des_lieux_id, numero)` pour chambres/salles de bain/wc/autres
+pièces) — cohérent avec la résilience réseau décidée ci-dessous. Clés,
+équipements divers et inventaire meublé en `PATCH` d'**upsert par id
+explicite** (pas un remplacement en bloc — revu le 2026-08-06 après
+relecture critique, voir docs/data-dictionary.md pour le raisonnement
+complet : un simple delete-puis-réinsertion de la liste à chaque
+soumission aurait pu silencieusement effacer les valeurs d'entrée si une
+soumission de sortie, des mois plus tard, ne renvoyait pas toutes les
+lignes déjà connues — et contournait de plus le timbrage d'audit,
+`mettreAJourAvecAudit`, en faisant un `DELETE` brut sur une table métier).
+DTOs en objets imbriqués par élément (`{ mur: { description, etatEntree,
+etatSortie } }`) alors que le schéma reste plat en base — le service fait
+le pont. Photos réutilisent le module Documents existant
+(`document_entite_type = 'etat_des_lieux'`), aucun nouveau mécanisme de
+stockage. Catalogue `elements_inventaire_meuble` seedé (88 lignes, voir
+docs/data-dictionary.md). Vérifié par un test d'intégration Postgres réel
+(14 tests, `etats-des-lieux.integration.spec.ts`), y compris le scénario
+de régression exact (entrée préservée après une soumission de sortie qui
+ne la mentionne pas).
+
 **Saisie numérique uniquement (téléphone/desktop), jamais sur papier —
 chantier d'interface à part entière, conçu après le schéma.** Parcours
 mobile en pas-à-pas pièce par pièce, M/P/B/TB en boutons tactiles larges

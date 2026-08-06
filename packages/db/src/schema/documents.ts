@@ -6,7 +6,11 @@ export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   "immeuble",
   "appartement",
   "locataire",
-  "bail"
+  "bail",
+  // Photos prises pendant la saisie numérique de l'état des lieux
+  // (module État des lieux, 2026-08-03) — réutilise le lien polymorphe
+  // existant plutôt qu'un nouveau mécanisme de stockage.
+  "etat_des_lieux"
 ]);
 
 export const documentCategorieEnum = pgEnum("document_categorie", [

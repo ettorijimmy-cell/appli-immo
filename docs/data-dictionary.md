@@ -202,7 +202,7 @@ Table de liaison pour gérer la colocation.
 ## documents
 | Champ | Type | Description |
 |---|---|---|
-| entite_type | enum | `sci` \| `immeuble` \| `appartement` \| `locataire` \| `bail` — lien polymorphe. Pas de contrainte de clé étrangère possible (5 tables cibles) : `DocumentsService.upload()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer |
+| entite_type | enum | `sci` \| `immeuble` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` — lien polymorphe. Pas de contrainte de clé étrangère possible (6 tables cibles) : `DocumentsService.upload()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03) — réutilise ce mécanisme existant plutôt qu'un nouveau |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
 | categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
@@ -724,6 +724,29 @@ Une ligne par type de clé, pas des colonnes répétées.
 | nombre_entree, nombre_sortie | integer, nullable | |
 | commentaire | text, nullable | |
 
+**Écriture (`etat_des_lieux_cles`, `etat_des_lieux_equipements_divers`,
+`etat_des_lieux_inventaire`) — upsert par id explicite, jamais un
+remplacement en bloc.** Décision revue le 2026-08-06 après relecture
+critique : un simple `DELETE` puis `INSERT` de la liste entière à chaque
+soumission (approche initiale) suppose que le client renvoie toujours
+l'état complet de la section — hypothèse jamais garantie côté serveur, et
+fausse par construction dès que l'entrée et la sortie sont soumises à des
+mois d'écart via deux écrans distincts. Une soumission de sortie qui ne
+renverrait que les champs `*_sortie` aurait silencieusement effacé les
+valeurs d'entrée. Corrigé par `EtatsDesLieuxService.upsertEtArchiverParId`
+(clés, équipements divers — pas de clé naturelle stable côté client) et
+`upsertEtArchiverParElementId` (inventaire — `element_id` sert déjà de
+clé naturelle, contrainte d'unicité `(etat_des_lieux_id, element_id)`) :
+une ligne avec `id` mais introuvable est rejetée (id périmé/étranger),
+une ligne existante non mentionnée dans la soumission n'est **jamais**
+modifiée, et la suppression n'est **jamais** implicite — seuls les ids
+listés explicitement dans `idsASupprimer` (`elementsASupprimer` pour
+l'inventaire) sont archivés (`archived_at`, jamais de `DELETE` sur une
+table métier — CLAUDE.md). Les lectures (`findById`) filtrent
+systématiquement `archived_at IS NULL`. Vérifié par un test d'intégration
+réel reproduisant exactement ce scénario (entrée préservée après une
+soumission de sortie qui ne la mentionne pas).
+
 ### Pièces (etat_des_lieux_piece_entree / _sejour / _cuisine / _pieces_chambre / _pieces_salle_de_bain / _pieces_wc / _pieces_autre)
 Chaque élément porte trois colonnes : `..._description` (texte libre,
 colonne "Description / détails" à part entière du modèle réel, distincte
@@ -756,9 +779,12 @@ M/P/B/TB.
 | commentaire | text, nullable | |
 
 ### elements_inventaire_meuble (catalogue de référence)
-~85 postes fixes du modèle réel (section inventaire du bail meublé),
-table seed — non modifiable en usage courant. **Seed des lignes pas
-encore fait**, à faire au moment de construire le service.
+88 postes fixes du modèle réel (section inventaire du bail meublé, bloc
+`{#meublé}` : MEUBLES, ÉLECTRO-MÉNAGER, et les colonnes d'impression
+"ÉQUIPEMENT 1"/"ÉQUIPEMENT 2" fusionnées dans `vaisselle_linge` — 21 + 17
++ 50), table seed — non modifiable en usage courant. Seedé par
+`apps/backend/scripts/seed-inventaire-meuble.ts` (`pnpm seed:inventaire-meuble`),
+idempotent (`onConflictDoUpdate` sur `code`).
 | Champ | Type | Description |
 |---|---|---|
 | code | text, unique | |
