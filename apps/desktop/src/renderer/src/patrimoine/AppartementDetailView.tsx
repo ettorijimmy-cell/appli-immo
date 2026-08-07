@@ -228,6 +228,26 @@ export function AppartementDetailView({
               <dt className="text-slate-500">Eau chaude</dt>
               <dd>{appartement.modeEauChaude ?? "—"}</dd>
             </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Chambres</dt>
+              <dd>{appartement.nombreChambres ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Salles de bain</dt>
+              <dd>{appartement.nombreSallesDeBain ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">WC</dt>
+              <dd>{appartement.nombreWc ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Autre pièce 1</dt>
+              <dd>{appartement.autrePiece1 ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Autre pièce 2</dt>
+              <dd>{appartement.autrePiece2 ?? "—"}</dd>
+            </div>
           </dl>
         )
       ) : (
@@ -458,6 +478,13 @@ function EditAppartementForm({
   const [modeEauChaude, setModeEauChaude] = useState<AppartementModeProduction | "">(
     appartement.modeEauChaude ?? ""
   );
+  const [nombreChambres, setNombreChambres] = useState(appartement.nombreChambres?.toString() ?? "");
+  const [nombreSallesDeBain, setNombreSallesDeBain] = useState(
+    appartement.nombreSallesDeBain?.toString() ?? ""
+  );
+  const [nombreWc, setNombreWc] = useState(appartement.nombreWc?.toString() ?? "");
+  const [autrePiece1, setAutrePiece1] = useState(appartement.autrePiece1 ?? "");
+  const [autrePiece2, setAutrePiece2] = useState(appartement.autrePiece2 ?? "");
   const [statut, setStatut] = useState<AppartementStatutModifiable>(
     appartement.statut === "archive" ? "vacant" : appartement.statut
   );
@@ -479,7 +506,15 @@ function EditAppartementForm({
         ...(dependancesAnnexes && { dependancesAnnexes }),
         ...(nombrePiecesPrincipales && { nombrePiecesPrincipales: Number(nombrePiecesPrincipales) }),
         ...(modeChauffage && { modeChauffage }),
-        ...(modeEauChaude && { modeEauChaude })
+        ...(modeEauChaude && { modeEauChaude }),
+        // !== "" (pas simplement truthy) : 0 est une valeur légitime ici
+        // (ex. studio sans chambre séparée), contrairement aux champs
+        // ci-dessus où 0 n'a pas de sens.
+        ...(nombreChambres !== "" && { nombreChambres: Number(nombreChambres) }),
+        ...(nombreSallesDeBain !== "" && { nombreSallesDeBain: Number(nombreSallesDeBain) }),
+        ...(nombreWc !== "" && { nombreWc: Number(nombreWc) }),
+        ...(autrePiece1 && { autrePiece1 }),
+        ...(autrePiece2 && { autrePiece2 })
       });
       onSaved();
     } catch {
@@ -626,6 +661,75 @@ function EditAppartementForm({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-nombre-chambres" className="text-sm font-medium text-slate-700">
+            Chambres
+          </label>
+          <input
+            id="appartement-edit-nombre-chambres"
+            type="number"
+            min={0}
+            max={3}
+            value={nombreChambres}
+            onChange={(event) => setNombreChambres(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-nombre-sdb" className="text-sm font-medium text-slate-700">
+            Salles de bain
+          </label>
+          <input
+            id="appartement-edit-nombre-sdb"
+            type="number"
+            min={0}
+            max={2}
+            value={nombreSallesDeBain}
+            onChange={(event) => setNombreSallesDeBain(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-nombre-wc" className="text-sm font-medium text-slate-700">
+            WC
+          </label>
+          <input
+            id="appartement-edit-nombre-wc"
+            type="number"
+            min={0}
+            max={2}
+            value={nombreWc}
+            onChange={(event) => setNombreWc(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-autre-piece-1" className="text-sm font-medium text-slate-700">
+            Autre pièce 1 (ex. Bureau)
+          </label>
+          <input
+            id="appartement-edit-autre-piece-1"
+            value={autrePiece1}
+            onChange={(event) => setAutrePiece1(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-autre-piece-2" className="text-sm font-medium text-slate-700">
+            Autre pièce 2
+          </label>
+          <input
+            id="appartement-edit-autre-piece-2"
+            value={autrePiece2}
+            onChange={(event) => setAutrePiece2(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </div>
 
         <div className="space-y-1">

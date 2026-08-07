@@ -1,20 +1,34 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { AccueilPage } from "./pages/AccueilPage";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { BauxPage } from "./pages/BauxPage";
+import { EtatDesLieuxPage } from "./pages/EtatDesLieuxPage";
+import { LoginPage } from "./pages/LoginPage";
 
-// Routes de base uniquement — les écrans réels (parcours pas-à-pas de
-// saisie de l'état des lieux) restent à concevoir, voir docs/backlog.md,
-// section "État des lieux". BrowserRouter (URLs propres) plutôt que
-// HashRouter (utilisé côté apps/desktop, nécessaire là-bas car Electron
-// charge un index.html local en file://) — cette app est servie sur un
-// vrai serveur HTTP, l'hébergement définitif (sous-chemin du backend ou
-// statique séparé) reste à trancher au provisionnement Scaleway.
+// BrowserRouter (URLs propres) plutôt que HashRouter (utilisé côté
+// apps/desktop, nécessaire là-bas car Electron charge un index.html local
+// en file://) — cette app est servie sur un vrai serveur HTTP.
+function AuthenticatedApp(): React.JSX.Element {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return (
+    <Routes>
+      <Route index element={<BauxPage />} />
+      <Route path="bail/:bailId" element={<EtatDesLieuxPage />} />
+    </Routes>
+  );
+}
+
 function App(): React.JSX.Element {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route index element={<AccueilPage />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <AuthenticatedApp />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

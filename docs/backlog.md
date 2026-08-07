@@ -744,6 +744,90 @@ silencieux vers `localhost` — voir docs/error-log.md). `BrowserRouter`
 (URLs propres) plutôt que `HashRouter` (utilisé côté desktop pour une
 raison propre à Electron, sans objet ici).
 
+**Composition de l'appartement — nouvelle source de vérité (2026-08-07) :**
+`appartements.nombre_chambres` / `nombre_salles_de_bain` / `nombre_wc`
+(integer, nullable) et `autre_piece_1` / `autre_piece_2` (texte, nullable),
+migration additive standard, même famille que `type_energie`/`chauffage`.
+Modifiables uniquement depuis la fiche appartement existante (Module 2,
+pas de champ à la création — même logique que `equipementCuisine`/
+`dependancesAnnexes`). Le parcours mobile lit cette configuration au
+démarrage et en déduit automatiquement le nombre et l'ordre des étapes
+("Entrée 1/N") — jamais redemandée, jamais devinée. Les deux "autres
+pièces" sont des emplacements fixes (numéro 1/2 sourcés depuis
+l'appartement), pas une liste libre : si l'agencement réel change (mur
+abattu, pièce ajoutée), le propriétaire corrige la fiche appartement,
+aucun mécanisme spécial construit pour ce cas rare.
+
+Verrou de complétude avant de démarrer un état des lieux : même principe
+que `validerCompletudeGenerationBail`, nouvelle fonction pure dédiée
+`validerCompletudeEtatDesLieux` (`packages/core`) plutôt qu'une logique
+parallèle — si chambres/salles de bain/WC ne sont pas renseignés,
+`EtatsDesLieuxService.create()` bloque avec un message explicite listant
+les champs manquants (`BadRequestException` + `champsManquants`) plutôt
+que de lancer un parcours à zéro étape. `autre_piece_1`/`autre_piece_2`
+volontairement hors du contrôle de complétude (légitimement vides).
+
+Alignement rétroactif du desktop sur cette même source (demandé
+explicitement avant de coder le mobile, pour éviter une double vérité) :
+les tableaux multi-instance de la vue de relecture (chambres/salles de
+bain/WC) utilisaient un maximum codé en dur — remplacé par
+`appartement.nombreChambres ?? 3` etc. La section "autres pièces", qui
+était un ajout libre en texte, a été entièrement remplacée par un flux à
+deux emplacements fixes pilotés par `autrePiece1`/`autrePiece2` (un
+bouton "+ Ajouter {libellé}" par emplacement non encore utilisé) — chaque
+ligne déjà créée continue de renvoyer son propre libellé capturé, jamais
+la valeur courante de la fiche appartement, pour ne pas relabelliser
+rétroactivement un état des lieux déjà rempli si la fiche change plus
+tard.
+
+**Mobile validé (2026-08-07) : parcours pas-à-pas complet
+(`EtatDesLieuxStepper`, `apps/mobile-web/src/etat-des-lieux`), le vrai
+outil de capture terrain.** Une étape à la fois (jamais un long
+formulaire qui scrolle), en-tête sticky "Titre N/Total" avec barre de
+progression, pied sticky Précédent/Suivant. M/P/B/TB en 4 gros boutons
+tactiles (`BoutonsEtatPiece`), bon/d'usage/mauvais en 3 boutons
+(`BoutonsEtatInventaire`) — jamais de menu déroulant. Une seule colonne
+d'état éditable à la fois selon `mode` (entrée tant que
+`statut !== "entree_terminee"`, sinon sortie) ; à la sortie, la valeur
+d'entrée s'affiche à côté en lecture seule (`ReferenceLectureSeule`).
+Commentaire replié par défaut, un tap pour l'ouvrir (`ChampReplie`).
+Bouton "+ Photo" par pièce (pas par élément), `input type="file"
+capture="environment"`, upload immédiat et indépendant du flux de
+soumission de l'étape, réutilise le module Documents existant
+(`entiteType: "etat_des_lieux"`).
+
+Résilience réseau : chaque étape expose un contrat `EtapeHandle.submit()`
+(`forwardRef`/`useImperativeHandle`) déclenché uniquement par "Suivant" ;
+en cas d'échec, blocage explicite avec message d'erreur et le bouton
+devient "Réessayer" — jamais d'avancée à l'étape suivante sur un état non
+confirmé enregistré côté serveur. Les champs description/nombre des
+pièces sont partagés entre entrée et sortie dans le schéma (toujours
+pré-remplis et renvoyés quel que soit `mode`) ; seul `etat` est
+spécifique au côté actif — les compteurs, à l'inverse, ont des champs
+entièrement dédiés par côté.
+
+Vérifié par un test de bout en bout au niveau HTTP réel (pas simulé) :
+connexion, appartement sans composition → verrou bloque avec le message
+exact, composition renseignée → état des lieux créé, parcours d'entrée
+complet (pièces, chambres, autre pièce, clés, compteurs, récap → statut
+`entree_terminee`), puis une resoumission de sortie ne touchant qu'une
+chambre et une clé → vérifié par relecture que les valeurs d'entrée des
+lignes touchées sont préservées et qu'une ligne de clé non mentionnée
+reste totalement intacte — le scénario exact qui avait motivé la
+correction `upsertEtArchiverParId` de l'étape 2, revérifié à travers le
+nouveau chemin de soumission mobile. `pnpm typecheck`/`lint`/`test`/
+`test:integration` complets et propres sur tout le monorepo.
+
+Hors de portée de cette vérification automatisée (nécessite un vrai
+téléphone/navigateur, non pilotable depuis cet environnement) : rendu
+visuel réel du parcours, taille effective des zones tactiles M/P/B/TB et
+bon/d'usage/mauvais, comportement d'ouverture du commentaire replié,
+comportement réel de `capture="environment"` sur un appareil physique,
+disposition visuelle colonne unique + référence lecture seule à la
+sortie, comportement visible du cycle Suivant/Précédent/Réessayer sous
+coupure réseau simulée — vérification manuelle demandée au propriétaire,
+comme pour le desktop.
+
 **Hébergement définitif encore à trancher au provisionnement Scaleway
 (tâche déjà en attente).** Deux options : servir les fichiers statiques
 sur un sous-chemin d'`apps/backend`, ou un hébergement statique séparé.

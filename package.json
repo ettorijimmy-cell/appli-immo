@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "turbo run dev --parallel --filter=backend --filter=desktop",
+    "dev": "turbo run dev --parallel --filter=backend --filter=desktop --filter=mobile-web",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",

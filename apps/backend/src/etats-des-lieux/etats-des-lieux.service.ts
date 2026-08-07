@@ -1,6 +1,8 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { calculerStatutEtatDesLieux } from "core";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { calculerStatutEtatDesLieux, validerCompletudeEtatDesLieux } from "core";
 import {
+  appartements,
+  baux,
   elementsInventaireMeuble,
   etatDesLieuxCles,
   etatDesLieuxCompteurs,
@@ -208,6 +210,40 @@ export class EtatsDesLieuxService {
     if (existant) {
       throw new ConflictException("Un état des lieux existe déjà pour ce bail");
     }
+
+    const [bail] = await this.db
+      .select({ appartementId: baux.appartementId })
+      .from(baux)
+      .where(eq(baux.id, dto.bailId))
+      .limit(1);
+    if (!bail) {
+      throw new NotFoundException("Bail introuvable");
+    }
+    const [appartement] = await this.db
+      .select({
+        nombreChambres: appartements.nombreChambres,
+        nombreSallesDeBain: appartements.nombreSallesDeBain,
+        nombreWc: appartements.nombreWc
+      })
+      .from(appartements)
+      .where(eq(appartements.id, bail.appartementId))
+      .limit(1);
+    if (!appartement) {
+      throw new NotFoundException("Appartement introuvable");
+    }
+    // Étape obligatoire AVANT toute création : la composition réelle du
+    // logement pilote le nombre d'étapes du parcours mobile pas-à-pas —
+    // jamais un état des lieux démarré à zéro étape ou deviné (même
+    // principe que validerCompletudeGenerationBail pour la génération du
+    // bail, packages/core).
+    const champsManquants = validerCompletudeEtatDesLieux(appartement);
+    if (champsManquants.length > 0) {
+      throw new BadRequestException({
+        message: `Configuration de l'appartement incomplète : ${champsManquants.join(", ")}`,
+        champsManquants
+      });
+    }
+
     const [entete] = await this.db.insert(etatsDesLieux).values({ bailId: dto.bailId }).returning();
     if (!entete) {
       throw new Error("Échec de la création de l'état des lieux");

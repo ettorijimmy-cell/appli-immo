@@ -129,7 +129,7 @@ export function BailActuelTab({
   }
 
   if (bailActuel.statut !== "resilie") {
-    return <BailActuelDetail bail={bailActuel} onChanged={refresh} />;
+    return <BailActuelDetail bail={bailActuel} appartement={appartement} onChanged={refresh} />;
   }
 
   // Un bail résilié reste affiché (dépôt de garantie, remboursements) mais
@@ -139,7 +139,7 @@ export function BailActuelTab({
   // automatiquement.
   return (
     <div className="space-y-4">
-      <BailActuelDetail bail={bailActuel} onChanged={refresh} />
+      <BailActuelDetail bail={bailActuel} appartement={appartement} onChanged={refresh} />
 
       <div className="flex items-center justify-between border-t border-slate-200 pt-4">
         <p className="text-sm text-slate-500">Ce bail est résilié.</p>
@@ -327,7 +327,15 @@ function NewBailForm({
   );
 }
 
-function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => void }): React.JSX.Element {
+function BailActuelDetail({
+  bail,
+  appartement,
+  onChanged
+}: {
+  bail: Bail;
+  appartement: Appartement;
+  onChanged: () => void;
+}): React.JSX.Element {
   const [colocataires, setColocataires] = useState<
     Array<{ lien: BailLocataire; locataire: Locataire | null }>
   >([]);
@@ -640,7 +648,7 @@ function BailActuelDetail({ bail, onChanged }: { bail: Bail; onChanged: () => vo
         )}
       </div>
 
-      <EtatDesLieuxSection bail={bail} />
+      <EtatDesLieuxSection bail={bail} appartement={appartement} />
 
       <DepotGarantieSection
         bail={bail}

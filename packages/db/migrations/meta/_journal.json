@@ -162,6 +162,13 @@
       "when": 1785793216749,
       "tag": "0022_many_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786088505596,
+      "tag": "0023_daily_loki",
+      "breakpoints": true
     }
   ]
 }

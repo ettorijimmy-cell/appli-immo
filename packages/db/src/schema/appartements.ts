@@ -54,6 +54,30 @@ export const appartements = pgTable("appartements", {
   // (bail meublé notamment) et dépendances/annexes (cave, parking...).
   equipementCuisine: text("equipement_cuisine"),
   dependancesAnnexes: text("dependances_annexes"),
+  // Composition réelle du logement (module État des lieux, 2026-08-07) —
+  // source de vérité unique pour générer le nombre d'étapes du parcours
+  // mobile pas-à-pas ET pour plafonner le nombre d'instances ajoutables
+  // dans la vue de relecture desktop (jusqu'alors codé en dur au maximum
+  // du modèle réel : 3 chambres / 2 salles de bain / 2 WC). Nullable :
+  // appartement existant avant l'introduction de ces champs, ou pas
+  // encore renseigné — un état des lieux ne peut pas démarrer tant que
+  // nombre_chambres/nombre_salles_de_bain/nombre_wc sont absents
+  // (packages/core, validerCompletudeEtatDesLieux), même principe que
+  // validerCompletudeGenerationBail pour la génération du bail.
+  nombreChambres: integer("nombre_chambres"),
+  nombreSallesDeBain: integer("nombre_salles_de_bain"),
+  nombreWc: integer("nombre_wc"),
+  // Libellés fixes des 2 emplacements libres du modèle réel ("Autres
+  // pièces : ……") — contrairement aux chambres/SdB/WC, la vue de
+  // relecture desktop et le parcours mobile ne proposent PAS de saisir un
+  // libellé à la volée : ils lisent ces deux champs. Si la disposition
+  // réelle change, le propriétaire corrige la fiche appartement — pas de
+  // mécanisme de renommage rétroactif des états des lieux déjà capturés
+  // (chaque etat_des_lieux_pieces_autre.libelle garde la valeur telle que
+  // saisie au moment de la capture). Nullable, légitimement absents (0,
+  // 1 ou 2 autres pièces) — jamais requis par validerCompletudeEtatDesLieux.
+  autrePiece1: text("autre_piece_1"),
+  autrePiece2: text("autre_piece_2"),
   // 'vacant' par défaut : un appartement nouvellement créé n'a pas encore
   // de bail actif (règle de transition automatique vacant -> loue au
   // Module 3).

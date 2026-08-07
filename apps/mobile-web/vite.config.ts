@@ -25,5 +25,9 @@ export default defineConfig({
   // Lit le .env à la racine du monorepo (un seul fichier .env pour tout le
   // projet), même convention que apps/desktop.
   envDir: resolve("../.."),
-  plugins: [react(), requireApiUrlInProdPlugin()]
+  plugins: [react(), requireApiUrlInProdPlugin()],
+  // host: true écoute sur 0.0.0.0 (toutes les interfaces), pas seulement
+  // localhost — nécessaire pour ouvrir le parcours de capture depuis un
+  // téléphone sur le même réseau local pendant les visites.
+  server: { host: true }
 });

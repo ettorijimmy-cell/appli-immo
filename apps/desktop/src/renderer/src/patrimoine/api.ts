@@ -54,6 +54,14 @@ export interface Appartement {
   nombrePiecesPrincipales: number | null;
   modeChauffage: AppartementModeProduction | null;
   modeEauChaude: AppartementModeProduction | null;
+  // Composition réelle du logement (module État des lieux) — source de
+  // vérité pour le nombre d'étapes du parcours mobile et le plafond
+  // d'instances ajoutables ici (voir etats-des-lieux/EtatDesLieuxSection.tsx).
+  nombreChambres: number | null;
+  nombreSallesDeBain: number | null;
+  nombreWc: number | null;
+  autrePiece1: string | null;
+  autrePiece2: string | null;
   statut: AppartementStatut;
 }
 
@@ -83,6 +91,11 @@ export interface UpdateAppartementInput {
   nombrePiecesPrincipales?: number;
   modeChauffage?: AppartementModeProduction;
   modeEauChaude?: AppartementModeProduction;
+  nombreChambres?: number;
+  nombreSallesDeBain?: number;
+  nombreWc?: number;
+  autrePiece1?: string;
+  autrePiece2?: string;
   statut?: AppartementStatutModifiable;
 }
 

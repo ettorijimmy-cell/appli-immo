@@ -51,23 +51,19 @@ export function PieceCard({
   titre,
   elements,
   row,
-  onSave,
-  libelleEditable = false
+  onSave
 }: {
   titre: string;
   elements: ElementDef[];
   row: PieceRow | null;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
-  libelleEditable?: boolean;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
-  const [libelle, setLibelle] = useState(row?.libelle ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setValeurs(construireValeursInitiales(elements, row));
-    setLibelle(row?.libelle ?? "");
   }, [row, elements]);
 
   function setChamp(prefix: string, champ: keyof ChampsElement, valeur: string): void {
@@ -79,9 +75,6 @@ export function PieceCard({
     setIsSaving(true);
     try {
       const payload: Record<string, unknown> = {};
-      if (libelleEditable) {
-        payload.libelle = libelle;
-      }
       for (const el of elements) {
         const champs = valeurs[el.prefix];
         if (!champs) {
@@ -110,15 +103,7 @@ export function PieceCard({
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
-        {libelleEditable ? (
-          <input
-            value={libelle}
-            onChange={(e) => setLibelle(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1 text-sm font-semibold text-slate-700"
-          />
-        ) : (
-          <h4 className="text-sm font-semibold text-slate-700">{titre}</h4>
-        )}
+        <h4 className="text-sm font-semibold text-slate-700">{titre}</h4>
         <button
           type="button"
           onClick={() => void handleSave()}
@@ -187,35 +172,33 @@ export function PieceCard({
 
 // Pièces à occurrences multiples (chambres, salles de bain, wc, autres
 // pièces) : une PieceCard par instance existante + un bouton d'ajout tant
-// que le maximum du modèle réel n'est pas atteint.
+// que le maximum réel du logement (appartement.nombreChambres/
+// nombreSallesDeBain/nombreWc) n'est pas atteint — jamais le maximum du
+// modèle décret codé en dur, qui autoriserait des instances fantômes au-
+// delà de la composition réelle (voir EtatDesLieuxSection). Les "autres
+// pièces" ont des libellés fixes définis sur l'appartement, pas de saisie
+// libre à la volée : voir AutresPiecesSection dédiée.
 export function MultiPieceSection({
   titrePrefixe,
   elements,
   rows,
   max,
-  onSave,
-  avecLibelle = false
+  onSave
 }: {
   titrePrefixe: string;
   elements: ElementDef[];
   rows: PieceRow[];
   max: number;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
-  avecLibelle?: boolean;
 }): React.JSX.Element {
   const numerosExistants = rows.map((r) => r.numero ?? 0);
   const prochainNumero = numerosExistants.length > 0 ? Math.max(...numerosExistants) + 1 : 1;
-  const [nouveauLibelle, setNouveauLibelle] = useState("");
   const [ajoutEnCours, setAjoutEnCours] = useState(false);
 
   async function handleAjouter(): Promise<void> {
-    if (avecLibelle && !nouveauLibelle.trim()) {
-      return;
-    }
     setAjoutEnCours(true);
     try {
-      await onSave(prochainNumero, avecLibelle ? { libelle: nouveauLibelle.trim() } : {});
-      setNouveauLibelle("");
+      await onSave(prochainNumero, {});
     } finally {
       setAjoutEnCours(false);
     }
@@ -229,41 +212,22 @@ export function MultiPieceSection({
         .map((row) => (
           <PieceCard
             key={row.id}
-            titre={avecLibelle ? row.libelle || `${titrePrefixe} ${row.numero}` : `${titrePrefixe} ${row.numero}`}
+            titre={`${titrePrefixe} ${row.numero}`}
             elements={elements}
             row={row}
-            libelleEditable={avecLibelle}
             onSave={(payload) => onSave(row.numero ?? 0, payload)}
           />
         ))}
-      {numerosExistants.length < max &&
-        (avecLibelle ? (
-          <div className="flex items-center gap-2">
-            <input
-              value={nouveauLibelle}
-              onChange={(e) => setNouveauLibelle(e.target.value)}
-              placeholder="Libellé de la pièce (ex. Bureau)"
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => void handleAjouter()}
-              disabled={ajoutEnCours || !nouveauLibelle.trim()}
-              className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-            >
-              {ajoutEnCours ? "Ajout…" : "+ Ajouter"}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void handleAjouter()}
-            disabled={ajoutEnCours}
-            className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-          >
-            {ajoutEnCours ? "Ajout…" : `+ Ajouter ${titrePrefixe.toLowerCase()} ${prochainNumero}`}
-          </button>
-        ))}
+      {numerosExistants.length < max && (
+        <button
+          type="button"
+          onClick={() => void handleAjouter()}
+          disabled={ajoutEnCours}
+          className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+        >
+          {ajoutEnCours ? "Ajout…" : `+ Ajouter ${titrePrefixe.toLowerCase()} ${prochainNumero}`}
+        </button>
+      )}
     </div>
   );
 }

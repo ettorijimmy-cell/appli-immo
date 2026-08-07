@@ -46,6 +46,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
   let etatsDesLieuxService: EtatsDesLieuxService;
   let db: Database;
   let bailId: string;
+  let userId: string;
 
   beforeEach(async () => {
     db = await begin();
@@ -96,6 +97,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     if (!user) {
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
+    userId = user.id;
 
     const sci = await scisService.create(user.id, {
       nom: "SCI État des lieux Test",
@@ -119,6 +121,17 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
       modeChauffage: "individuel",
       modeEauChaude: "individuel",
       loyerReference: "900.00"
+    });
+    // Composition réelle du logement — désormais requise pour démarrer un
+    // état des lieux (validerCompletudeEtatDesLieux). Renseignée ici pour
+    // que les tests existants (soumission par pièce, etc.) restent
+    // représentatifs d'un appartement correctement configuré ; le blocage
+    // lui-même est testé séparément avec un appartement volontairement
+    // incomplet.
+    await appartementsService.update(appartement.id, {
+      nombreChambres: 2,
+      nombreSallesDeBain: 1,
+      nombreWc: 1
     });
     const bail = await bauxService.create({
       appartementId: appartement.id,
@@ -145,6 +158,61 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     expect(entete.statut).toBe("non_commence");
 
     await expect(etatsDesLieuxService.create({ bailId })).rejects.toThrow(/existe déjà/i);
+  });
+
+  it("create() : bloque si la composition de l'appartement (chambres/salles de bain/WC) est incomplète", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Composition Incomplète",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const immeuble = await immeublesService.create({
+      sciId: sci.id,
+      nom: "Immeuble Composition Incomplète",
+      adresse: "1 rue de Test",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    // Composition volontairement non renseignée (nombreChambres/
+    // nombreSallesDeBain/nombreWc restent null) — appartement créé avant
+    // l'introduction de ces champs, ou pas encore configuré.
+    const appartementIncomplet = await appartementsService.create({
+      immeubleId: immeuble.id,
+      numero: "2",
+      type: "T2",
+      nombrePiecesPrincipales: 2,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const bailSansComposition = await bauxService.create({
+      appartementId: appartementIncomplet.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+
+    await expect(etatsDesLieuxService.create({ bailId: bailSansComposition.id })).rejects.toMatchObject({
+      response: {
+        champsManquants: [
+          "Nombre de chambres de l'appartement",
+          "Nombre de salles de bain de l'appartement",
+          "Nombre de WC de l'appartement"
+        ]
+      }
+    });
+
+    // Une fois la composition renseignée (même partiellement), seuls les
+    // champs réellement manquants sont encore signalés.
+    await appartementsService.update(appartementIncomplet.id, { nombreChambres: 1, nombreWc: 1 });
+    await expect(etatsDesLieuxService.create({ bailId: bailSansComposition.id })).rejects.toMatchObject({
+      response: { champsManquants: ["Nombre de salles de bain de l'appartement"] }
+    });
+
+    await appartementsService.update(appartementIncomplet.id, { nombreSallesDeBain: 1 });
+    const entete = await etatsDesLieuxService.create({ bailId: bailSansComposition.id });
+    expect(entete.bailId).toBe(bailSansComposition.id);
   });
 
   it("statut dérivé (jamais stocké) : non_commence → entree_terminee → complet, selon date_entree/date_sortie", async () => {

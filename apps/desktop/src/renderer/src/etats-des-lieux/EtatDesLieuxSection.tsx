@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
 import type { Bail } from "../locataires/api";
+import type { Appartement } from "../patrimoine/api";
 import {
   createEtatDesLieux,
   getCatalogueInventaire,
@@ -19,6 +21,7 @@ import {
   updateEtatDesLieuxHeader,
   type ElementInventaireMeuble,
   type EtatDesLieuxComplet,
+  type PieceRow,
   type StatutEtatDesLieux
 } from "./api";
 import { ClesSection } from "./ClesSection";
@@ -44,9 +47,15 @@ const LABEL_STATUT: Record<StatutEtatDesLieux, string> = {
 
 // Vue de relecture desktop (tableau dense, même pattern que Patrimoine /
 // Finances) : sert à relire/corriger l'état des lieux après la visite —
-// la capture initiale se fait sur le parcours mobile pas-à-pas (à
-// construire). Un seul état des lieux par bail (bail_id unique).
-export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element {
+// la capture initiale se fait sur le parcours mobile pas-à-pas. Un seul
+// état des lieux par bail (bail_id unique).
+export function EtatDesLieuxSection({
+  bail,
+  appartement
+}: {
+  bail: Bail;
+  appartement: Appartement;
+}): React.JSX.Element {
   const [etatDesLieux, setEtatDesLieux] = useState<EtatDesLieuxComplet | null>(null);
   const [catalogue, setCatalogue] = useState<ElementInventaireMeuble[]>([]);
   const [showArchived, setShowArchived] = useState(false);
@@ -92,12 +101,17 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
   }, [etatDesLieux, bail.typeBail, catalogue.length]);
 
   async function handleCreer(): Promise<void> {
+    setError(null);
     setIsCreating(true);
     try {
       await createEtatDesLieux(bail.id);
       await refresh();
-    } catch {
-      setError("Impossible de créer l'état des lieux");
+    } catch (err) {
+      // Le backend renvoie déjà un message complet et lisible (liste des
+      // champs manquants incluse) quand la composition de l'appartement
+      // est incomplète — voir EtatsDesLieuxService.create,
+      // validerCompletudeEtatDesLieux.
+      setError(err instanceof ApiError ? err.message : "Impossible de créer l'état des lieux");
     } finally {
       setIsCreating(false);
     }
@@ -107,26 +121,25 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
     return <p className="text-sm text-slate-500">Chargement…</p>;
   }
 
-  if (error) {
-    return (
-      <p role="alert" className="text-sm text-red-600">
-        {error}
-      </p>
-    );
-  }
-
   if (!etatDesLieux) {
     return (
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
-        <p className="text-sm text-slate-500">Aucun état des lieux pour ce bail.</p>
-        <button
-          type="button"
-          onClick={() => void handleCreer()}
-          disabled={isCreating}
-          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
-        >
-          {isCreating ? "Création…" : "Créer l'état des lieux"}
-        </button>
+      <div className="rounded-lg border border-slate-200 p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-500">Aucun état des lieux pour ce bail.</p>
+          <button
+            type="button"
+            onClick={() => void handleCreer()}
+            disabled={isCreating}
+            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {isCreating ? "Création…" : "Créer l'état des lieux"}
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="mt-2 text-sm text-red-600">
+            {error}
+          </p>
+        )}
       </div>
     );
   }
@@ -173,7 +186,7 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
           titrePrefixe="Chambre"
           elements={ELEMENTS_CHAMBRE}
           rows={etatDesLieux.chambres}
-          max={3}
+          max={appartement.nombreChambres ?? 3}
           onSave={async (numero, payload) => {
             await submitPieceChambre(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -187,7 +200,7 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
           titrePrefixe="Salle de bain"
           elements={ELEMENTS_SALLE_DE_BAIN}
           rows={etatDesLieux.sallesDeBain}
-          max={2}
+          max={appartement.nombreSallesDeBain ?? 2}
           onSave={async (numero, payload) => {
             await submitPieceSalleDeBain(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -201,7 +214,7 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
           titrePrefixe="WC"
           elements={ELEMENTS_WC}
           rows={etatDesLieux.wc}
-          max={2}
+          max={appartement.nombreWc ?? 2}
           onSave={async (numero, payload) => {
             await submitPieceWc(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -209,20 +222,14 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
         />
       </div>
 
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-slate-700">Autres pièces</h4>
-        <MultiPieceSection
-          titrePrefixe="Autre pièce"
-          elements={ELEMENTS_AUTRE}
-          rows={etatDesLieux.autres}
-          max={2}
-          avecLibelle
-          onSave={async (numero, payload) => {
-            await submitPieceAutre(etatDesLieux.id, { numero, ...payload });
-            await refresh();
-          }}
-        />
-      </div>
+      <AutresPiecesSection
+        appartement={appartement}
+        rows={etatDesLieux.autres}
+        onSave={async (numero, payload) => {
+          await submitPieceAutre(etatDesLieux.id, { numero, ...payload });
+          await refresh();
+        }}
+      />
 
       <CompteursCard
         compteurs={etatDesLieux.compteurs}
@@ -270,6 +277,86 @@ export function EtatDesLieuxSection({ bail }: { bail: Bail }): React.JSX.Element
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Les 2 emplacements libres du modèle réel ont des libellés FIXES, définis
+// une fois pour toutes sur la fiche appartement (autre_piece_1/2) — plus
+// de saisie d'un libellé à la volée depuis l'état des lieux (revu le
+// 2026-08-07, voir packages/db/src/schema/appartements.ts). Convention :
+// numero 1 correspond toujours à autrePiece1, numero 2 à autrePiece2.
+function AutresPiecesSection({
+  appartement,
+  rows,
+  onSave
+}: {
+  appartement: Appartement;
+  rows: PieceRow[];
+  onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
+}): React.JSX.Element | null {
+  const [ajoutEnCours, setAjoutEnCours] = useState<number | null>(null);
+
+  const slots: { numero: number; libelle: string }[] = [];
+  if (appartement.autrePiece1) {
+    slots.push({ numero: 1, libelle: appartement.autrePiece1 });
+  }
+  if (appartement.autrePiece2) {
+    slots.push({ numero: 2, libelle: appartement.autrePiece2 });
+  }
+
+  if (slots.length === 0) {
+    // Aucune "autre pièce" configurée sur l'appartement — rien à afficher,
+    // pas de mécanisme de saisie libre en remplacement (voir data-
+    // dictionary.md, section appartements).
+    return null;
+  }
+
+  async function handleAjouter(numero: number, libelle: string): Promise<void> {
+    setAjoutEnCours(numero);
+    try {
+      await onSave(numero, { libelle });
+    } finally {
+      setAjoutEnCours(null);
+    }
+  }
+
+  return (
+    <div>
+      <h4 className="mb-2 text-sm font-semibold text-slate-700">Autres pièces</h4>
+      <div className="space-y-3">
+        {slots.map(({ numero, libelle }) => {
+          const row = rows.find((r) => r.numero === numero) ?? null;
+          if (row) {
+            // libelle capturé à la création (row.libelle), pas la valeur
+            // courante de l'appartement — voir data-dictionary.md,
+            // appartements : si la disposition change, seules les
+            // FUTURES captures suivent, jamais un renommage rétroactif.
+            // SubmitPieceAutreDto exige `libelle` à chaque soumission
+            // (pas seulement à la création), d'où le réinjecter ici.
+            return (
+              <PieceCard
+                key={numero}
+                titre={row.libelle || libelle}
+                elements={ELEMENTS_AUTRE}
+                row={row}
+                onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
+              />
+            );
+          }
+          return (
+            <button
+              key={numero}
+              type="button"
+              onClick={() => void handleAjouter(numero, libelle)}
+              disabled={ajoutEnCours === numero}
+              className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+            >
+              {ajoutEnCours === numero ? "Ajout…" : `+ Ajouter ${libelle}`}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
