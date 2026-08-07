@@ -169,6 +169,13 @@
       "when": 1786088505596,
       "tag": "0023_daily_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786123720923,
+      "tag": "0024_secret_kid_colt",
+      "breakpoints": true
     }
   ]
 }

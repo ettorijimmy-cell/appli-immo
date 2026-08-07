@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ouvrirDocument, type DocumentMetier } from "../documents/api";
 import type { EtatElement, PieceRow } from "./api";
 import type { ElementDef } from "./pieces-config";
 
@@ -41,6 +42,31 @@ function construireValeursInitiales(elements: ElementDef[], row: PieceRow | null
   return valeurs;
 }
 
+// Photos prises depuis le parcours mobile pour cette pièce précise (voir
+// documentEtatDesLieuxPieceTypeEnum) — liens plutôt que vignettes : même
+// mécanisme d'ouverture que le reste du module Documents (ouvrirDocument,
+// seul point de déchiffrement, jamais d'URL directe sur le fichier
+// stocké, voir CLAUDE.md).
+function PhotosPiece({ photos }: { photos: DocumentMetier[] }): React.JSX.Element | null {
+  if (photos.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mb-2 flex flex-wrap gap-2">
+      {photos.map((photo) => (
+        <button
+          key={photo.id}
+          type="button"
+          onClick={() => void ouvrirDocument(photo.id)}
+          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50"
+        >
+          📷 {photo.nomFichier}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Tableau dense (Élément / Description / État entrée / État sortie) pour
 // une pièce — pilote son rendu depuis `elements` (voir pieces-config.ts)
 // plutôt que dupliquer un composant par pièce. Sauvegarde explicite (pas
@@ -51,11 +77,13 @@ export function PieceCard({
   titre,
   elements,
   row,
+  photos = [],
   onSave
 }: {
   titre: string;
   elements: ElementDef[];
   row: PieceRow | null;
+  photos?: DocumentMetier[];
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
@@ -120,6 +148,8 @@ export function PieceCard({
         </p>
       )}
 
+      <PhotosPiece photos={photos} />
+
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-slate-500">
@@ -183,12 +213,14 @@ export function MultiPieceSection({
   elements,
   rows,
   max,
+  photosParNumero,
   onSave
 }: {
   titrePrefixe: string;
   elements: ElementDef[];
   rows: PieceRow[];
   max: number;
+  photosParNumero?: Map<number, DocumentMetier[]>;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const numerosExistants = rows.map((r) => r.numero ?? 0);
@@ -215,6 +247,7 @@ export function MultiPieceSection({
             titre={`${titrePrefixe} ${row.numero}`}
             elements={elements}
             row={row}
+            photos={photosParNumero?.get(row.numero ?? 0) ?? []}
             onSave={(payload) => onSave(row.numero ?? 0, payload)}
           />
         ))}

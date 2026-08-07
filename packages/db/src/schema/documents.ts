@@ -33,6 +33,23 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
 // réellement écrite par ce module (archiver()).
 export const documentStatutEnum = pgEnum("document_statut", ["valide", "expire", "archive"]);
 
+// Sous-classification de la pièce concernée, valable uniquement quand
+// entiteType = 'etat_des_lieux' (photos prises depuis le parcours mobile
+// pas-à-pas, un bouton "+ Photo" par pièce) — voir docs/error-log.md,
+// [2026-08-07] Photos état des lieux non rattachées aux pièces. Les 7
+// valeurs correspondent exactement aux étapes "piece-*" du parcours
+// mobile (apps/mobile-web/src/etat-des-lieux/stepper-config.ts), sans le
+// préfixe "piece-".
+export const documentEtatDesLieuxPieceTypeEnum = pgEnum("document_etat_des_lieux_piece_type", [
+  "entree",
+  "sejour",
+  "cuisine",
+  "chambre",
+  "salle_de_bain",
+  "wc",
+  "autre"
+]);
+
 export const documents = pgTable("documents", {
   ...auditColumns,
   // Lien polymorphe : pas de contrainte de clé étrangère possible (5 tables
@@ -48,5 +65,11 @@ export const documents = pgTable("documents", {
   tailleOctets: integer("taille_octets").notNull(),
   // Clé/chemin du blob chiffré sur disque (repli local temporaire, voir
   // docs/data-dictionary.md) — jamais exposé au frontend.
-  cheminStockage: text("chemin_stockage").notNull()
+  cheminStockage: text("chemin_stockage").notNull(),
+  // Nullables : identifient la pièce précise pour une photo d'état des
+  // lieux (numero seulement pour chambre/salle_de_bain/wc/autre, null pour
+  // entrée/séjour/cuisine à instance unique) — jamais renseignés pour les
+  // 5 autres entiteType.
+  etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
+  etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero")
 });

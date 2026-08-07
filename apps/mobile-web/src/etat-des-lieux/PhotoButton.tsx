@@ -1,12 +1,22 @@
 import { useRef, useState } from "react";
-import { uploaderPhotoEtatDesLieux } from "../api/documents";
+import { uploaderPhotoEtatDesLieux, type EtatDesLieuxPieceType } from "../api/documents";
 
 // Bouton "+ Photo" par pièce (pas par élément), décision actée — upload
 // immédiat dès la sélection, indépendant du cycle Suivant/Précédent
 // (jamais bloquant sur la saisie des éléments de la pièce).
 // capture="environment" : ouvre directement l'appareil photo arrière sur
-// mobile plutôt que la galerie, plus rapide en visite.
-export function PhotoButton({ etatDesLieuxId }: { etatDesLieuxId: string }): React.JSX.Element {
+// mobile plutôt que la galerie, plus rapide en visite. pieceType/
+// pieceNumero identifient la pièce active pour que la relecture desktop
+// puisse afficher la photo au bon endroit (voir api/documents.ts).
+export function PhotoButton({
+  etatDesLieuxId,
+  pieceType,
+  pieceNumero
+}: {
+  etatDesLieuxId: string;
+  pieceType: EtatDesLieuxPieceType;
+  pieceNumero?: number;
+}): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +30,7 @@ export function PhotoButton({ etatDesLieuxId }: { etatDesLieuxId: string }): Rea
     setError(null);
     setIsUploading(true);
     try {
-      await uploaderPhotoEtatDesLieux(etatDesLieuxId, fichier);
+      await uploaderPhotoEtatDesLieux(etatDesLieuxId, fichier, pieceType, pieceNumero);
       setNombreEnvoyees((n) => n + 1);
     } catch {
       setError("Envoi impossible — réessayez");

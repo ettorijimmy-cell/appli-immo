@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
+import { listDocuments, type DocumentEtatDesLieuxPieceType, type DocumentMetier } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { Bail } from "../locataires/api";
 import type { Appartement } from "../patrimoine/api";
@@ -39,6 +40,25 @@ import {
   ELEMENTS_WC
 } from "./pieces-config";
 
+// Regroupe les photos par pièce (voir documents/api.ts,
+// etatDesLieuxPieceType/Numero) — pièces à instance unique (numero null)
+// vs. multi-instances (numero requis, une Map par pièce).
+function photosPieceUnique(photos: DocumentMetier[], type: DocumentEtatDesLieuxPieceType): DocumentMetier[] {
+  return photos.filter((p) => p.etatDesLieuxPieceType === type && p.etatDesLieuxPieceNumero === null);
+}
+
+function photosParNumero(photos: DocumentMetier[], type: DocumentEtatDesLieuxPieceType): Map<number, DocumentMetier[]> {
+  const map = new Map<number, DocumentMetier[]>();
+  for (const photo of photos) {
+    if (photo.etatDesLieuxPieceType === type && photo.etatDesLieuxPieceNumero !== null) {
+      const liste = map.get(photo.etatDesLieuxPieceNumero) ?? [];
+      liste.push(photo);
+      map.set(photo.etatDesLieuxPieceNumero, liste);
+    }
+  }
+  return map;
+}
+
 const LABEL_STATUT: Record<StatutEtatDesLieux, string> = {
   non_commence: "Non commencé",
   entree_terminee: "Entrée renseignée",
@@ -57,6 +77,7 @@ export function EtatDesLieuxSection({
   appartement: Appartement;
 }): React.JSX.Element {
   const [etatDesLieux, setEtatDesLieux] = useState<EtatDesLieuxComplet | null>(null);
+  const [photos, setPhotos] = useState<DocumentMetier[]>([]);
   const [catalogue, setCatalogue] = useState<ElementInventaireMeuble[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,7 +98,13 @@ export function EtatDesLieuxSection({
       setIsLoading(true);
     }
     try {
-      setEtatDesLieux(await getEtatDesLieuxParBail(bail.id, showArchived));
+      const donnees = await getEtatDesLieuxParBail(bail.id, showArchived);
+      setEtatDesLieux(donnees);
+      setPhotos(
+        donnees
+          ? await listDocuments({ entiteType: "etat_des_lieux", entiteId: donnees.id, categorie: "photo" })
+          : []
+      );
       setError(null);
     } catch {
       setError("Impossible de charger l'état des lieux");
@@ -156,6 +183,7 @@ export function EtatDesLieuxSection({
         titre="Entrée"
         elements={ELEMENTS_ENTREE}
         row={etatDesLieux.entree}
+        photos={photosPieceUnique(photos, "entree")}
         onSave={async (payload) => {
           await submitPieceEntree(etatDesLieux.id, payload);
           await refresh();
@@ -165,6 +193,7 @@ export function EtatDesLieuxSection({
         titre="Séjour"
         elements={ELEMENTS_SEJOUR}
         row={etatDesLieux.sejour}
+        photos={photosPieceUnique(photos, "sejour")}
         onSave={async (payload) => {
           await submitPieceSejour(etatDesLieux.id, payload);
           await refresh();
@@ -174,6 +203,7 @@ export function EtatDesLieuxSection({
         titre="Cuisine"
         elements={ELEMENTS_CUISINE}
         row={etatDesLieux.cuisine}
+        photos={photosPieceUnique(photos, "cuisine")}
         onSave={async (payload) => {
           await submitPieceCuisine(etatDesLieux.id, payload);
           await refresh();
@@ -187,6 +217,7 @@ export function EtatDesLieuxSection({
           elements={ELEMENTS_CHAMBRE}
           rows={etatDesLieux.chambres}
           max={appartement.nombreChambres ?? 3}
+          photosParNumero={photosParNumero(photos, "chambre")}
           onSave={async (numero, payload) => {
             await submitPieceChambre(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -201,6 +232,7 @@ export function EtatDesLieuxSection({
           elements={ELEMENTS_SALLE_DE_BAIN}
           rows={etatDesLieux.sallesDeBain}
           max={appartement.nombreSallesDeBain ?? 2}
+          photosParNumero={photosParNumero(photos, "salle_de_bain")}
           onSave={async (numero, payload) => {
             await submitPieceSalleDeBain(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -215,6 +247,7 @@ export function EtatDesLieuxSection({
           elements={ELEMENTS_WC}
           rows={etatDesLieux.wc}
           max={appartement.nombreWc ?? 2}
+          photosParNumero={photosParNumero(photos, "wc")}
           onSave={async (numero, payload) => {
             await submitPieceWc(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -225,6 +258,7 @@ export function EtatDesLieuxSection({
       <AutresPiecesSection
         appartement={appartement}
         rows={etatDesLieux.autres}
+        photosParNumero={photosParNumero(photos, "autre")}
         onSave={async (numero, payload) => {
           await submitPieceAutre(etatDesLieux.id, { numero, ...payload });
           await refresh();
@@ -289,10 +323,12 @@ export function EtatDesLieuxSection({
 function AutresPiecesSection({
   appartement,
   rows,
+  photosParNumero,
   onSave
 }: {
   appartement: Appartement;
   rows: PieceRow[];
+  photosParNumero?: Map<number, DocumentMetier[]>;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element | null {
   const [ajoutEnCours, setAjoutEnCours] = useState<number | null>(null);
@@ -340,6 +376,7 @@ function AutresPiecesSection({
                 titre={row.libelle || libelle}
                 elements={ELEMENTS_AUTRE}
                 row={row}
+                photos={photosParNumero?.get(numero) ?? []}
                 onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
               />
             );

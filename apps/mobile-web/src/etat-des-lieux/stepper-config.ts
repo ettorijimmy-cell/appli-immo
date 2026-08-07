@@ -1,3 +1,4 @@
+import type { EtatDesLieuxPieceType } from "../api/documents";
 import type { BailTypeBail } from "../api/patrimoine";
 import type { Appartement } from "../api/patrimoine";
 
@@ -19,6 +20,22 @@ export interface Etape {
   type: EtapeType;
   titre: string;
   numero?: number;
+}
+
+// Correspondance vers la sous-classification des photos (documents.ts) —
+// undefined pour les étapes qui ne sont pas des pièces (compteurs, clés...).
+const PIECE_TYPE_PAR_ETAPE: Partial<Record<EtapeType, EtatDesLieuxPieceType>> = {
+  "piece-entree": "entree",
+  "piece-sejour": "sejour",
+  "piece-cuisine": "cuisine",
+  "piece-chambre": "chambre",
+  "piece-salle-de-bain": "salle_de_bain",
+  "piece-wc": "wc",
+  "piece-autre": "autre"
+};
+
+export function pieceTypePourEtape(etape: Etape): EtatDesLieuxPieceType | undefined {
+  return PIECE_TYPE_PAR_ETAPE[etape.type];
 }
 
 // Génère la séquence exacte d'étapes depuis la composition réelle de

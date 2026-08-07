@@ -125,6 +125,10 @@ export function getEtatDesLieuxParBail(
   );
 }
 
+export function getEtatDesLieuxById(id: string): Promise<EtatDesLieuxComplet> {
+  return authenticatedFetch<EtatDesLieuxComplet>(`/etats-des-lieux/${id}`);
+}
+
 export function createEtatDesLieux(bailId: string): Promise<EtatDesLieux> {
   return authenticatedFetch<EtatDesLieux>("/etats-des-lieux", { method: "POST", body: JSON.stringify({ bailId }) });
 }

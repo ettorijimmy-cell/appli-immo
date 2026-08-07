@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerStatutDocument } from "core";
 import {
   appartements,
@@ -41,6 +41,11 @@ export class DocumentsService {
 
   async upload(dto: CreateDocumentDto, fichier: Express.Multer.File) {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
+    if ((dto.etatDesLieuxPieceType || dto.etatDesLieuxPieceNumero !== undefined) && dto.entiteType !== "etat_des_lieux") {
+      throw new BadRequestException(
+        "etatDesLieuxPieceType/etatDesLieuxPieceNumero ne sont valables que pour entiteType 'etat_des_lieux'."
+      );
+    }
 
     const cheminStockage = await this.storage.enregistrer(fichier.buffer);
 
@@ -54,7 +59,9 @@ export class DocumentsService {
         nomFichier: fichier.originalname,
         mimeType: fichier.mimetype,
         tailleOctets: fichier.size,
-        cheminStockage
+        cheminStockage,
+        etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
+        etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null
       })
       .returning();
     if (!document) {

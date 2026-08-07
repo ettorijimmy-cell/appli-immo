@@ -34,7 +34,7 @@ import {
 } from "./pieces-config";
 import { PieceStepScreen } from "./PieceStepScreen";
 import { RecapStepScreen } from "./RecapStepScreen";
-import { construireEtapes, type Etape } from "./stepper-config";
+import { construireEtapes, pieceTypePourEtape, type Etape } from "./stepper-config";
 
 // Le vrai outil de capture (parcours pas-à-pas, décisions actées) :
 // - une étape à la fois, jamais un long formulaire qui scrolle
@@ -111,9 +111,13 @@ export function EtatDesLieuxStepper({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {etape.type.startsWith("piece-") && (
+        {pieceTypePourEtape(etape) && (
           <div className="mb-4">
-            <PhotoButton etatDesLieuxId={donnees.id} />
+            <PhotoButton
+              etatDesLieuxId={donnees.id}
+              pieceType={pieceTypePourEtape(etape)!}
+              {...(etape.numero !== undefined && { pieceNumero: etape.numero })}
+            />
           </div>
         )}
 

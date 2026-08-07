@@ -828,6 +828,30 @@ sortie, comportement visible du cycle Suivant/Précédent/Réessayer sous
 coupure réseau simulée — vérification manuelle demandée au propriétaire,
 comme pour le desktop.
 
+**Correctif (2026-08-07) : photos non rattachées à leur pièce en
+relecture desktop.** Trouvé par le propriétaire en testant l'écran réel
+(photos visibles dans Documents mais isolées, sans lien avec la pièce
+concernée dans `EtatDesLieuxSection`). Cause confirmée dans le code
+réel avant correction : `PhotoButton` envoyait toujours `entiteId` =
+l'en-tête `etats_des_lieux` (jamais une ligne de pièce précise), pour
+une raison structurelle et pas un oubli — les lignes de pièce
+n'existent qu'après soumission de l'étape mobile ("Suivant"), alors que
+la photo part immédiatement à la sélection, potentiellement avant. Deux
+colonnes nullables ajoutées sur `documents`
+(`etat_des_lieux_piece_type`/`_numero`, voir data-dictionary.md) portées
+par le parcours mobile dès l'étape courante (déterministe, indépendant
+de l'existence de la ligne), avec garde-fou applicatif rejetant ces
+champs pour tout `entiteType` autre que `etat_des_lieux`. La vue de
+relecture desktop (`PieceGrid.tsx`, `EtatDesLieuxSection.tsx`) regroupe
+les photos par `(type, numero)` et les affiche en liens directement dans
+la `PieceCard` de la pièce concernée. Vérifié par un test HTTP réel :
+photo envoyée pour "chambre 1" AVANT que la ligne existe en base →
+upload accepté → soumission tardive de la ligne chambre 1 → la photo
+s'associe correctement par correspondance de numéro, pas de clé
+étrangère ; deuxième photo "chambre 2" et une photo "entrée" (sans
+numéro) confirmées non mélangées ; garde-fou testé (pieceType refusé sur
+`entiteType: "bail"`, 400). Pipeline complet propre.
+
 **Hébergement définitif encore à trancher au provisionnement Scaleway
 (tâche déjà en attente).** Deux options : servir les fichiers statiques
 sur un sous-chemin d'`apps/backend`, ou un hébergement statique séparé.

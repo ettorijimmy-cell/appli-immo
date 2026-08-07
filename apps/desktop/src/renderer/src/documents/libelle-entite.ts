@@ -1,3 +1,4 @@
+import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
 import { getLocataire } from "../locataires/api";
 import { getAppartement, getImmeuble } from "../patrimoine/api";
@@ -53,6 +54,11 @@ export async function resoudreLibelleEntite(
           return `${contexte.immeubleNom} — n°${contexte.appartementNumero}${
             contexte.locatairesNoms ? ` (${contexte.locatairesNoms})` : ""
           }`;
+        }
+        case "etat_des_lieux": {
+          const etatDesLieux = await getEtatDesLieuxById(entiteId);
+          const contexte = await chargerContexteBail(etatDesLieux.bailId, cache.contexteBail);
+          return `État des lieux — ${contexte.immeubleNom} n°${contexte.appartementNumero}`;
         }
       }
     } catch {

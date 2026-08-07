@@ -1,6 +1,14 @@
 import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
-export type DocumentEntiteType = "sci" | "immeuble" | "appartement" | "locataire" | "bail";
+export type DocumentEntiteType = "sci" | "immeuble" | "appartement" | "locataire" | "bail" | "etat_des_lieux";
+export type DocumentEtatDesLieuxPieceType =
+  | "entree"
+  | "sejour"
+  | "cuisine"
+  | "chambre"
+  | "salle_de_bain"
+  | "wc"
+  | "autre";
 export type DocumentCategorie =
   | "bail"
   | "assurance"
@@ -26,6 +34,8 @@ export interface DocumentMetier {
   mimeType: string;
   tailleOctets: number;
   archivedAt: string | null;
+  etatDesLieuxPieceType: DocumentEtatDesLieuxPieceType | null;
+  etatDesLieuxPieceNumero: number | null;
 }
 
 export interface UploadDocumentInput {

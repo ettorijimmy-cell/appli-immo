@@ -215,6 +215,25 @@ Table de liaison pour gérer la colocation.
 | mime_type | text | Type MIME déclaré à l'upload, renvoyé tel quel au téléchargement (`Content-Type`) |
 | taille_octets | integer | Taille du fichier original (avant chiffrement) |
 | chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — jamais exposé au frontend, uniquement interne à `DocumentsService`/`DocumentStorageService` |
+| etat_des_lieux_piece_type | enum, nullable | `entree` \| `sejour` \| `cuisine` \| `chambre` \| `salle_de_bain` \| `wc` \| `autre` — significatif uniquement quand `entite_type = 'etat_des_lieux'` (photos prises depuis le parcours mobile pas-à-pas, un bouton "+ Photo" par pièce). Ajouté le 2026-08-07 : corrige un trou identifié en test manuel (photo visible dans Documents mais pas rattachée à sa pièce en relecture desktop) |
+| etat_des_lieux_piece_numero | integer, nullable | Numéro d'instance pour chambre/salle_de_bain/wc/autre (null pour entrée/séjour/cuisine, pièces à instance unique) |
+
+**Rattachement des photos à une pièce précise (2026-08-07)** : `entite_id`
+pour une photo d'état des lieux reste l'id de l'en-tête `etats_des_lieux`
+(jamais celui d'une ligne de pièce) — les lignes de pièce
+(`etat_des_lieux_pieces_chambre` etc.) sont créées paresseusement par
+upsert-by-id seulement à la soumission de l'étape mobile correspondante
+("Suivant"), potentiellement APRÈS que la photo ait été prise (le bouton
+"+ Photo" envoie immédiatement, indépendamment du cycle de soumission de
+l'étape — voir docs/backlog.md, section État des lieux). Utiliser l'id
+d'une ligne de pièce comme `entite_id` ne serait donc pas fiable : cette
+ligne peut ne pas encore exister. `etat_des_lieux_piece_type`/`_numero`
+identifient la pièce par sa position dans le parcours (déterministe dès
+l'étape mobile, indépendante de l'existence de la ligne), pas par clé
+étrangère — la relecture desktop les associe à la ligne réelle par
+correspondance `(type, numero)`, dans n'importe quel ordre de création.
+Garde-fou applicatif (`DocumentsService.upload`) : ces deux champs sont
+rejetés (400) si `entite_type` n'est pas `etat_des_lieux`.
 
 **Décision produit (stockage, tranchée avec l'utilisateur)** : Scaleway Object
 Storage n'est pas provisionné (Module 0, différé). Repli temporaire : chaque
