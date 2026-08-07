@@ -39,9 +39,21 @@ function cspPlugin(): Plugin {
       apiUrl = envApiUrl ?? DEFAULT_DEV_API_URL;
     },
     transformIndexHtml(html) {
+      // img-src 'self' blob: — nécessaire aux vignettes photo de l'état des
+      // lieux (2026-08-07) : le contenu vient de /documents/:id/contenu
+      // (authentifié, jamais d'URL publique), converti en URL blob: en
+      // mémoire par le renderer pour affichage inline. Sans cette
+      // directive, default-src 'self' s'applique en repli et bloque le
+      // rendu de <img src="blob:...">, silencieusement (pas d'exception
+      // JS interceptable, juste une icône cassée) — voir docs/error-log.md,
+      // [2026-07-26] CSP bloquait le login Electron, pour le précédent
+      // connect-src qui a le même mécanisme de repli. Scope volontairement
+      // minimal : blob: uniquement, jamais d'origine distante. Même
+      // directive en dev et en prod — l'affichage des vignettes est une
+      // fonctionnalité du produit, pas une commodité de développement.
       const csp = isDev
-        ? `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ${apiUrl}`
-        : `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${apiUrl}`;
+        ? `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self' ${apiUrl}`
+        : `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self' ${apiUrl}`;
       // Recherche d'un placeholder littéral, pas une regex sur la balise :
       // insensible à toute mise en forme HTML environnante. Échec bruyant
       // si absent plutôt qu'un remplacement silencieusement ignoré (cause
