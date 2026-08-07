@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ouvrirDocument, type DocumentMetier } from "../documents/api";
+import type { DocumentMetier } from "../documents/api";
+import { authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
 import type { ElementDef } from "./pieces-config";
 
@@ -42,28 +43,113 @@ function construireValeursInitiales(elements: ElementDef[], row: PieceRow | null
   return valeurs;
 }
 
+// Première image inline de l'app (aucun mécanisme de vignette n'existait
+// avant — le reste du module Documents n'affiche que des liens de
+// téléchargement, voir DocumentsForEntite.tsx/ouvrirDocument). L'endpoint
+// /documents/:id/contenu exige un header Authorization, donc pas de
+// <img src="..."> direct : on récupère le blob déchiffré via le même
+// mécanisme authentifié que le reste du module (authenticatedFetchBlob),
+// jamais d'URL publique (CLAUDE.md) — l'URL objet obtenue ne quitte jamais
+// cette fenêtre (pas de nouvel onglet, qui rendrait le partage du blob
+// incertain entre contextes) et est révoquée au démontage.
+function PhotoThumbnail({
+  photo,
+  onOuvrir
+}: {
+  photo: DocumentMetier;
+  onOuvrir: (url: string, nomFichier: string) => void;
+}): React.JSX.Element {
+  const [url, setUrl] = useState<string | null>(null);
+  const [erreur, setErreur] = useState(false);
+
+  useEffect(() => {
+    let urlCourante: string | null = null;
+    let annule = false;
+    authenticatedFetchBlob(`/documents/${photo.id}/contenu`)
+      .then(({ blob }) => {
+        if (annule) {
+          return;
+        }
+        urlCourante = URL.createObjectURL(blob);
+        setUrl(urlCourante);
+      })
+      .catch(() => setErreur(true));
+    return () => {
+      annule = true;
+      if (urlCourante) {
+        URL.revokeObjectURL(urlCourante);
+      }
+    };
+  }, [photo.id]);
+
+  if (erreur) {
+    return (
+      <div className="flex h-16 w-16 items-center justify-center rounded border border-slate-200 text-xs text-slate-400">
+        Erreur
+      </div>
+    );
+  }
+
+  if (!url) {
+    return <div className="h-16 w-16 animate-pulse rounded border border-slate-200 bg-slate-100" />;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOuvrir(url, photo.nomFichier)}
+      className="h-16 w-16 overflow-hidden rounded border border-slate-200 hover:ring-2 hover:ring-indigo-400"
+    >
+      <img src={url} alt={photo.nomFichier} className="h-full w-full object-cover" />
+    </button>
+  );
+}
+
 // Photos prises depuis le parcours mobile pour cette pièce précise (voir
-// documentEtatDesLieuxPieceTypeEnum) — liens plutôt que vignettes : même
-// mécanisme d'ouverture que le reste du module Documents (ouvrirDocument,
-// seul point de déchiffrement, jamais d'URL directe sur le fichier
-// stocké, voir CLAUDE.md).
+// documentEtatDesLieuxPieceTypeEnum) — vignettes cliquables, agrandies
+// dans une modale plein écran (pas de téléchargement forcé).
 function PhotosPiece({ photos }: { photos: DocumentMetier[] }): React.JSX.Element | null {
+  const [agrandie, setAgrandie] = useState<{ url: string; nomFichier: string } | null>(null);
+
   if (photos.length === 0) {
     return null;
   }
+
   return (
-    <div className="mb-2 flex flex-wrap gap-2">
-      {photos.map((photo) => (
-        <button
-          key={photo.id}
-          type="button"
-          onClick={() => void ouvrirDocument(photo.id)}
-          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50"
+    <>
+      <div className="mb-2 flex flex-wrap gap-2">
+        {photos.map((photo) => (
+          <PhotoThumbnail
+            key={photo.id}
+            photo={photo}
+            onOuvrir={(url, nomFichier) => setAgrandie({ url, nomFichier })}
+          />
+        ))}
+      </div>
+
+      {agrandie && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+          onClick={() => setAgrandie(null)}
         >
-          📷 {photo.nomFichier}
-        </button>
-      ))}
-    </div>
+          <img
+            src={agrandie.url}
+            alt={agrandie.nomFichier}
+            className="max-h-full max-w-full rounded shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setAgrandie(null)}
+            className="absolute right-6 top-6 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Fermer
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
