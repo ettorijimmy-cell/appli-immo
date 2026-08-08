@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AppartementDetailView } from "../patrimoine/AppartementDetailView";
+import { AppartementDetailView, type Tab as OngletAppartement } from "../patrimoine/AppartementDetailView";
+
+const ONGLETS_APPARTEMENT: OngletAppartement[] = ["infos", "equipements", "bail", "historique", "documents"];
 import { getAppartement, getImmeuble } from "../patrimoine/api";
 import { ImmeubleDetailView } from "../patrimoine/ImmeubleDetailView";
 import { SciDetailView } from "../patrimoine/SciDetailView";
@@ -13,7 +15,14 @@ type View =
   | { level: "scis" }
   | { level: "sci"; sciId: string }
   | { level: "immeuble"; sciId: string; immeubleId: string }
-  | { level: "appartement"; sciId: string; immeubleId: string; appartementId: string; nouveauBail: boolean };
+  | {
+      level: "appartement";
+      sciId: string;
+      immeubleId: string;
+      appartementId: string;
+      nouveauBail: boolean;
+      onglet: OngletAppartement | null;
+    };
 
 export function PatrimoinePage(): React.JSX.Element {
   const [searchParams] = useSearchParams();
@@ -35,6 +44,10 @@ export function PatrimoinePage(): React.JSX.Element {
     const immeubleId = params.get("immeubleId");
     const sciId = params.get("sciId");
     const nouveauBail = params.get("nouveauBail") === "1";
+    const ongletBrut = params.get("onglet");
+    const onglet = ONGLETS_APPARTEMENT.includes(ongletBrut as OngletAppartement)
+      ? (ongletBrut as OngletAppartement)
+      : null;
 
     if (!appartementId && !immeubleId && !sciId) {
       return;
@@ -49,7 +62,8 @@ export function PatrimoinePage(): React.JSX.Element {
           sciId: immeuble.sciId,
           immeubleId: immeuble.id,
           appartementId,
-          nouveauBail
+          nouveauBail,
+          onglet
         });
       } else if (immeubleId) {
         const immeuble = await getImmeuble(immeubleId);
@@ -80,7 +94,14 @@ export function PatrimoinePage(): React.JSX.Element {
         immeubleId={view.immeubleId}
         onBack={() => setView({ level: "sci", sciId: view.sciId })}
         onSelectAppartement={(appartementId) =>
-          setView({ level: "appartement", sciId: view.sciId, immeubleId: view.immeubleId, appartementId, nouveauBail: false })
+          setView({
+            level: "appartement",
+            sciId: view.sciId,
+            immeubleId: view.immeubleId,
+            appartementId,
+            nouveauBail: false,
+            onglet: null
+          })
         }
       />
     );
@@ -90,7 +111,7 @@ export function PatrimoinePage(): React.JSX.Element {
     <AppartementDetailView
       appartementId={view.appartementId}
       onBack={() => setView({ level: "immeuble", sciId: view.sciId, immeubleId: view.immeubleId })}
-      ongletInitial={view.nouveauBail ? "bail" : "infos"}
+      ongletInitial={view.onglet ?? (view.nouveauBail ? "bail" : "infos")}
       ouvrirNouveauBailInitial={view.nouveauBail}
     />
   );

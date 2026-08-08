@@ -11,6 +11,8 @@ export * from "./paiements/proposer-rapprochements";
 export * from "./paiements/calculer-provisions-recues";
 export * from "./paiements/calculer-montant-recu-total";
 export * from "./documents/calculer-statut-document";
+export * from "./documents/formater-liste-noms";
+export * from "./documents/trouver-balises-desequilibrees";
 export * from "./dates/calendrier";
 export * from "./alertes/regles-alertes";
 export * from "./alertes/calculer-action-alerte";

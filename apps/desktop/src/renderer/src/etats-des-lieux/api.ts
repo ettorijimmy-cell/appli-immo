@@ -1,4 +1,4 @@
-import { authenticatedFetch } from "../lib/authenticated-fetch";
+import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
 export type EtatElement = "M" | "P" | "B" | "TB";
 export type EtatInventaire = "bon" | "dusage" | "mauvais";
@@ -232,4 +232,25 @@ export function submitInventaire(
 
 export function getCatalogueInventaire(): Promise<ElementInventaireMeuble[]> {
   return authenticatedFetch<ElementInventaireMeuble[]>("/etats-des-lieux/catalogue-inventaire");
+}
+
+// Déclenche le téléchargement du .docx généré côté backend (même méthode
+// que ouvrirDocument, documents/api.ts) — le backend bloque déjà avec un
+// message explicite (champsManquants) si l'entrée n'est pas terminée ou si
+// la composition de l'appartement est incomplète ; l'appelant se contente
+// de relayer ce message (ApiError).
+export async function genererDocumentEtatDesLieux(id: string): Promise<void> {
+  const { blob, nomFichier } = await authenticatedFetchBlob(`/etats-des-lieux/${id}/document-docx`, {
+    method: "POST"
+  });
+  const url = URL.createObjectURL(blob);
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = nomFichier ?? "etat-des-lieux.docx";
+  lien.target = "_blank";
+  lien.rel = "noopener noreferrer";
+  document.body.appendChild(lien);
+  lien.click();
+  document.body.removeChild(lien);
+  URL.revokeObjectURL(url);
 }

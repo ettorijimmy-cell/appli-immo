@@ -24,7 +24,7 @@ const MODES_PRODUCTION: AppartementModeProduction[] = ["individuel", "collectif"
 // "archive" en est exclu : l'archivage a son propre bouton dédié.
 const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
 
-type Tab = "infos" | "equipements" | "bail" | "historique" | "documents";
+export type Tab = "infos" | "equipements" | "bail" | "historique" | "documents";
 
 export function AppartementDetailView({
   appartementId,

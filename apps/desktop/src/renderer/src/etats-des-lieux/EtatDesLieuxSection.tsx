@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ArchiveToggle } from "../components/ArchiveFilter";
 import { listDocuments, type DocumentEtatDesLieuxPieceType, type DocumentMetier } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { Bail } from "../locataires/api";
-import type { Appartement } from "../patrimoine/api";
+import { listEquipements, type Appartement } from "../patrimoine/api";
 import {
   createEtatDesLieux,
+  genererDocumentEtatDesLieux,
   getCatalogueInventaire,
   getEtatDesLieuxParBail,
   submitCles,
@@ -76,6 +78,7 @@ export function EtatDesLieuxSection({
   bail: Bail;
   appartement: Appartement;
 }): React.JSX.Element {
+  const navigate = useNavigate();
   const [etatDesLieux, setEtatDesLieux] = useState<EtatDesLieuxComplet | null>(null);
   const [photos, setPhotos] = useState<DocumentMetier[]>([]);
   const [catalogue, setCatalogue] = useState<ElementInventaireMeuble[]>([]);
@@ -273,6 +276,8 @@ export function EtatDesLieuxSection({
         }}
       />
 
+      <ChauffageLinks appartementId={appartement.id} navigate={navigate} />
+
       <ClesSection
         lignes={etatDesLieux.cles}
         onSaveLigne={async (ligne) => {
@@ -311,6 +316,75 @@ export function EtatDesLieuxSection({
           }}
         />
       )}
+    </div>
+  );
+}
+
+// "Chaudière" et "Chauffe-eau" du modèle Word réel sont deux champs texte
+// libre, jamais rattachés à une donnée structurée (voir le document
+// généré : lignes en pointillés, hors périmètre de saisie de l'app). Pour
+// vérifier leur présence/état réels, le propriétaire doit se référer à la
+// fiche équipement de l'appartement (Module 2, onglet Équipements —
+// types "chaudiere"/"ballon_eau_chaude") : un lien direct évite d'y
+// naviguer manuellement pendant une relecture à l'écran.
+// Nombre réel d'équipements chaudière/chauffe-eau déclarés — calculé à
+// chaque affichage depuis le module Équipements (jamais stocké côté état
+// des lieux, même principe que le document Word généré). Équipements
+// archivés exclus. Récupéré indépendamment du reste de la section
+// (domaine Module 2, sans lien avec etatDesLieux) plutôt que remonté dans
+// EtatDesLieuxSection : évite d'entremêler deux sources de données sans
+// rapport entre elles.
+function ChauffageLinks({
+  appartementId,
+  navigate
+}: {
+  appartementId: string;
+  navigate: (chemin: string) => void;
+}): React.JSX.Element {
+  const [nombreChaudieres, setNombreChaudieres] = useState<number | null>(null);
+  const [nombreChauffeEau, setNombreChauffeEau] = useState<number | null>(null);
+
+  useEffect(() => {
+    void listEquipements(appartementId).then((equipements) => {
+      const actifs = equipements.filter((e) => e.archivedAt === null);
+      setNombreChaudieres(actifs.filter((e) => e.type === "chaudiere").length);
+      setNombreChauffeEau(actifs.filter((e) => e.type === "ballon_eau_chaude").length);
+    });
+  }, [appartementId]);
+
+  const ouvrirEquipements = (): void => navigate(`/patrimoine?appartementId=${appartementId}&onglet=equipements`);
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <h4 className="mb-2 text-sm font-semibold text-slate-700">Chauffage</h4>
+      <dl className="space-y-1 text-sm">
+        <div className="flex items-center justify-between">
+          <dt className="text-slate-500">Chaudière</dt>
+          <dd className="flex items-center gap-3">
+            <span className="font-medium text-slate-700">{nombreChaudieres ?? "…"}</span>
+            <button
+              type="button"
+              onClick={ouvrirEquipements}
+              className="text-indigo-700 hover:text-indigo-800 hover:underline"
+            >
+              Voir dans Équipements →
+            </button>
+          </dd>
+        </div>
+        <div className="flex items-center justify-between">
+          <dt className="text-slate-500">Chauffe-eau</dt>
+          <dd className="flex items-center gap-3">
+            <span className="font-medium text-slate-700">{nombreChauffeEau ?? "…"}</span>
+            <button
+              type="button"
+              onClick={ouvrirEquipements}
+              className="text-indigo-700 hover:text-indigo-800 hover:underline"
+            >
+              Voir dans Équipements →
+            </button>
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }
@@ -413,6 +487,8 @@ function EnTeteEtatDesLieux({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   async function handleSave(): Promise<void> {
     setError(null);
@@ -432,6 +508,25 @@ function EnTeteEtatDesLieux({
     }
   }
 
+  // Actif dès "entrée renseignée" (dateEntree connue) — le backend
+  // bloque de toute façon avec un message explicite (champsManquants) si
+  // la composition de l'appartement ou l'entrée elle-même sont
+  // incomplètes ; ce garde-fou côté bouton évite juste un clic inutile
+  // tant qu'aucune donnée n'a encore été saisie.
+  const peutGenerer = etatDesLieux.statut !== "non_commence";
+
+  async function handleGenerer(): Promise<void> {
+    setGenerationError(null);
+    setIsGenerating(true);
+    try {
+      await genererDocumentEtatDesLieux(etatDesLieux.id);
+    } catch (err) {
+      setGenerationError(err instanceof ApiError ? err.message : "Impossible de générer le document");
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-center justify-between">
@@ -442,6 +537,15 @@ function EnTeteEtatDesLieux({
           </span>
           <button
             type="button"
+            onClick={() => void handleGenerer()}
+            disabled={!peutGenerer || isGenerating}
+            title={peutGenerer ? undefined : "L'entrée doit être renseignée avant de générer le document"}
+            className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {isGenerating ? "Génération…" : "Générer le document"}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowEditForm((v) => !v)}
             className="text-sm text-slate-500 hover:text-slate-700"
           >
@@ -449,6 +553,12 @@ function EnTeteEtatDesLieux({
           </button>
         </div>
       </div>
+
+      {generationError && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {generationError}
+        </p>
+      )}
 
       {showEditForm ? (
         <div className="mt-3 grid grid-cols-3 gap-4">

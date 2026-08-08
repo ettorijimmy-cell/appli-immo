@@ -14,6 +14,7 @@ import { EncryptionModule } from "./crypto/encryption.module";
 import { DatabaseModule } from "./database/database.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
+import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
 import { GarantsModule } from "./garants/garants.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
@@ -51,7 +52,8 @@ import { VersementsModule } from "./versements/versements.module";
     TableauDeBordModule,
     IndicesIrlModule,
     BailDocumentDocxModule,
-    EtatsDesLieuxModule
+    EtatsDesLieuxModule,
+    EtatDesLieuxDocumentDocxModule
   ]
 })
 export class AppModule {}

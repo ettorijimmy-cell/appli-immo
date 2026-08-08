@@ -27,11 +27,13 @@
     "core": "workspace:*",
     "db": "workspace:*",
     "docxtemplater": "^3.69.3",
+    "docxtemplater-image-module-free": "^1.1.1",
     "drizzle-orm": "^0.38.4",
     "multer": "^2.2.0",
     "pizzip": "^3.2.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
