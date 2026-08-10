@@ -162,6 +162,10 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     expect(document.tailleOctets).toBe(Buffer.byteLength(contenuOriginal, "utf8"));
     expect(document.statut).toBe("valide");
 
+    // chemin_stockage est une clé de stockage interne (disque ou bucket) :
+    // jamais renvoyée par versDto (projection explicite, pas un spread).
+    expect(document).not.toHaveProperty("cheminStockage");
+
     // Le contenu sur disque doit être chiffré, jamais lisible en clair.
     const fichiersSurDisque = await readdir(storageDirTest);
     expect(fichiersSurDisque).toHaveLength(1);

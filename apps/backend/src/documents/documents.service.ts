@@ -154,10 +154,29 @@ export class DocumentsService {
     return { contenu, document };
   }
 
+  // Projection explicite plutôt qu'un spread de la ligne brute :
+  // chemin_stockage (clé interne de stockage, disque ou bucket selon
+  // DocumentStorageService) ne doit jamais atteindre le frontend — un
+  // spread laisserait passer silencieusement tout futur champ interne
+  // ajouté à la table, sans qu'on ait à y repenser ici.
   private versDto(document: DocumentRow) {
     const dateReference = new Date().toISOString().slice(0, 10);
     return {
-      ...document,
+      id: document.id,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+      updatedBy: document.updatedBy,
+      version: document.version,
+      archivedAt: document.archivedAt,
+      entiteType: document.entiteType,
+      entiteId: document.entiteId,
+      categorie: document.categorie,
+      dateExpiration: document.dateExpiration,
+      nomFichier: document.nomFichier,
+      mimeType: document.mimeType,
+      tailleOctets: document.tailleOctets,
+      etatDesLieuxPieceType: document.etatDesLieuxPieceType,
+      etatDesLieuxPieceNumero: document.etatDesLieuxPieceNumero,
       statut: calculerStatutDocument(document.dateExpiration, document.archivedAt !== null, dateReference)
     };
   }
