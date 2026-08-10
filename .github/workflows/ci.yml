@@ -53,6 +53,14 @@ jobs:
       - name: Appliquer les migrations Drizzle sur le Postgres éphémère
         run: pnpm --filter db db:migrate
 
+      # Sans ce seed, elements_inventaire_meuble reste vide sur un Postgres
+      # neuf — plusieurs tests d'intégration État des lieux en dépendent
+      # (catalogue de 88 lignes). Absent jusqu'ici car ce pipeline n'avait
+      # jamais tourné pour de vrai (voir docs/error-log.md, [2026-08-10]) ;
+      # en local, la base de dev déjà seedée masquait la dépendance.
+      - name: Seeder le catalogue inventaire meublé
+        run: pnpm seed:inventaire-meuble
+
       - name: Test d'intégration — flux de connexion (Argon2 + JWT) contre un vrai Postgres
         run: pnpm test:integration
 

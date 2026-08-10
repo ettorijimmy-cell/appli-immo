@@ -33,6 +33,73 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-08-10] CI jamais poussé sur GitHub — deux écarts local/CI découverts au premier vrai run
+
+**Symptôme** : deux bugs distincts, jamais détectés jusqu'ici :
+1. `apps/backend/src/documents/storage/document-storage.service.ts`
+   (service de stockage local des documents, utilisé depuis le Module 4)
+   n'avait jamais été commité — code réellement en usage, invisible à git.
+2. Sur un Postgres fraîchement migré (sans base de dev déjà seedée), 3
+   tests d'intégration échouent : `getCatalogueInventaire()` attend 88
+   lignes et en trouve 0, `submitInventaire()` échoue à la même cause, et
+   la génération du docx état des lieux ne trouve pas "ÉLECTRO-MÉNAGER"
+   dans le texte produit (conséquence en cascade du catalogue vide).
+
+**Contexte** : 70 commits locaux accumulés sur plusieurs semaines de
+développement (tous les modules du MVP), jamais poussés vers
+`origin/main` — resté au tout premier commit du dépôt
+(`chore: ajout du .gitignore`). Le pipeline CI (`.github/workflows/ci.yml`,
+déclenché `on: push`/`pull_request`) n'avait donc *jamais tourné pour de
+vrai* sur ce projet, malgré des dizaines d'entrées de backlog/tâches
+mentionnant "pipeline complet" — ce "pipeline complet" n'a toujours
+désigné que les commandes `pnpm lint`/`typecheck`/`test`/`test:integration`
+exécutées localement, jamais une exécution GitHub Actions réelle.
+
+**Cause (bug 1)** : `.gitignore` contenait un motif non ancré `storage/`,
+destiné à exclure `apps/backend/storage/` (blobs de documents chiffrés,
+données réelles) mais qui excluait en réalité TOUT dossier nommé
+`storage/` dans le dépôt, y compris `apps/backend/src/documents/storage/`
+(code source). Le fichier existait et tournait localement (le système de
+fichiers ne se soucie pas de ce que git suit), donc jamais repéré — un
+`git clone` frais (ce que fait tout runner CI) ne l'aurait jamais eu, et
+`documents.service.ts` aurait échoué au typecheck immédiatement.
+
+**Cause (bug 2)** : `elements_inventaire_meuble` (catalogue de 88 éléments
+d'inventaire meublé) n'est peuplée que par le script
+`pnpm seed:inventaire-meuble`, jamais appelé automatiquement — ni par les
+migrations Drizzle, ni par `ci.yml`. En local, la base de dev
+(`appli_immo_dev`, port 5433) avait été seedée une fois manuellement des
+semaines plus tôt et n'a plus jamais été recréée depuis, masquant
+totalement la dépendance. Un Postgres neuf (le service éphémère de CI, ou
+n'importe quel nouvel environnement) migre les tables mais ne les peuple
+jamais de données de référence.
+
+**Solution** :
+1. `.gitignore` : motif ancré `/apps/backend/storage/` au lieu de
+   `storage/` (commit séparé, avant tout autre changement).
+   `document-storage.service.ts` récupéré dans un commit dédié, contenu
+   identique à celui réellement en usage.
+2. `.github/workflows/ci.yml` : nouvelle étape `pnpm seed:inventaire-meuble`
+   entre les migrations et `pnpm test:integration`.
+3. Les deux correctifs vérifiés par reproduction réelle : conteneur
+   Postgres jetable (`docker run postgres:16`, base neuve), migrations
+   appliquées, `test:integration` lancé — échec reproduit à l'identique de
+   ce que CI a montré, puis confirmé résolu après le seed, avant de
+   pousser le correctif.
+
+**Fichiers concernés** : `.gitignore`,
+`apps/backend/src/documents/storage/document-storage.service.ts`,
+`.github/workflows/ci.yml`.
+
+**À surveiller** : ce projet a maintenant un vrai historique de CI passé
+au vert — ne plus jamais accumuler des dizaines de commits locaux sans
+pousser. Pour toute nouvelle table de référence/catalogue seedée
+manuellement en local (sur le modèle d'`elements_inventaire_meuble`),
+vérifier explicitement qu'un test d'intégration qui en dépend échoue bien
+sur un Postgres neuf, jamais seulement sur la base de dev locale
+persistante — sinon le même piège se reproduira silencieusement à chaque
+nouvelle table de ce genre.
+
 ### [2026-07-29] Navigation sidebar bloquée depuis une fiche profonde (Patrimoine, Locataires)
 
 **Symptôme** : depuis une fiche imbriquée (SCI → Immeuble → Appartement, ou
