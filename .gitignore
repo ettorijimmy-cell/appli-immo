@@ -13,7 +13,13 @@ build/
 *.sqlite-journal
 
 backups/
-storage/
+# Anchré (pas juste "storage/") : un motif non ancré matche N'IMPORTE QUEL
+# dossier nommé "storage" dans tout le repo, y compris du code source
+# (apps/backend/src/documents/storage/) — découvert le 2026-08-10, ce
+# dossier de code était invisible à git depuis sa création. Seul le
+# stockage local de blobs documents (données réelles, jamais versionnées)
+# doit être ignoré ici.
+/apps/backend/storage/
 tmp/
 
 .vscode/*
