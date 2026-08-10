@@ -1,15 +1,20 @@
 import swc from "unplugin-swc";
 import { defineConfig } from "vitest/config";
 
+const enCi = process.env.CI === "true" || process.env.CI === "1";
+
 export default defineConfig({
   plugins: [swc.vite()],
   test: {
     environment: "node",
     include: ["**/*.integration.spec.ts"],
-    // Défaut Vitest (10s) trop court pour compiler un TestingModule NestJS
-    // qui importe de nombreux modules (ex. alertes.integration.spec.ts,
-    // 9 modules) sur un runner CI partagé/plus lent qu'une machine de dev —
-    // voir docs/error-log.md, [2026-08-10].
-    hookTimeout: 30000
+    // CI uniquement (runner partagé, ressources limitées) : sérialise
+    // l'exécution des fichiers de test pour éliminer toute contention entre
+    // plusieurs TestingModule NestJS compilés en parallèle — voir
+    // docs/error-log.md, [2026-08-10] (alertes.integration.spec.ts échouait
+    // de façon non déterministe, cause exacte jamais confirmée par des logs
+    // bruts). En local, parallélisme par défaut conservé (rapide, le
+    // problème ne s'y est jamais reproduit).
+    poolOptions: enCi ? { threads: { singleThread: true } } : undefined
   }
 });

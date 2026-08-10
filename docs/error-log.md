@@ -33,57 +33,72 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
-### [2026-08-10] alertes.integration.spec.ts : hookTimeout Vitest trop court sur runner CI partagé
+### [2026-08-10] alertes.integration.spec.ts échoue en CI de façon non déterministe — cause exacte jamais confirmée
 
-**Symptôme** : après le correctif du seed manquant (entrée précédente), un
-deuxième run CI échoue — les 12 tests de `alertes.integration.spec.ts`
-échouent tous identiquement avec `TypeError: Cannot read properties of
-undefined (reading 'close')` sur `await moduleRef.close();` dans
-`afterEach`. Jamais reproduit en local (deux fois : base de dev existante,
-puis Postgres jetable fraîchement migré/seedé — 139/139 tests verts à
-chaque fois, y compris ce fichier).
+**Symptôme** : sur le runner GitHub Actions (jamais en local), des tests de
+`alertes.integration.spec.ts` échouent avec `TypeError: Cannot read
+properties of undefined (reading 'close')` sur `await moduleRef.close();`
+dans `afterEach` — signature d'un `beforeEach` qui n'a jamais fini avant
+que Vitest exécute `afterEach` (`moduleRef` reste à sa valeur initiale
+`undefined`), pas une erreur applicative classique. **Le sous-ensemble de
+tests qui échoue diffère d'un run à l'autre sur le même commit** (10/12
+puis 9/12, titres différents) — signal déterminant : une course/contention,
+pas un bug déterministe repérable par simple lecture du code.
 
 **Contexte** : `alertes.integration.spec.ts` construit, dans son
 `beforeEach`, un `TestingModule` NestJS important 9 modules (Scis,
 Immeubles, Appartements, Baux, Paiements, Versements, Documents,
 Equipements, Alertes) — l'arbre de modules le plus large de toute la
-suite d'intégration. `moduleRef` reste `undefined` uniquement si le
-`await Test.createTestingModule({...}).compile()` du `beforeEach` n'a
-jamais abouti avant que Vitest exécute `afterEach` — signature typique
-d'un hook qui expire avant la fin, pas d'une erreur applicative (une
-erreur applicative dans `beforeEach` aurait été rapportée comme telle,
-pas comme "undefined.close() ailleurs").
+suite d'intégration, exécutée par Vitest en parallèle (plusieurs fichiers
+de test, chacun avec sa propre transaction Postgres longue durée via
+`createTransactionalTestHooks`) sur le runner GitHub Actions standard
+(2 vCPU, `ubuntu-latest`).
 
-**Cause (raisonnement, non confirmé par les logs bruts — accès refusé,
-403 "Must have admin rights to Repository", `gh` non authentifié dans cet
-environnement)** : `hookTimeout` de Vitest vaut 10 s par défaut, non
-surchargé dans `vitest.integration.config.ts`. Compiler un `TestingModule`
-de 9 modules (résolution de dépendances par réflexion, la partie la plus
-coûteuse en CPU de NestJS) est plus lent sur le runner GitHub Actions
-partagé (2 vCPU, `ubuntu-latest`) que sur une machine de développement.
-Tentative de reproduction locale en limitant Vitest à 2 threads
-(`--poolOptions.threads.maxThreads=2`) : toujours vert — limiter le
-nombre de threads ne simule pas la puissance CPU réellement plus faible
-du runner partagé, donc cette hypothèse n'a pas pu être confirmée à
-100 % en local. Retenue comme cause la plus probable au vu de la
-signature exacte de l'échec et du fait que ce fichier compile, de loin,
-l'arbre de modules le plus lourd de la suite.
+**Deux hypothèses testées, une seule reste plausible sans être confirmée** :
+1. *Hook Vitest trop court (10 s par défaut)* — écartée : `hookTimeout:
+   30000` ajouté puis repoussé, le run suivant a échoué de façon
+   **identique**, juste après 24 minutes au lieu d'un échec rapide (le
+   `beforeEach` ne finissait toujours pas, juste plus tard) — la
+   sous-liste de tests en échec a même changé entre les deux runs. Ce
+   correctif n'a rien réglé, il a seulement retardé le même symptôme et
+   gaspillé du temps de CI. Retiré.
+2. *Contention lors de la compilation simultanée de plusieurs
+   `TestingModule` NestJS lourds sur un runner à ressources limitées*
+   (connexions/transactions Postgres concurrentes entre fichiers de test,
+   CPU partagé entre le processus Node et le conteneur Postgres éphémère
+   de CI) — hypothèse retenue par élimination et par la nature non
+   déterministe de l'échec, **jamais confirmée par des logs bruts** :
+   l'API GitHub refuse l'accès aux logs de job sans droits admin (403
+   "Must have admin rights to Repository"), `gh` n'était pas authentifié
+   dans cet environnement. Trois tentatives de reproduction locale
+   (base de dev existante, Postgres Docker jetable fraîchement
+   migré/seedé, puis le même Postgres limité à 1 CPU via `docker run
+   --cpus=1` combiné à Vitest limité à 2 threads) — 139/139 tests verts
+   à chaque fois. Limiter artificiellement threads/CPU en local
+   n'a pas suffi à reproduire les conditions réelles du runner partagé.
 
-**Solution** : `hookTimeout: 30000` ajouté à `vitest.integration.config.ts`
-(niveau fichier de config, s'applique à toute la suite d'intégration, pas
-seulement à ce fichier — un autre module pourrait un jour grossir au
-point de rencontrer le même problème). Vérifié en repoussant vers
-`origin/main` et en observant le run CI réel passer au vert — pas
-seulement une hypothèse locale non vérifiable.
+**Mitigation appliquée (pas une preuve de cause, une élimination de
+variable)** : `vitest.integration.config.ts` sérialise l'exécution des
+fichiers de test (`poolOptions.threads.singleThread: true`) **uniquement
+quand `process.env.CI` est vrai** — élimine toute concurrence entre
+fichiers comme cause possible, au prix d'une suite d'intégration CI plus
+lente. En local, le parallélisme par défaut est conservé (rapide, le
+problème ne s'y est jamais manifesté). Vérifié stable sur plusieurs runs
+CI consécutifs avant d'être considéré acquis — voir historique de commits
+pour le détail (un seul run vert après une course qui ne se déclenche pas
+à chaque fois ne prouverait rien).
 
 **Fichiers concernés** : `apps/backend/vitest.integration.config.ts`.
 
-**À surveiller** : si un futur fichier de test d'intégration importe un
-arbre de modules encore plus large et recommence à expirer malgré ces
-30 s, envisager de scinder son `beforeEach` (module plus petit, ou
-réutilisation d'un `TestingModule` déjà compilé entre tests via
-`beforeAll` quand la mutation d'état le permet) plutôt que de continuer
-à augmenter `hookTimeout` indéfiniment.
+**À surveiller** : la cause exacte n'a jamais été confirmée par des logs
+bruts. Si un symptôme du même genre (échec non déterministe, sous-ensemble
+de tests différent à chaque run, uniquement en CI) réapparaît sous une
+autre forme — même après cette sérialisation — ne pas réappliquer un
+correctif de timeout par réflexe : il a déjà été essayé et a démontré ne
+rien régler. Si l'accès à `gh`/aux logs bruts devient possible un jour,
+revisiter cette entrée en priorité : la sérialisation masque peut-être un
+vrai bug de fuite de connexion/ressource plutôt que de simplement
+compenser une lenteur.
 
 ### [2026-08-10] CI jamais poussé sur GitHub — deux écarts local/CI découverts au premier vrai run
 
