@@ -33,6 +33,58 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-08-10] alertes.integration.spec.ts : hookTimeout Vitest trop court sur runner CI partagé
+
+**Symptôme** : après le correctif du seed manquant (entrée précédente), un
+deuxième run CI échoue — les 12 tests de `alertes.integration.spec.ts`
+échouent tous identiquement avec `TypeError: Cannot read properties of
+undefined (reading 'close')` sur `await moduleRef.close();` dans
+`afterEach`. Jamais reproduit en local (deux fois : base de dev existante,
+puis Postgres jetable fraîchement migré/seedé — 139/139 tests verts à
+chaque fois, y compris ce fichier).
+
+**Contexte** : `alertes.integration.spec.ts` construit, dans son
+`beforeEach`, un `TestingModule` NestJS important 9 modules (Scis,
+Immeubles, Appartements, Baux, Paiements, Versements, Documents,
+Equipements, Alertes) — l'arbre de modules le plus large de toute la
+suite d'intégration. `moduleRef` reste `undefined` uniquement si le
+`await Test.createTestingModule({...}).compile()` du `beforeEach` n'a
+jamais abouti avant que Vitest exécute `afterEach` — signature typique
+d'un hook qui expire avant la fin, pas d'une erreur applicative (une
+erreur applicative dans `beforeEach` aurait été rapportée comme telle,
+pas comme "undefined.close() ailleurs").
+
+**Cause (raisonnement, non confirmé par les logs bruts — accès refusé,
+403 "Must have admin rights to Repository", `gh` non authentifié dans cet
+environnement)** : `hookTimeout` de Vitest vaut 10 s par défaut, non
+surchargé dans `vitest.integration.config.ts`. Compiler un `TestingModule`
+de 9 modules (résolution de dépendances par réflexion, la partie la plus
+coûteuse en CPU de NestJS) est plus lent sur le runner GitHub Actions
+partagé (2 vCPU, `ubuntu-latest`) que sur une machine de développement.
+Tentative de reproduction locale en limitant Vitest à 2 threads
+(`--poolOptions.threads.maxThreads=2`) : toujours vert — limiter le
+nombre de threads ne simule pas la puissance CPU réellement plus faible
+du runner partagé, donc cette hypothèse n'a pas pu être confirmée à
+100 % en local. Retenue comme cause la plus probable au vu de la
+signature exacte de l'échec et du fait que ce fichier compile, de loin,
+l'arbre de modules le plus lourd de la suite.
+
+**Solution** : `hookTimeout: 30000` ajouté à `vitest.integration.config.ts`
+(niveau fichier de config, s'applique à toute la suite d'intégration, pas
+seulement à ce fichier — un autre module pourrait un jour grossir au
+point de rencontrer le même problème). Vérifié en repoussant vers
+`origin/main` et en observant le run CI réel passer au vert — pas
+seulement une hypothèse locale non vérifiable.
+
+**Fichiers concernés** : `apps/backend/vitest.integration.config.ts`.
+
+**À surveiller** : si un futur fichier de test d'intégration importe un
+arbre de modules encore plus large et recommence à expirer malgré ces
+30 s, envisager de scinder son `beforeEach` (module plus petit, ou
+réutilisation d'un `TestingModule` déjà compilé entre tests via
+`beforeAll` quand la mutation d'état le permet) plutôt que de continuer
+à augmenter `hookTimeout` indéfiniment.
+
 ### [2026-08-10] CI jamais poussé sur GitHub — deux écarts local/CI découverts au premier vrai run
 
 **Symptôme** : deux bugs distincts, jamais détectés jusqu'ici :
