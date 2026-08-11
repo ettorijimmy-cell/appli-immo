@@ -1,10 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CreateGarantDto } from "./dto/create-garant.dto";
 import { UpdateGarantDto } from "./dto/update-garant.dto";
 import { GarantsService } from "./garants.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("garants")
 export class GarantsController {
   constructor(private readonly garantsService: GarantsService) {}

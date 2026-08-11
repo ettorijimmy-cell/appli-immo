@@ -9,18 +9,15 @@ import {
   Query,
   StreamableFile,
   UploadedFile,
-  UseGuards,
   UseInterceptors
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { DocumentsService, type FindAllDocumentsFiltres } from "./documents.service";
 import { CreateDocumentDto, type DocumentCategorie, type DocumentEntiteType } from "./dto/create-document.dto";
 import { UpdateDocumentDto } from "./dto/update-document.dto";
 
 const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
 
-@UseGuards(JwtAuthGuard)
 @Controller("documents")
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}

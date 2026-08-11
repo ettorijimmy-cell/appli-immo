@@ -1,10 +1,8 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ComptesBancairesSciService } from "./comptes-bancaires-sci.service";
 import { CreateCompteBancaireDto } from "./dto/create-compte-bancaire.dto";
 
-@UseGuards(JwtAuthGuard)
 @Controller()
 export class ComptesBancairesSciController {
   constructor(private readonly comptesBancairesSciService: ComptesBancairesSciService) {}

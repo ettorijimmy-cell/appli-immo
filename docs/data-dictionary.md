@@ -728,6 +728,39 @@ jamais modifiée après écriture.
 | mot_de_passe_hash | text | Argon2, jamais un autre algorithme |
 | statut | enum | `actif` \| `archive` |
 
+## Authentification et autorisation (backend)
+
+**Décision produit (garde globale, tranchée avec l'utilisateur,
+2026-08-11)** : `JwtAuthGuard` est enregistrée comme garde globale
+(`APP_GUARD`, `apps/backend/src/auth/auth.module.ts`) — toute route
+protège par défaut, échec sécurisé, plutôt que de compter sur l'ajout
+manuel de `@UseGuards(JwtAuthGuard)` sur chaque nouveau controller. Même
+principe que `JWT_SECRET`/`ENCRYPTION_KEY` qui bloquent le démarrage en
+production plutôt que de se reposer sur la vigilance humaine (voir
+docs/error-log.md). Seules les routes explicitement décorées `@Public()`
+(`apps/backend/src/auth/public.decorator.ts`) échappent à la garde —
+aujourd'hui uniquement `POST /auth/login`, seule route qui ne peut pas
+exiger un JWT pour en délivrer un.
+
+Vérifié empiriquement (pas seulement par lecture de code) : les 139 tests
+d'intégration existants passent inchangés (aucun n'exerce la couche HTTP,
+tous appellent les services directement — la garde n'y est donc jamais
+sollicitée) ; en conditions réelles, `POST /auth/login` reste accessible
+sans JWT (message `"Identifiants invalides"` renvoyé, preuve que la
+requête atteint bien le controller) tandis qu'un accès sans JWT à
+`/scis`, `/paiements`, `/documents` ou `/tableau-de-bord/en-tete` est
+bloqué par la garde (`"Unauthorized"`, avant tout code applicatif) ; un
+JWT valide donne bien accès à ces mêmes routes.
+
+**Règle pour un futur endpoint `/health`** : s'il est ajouté un jour
+(monitoring Scaleway Serverless Containers, qui ne peut pas envoyer de
+JWT), il devra utiliser explicitement `@Public()`, comme
+`POST /auth/login` aujourd'hui — jamais public par oubli. Son corps de
+réponse doit rester un statut minimal (ex. `{ status: "ok" }` ou un
+simple code HTTP), **jamais** de détail de connexion DB, de version
+applicative, ou de stack trace : un endpoint volontairement non
+authentifié est par nature accessible à quiconque atteint le conteneur.
+
 ---
 
 ## État des lieux (module, 2026-08-03)

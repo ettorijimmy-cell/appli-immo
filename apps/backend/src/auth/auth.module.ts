@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
 import { UsersModule } from "../users/users.module";
 import { AuthController } from "./auth.controller";
@@ -33,11 +34,18 @@ const jwtModule = JwtModule.registerAsync({
 // Global : JwtAuthGuard est une préoccupation transversale (voir
 // docs/error-log.md) — tout futur module protégé par JWT doit pouvoir
 // l'utiliser sans réimporter AuthModule à chaque fois.
+//
+// APP_GUARD enregistre JwtAuthGuard comme garde globale : échec sécurisé
+// par défaut, toute route exige un JWT valide sauf décorée @Public()
+// (voir public.decorator.ts et docs/data-dictionary.md, section
+// Authentification). useExisting (pas useClass) pour réutiliser la même
+// instance que le provider JwtAuthGuard ci-dessous, plutôt que d'en
+// construire une seconde.
 @Global()
 @Module({
   imports: [UsersModule, jwtModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, { provide: APP_GUARD, useExisting: JwtAuthGuard }],
   exports: [JwtAuthGuard, jwtModule]
 })
 export class AuthModule {}

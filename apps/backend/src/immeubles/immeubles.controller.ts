@@ -1,10 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CreateImmeubleDto } from "./dto/create-immeuble.dto";
 import { UpdateImmeubleDto } from "./dto/update-immeuble.dto";
 import { ImmeublesService } from "./immeubles.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("immeubles")
 export class ImmeublesController {
   constructor(private readonly immeublesService: ImmeublesService) {}

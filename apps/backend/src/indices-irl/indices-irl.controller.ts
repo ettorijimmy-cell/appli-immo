@@ -1,9 +1,7 @@
-import { Controller, Get, Post, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Controller, Get, Post } from "@nestjs/common";
 import { IndicesIrlJobService } from "./indices-irl-job.service";
 import { IndicesIrlService } from "./indices-irl.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("indices-irl")
 export class IndicesIrlController {
   constructor(

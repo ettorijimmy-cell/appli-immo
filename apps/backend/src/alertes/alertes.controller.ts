@@ -1,11 +1,9 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { AlertesConfigService, TYPES_AVEC_SEUIL_CONFIGURABLE, type AlerteType } from "./alertes-config.service";
 import { AlertesJobService } from "./alertes-job.service";
 import { AlertesService, type FindAllAlertesFiltres } from "./alertes.service";
 import { UpdateSeuilAlerteDto } from "./dto/update-seuil-alerte.dto";
 
-@UseGuards(JwtAuthGuard)
 @Controller("alertes")
 export class AlertesController {
   constructor(
@@ -48,7 +46,6 @@ export class AlertesController {
   }
 }
 
-@UseGuards(JwtAuthGuard)
 @Controller("parametres-alertes")
 export class ParametresAlertesController {
   constructor(private readonly alertesConfigService: AlertesConfigService) {}

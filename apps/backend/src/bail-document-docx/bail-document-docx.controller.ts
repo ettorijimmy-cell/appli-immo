@@ -1,12 +1,10 @@
-import { Body, Controller, Param, Post, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Param, Post, Res } from "@nestjs/common";
 import type { Response } from "express";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { BailDocumentDocxService } from "./bail-document-docx.service";
 import { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-docx.dto";
 
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-@UseGuards(JwtAuthGuard)
 @Controller("baux")
 export class BailDocumentDocxController {
   constructor(private readonly bailDocumentDocxService: BailDocumentDocxService) {}

@@ -1,11 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateSciDto } from "./dto/create-sci.dto";
 import { UpdateSciDto } from "./dto/update-sci.dto";
 import { ScisService } from "./scis.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("scis")
 export class ScisController {
   constructor(private readonly scisService: ScisService) {}

@@ -1,11 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { BauxService } from "./baux.service";
 import { CreateBailDto } from "./dto/create-bail.dto";
 import { ResilierBailDto } from "./dto/resilier-bail.dto";
 import { UpdateBailDto } from "./dto/update-bail.dto";
 
-@UseGuards(JwtAuthGuard)
 @Controller("baux")
 export class BauxController {
   constructor(private readonly bauxService: BauxService) {}

@@ -1,10 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { CreateLocataireDto } from "./dto/create-locataire.dto";
 import { UpdateLocataireDto } from "./dto/update-locataire.dto";
 import { LocatairesService } from "./locataires.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("locataires")
 export class LocatairesController {
   constructor(private readonly locatairesService: LocatairesService) {}

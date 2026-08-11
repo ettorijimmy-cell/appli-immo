@@ -1,5 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CreateEtatDesLieuxDto } from "./dto/create-etat-des-lieux.dto";
 import { SubmitClesDto } from "./dto/submit-cles.dto";
 import { SubmitCompteursDto } from "./dto/submit-compteurs.dto";
@@ -15,7 +14,6 @@ import { SubmitPieceWcDto } from "./dto/submit-piece-wc.dto";
 import { UpdateEtatDesLieuxDto } from "./dto/update-etat-des-lieux.dto";
 import { EtatsDesLieuxService } from "./etats-des-lieux.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("etats-des-lieux")
 export class EtatsDesLieuxController {
   constructor(private readonly etatsDesLieuxService: EtatsDesLieuxService) {}

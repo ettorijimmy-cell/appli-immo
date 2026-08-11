@@ -1,9 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CreateRemboursementDto } from "./dto/create-remboursement.dto";
 import { RemboursementsService } from "./remboursements.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("remboursements")
 export class RemboursementsController {
   constructor(private readonly remboursementsService: RemboursementsService) {}

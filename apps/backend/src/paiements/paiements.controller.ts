@@ -1,11 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CreatePaiementDto } from "./dto/create-paiement.dto";
 import { RapprocherCsvDto } from "./dto/rapprocher-csv.dto";
 import { UpdatePaiementDto } from "./dto/update-paiement.dto";
 import { PaiementsService } from "./paiements.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("paiements")
 export class PaiementsController {
   constructor(private readonly paiementsService: PaiementsService) {}

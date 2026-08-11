@@ -1,9 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { BailLocatairesService } from "./bail-locataires.service";
 import { CreateBailLocataireDto } from "./dto/create-bail-locataire.dto";
 
-@UseGuards(JwtAuthGuard)
 @Controller("bail-locataires")
 export class BailLocatairesController {
   constructor(private readonly bailLocatairesService: BailLocatairesService) {}

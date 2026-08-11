@@ -1,10 +1,8 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Controller, Get, Query } from "@nestjs/common";
 import { DerniereSauvegardeService } from "./derniere-sauvegarde.service";
 import { PeriodeQueryDto } from "./dto/periode-query.dto";
 import { TableauDeBordService } from "./tableau-de-bord.service";
 
-@UseGuards(JwtAuthGuard)
 @Controller("tableau-de-bord")
 export class TableauDeBordController {
   constructor(
