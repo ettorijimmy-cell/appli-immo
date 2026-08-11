@@ -33,6 +33,70 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-08-11] La vraie cause racine : Turborepo ne transmettait pas DATABASE_URL à test:integration
+
+**Résout définitivement les trois entrées précédentes du 2026-08-11 et
+celle du 2026-08-10.** `begin()` qui bloquait et `afterEach` qui masquait
+l'erreur (voir entrée suivante) étaient de vrais bugs, corrigés à juste
+titre — mais ni l'un ni l'autre n'était LA cause du premier échec CI.
+Celle-ci ne pouvait être trouvée qu'en reproduisant *exactement* la
+commande que `ci.yml` exécute (`pnpm test:integration` depuis la racine
+du dépôt, donc via `turbo run test:integration`) — jamais fait avant
+cette entrée : toutes les tentatives précédentes lançaient `vitest`
+directement ou depuis `apps/backend`, contournant Turborepo.
+
+**Symptôme réel, confirmé par reproduction locale exacte** :
+`DATABASE_URL='postgres://bogus@127.0.0.1:1/x' pnpm test:integration`
+(depuis la racine) fait passer les 139 tests — la valeur bogus n'est
+**jamais lue**. Turborepo, sans déclaration explicite dans `turbo.json`,
+ne transmet pas une variable d'environnement arbitraire au processus
+enfant qu'il lance pour `test:integration` : `process.env.DATABASE_URL`
+vaut `undefined` côté vitest, et `packages/db/src/client.ts` retombe
+silencieusement sur `DEFAULT_DEV_DATABASE_URL` (port 5433). En CI, rien
+n'écoute sur ce port (le service Postgres de `ci.yml` est sur 5432) —
+d'où `ECONNREFUSED 127.0.0.1:5433`. **Jamais reproduit dans les
+nombreuses tentatives précédentes de cette investigation** parce que le
+vrai Postgres de dev tournait réellement sur le port 5433 pendant toute
+la session : le repli silencieux se connectait "par accident" à une vraie
+base (la mauvaise, mais joignable), masquant totalement le problème.
+`db:migrate` et `pnpm seed:inventaire-meuble` (lancés en `pnpm` direct,
+jamais via `turbo run`) recevaient `DATABASE_URL` normalement — d'où leur
+succès systématique en CI, qui a longtemps détourné le diagnostic vers
+autre chose que Turborepo.
+
+**Effet de bord découvert pendant la reproduction** : avec une URL
+réellement injoignable (au lieu d'un simple repli vers un port fermé),
+le processus worker Vitest (Tinypool) plante entièrement — `Unhandled
+'error' event` sur le socket bas niveau du client `postgres`, hors de
+portée d'un `try/catch` applicatif — plutôt que de faire échouer les
+tests un par un proprement. Ceci explique le dernier run CI en échec
+observé après les deux correctifs précédents : aucune annotation
+individuelle par test, seulement "Process completed with exit code 1"
+— le worker entier s'est arrêté avant que Vitest ne puisse générer son
+rapport normal. Ce plantage ne se produit qu'en cas d'échec de connexion
+réel ; une fois `DATABASE_URL` correctement transmise vers un Postgres
+réellement joignable (le cas normal en CI une fois ce correctif posé),
+il ne se déclenche pas.
+
+**Solution** : `globalEnv: ["DATABASE_URL"]` ajouté à `turbo.json`.
+Vérifié par reproduction exacte de la commande CI (`pnpm test:integration`
+depuis la racine) : une URL bogue explicite provoque désormais une vraie
+erreur de connexion (au lieu d'un repli silencieux réussi), et une URL
+valide vers une base fraîchement créée et nommée distinctement (jamais
+utilisée ailleurs dans cette session, pour exclure toute coïncidence)
+fait passer les 139 tests.
+
+**Fichiers concernés** : `turbo.json`.
+
+**À surveiller** : toute future variable d'environnement dont dépend un
+`run:` de `ci.yml` exécuté via un script racine qui délègue à `turbo run`
+(et pas seulement `test:integration` — `build`, `test`, `dev` y sont
+tout aussi exposés) doit être déclarée dans `globalEnv` (ou `env` au
+niveau de la tâche concernée), sinon le même repli silencieux vers une
+valeur de dev locale peut se reproduire pour n'importe quelle autre
+variable future, avec le même effet masquant en local tant qu'un service
+local du même nom écoute par coïncidence sur le port par défaut.
+
 ### [2026-08-11] Vraie cause trouvée : begin() bloquait pour toujours en cas d'échec de connexion (transactional-test.ts)
 
 **Résout l'entrée précédente ([2026-08-10]) — le diagnostic initial était

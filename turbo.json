@@ -1,5 +1,17 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // Sans déclaration explicite, Turborepo ne transmet PAS une variable
+  // d'environnement arbitraire aux processus enfants qu'il lance — DATABASE_URL
+  // était donc silencieusement absente pour `test:integration` (mais présente
+  // pour `db:migrate`/le script de seed, lancés hors turbo, via pnpm direct).
+  // Résultat en CI : repli silencieux sur DEFAULT_DEV_DATABASE_URL
+  // (packages/db/src/client.ts, port 5433) — inexistant sur le runner GitHub
+  // Actions (le service Postgres de ci.yml écoute sur 5432) — d'où
+  // ECONNREFUSED 127.0.0.1:5433. Jamais repéré en local car le vrai Postgres
+  // de dev tournait réellement sur ce port pendant toute la session, rendant
+  // le repli silencieux "accidentellement" fonctionnel. Voir
+  // docs/error-log.md, [2026-08-11].
+  "globalEnv": ["DATABASE_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
