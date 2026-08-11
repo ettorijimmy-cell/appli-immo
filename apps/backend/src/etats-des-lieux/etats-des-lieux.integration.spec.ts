@@ -143,7 +143,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

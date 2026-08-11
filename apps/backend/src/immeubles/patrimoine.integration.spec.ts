@@ -103,7 +103,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

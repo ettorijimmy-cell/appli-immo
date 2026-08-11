@@ -138,7 +138,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

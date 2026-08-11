@@ -170,7 +170,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 
@@ -696,7 +696,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
     // Restaure la fixture valide pour ne pas affecter d'autres tests
     // exécutés dans le même processus après celui-ci.

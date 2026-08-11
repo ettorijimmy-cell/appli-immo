@@ -137,7 +137,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

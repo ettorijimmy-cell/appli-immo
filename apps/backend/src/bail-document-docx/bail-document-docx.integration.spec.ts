@@ -143,7 +143,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

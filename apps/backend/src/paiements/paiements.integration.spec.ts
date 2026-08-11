@@ -151,7 +151,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

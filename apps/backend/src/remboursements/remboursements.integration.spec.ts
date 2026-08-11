@@ -146,7 +146,7 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 

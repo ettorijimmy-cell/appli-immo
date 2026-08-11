@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { readFile, readdir, rm } from "fs/promises";
+import { readFile, rm } from "fs/promises";
 import os from "os";
 import path from "path";
 import { ConfigModule } from "@nestjs/config";
@@ -138,7 +138,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
   });
 
   afterEach(async () => {
-    await moduleRef.close();
+    await moduleRef?.close();
     await rollback();
   });
 
@@ -166,10 +166,14 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     // jamais renvoyée par versDto (projection explicite, pas un spread).
     expect(document).not.toHaveProperty("cheminStockage");
 
+    // Chemin organisé par entité : documents/<entiteType>/<entiteId>/<documentId>.enc
+    // (voir construireCheminStockage) — jamais le nom de fichier original.
+    // Vérifié directement en base, puisque la réponse API ne l'expose plus.
+    const [ligneBrute] = await db.select().from(documents).where(eq(documents.id, document.id)).limit(1);
+    expect(ligneBrute?.cheminStockage).toBe(`documents/appartement/${appartementId}/${document.id}.enc`);
+
     // Le contenu sur disque doit être chiffré, jamais lisible en clair.
-    const fichiersSurDisque = await readdir(storageDirTest);
-    expect(fichiersSurDisque).toHaveLength(1);
-    const brutSurDisque = await readFile(path.join(storageDirTest, fichiersSurDisque[0]!));
+    const brutSurDisque = await readFile(path.join(storageDirTest, ligneBrute!.cheminStockage));
     expect(brutSurDisque.toString("utf8")).not.toContain(contenuOriginal);
 
     const { contenu } = await documentsService.telecharger(document.id);
