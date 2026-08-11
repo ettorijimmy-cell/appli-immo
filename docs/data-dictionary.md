@@ -214,7 +214,7 @@ Table de liaison pour gérer la colocation.
 | nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |
 | mime_type | text | Type MIME déclaré à l'upload, renvoyé tel quel au téléchargement (`Content-Type`) |
 | taille_octets | integer | Taille du fichier original (avant chiffrement) |
-| chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — jamais exposé au frontend, uniquement interne à `DocumentsService`/`DocumentStorageService` |
+| chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — `documents/<entite_type>/<entite_id>/<id>.enc`, interne à `DocumentsService`/`DocumentStorageService` |
 | etat_des_lieux_piece_type | enum, nullable | `entree` \| `sejour` \| `cuisine` \| `chambre` \| `salle_de_bain` \| `wc` \| `autre` — significatif uniquement quand `entite_type = 'etat_des_lieux'` (photos prises depuis le parcours mobile pas-à-pas, un bouton "+ Photo" par pièce). Ajouté le 2026-08-07 : corrige un trou identifié en test manuel (photo visible dans Documents mais pas rattachée à sa pièce en relecture desktop) |
 | etat_des_lieux_piece_numero | integer, nullable | Numéro d'instance pour chambre/salle_de_bain/wc/autre (null pour entrée/séjour/cuisine, pièces à instance unique) |
 
@@ -235,18 +235,32 @@ correspondance `(type, numero)`, dans n'importe quel ordre de création.
 Garde-fou applicatif (`DocumentsService.upload`) : ces deux champs sont
 rejetés (400) si `entite_type` n'est pas `etat_des_lieux`.
 
-**Décision produit (stockage, tranchée avec l'utilisateur)** : Scaleway Object
-Storage n'est pas provisionné (Module 0, différé). Repli temporaire : chaque
-document est chiffré (AES-256-GCM, `EncryptionService.encryptBuffer` —
-`apps/backend/src/crypto`, mêmes clé/algorithme que l'IBAN/BIC) puis écrit
-sur disque local sous un nom opaque (UUID aléatoire, indépendant de l'id de
-la ligne `documents`), dans un dossier configurable
-(`DOCUMENTS_STORAGE_DIR`, repli par défaut sur `storage/documents` relatif
-au dossier `apps/backend` — voir `.env.example`). **Ceci est un repli
-temporaire explicitement identifié comme tel, à migrer vers Scaleway Object
-Storage une fois provisionné — pas une solution finale.** Le contenu en
-clair n'est accessible que via `GET /documents/:id/contenu`, route
-authentifiée qui journalise l'accès dans `journal_audit`
+**Décision produit (stockage, tranchée avec l'utilisateur, 2026-08-09)** :
+deux backends selon la présence de `SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/
+`SCW_BUCKET_NAME` (`DocumentStorageService`, `apps/backend/src/documents/
+storage`) — même bascule que `DATABASE_URL` entre Postgres local et
+Scaleway :
+- **absentes → disque local** (dev par défaut, comportement historique) :
+  dossier configurable `DOCUMENTS_STORAGE_DIR` (repli par défaut
+  `storage/documents` relatif au dossier `apps/backend` — voir
+  `.env.example`) ;
+- **présentes → Scaleway Object Storage** (S3-compatible, région fr-par
+  fixe, bucket chiffré SSE-ONE — voir docs/integrations.md).
+
+Dans les deux cas, chaque document est chiffré (AES-256-GCM,
+`EncryptionService.encryptBuffer` — `apps/backend/src/crypto`, mêmes
+clé/algorithme que l'IBAN/BIC) **avant** d'être écrit, sous la même clé/
+chemin : `documents/<entite_type>/<entite_id>/<id>.enc` (organisé par
+entité plutôt qu'un préfixe plat, cohérent avec le lien polymorphe —
+`construireCheminStockage`, `apps/backend/src/documents/storage`). Seuls
+des UUID apparaissent dans ce chemin — jamais le nom de fichier original
+(`documents.nom_fichier`), qui reste uniquement en base. L'id de la ligne
+`documents` est généré côté application (`uuidv7()`, avant l'insertion) et
+non par le défaut du schéma, car il doit être connu pour construire le
+chemin avant l'écriture du blob.
+
+Le contenu en clair n'est accessible que via `GET /documents/:id/contenu`,
+route authentifiée qui journalise l'accès dans `journal_audit`
 (`AuditService.logAccesDocumentSensible`, même mécanisme que l'IBAN/BIC),
 jamais via une URL publique ou un chemin de fichier exposé au frontend
 (CLAUDE.md, section Règles importantes).

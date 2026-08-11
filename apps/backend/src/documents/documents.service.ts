@@ -12,11 +12,13 @@ import {
   type Database
 } from "db";
 import { and, eq, ilike, isNull, type SQL } from "drizzle-orm";
+import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateDocumentDto, DocumentCategorie, DocumentEntiteType } from "./dto/create-document.dto";
 import type { UpdateDocumentDto } from "./dto/update-document.dto";
+import { construireCheminStockage } from "./storage/construire-chemin-stockage";
 import { DocumentStorageService } from "./storage/document-storage.service";
 
 export interface FindAllDocumentsFiltres {
@@ -47,11 +49,17 @@ export class DocumentsService {
       );
     }
 
-    const cheminStockage = await this.storage.enregistrer(fichier.buffer);
+    // L'id est généré ici (plutôt que laissé au $defaultFn du schéma) car il
+    // fait partie du chemin de stockage — il doit être connu avant l'écriture
+    // du blob, pas seulement après l'insertion de la ligne.
+    const documentId = uuidv7();
+    const cheminStockage = construireCheminStockage(dto.entiteType, dto.entiteId, documentId);
+    await this.storage.enregistrer(fichier.buffer, cheminStockage);
 
     const [document] = await this.db
       .insert(documents)
       .values({
+        id: documentId,
         entiteType: dto.entiteType,
         entiteId: dto.entiteId,
         categorie: dto.categorie,
