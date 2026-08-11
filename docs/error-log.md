@@ -88,14 +88,26 @@ fait passer les 139 tests.
 
 **Fichiers concernés** : `turbo.json`.
 
-**À surveiller** : toute future variable d'environnement dont dépend un
-`run:` de `ci.yml` exécuté via un script racine qui délègue à `turbo run`
-(et pas seulement `test:integration` — `build`, `test`, `dev` y sont
-tout aussi exposés) doit être déclarée dans `globalEnv` (ou `env` au
-niveau de la tâche concernée), sinon le même repli silencieux vers une
-valeur de dev locale peut se reproduire pour n'importe quelle autre
-variable future, avec le même effet masquant en local tant qu'un service
-local du même nom écoute par coïncidence sur le port par défaut.
+**À surveiller — confirmé, pas une supposition (2026-08-11, après coup)** :
+`npx turbo run test --filter=backend --dry=json` affiche
+`"envMode": "strict"` (mode par défaut de cette version de Turborepo,
+jamais surchargé dans `turbo.json`) et, pour chaque tâche,
+`"specified": { "env": ["DATABASE_URL"], "passThroughEnv": null }` — donc
+**aucun mécanisme automatique** ne transmet une variable non déclarée,
+seule `DATABASE_URL` est laissée passer aujourd'hui. Concrètement : le
+jour où un module ajoute de vrais tests d'intégration contre le bucket
+Object Storage réel en CI (`SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/
+`SCW_BUCKET_NAME`, ou toute autre variable future dont dépend un `run:`
+de `ci.yml` délégué à `turbo run` — pas seulement `test:integration`,
+`build`/`test`/`dev` y sont tout aussi exposés), il faudra l'ajouter
+explicitement à `globalEnv` dans `turbo.json` (ou au tableau `env` de la
+tâche concernée si elle ne doit pas être globale) — sinon exactement le
+même repli silencieux vers une valeur de dev locale se reproduira, avec
+le même effet masquant en local tant qu'un service du même nom écoute
+par coïncidence sur le port/l'identifiant par défaut. Turborepo accepte
+un joker en suffixe (`"SCW_*"`) si plusieurs variables du même préfixe
+doivent être ajoutées d'un coup — pas de correspondance partielle
+ailleurs qu'en fin de chaîne.
 
 ### [2026-08-11] Vraie cause trouvée : begin() bloquait pour toujours en cas d'échec de connexion (transactional-test.ts)
 
