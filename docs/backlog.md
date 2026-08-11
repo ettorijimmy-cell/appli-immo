@@ -402,6 +402,54 @@ les trois parcours ci-dessus).
   avant développement, pas une règle improvisée dans un module tableau de
   bord.
 
+- **Retours d'API non projetés explicitement — 13 services, motif pas
+  occurrence isolée.** Découvert en corrigeant `DocumentsService.versDto`
+  (2026-08-10, `chemin_stockage` — une clé de stockage interne — fuyait
+  vers le frontend via un `...document` brut). Grep systématique sur
+  `apps/backend/src/**/*.service.ts` : 13 autres services renvoient une
+  ligne Drizzle (`.select()`/`.returning()`) directement ou via spread, à
+  l'API, sans liste blanche de champs. Aucune de leurs tables ne porte de
+  colonne sensible aujourd'hui (vérifié contre `packages/db/src/schema` au
+  moment de cette entrée) — mais rien n'empêche un futur ajout de colonne
+  sensible sur l'une d'elles de fuiter en silence, exactement comme
+  `chemin_stockage`. Les deux endroits qui manipulent une vraie donnée
+  sensible (`comptes_bancaires_sci.iban_chiffre`/`bic_chiffre`,
+  `utilisateurs.mot_de_passe_hash` via `AuthService`) utilisent déjà une
+  projection explicite — c'est le reste du CRUD "ordinaire" qui ne le fait
+  pas. Fichiers concernés (à traiter au fil de l'eau, pas en un seul
+  chantier — chacun mérite sa propre revue des champs à exposer) :
+  1. `apps/backend/src/etats-des-lieux/etats-des-lieux.service.ts`
+  2. `apps/backend/src/appartements/appartements.service.ts`
+  3. `apps/backend/src/scis/scis.service.ts`
+  4. `apps/backend/src/immeubles/immeubles.service.ts`
+  5. `apps/backend/src/baux/baux.service.ts`
+  6. `apps/backend/src/garants/garants.service.ts`
+  7. `apps/backend/src/remboursements/remboursements.service.ts`
+  8. `apps/backend/src/paiements/paiements.service.ts`
+  9. `apps/backend/src/versements/versements.service.ts`
+  10. `apps/backend/src/alertes/alertes-config.service.ts`
+  11. `apps/backend/src/equipements/equipements.service.ts`
+  12. `apps/backend/src/bail-locataires/bail-locataires.service.ts`
+  13. `apps/backend/src/locataires/locataires.service.ts`
+
+  Cas apparenté, à surveiller séparément : `apps/backend/src/users/
+  users.service.ts` (`findByEmail`/`findById`) renvoie aussi la ligne
+  brute — donc `mot_de_passe_hash` — mais reste sans risque aujourd'hui
+  car aucun `UsersController` n'existe et ses deux seuls appelants
+  (`AuthService.validateUser`, `ScisService`) re-projettent avant de
+  renvoyer quoi que ce soit plus loin. Le jour où un endpoint utilisateur
+  est exposé directement, vérifier qu'il ne réutilise pas ces méthodes
+  telles quelles.
+
+---
+
+## Maintenance
+
+- **Clé API Object Storage (application `appli-immo-backend`) — expire le
+  2027-08-08.** À renouveler avant cette date : en cas d'expiration non
+  anticipée, le stockage des documents (pièces d'identité, RIB, photos
+  d'état des lieux) tombe en panne.
+
 ---
 
 ## Hors backlog MVP (rappel, voir docs/app-spec.md section 5)
