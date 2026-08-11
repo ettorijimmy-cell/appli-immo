@@ -22,6 +22,14 @@ export class EncryptionService {
 
   constructor(config: ConfigService) {
     const keyBase64 = config.get<string>("ENCRYPTION_KEY");
+
+    // Échec bruyant plutôt qu'un repli silencieux vers une clé de
+    // développement connue en production (même principe que JWT_SECRET
+    // dans auth.module.ts). Le repli reste actif en dev uniquement.
+    if (!keyBase64 && process.env.NODE_ENV === "production") {
+      throw new Error("ENCRYPTION_KEY doit être définie en production (voir .env.example).");
+    }
+
     this.key = keyBase64 ? Buffer.from(keyBase64, "base64") : DEV_FALLBACK_KEY;
     if (this.key.length !== 32) {
       throw new Error("ENCRYPTION_KEY doit être une clé AES-256 encodée en base64 (32 octets)");
