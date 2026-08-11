@@ -33,72 +33,87 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
-### [2026-08-10] alertes.integration.spec.ts échoue en CI de façon non déterministe — cause exacte jamais confirmée
+### [2026-08-11] Vraie cause trouvée : begin() bloquait pour toujours en cas d'échec de connexion (transactional-test.ts)
 
-**Symptôme** : sur le runner GitHub Actions (jamais en local), des tests de
-`alertes.integration.spec.ts` échouent avec `TypeError: Cannot read
-properties of undefined (reading 'close')` sur `await moduleRef.close();`
-dans `afterEach` — signature d'un `beforeEach` qui n'a jamais fini avant
-que Vitest exécute `afterEach` (`moduleRef` reste à sa valeur initiale
-`undefined`), pas une erreur applicative classique. **Le sous-ensemble de
-tests qui échoue diffère d'un run à l'autre sur le même commit** (10/12
-puis 9/12, titres différents) — signal déterminant : une course/contention,
-pas un bug déterministe repérable par simple lecture du code.
+**Résout l'entrée précédente ([2026-08-10]) — le diagnostic initial était
+faux : ce n'était pas isolé à `alertes.integration.spec.ts`.** Deux
+mauvaises pistes (hook timeout, contention inter-fichiers) ont été
+essayées et réfutées par des runs CI réels avant celle-ci — voir le
+tableau ci-dessous. Le fichier `.integration.spec.ts` sur lequel portait
+le diagnostic ne comptait que pour 10 des ~50 annotations affichées par
+l'API GitHub Checks (limite de pagination jamais vérifiée à l'époque) ;
+**les 12 fichiers, 139 tests, échouaient en réalité tous identiquement**,
+confirmé par le log brut complet téléchargé (pas l'API).
 
-**Contexte** : `alertes.integration.spec.ts` construit, dans son
-`beforeEach`, un `TestingModule` NestJS important 9 modules (Scis,
-Immeubles, Appartements, Baux, Paiements, Versements, Documents,
-Equipements, Alertes) — l'arbre de modules le plus large de toute la
-suite d'intégration, exécutée par Vitest en parallèle (plusieurs fichiers
-de test, chacun avec sa propre transaction Postgres longue durée via
-`createTransactionalTestHooks`) sur le runner GitHub Actions standard
-(2 vCPU, `ubuntu-latest`).
+**Symptôme réel** : `TypeError: Cannot read properties of undefined
+(reading 'close')` sur `await moduleRef.close();` dans `afterEach`,
+répété à l'identique dans les 12 fichiers `*.integration.spec.ts`, sans
+exception.
 
-**Deux hypothèses testées, une seule reste plausible sans être confirmée** :
-1. *Hook Vitest trop court (10 s par défaut)* — écartée : `hookTimeout:
-   30000` ajouté puis repoussé, le run suivant a échoué de façon
-   **identique**, juste après 24 minutes au lieu d'un échec rapide (le
-   `beforeEach` ne finissait toujours pas, juste plus tard) — la
-   sous-liste de tests en échec a même changé entre les deux runs. Ce
-   correctif n'a rien réglé, il a seulement retardé le même symptôme et
-   gaspillé du temps de CI. Retiré.
-2. *Contention lors de la compilation simultanée de plusieurs
-   `TestingModule` NestJS lourds sur un runner à ressources limitées*
-   (connexions/transactions Postgres concurrentes entre fichiers de test,
-   CPU partagé entre le processus Node et le conteneur Postgres éphémère
-   de CI) — hypothèse retenue par élimination et par la nature non
-   déterministe de l'échec, **jamais confirmée par des logs bruts** :
-   l'API GitHub refuse l'accès aux logs de job sans droits admin (403
-   "Must have admin rights to Repository"), `gh` n'était pas authentifié
-   dans cet environnement. Trois tentatives de reproduction locale
-   (base de dev existante, Postgres Docker jetable fraîchement
-   migré/seedé, puis le même Postgres limité à 1 CPU via `docker run
-   --cpus=1` combiné à Vitest limité à 2 threads) — 139/139 tests verts
-   à chaque fois. Limiter artificiellement threads/CPU en local
-   n'a pas suffi à reproduire les conditions réelles du runner partagé.
+**Cause réelle, dans le helper partagé
+`apps/backend/src/test-utils/transactional-test.ts`** : `begin()` retourne
+une promesse (`ready`) qui n'est résolue que depuis l'INTÉRIEUR du
+callback passé à `rootDb.transaction(callback)`, via `markReady(tx)`. Si
+`rootDb.transaction(...)` échoue à établir la transaction AVANT même
+d'invoquer ce callback (ex. connexion Postgres impossible), le rejet part
+sur une chaîne de promesses complètement différente
+(`transactionSettled`, alimentée par le `.catch()` du `.transaction(...)`)
+que personne n'attend à ce moment-là — `rollback()` ne l'attend que plus
+tard, dans `afterEach`, qui n'est jamais atteint puisque `beforeEach` est
+toujours bloqué sur `await begin()`. Résultat : `ready` ne se résout
+**ni ne rejette jamais** — `beforeEach` bloque indéfiniment sur
+`db = await begin();`, sans même atteindre la ligne qui construit
+`moduleRef`. D'où le symptôme : `moduleRef` reste à `undefined` pour
+toujours, dans les 12 fichiers, puisqu'ils utilisent tous le même helper.
+Jamais reproduit en local car ma connexion Postgres locale n'a jamais
+échoué à s'établir dans aucune tentative — le chemin de blocage n'a donc
+jamais été emprunté chez moi, quelle que soit la charge/le CPU simulés.
 
-**Mitigation appliquée (pas une preuve de cause, une élimination de
-variable)** : `vitest.integration.config.ts` sérialise l'exécution des
-fichiers de test (`poolOptions.threads.singleThread: true`) **uniquement
-quand `process.env.CI` est vrai** — élimine toute concurrence entre
-fichiers comme cause possible, au prix d'une suite d'intégration CI plus
-lente. En local, le parallélisme par défaut est conservé (rapide, le
-problème ne s'y est jamais manifesté). Vérifié stable sur plusieurs runs
-CI consécutifs avant d'être considéré acquis — voir historique de commits
-pour le détail (un seul run vert après une course qui ne se déclenche pas
-à chaque fois ne prouverait rien).
+**Pourquoi les deux pistes précédentes ont semblé produire un effet sans
+rien régler** : `hookTimeout: 30000` a retardé l'échec (Vitest finissait
+par abandonner le hook bloqué après 30 s au lieu de 10 s) sans jamais le
+corriger — c'est la fuite de promesse elle-même, pas le délai, qui était
+en cause. La sérialisation (`singleThread`) n'avait aucune raison d'avoir
+un effet, puisque le blocage ne dépend d'aucune concurrence entre
+fichiers — chaque fichier bloque pour la même raison, seul, l'un après
+l'autre.
 
-**Fichiers concernés** : `apps/backend/vitest.integration.config.ts`.
+**Solution** : `begin()` capture désormais aussi la fonction `reject` de
+`ready` (`markFailed`). Si `rootDb.transaction(...)` rejette pour une
+raison autre que le `RollbackSignal` interne, `begin()` rejette
+immédiatement avec la vraie erreur au lieu de bloquer. Sans effet si
+`ready` est déjà résolue (un `reject()` après un `resolve()` est un
+no-op standard des Promise JS). Testé par reproduction exacte du
+scénario (un faux `rootDb.transaction` qui rejette avant d'appeler son
+callback) dans `apps/backend/src/test-utils/transactional-test.spec.ts` —
+confirme que `begin()` rejette avec la vraie erreur au lieu de bloquer,
+et que `rollback()` (appelé depuis `afterEach` même quand `beforeEach` a
+déjà jeté) l'expose une seconde fois proprement, sans rejet non
+intercepté.
 
-**À surveiller** : la cause exacte n'a jamais été confirmée par des logs
-bruts. Si un symptôme du même genre (échec non déterministe, sous-ensemble
-de tests différent à chaque run, uniquement en CI) réapparaît sous une
-autre forme — même après cette sérialisation — ne pas réappliquer un
-correctif de timeout par réflexe : il a déjà été essayé et a démontré ne
-rien régler. Si l'accès à `gh`/aux logs bruts devient possible un jour,
-revisiter cette entrée en priorité : la sérialisation masque peut-être un
-vrai bug de fuite de connexion/ressource plutôt que de simplement
-compenser une lenteur.
+**Ce qui reste à découvrir** : ce correctif fait remonter la vraie erreur
+au lieu de la masquer par un blocage — il ne dit pas *pourquoi*
+`rootDb.transaction(...)` échouait à se connecter sur le runner GitHub
+Actions. La prochaine exécution CI en échec (s'il y en a une) affichera
+désormais le vrai message d'erreur Postgres/réseau directement dans les
+annotations, sans qu'il faille retourner chercher dans un log brut.
+
+**Fichiers concernés** :
+`apps/backend/src/test-utils/transactional-test.ts`,
+`apps/backend/src/test-utils/transactional-test.spec.ts` (nouveau).
+
+**À surveiller** : tout futur helper de test qui résout une promesse
+depuis l'intérieur d'un callback asynchrone (pattern "défère la
+résolution à un événement interne") doit systématiquement aussi câbler le
+chemin d'échec vers la même promesse — sinon le même type de blocage
+silencieux, indiscernable d'un vrai timeout ou d'une erreur applicative,
+peut resurgir ailleurs.
+
+| Piste | Testée comment | Résultat |
+|---|---|---|
+| Hook Vitest trop court | `hookTimeout: 30000`, run CI réel observé | Retardait l'échec de ~24 min, ne le corrigeait pas |
+| Contention inter-fichiers | Suite sérialisée, run CI réel observé | Aucun effet — même échec en isolation totale |
+| **`begin()` ne propage pas l'échec de connexion** | Bug lu directement dans le code, test unitaire dédié qui reproduit le scénario exact | **Cause confirmée et corrigée** |
 
 ### [2026-08-10] CI jamais poussé sur GitHub — deux écarts local/CI découverts au premier vrai run
 

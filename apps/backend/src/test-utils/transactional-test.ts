@@ -19,8 +19,10 @@ export function createTransactionalTestHooks(rootDb: Database): {
 
   async function begin(): Promise<Database> {
     let markReady: (tx: Database) => void;
-    const ready = new Promise<Database>((resolve) => {
+    let markFailed: (error: unknown) => void;
+    const ready = new Promise<Database>((resolve, reject) => {
       markReady = resolve;
+      markFailed = reject;
     });
     const release = new Promise<void>((resolve) => {
       releaseTransaction = resolve;
@@ -34,6 +36,14 @@ export function createTransactionalTestHooks(rootDb: Database): {
       })
       .catch((error: unknown) => {
         if (!(error instanceof RollbackSignal)) {
+          // Si la transaction échoue avant même d'appeler markReady
+          // (ex. connexion Postgres impossible à établir), `ready`
+          // restait indéfiniment en attente — begin() bloquait pour
+          // toujours au lieu de faire remonter la vraie erreur au
+          // beforeEach appelant (voir docs/error-log.md, [2026-08-11]).
+          // Sans effet si `ready` est déjà résolue (reject après
+          // resolve est un no-op standard des Promise).
+          markFailed(error);
           throw error;
         }
       });
