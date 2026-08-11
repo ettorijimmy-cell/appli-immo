@@ -33,6 +33,45 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-08-11] Le préfixe SCW_ est réservé par Scaleway — inutilisable pour des secrets applicatifs
+
+**Symptôme** : le formulaire de création de secret Serverless Containers,
+dans la console Scaleway, refuse toute variable dont le nom commence par
+`SCW_` avec le message "SCW_* is a prefix reserved by Scaleway", repéré
+avant toute saisie grâce à la vérification préalable demandée par
+l'utilisateur (voir consigne standing : confirmer chaque étape de
+configuration de production avant d'agir).
+
+**Contexte** : hébergement backend (étape 5, déploiement Serverless
+Containers) — les trois secrets pilotant le backend Object Storage du
+Module 4 avaient été nommés `SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/
+`SCW_BUCKET_NAME`, par cohérence avec `DATABASE_URL` (bascule dev/prod).
+
+**Cause** : Scaleway réserve tout le préfixe `SCW_` à sa propre
+configuration produit (ex. validation de token) sur Serverless Containers
+— confirmé à la fois par le message du formulaire et par la documentation
+Scaleway (recherche web, pas de mémoire). Ce n'est pas limité aux
+variables auto-injectées comme `SCW_REGION` : toute variable utilisateur
+du même préfixe est rejetée à la création.
+
+**Solution** : renommage des trois variables, dans le code et partout où
+elles sont documentées, sans préfixe `SCW_` :
+`OBJECT_STORAGE_ACCESS_KEY`/`OBJECT_STORAGE_SECRET_KEY`/
+`OBJECT_STORAGE_BUCKET_NAME`. Les valeurs elles-mêmes restent les
+identifiants Scaleway (Access Key/Secret Key) — seul le nom de la
+variable d'environnement change.
+
+**Fichiers concernés** : `apps/backend/src/documents/storage/
+document-storage.service.ts`, `.env.example`, `docs/data-dictionary.md`,
+`docs/integrations.md`, cette entrée et l'entrée du 2026-08-11 sur
+`turbo.json`/`globalEnv` (exemple de joker mis à jour).
+
+**À surveiller** : toute future variable d'environnement liée à
+Scaleway (ex. si un jour une clé API Scaleway distincte est introduite)
+doit être nommée sans le préfixe `SCW_`, quel que soit le produit
+Scaleway concerné (pas seulement Serverless Containers — la réservation
+est documentée au niveau plateforme).
+
 ### [2026-08-11] La vraie cause racine : Turborepo ne transmettait pas DATABASE_URL à test:integration
 
 **Résout définitivement les trois entrées précédentes du 2026-08-11 et
@@ -96,17 +135,18 @@ jamais surchargé dans `turbo.json`) et, pour chaque tâche,
 **aucun mécanisme automatique** ne transmet une variable non déclarée,
 seule `DATABASE_URL` est laissée passer aujourd'hui. Concrètement : le
 jour où un module ajoute de vrais tests d'intégration contre le bucket
-Object Storage réel en CI (`SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/
-`SCW_BUCKET_NAME`, ou toute autre variable future dont dépend un `run:`
-de `ci.yml` délégué à `turbo run` — pas seulement `test:integration`,
-`build`/`test`/`dev` y sont tout aussi exposés), il faudra l'ajouter
+Object Storage réel en CI (`OBJECT_STORAGE_ACCESS_KEY`/
+`OBJECT_STORAGE_SECRET_KEY`/`OBJECT_STORAGE_BUCKET_NAME`, ou toute autre
+variable future dont dépend un `run:` de `ci.yml` délégué à `turbo run` —
+pas seulement `test:integration`, `build`/`test`/`dev` y sont tout aussi
+exposés), il faudra l'ajouter
 explicitement à `globalEnv` dans `turbo.json` (ou au tableau `env` de la
 tâche concernée si elle ne doit pas être globale) — sinon exactement le
 même repli silencieux vers une valeur de dev locale se reproduira, avec
 le même effet masquant en local tant qu'un service du même nom écoute
 par coïncidence sur le port/l'identifiant par défaut. Turborepo accepte
-un joker en suffixe (`"SCW_*"`) si plusieurs variables du même préfixe
-doivent être ajoutées d'un coup — pas de correspondance partielle
+un joker en suffixe (`"OBJECT_STORAGE_*"`) si plusieurs variables du même
+préfixe doivent être ajoutées d'un coup — pas de correspondance partielle
 ailleurs qu'en fin de chaîne.
 
 ### [2026-08-11] Vraie cause trouvée : begin() bloquait pour toujours en cas d'échec de connexion (transactional-test.ts)

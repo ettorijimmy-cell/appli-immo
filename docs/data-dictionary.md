@@ -236,10 +236,12 @@ Garde-fou applicatif (`DocumentsService.upload`) : ces deux champs sont
 rejetés (400) si `entite_type` n'est pas `etat_des_lieux`.
 
 **Décision produit (stockage, tranchée avec l'utilisateur, 2026-08-09)** :
-deux backends selon la présence de `SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/
-`SCW_BUCKET_NAME` (`DocumentStorageService`, `apps/backend/src/documents/
-storage`) — même bascule que `DATABASE_URL` entre Postgres local et
-Scaleway :
+deux backends selon la présence de `OBJECT_STORAGE_ACCESS_KEY`/
+`OBJECT_STORAGE_SECRET_KEY`/`OBJECT_STORAGE_BUCKET_NAME`
+(`DocumentStorageService`, `apps/backend/src/documents/storage`) — même
+bascule que `DATABASE_URL` entre Postgres local et Scaleway (nommage sans
+préfixe `SCW_`, réservé par la plateforme — voir docs/error-log.md,
+[2026-08-11]) :
 - **absentes → disque local** (dev par défaut, comportement historique) :
   dossier configurable `DOCUMENTS_STORAGE_DIR` (repli par défaut
   `storage/documents` relatif au dossier `apps/backend` — voir
@@ -264,6 +266,20 @@ route authentifiée qui journalise l'accès dans `journal_audit`
 (`AuditService.logAccesDocumentSensible`, même mécanisme que l'IBAN/BIC),
 jamais via une URL publique ou un chemin de fichier exposé au frontend
 (CLAUDE.md, section Règles importantes).
+
+**Décision produit (`ENCRYPTION_KEY` dev/prod, tranchée avec l'utilisateur,
+2026-08-11)** : la clé de production (Scaleway Serverless Containers) est
+générée indépendamment de celle utilisée en développement local — jamais
+la même valeur, jamais copiée de l'une vers l'autre. Cohérent avec la
+séparation dev/prod déjà en place pour `DATABASE_URL`
+(`DEFAULT_DEV_DATABASE_URL` vs base Scaleway). Décision possible sans
+contrainte de migration : au moment de la génération de la clé de
+production, aucune donnée réelle n'était encore chiffrée sur la base
+Scaleway (seul le schéma avait été migré — voir docs/backlog.md,
+Hébergement backend) ; rien ne dépendait donc de la clé de dev côté
+production. Si des données de dev doivent un jour être reprises en
+production, elles devront être déchiffrées avec la clé de dev puis
+rechiffrées avec la clé de prod — jamais migrées telles quelles.
 
 **Décision produit (statut `expire`, tranchée avec l'utilisateur)** : le job
 planifié quotidien qui fera de `expire` un fait réellement persisté n'existe

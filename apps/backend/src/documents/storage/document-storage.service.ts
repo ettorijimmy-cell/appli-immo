@@ -16,9 +16,10 @@ interface ConfigurationS3 {
 }
 
 /**
- * Deux backends selon la présence de SCW_ACCESS_KEY/SCW_SECRET_KEY/
- * SCW_BUCKET_NAME — même bascule que DATABASE_URL entre Postgres local et
- * Scaleway (voir docs/data-dictionary.md, section documents) :
+ * Deux backends selon la présence de OBJECT_STORAGE_ACCESS_KEY/
+ * OBJECT_STORAGE_SECRET_KEY/OBJECT_STORAGE_BUCKET_NAME — même bascule que
+ * DATABASE_URL entre Postgres local et Scaleway (voir
+ * docs/data-dictionary.md, section documents) :
  *   - absentes → disque local chiffré (DOCUMENTS_STORAGE_DIR, comportement
  *     dev historique, inchangé)
  *   - présentes → bucket Scaleway Object Storage (S3-compatible)
@@ -36,9 +37,9 @@ export class DocumentStorageService {
     private readonly encryptionService: EncryptionService,
     config: ConfigService
   ) {
-    const accessKeyId = config.get<string>("SCW_ACCESS_KEY");
-    const secretAccessKey = config.get<string>("SCW_SECRET_KEY");
-    const bucket = config.get<string>("SCW_BUCKET_NAME");
+    const accessKeyId = config.get<string>("OBJECT_STORAGE_ACCESS_KEY");
+    const secretAccessKey = config.get<string>("OBJECT_STORAGE_SECRET_KEY");
+    const bucket = config.get<string>("OBJECT_STORAGE_BUCKET_NAME");
 
     if (accessKeyId && secretAccessKey && bucket) {
       this.s3 = {
