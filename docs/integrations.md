@@ -23,7 +23,8 @@ déboguer chaque intégration au fil du développement.
 | Usage | Synchronisation SQLite local (Electron) ↔ Postgres cloud |
 | Documentation | https://docs.powersync.com |
 | SDK utilisé | SDK Node.js (processus principal Electron) — pas le SDK web, pas le SDK Tauri |
-| Sync Rules | Définies dans le tableau de bord PowerSync ; en MVP mono-utilisateur, règle unique : toutes les données rattachées aux organisations de l'utilisateur connecté |
+| Sync Streams | Définies dans le tableau de bord PowerSync (YAML, `config: edition: 3` / `streams:`) ; mécanisme recommandé par PowerSync pour tout nouveau projet — Sync Rules (terminologie initiale de ce document) est désormais qualifié de legacy. Requête de chaque stream toujours à colonnes explicites, jamais `SELECT *` (voir docs/data-dictionary.md, section Authentification et autorisation) ; en MVP mono-utilisateur, portée par stream : toutes les données rattachées aux organisations de l'utilisateur connecté (`auth.user_id()`) |
+| IPs à autoriser (base source, région EU) | `79.125.70.43`, `18.200.209.88`, `18.234.18.91`, `18.233.128.219`, `34.202.251.156` (+ `2602:817::/44` en IPv6) — voir docs/backlog.md, section Dette technique, pour la restriction des IPs autorisées Scaleway encore ouvertes en 0.0.0.0/0 |
 | Chiffrement local | SQLite3MultipleCiphers activé — voir docs/app-spec.md section Sécurité |
 | Palier tarifaire | Gratuit sous 2 Go de données synchronisées/mois — largement suffisant à l'échelle actuelle, à surveiller si évolution SaaS |
 

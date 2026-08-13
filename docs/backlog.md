@@ -21,7 +21,10 @@ Graphe de dépendances : 0 → 1 → 2 → 3 → {4, 5} → 6 → 7 → 8
 - Schéma Drizzle initial : `organisations`, `organisation_sci`,
   `utilisateurs`, `journal_audit`
 - Première migration
-- Configuration PowerSync (Sync Rules de base) branchée sur Postgres
+- Configuration PowerSync (Sync Streams de base) branchée sur Postgres —
+  Sync Rules, mentionné à l'origine, est désormais qualifié de legacy par
+  PowerSync ; Sync Streams est le mécanisme recommandé pour tout nouveau
+  projet (voir docs/integrations.md)
 - Squelette backend NestJS + module d'authentification (JWT + Argon2)
 - Squelette Electron : fenêtre principale, `contextIsolation: true`,
   `nodeIntegration: false`, aucun contenu web distant
@@ -278,6 +281,79 @@ les trois parcours ci-dessus).
 ---
 
 ## Dette technique
+
+- **IPs autorisées de la base Postgres de production laissées grand ouvertes
+  (0.0.0.0/0, "Allow All") — priorité haute.** Constaté 2026-08-12 pendant
+  le diagnostic de connexion PowerSync (chantier hébergement/synchro) :
+  l'onglet "IPs autorisées" de la console Scaleway pour l'instance Postgres
+  de production ne contient qu'une seule entrée, `0.0.0.0/0`, qui autorise
+  toute adresse IP source à tenter une connexion — la couche réseau
+  n'apporte donc aujourd'hui aucune restriction, la base ne dépendant que
+  des identifiants applicatifs (mot de passe `powersync_role`,
+  `appli_immo_app`, etc.) pour se protéger. Exposition non négligeable :
+  cette base contient des données personnelles (locataires, garants) et
+  financières (paiements, IBAN/BIC chiffrés) réelles. À restreindre dès que
+  la connexion PowerSync sera fonctionnelle (pas avant, pour ne pas
+  entremêler ce chantier de sécurité avec le diagnostic de connexion en
+  cours) aux seules IP réellement nécessaires : les 5 IP PowerSync Cloud
+  région EU (`79.125.70.43`, `18.200.209.88`, `18.234.18.91`,
+  `18.233.128.219`, `34.202.251.156`, voir docs/integrations.md) plus l'IP
+  du propriétaire pour l'administration ponctuelle (psql direct, migrations
+  manuelles).
+
+- **Chiffrement local de la base SQLite PowerSync (SQLite3MultipleCiphers)
+  non implémenté — priorité haute.** Décision assumée le 2026-08-13 pour ne
+  pas bloquer le premier test de connectivité minimal (table `scis` — voir
+  `apps/desktop/src/main/powersync/index.ts`) : la base locale gérée par
+  PowerSync (`powersync.db`, dossier données utilisateur Electron) est
+  actuellement en clair sur disque, alors que le chiffrement au repos de la
+  base locale est un principe posé dès la Phase 8 (voir docs/app-spec.md,
+  section Sécurité, et docs/integrations.md). **Condition explicite avant
+  d'étendre la synchronisation au-delà de la seule table `scis`** : ne
+  jamais synchroniser de données personnelles ou financières réelles
+  (locataires, paiements, IBAN/BIC chiffrés côté serveur mais dont d'autres
+  champs sensibles resteraient en clair localement) tant que ce chiffrement
+  n'est pas en place. Implique de brancher `better-sqlite3-multiple-ciphers`
+  à la place de `better-sqlite3` et une gestion de la clé de chiffrement
+  locale (protection par le trousseau Windows, déjà documentée comme
+  principe mais pas encore implémentée pour ce fichier précis) — à traiter
+  comme un vrai sujet de conception, pas une simple substitution de
+  dépendance.
+
+- **Sync Stream `scis` utilisait `SELECT *` — corrigé, mais règle à
+  respecter pour toute future table (priorité haute, précédent à ne pas
+  reproduire).** Découvert le 2026-08-13 en inspectant directement
+  `powersync.db` après le premier test réel : le schéma client PowerSync
+  (`apps/desktop/src/main/powersync/schema.ts`) ne restreint que la *vue*
+  exposée à l'application, jamais ce qui est physiquement stocké sur
+  l'appareil. La table interne `ps_data__scis` contenait le JSON complet
+  renvoyé par la requête du stream — `adresse`, `code_postal`, `ville`,
+  `telephone`, `nom_gerant`, alors que le schéma client ne déclare que
+  `nom`/`regime_fiscal`/`statut`. Sans gravité sur `scis` (aucune de ces
+  colonnes n'est sensible), mais le mécanisme est le même quelle que soit
+  la table : un `SELECT *` dans un futur stream sur `locataires`,
+  `garants` ou `paiements` stockerait en clair sur l'appareil des colonnes
+  jamais voulues localement, indépendamment de ce que déclare le schéma
+  client.
+  **Règle absolue pour la suite** : la requête de chaque Sync Stream
+  (dashboard PowerSync) doit toujours lister explicitement les colonnes
+  voulues, jamais `SELECT *` — même principe que la projection explicite
+  déjà appliquée à `DocumentsService.versDto` (voir plus bas dans cette
+  section, entrée "Retours d'API non projetés explicitement") : ne jamais laisser
+  un mécanisme bas niveau décider implicitement de ce qui sort du système.
+  Le stream `scis` a été corrigé dès la découverte (colonnes explicites
+  `id, nom, regime_fiscal, statut`), pour servir de modèle correct au
+  copié-collé lors de l'extension par domaine (docs/backlog.md, tâche
+  associée), pas de mauvais exemple reproduit par habitude.
+  **Distinct de la protection de `journal_audit`** (voir
+  docs/data-dictionary.md, section Authentification et autorisation) :
+  `journal_audit` est absente de `CREATE PUBLICATION powersync FOR TABLE
+  (...)` elle-même — protection structurelle, en amont de toute requête de
+  stream, qu'aucun `SELECT *` futur ne pourrait contourner puisqu'aucune
+  copie de cette table n'existe côté PowerSync. La règle "colonnes
+  explicites" ci-dessus ne s'applique qu'aux tables réellement présentes
+  dans la publication — pour celles-ci, la vigilance de rédaction de la
+  requête est le seul rempart, contrairement à `journal_audit`.
 
 - **Trop-perçu non traité à la résiliation d'un bail réglé en cours de mois**
   (identifié Module 5, lors de la conception de la proration des échéances ;

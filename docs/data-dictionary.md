@@ -761,6 +761,58 @@ simple code HTTP), **jamais** de détail de connexion DB, de version
 applicative, ou de stack trace : un endpoint volontairement non
 authentifié est par nature accessible à quiconque atteint le conteneur.
 
+### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
+
+Découvert le 2026-08-13 en inspectant directement le fichier SQLite local
+(`powersync.db`) après le premier test réel du Sync Stream `scis`, pas
+supposé : **le schéma client PowerSync (`apps/desktop/src/main/powersync/
+schema.ts`, `Table`/`column`) ne restreint que la *vue* exposée à
+l'application** (la table SQL que l'app interroge, ex. `scis`). Il ne
+restreint **jamais** ce qui est physiquement écrit sur le disque de
+l'appareil. La table interne `ps_data__<nom_table>` contient le JSON
+**complet** renvoyé par la requête du Sync Stream — inspecté directement :
+`ps_data__scis` contenait `adresse`/`code_postal`/`ville`/`telephone`/
+`nom_gerant` en clair, alors que le schéma client ne déclarait que
+`nom`/`regime_fiscal`/`statut`. Sur cette table précise, sans gravité
+(aucune de ces colonnes n'est sensible) — mais le mécanisme réel est à
+retenir pour toute extension future.
+
+**Règle absolue pour toute future table ajoutée à un Sync Stream** :
+la requête du stream (dashboard PowerSync) ne doit **jamais** utiliser
+`SELECT *` — toujours une liste de colonnes explicite, correspondant
+exactement à ce qu'on accepte de voir stocké en clair sur l'appareil
+local. Le stream `scis` a été corrigé selon cette règle dès sa
+découverte (voir docs/backlog.md), pour servir de modèle correct plutôt
+que de mauvais exemple copié-collé lors des extensions par domaine
+(`indices_irl`, `locataires`, `paiements`...). Même principe que la
+projection explicite déjà appliquée à `DocumentsService.versDto`
+(voir docs/backlog.md, section Dette technique) : ne jamais laisser un
+mécanisme bas niveau (spread de ligne de base, `SELECT *`) décider
+implicitement de ce qui sort du système.
+
+**Ce mécanisme est distinct — et strictement plus faible — que
+l'exclusion de `journal_audit`.** `journal_audit` n'est protégée par
+*aucune écriture prudente de requête* : elle est absente de
+`CREATE PUBLICATION powersync FOR TABLE (...)` elle-même (voir
+docs/integrations.md et docs/backlog.md). Conséquence structurelle :
+PowerSync ne reçoit **jamais** la moindre ligne de `journal_audit` via
+la réplication logique, quel que soit le contenu d'un futur Sync
+Stream — il n'existe tout simplement aucune copie de cette table côté
+PowerSync dans laquelle un `SELECT *` malencontreux pourrait puiser. Ce
+n'est pas une question de requête bien ou mal écrite (comme pour
+`scis`), c'est une impossibilité structurelle en amont. Complété par
+`REVOKE SELECT ON journal_audit FROM powersync_role` (vérifié via
+`has_table_privilege`) en défense supplémentaire — mais la publication
+est la vraie barrière, le `REVOKE` n'est qu'une seconde ligne de
+défense pour le cas où quelqu'un tenterait une requête ad hoc hors du
+mécanisme normal de PowerSync.
+
+En résumé : **`journal_audit` = protégée à la source (publication
+Postgres), aucune vigilance de requête requise. Toute autre table
+présente dans la publication = protégée uniquement par la rigueur de la
+requête du Sync Stream (liste de colonnes explicite), vigilance requise
+à chaque extension.**
+
 ---
 
 ## État des lieux (module, 2026-08-03)
