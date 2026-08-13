@@ -79,7 +79,10 @@ importers:
         version: 1.1.1
       drizzle-orm:
         specifier: ^0.38.4
-        version: 0.38.4(@types/react@18.3.31)(postgres@3.4.9)(react@18.3.1)
+        version: 0.38.4(@types/react@18.3.31)(better-sqlite3@13.0.3)(postgres@3.4.9)(react@18.3.1)
+      jose:
+        specifier: ^6.2.8
+        version: 6.2.8
       multer:
         specifier: ^2.2.0
         version: 2.2.0
@@ -132,6 +135,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@powersync/node':
+        specifier: ^0.20.2
+        version: 0.20.2(@powersync/common@2.0.0)(better-sqlite3@13.0.3)
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -253,7 +262,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.38.0
-        version: 0.38.4(@types/react@18.3.31)(postgres@3.4.9)(react@18.3.1)
+        version: 0.38.4(@types/react@18.3.31)(better-sqlite3@13.0.3)(postgres@3.4.9)(react@18.3.1)
       postgres:
         specifier: ^3.4.0
         version: 3.4.9
@@ -1915,6 +1924,23 @@ packages:
     resolution: {integrity: sha512-m7X9U6BG2+J+R1lSOdCiITLLrxm+cWlNI3HUFA92oLO77ObGNzaKdh8pMLqdZcshtkKuV84olNNXDfMc4FezBQ==}
     engines: {node: '>=10'}
 
+  '@powersync/common@2.0.0':
+    resolution: {integrity: sha512-GuWmk0w0Y6I1HDwX4uGFzzw1e4E4bkvDSSCpVikdTEIk1xcW5NNnqTX8xfDheZdoQZunm/XushrR/LsIp1Yc/g==}
+
+  '@powersync/node@0.20.2':
+    resolution: {integrity: sha512-Xs9Xdu72T1AJzs67iwkWvXPNGDFDk1M11qMIa1WLgEq5CeuKExzPmJYCoakuzdNO9EuUw0eoqf4hgFX65EnDYA==}
+    peerDependencies:
+      '@powersync/common': ^2.0.0
+      better-sqlite3: 12.x
+    peerDependenciesMeta:
+      better-sqlite3:
+        optional: true
+
+  '@powersync/shared-internals@1.1.1':
+    resolution: {integrity: sha512-EiYxTbqbD6lfpDERLyECBsORDfrrgLSf4nmQ35Ug4cUNKFBwO4tGPZaquGeXbr4O+uJk0QFE/f6+33MLCDurIA==}
+    peerDependencies:
+      '@powersync/common': 2.0.0
+
   '@rolldown/binding-android-arm64@1.1.5':
     resolution: {integrity: sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2667,6 +2693,10 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  better-sqlite3@13.0.3:
+    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+    engines: {node: '>=22'}
+
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
     engines: {node: '>=8'}
@@ -2806,6 +2836,9 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  comlink@4.4.2:
+    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
 
   commander@2.20.3:
     resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
@@ -3483,6 +3516,9 @@ packages:
   jiti@1.21.7:
     resolution: {integrity: sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==}
     hasBin: true
+
+  jose@6.2.8:
+    resolution: {integrity: sha512-Bsdjwm3Qsd/P0jR+BHDe3LytDfY7WBq2HmCCLIwuVRHMuEC9ae7/R474GIUdF1NgCyZjzVo/A9DOiOBtXq8ZoQ==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -6015,6 +6051,21 @@ snapshots:
 
   '@phc/format@1.0.0': {}
 
+  '@powersync/common@2.0.0': {}
+
+  '@powersync/node@0.20.2(@powersync/common@2.0.0)(better-sqlite3@13.0.3)':
+    dependencies:
+      '@powersync/common': 2.0.0
+      '@powersync/shared-internals': 1.1.1(@powersync/common@2.0.0)
+      comlink: 4.4.2
+      undici: 7.28.0
+    optionalDependencies:
+      better-sqlite3: 13.0.3
+
+  '@powersync/shared-internals@1.1.1(@powersync/common@2.0.0)':
+    dependencies:
+      '@powersync/common': 2.0.0
+
   '@rolldown/binding-android-arm64@1.1.5':
     optional: true
 
@@ -6700,6 +6751,10 @@ snapshots:
 
   baseline-browser-mapping@2.11.1: {}
 
+  better-sqlite3@13.0.3:
+    dependencies:
+      node-addon-api: 8.9.0
+
   binary-extensions@2.3.0: {}
 
   bl@4.1.0:
@@ -6850,6 +6905,8 @@ snapshots:
 
   color-name@1.1.4: {}
 
+  comlink@4.4.2: {}
+
   commander@2.20.3: {}
 
   commander@4.1.1: {}
@@ -6970,9 +7027,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.38.4(@types/react@18.3.31)(postgres@3.4.9)(react@18.3.1):
+  drizzle-orm@0.38.4(@types/react@18.3.31)(better-sqlite3@13.0.3)(postgres@3.4.9)(react@18.3.1):
     optionalDependencies:
       '@types/react': 18.3.31
+      better-sqlite3: 13.0.3
       postgres: 3.4.9
       react: 18.3.1
 
@@ -7583,6 +7641,8 @@ snapshots:
       supports-color: 8.1.1
 
   jiti@1.21.7: {}
+
+  jose@6.2.8: {}
 
   joycon@3.1.1: {}
 
@@ -8564,8 +8624,7 @@ snapshots:
 
   undici-types@8.3.0: {}
 
-  undici@7.28.0:
-    optional: true
+  undici@7.28.0: {}
 
   universalify@2.0.1: {}
 

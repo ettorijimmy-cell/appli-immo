@@ -1,6 +1,16 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
-// Point d'extension pour les futurs canaux IPC (connexion PowerSync, etc.).
-const api = {};
+export interface PowerSyncCredentials {
+  token: string;
+  endpoint: string;
+}
+
+const api = {
+  powersync: {
+    connect: (credentials: PowerSyncCredentials): Promise<void> =>
+      ipcRenderer.invoke("powersync:connect", credentials),
+    disconnect: (): Promise<void> => ipcRenderer.invoke("powersync:disconnect")
+  }
+};
 
 contextBridge.exposeInMainWorld("api", api);

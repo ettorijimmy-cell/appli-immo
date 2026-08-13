@@ -1,6 +1,8 @@
 import { join } from "path";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { connectPowerSync, disconnectPowerSync } from "./powersync";
+import type { StoredPowerSyncCredentials } from "./powersync/credentials-store";
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -33,6 +35,19 @@ function createWindow(): void {
     void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
+
+// IPC : le renderer obtient le jeton PowerSync via GET /powersync/token
+// (authentifié avec le JWT applicatif, jamais accessible depuis le
+// processus principal directement) puis le transmet ici — le SDK Node
+// PowerSync tourne dans le processus principal (voir docs/integrations.md),
+// pas le renderer.
+ipcMain.handle("powersync:connect", async (_event, credentials: StoredPowerSyncCredentials) => {
+  await connectPowerSync(credentials);
+});
+
+ipcMain.handle("powersync:disconnect", async () => {
+  await disconnectPowerSync();
+});
 
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.appli-immo.desktop");

@@ -8,7 +8,20 @@ import {
   type ReactNode
 } from "react";
 import { authEvents, TOKEN_STORAGE_KEY, UNAUTHORIZED_EVENT } from "./auth-events";
-import { loginRequest } from "./api";
+import { fetchPowerSyncCredentials, loginRequest } from "./api";
+
+// Échec non bloquant : une erreur PowerSync (dashboard mal configuré,
+// réseau) ne doit jamais empêcher l'utilisateur de se connecter et
+// d'utiliser l'app via l'API REST existante — seule la synchronisation
+// locale est affectée. Voir docs/backlog.md, chantier PowerSync.
+async function synchroniserPowerSync(): Promise<void> {
+  try {
+    const credentials = await fetchPowerSyncCredentials();
+    await window.api.powersync.connect(credentials);
+  } catch (error) {
+    console.error("Connexion PowerSync échouée (l'application reste utilisable) :", error);
+  }
+}
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -25,11 +38,23 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     const { accessToken } = await loginRequest(email, password);
     localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
     setToken(accessToken);
+    void synchroniserPowerSync();
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken(null);
+    void window.api.powersync.disconnect();
+  }, []);
+
+  // Session déjà active au démarrage de l'app (token persistant en
+  // localStorage) : reconnecte PowerSync sans attendre un nouveau login.
+  useEffect(() => {
+    if (token) {
+      void synchroniserPowerSync();
+    }
+    // Volontairement au montage seulement — pas à chaque changement de
+    // token (le login gère déjà sa propre synchronisation ci-dessus).
   }, []);
 
   // Un 401 sur n'importe quel appel authentifié (token expiré ou signé par
