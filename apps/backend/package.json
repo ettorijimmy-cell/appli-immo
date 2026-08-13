@@ -31,6 +31,7 @@
     "docxtemplater": "^3.69.3",
     "docxtemplater-image-module-free": "^1.1.1",
     "drizzle-orm": "^0.38.4",
+    "jose": "^6.2.8",
     "multer": "^2.2.0",
     "pizzip": "^3.2.0",
     "reflect-metadata": "^0.2.2",

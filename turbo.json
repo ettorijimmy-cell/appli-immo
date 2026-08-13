@@ -11,7 +11,7 @@
   // de dev tournait réellement sur ce port pendant toute la session, rendant
   // le repli silencieux "accidentellement" fonctionnel. Voir
   // docs/error-log.md, [2026-08-11].
-  "globalEnv": ["DATABASE_URL"],
+  "globalEnv": ["DATABASE_URL", "POWERSYNC_*"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
