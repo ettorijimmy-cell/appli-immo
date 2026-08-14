@@ -4,5 +4,9 @@ packages:
 allowBuilds:
   '@swc/core': true
   argon2: true
-  better-sqlite3: true
+  # Peer optionnel déclaré par @powersync/node — jamais réellement utilisé
+  # ici : remplacé par better-sqlite3-multiple-ciphers via loadBetterSqlite3
+  # dans database.worker.ts (chiffrement local, voir docs/backlog.md).
+  better-sqlite3: false
+  better-sqlite3-multiple-ciphers: true
   esbuild: true

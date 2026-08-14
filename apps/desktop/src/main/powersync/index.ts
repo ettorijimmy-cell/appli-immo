@@ -1,4 +1,5 @@
 import { join } from "path";
+import { Worker } from "node:worker_threads";
 import { PowerSyncDatabase } from "@powersync/node";
 import { app } from "electron";
 import { AppConnector } from "./connector";
@@ -6,17 +7,44 @@ import { setStoredCredentials, type StoredPowerSyncCredentials } from "./credent
 import { AppSchema } from "./schema";
 
 // Fichier SQLite local géré par PowerSync — dossier de données utilisateur
-// Electron, jamais dans le repo. Chiffrement au repos (SQLite3MultipleCiphers,
-// voir docs/integrations.md) volontairement différé pour ce premier test de
-// connectivité minimal : à traiter avant toute extension au-delà de la
-// table scis (voir docs/backlog.md, chantier PowerSync).
+// Electron, jamais dans le repo. Chiffré (SQLite3MultipleCiphers via
+// better-sqlite3-multiple-ciphers, voir docs/data-dictionary.md section
+// Sécurité PowerSync) — clé résolue une seule fois au démarrage
+// (voir encryption-key.ts) et injectée ici via setEncryptionKey(), avant
+// toute connexion.
 let db: PowerSyncDatabase | null = null;
 let connected = false;
+let encryptionKey: string | null = null;
+
+export function setEncryptionKey(key: string): void {
+  encryptionKey = key;
+}
 
 function getDb(): PowerSyncDatabase {
+  if (!encryptionKey) {
+    throw new Error(
+      "Clé de chiffrement PowerSync non initialisée — setEncryptionKey() doit être appelé (voir main/index.ts) avant toute connexion."
+    );
+  }
+  const cle = encryptionKey;
+
   db ??= new PowerSyncDatabase({
     schema: AppSchema,
-    database: { dbFilename: join(app.getPath("userData"), "powersync.db") }
+    database: {
+      dbFilename: join(app.getPath("userData"), "powersync.db"),
+      // Worker séparé (database.worker.ts, entrée de build dédiée — voir
+      // electron.vite.config.ts) : remplace le driver SQLite par défaut
+      // par le fork chiffré. __dirname pointe vers out/main en production
+      // comme en dev (même pattern que le chemin du preload ci-dessous).
+      openWorker: (_filename, options) => new Worker(join(__dirname, "powersync-worker.js"), options),
+      initializeConnection: async (connexion) => {
+        const cleEchappee = cle.replaceAll("'", "''");
+        await connexion.execute(`pragma key = '${cleEchappee}'`);
+        // Échoue immédiatement si la clé est fausse — mécanisme natif
+        // SQLite3MultipleCiphers, pas une vérification ajoutée par nous.
+        await connexion.execute("pragma user_version");
+      }
+    }
   });
   return db;
 }

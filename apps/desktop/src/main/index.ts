@@ -1,8 +1,9 @@
 import { join } from "path";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
-import { connectPowerSync, disconnectPowerSync } from "./powersync";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { connectPowerSync, disconnectPowerSync, setEncryptionKey } from "./powersync";
 import type { StoredPowerSyncCredentials } from "./powersync/credentials-store";
+import { initializePowerSyncEncryption } from "./powersync/encryption-key";
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -49,7 +50,23 @@ ipcMain.handle("powersync:disconnect", async () => {
   await disconnectPowerSync();
 });
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  // Résolu avant toute fenêtre : un échec ici (safeStorage indisponible,
+  // clé indéchiffrable) doit bloquer le démarrage, jamais laisser l'app
+  // s'ouvrir avec une base locale non protégée ou une nouvelle clé
+  // régénérée en silence — voir docs/backlog.md, chantier PowerSync.
+  try {
+    const cle = await initializePowerSyncEncryption();
+    setEncryptionKey(cle);
+  } catch (error) {
+    dialog.showErrorBox(
+      "Erreur de chiffrement",
+      error instanceof Error ? error.message : String(error)
+    );
+    app.quit();
+    return;
+  }
+
   electronApp.setAppUserModelId("com.appli-immo.desktop");
 
   app.on("browser-window-created", (_, window) => {
