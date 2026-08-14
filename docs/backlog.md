@@ -301,24 +301,40 @@ les trois parcours ci-dessus).
   du propriétaire pour l'administration ponctuelle (psql direct, migrations
   manuelles).
 
-- **Chiffrement local de la base SQLite PowerSync (SQLite3MultipleCiphers)
-  non implémenté — priorité haute.** Décision assumée le 2026-08-13 pour ne
-  pas bloquer le premier test de connectivité minimal (table `scis` — voir
-  `apps/desktop/src/main/powersync/index.ts`) : la base locale gérée par
-  PowerSync (`powersync.db`, dossier données utilisateur Electron) est
-  actuellement en clair sur disque, alors que le chiffrement au repos de la
-  base locale est un principe posé dès la Phase 8 (voir docs/app-spec.md,
-  section Sécurité, et docs/integrations.md). **Condition explicite avant
-  d'étendre la synchronisation au-delà de la seule table `scis`** : ne
-  jamais synchroniser de données personnelles ou financières réelles
-  (locataires, paiements, IBAN/BIC chiffrés côté serveur mais dont d'autres
-  champs sensibles resteraient en clair localement) tant que ce chiffrement
-  n'est pas en place. Implique de brancher `better-sqlite3-multiple-ciphers`
-  à la place de `better-sqlite3` et une gestion de la clé de chiffrement
-  locale (protection par le trousseau Windows, déjà documentée comme
-  principe mais pas encore implémentée pour ce fichier précis) — à traiter
-  comme un vrai sujet de conception, pas une simple substitution de
-  dépendance.
+- **Chiffrement local de la base SQLite PowerSync — résolu (2026-08-14).**
+  Condition posée le 2026-08-13 (voir historique de conception) avant
+  d'étendre la synchronisation au-delà de `scis`, désormais levée :
+  `better-sqlite3-multiple-ciphers` remplace `better-sqlite3`
+  (`apps/desktop/src/main/powersync/database.worker.ts`, worker dédié —
+  voir `electron.vite.config.ts`, entrée de build séparée), clé générée une
+  seule fois (`crypto.randomBytes(32)`) et protégée par `safeStorage`
+  d'Electron (`apps/desktop/src/main/powersync/encryption-key.ts`), jamais
+  redemandée à l'utilisateur. Marqueur de migration à usage unique
+  (`powersync-migration-v1-done`) distinguant le premier lancement (purge
+  silencieuse d'une éventuelle base de test non chiffrée, seule fois où une
+  clé est générée) du régime permanent ensuite (clé absente ou
+  indéchiffrable = échec bruyant au démarrage, `dialog.showErrorBox` +
+  `app.quit()`, jamais de régénération silencieuse — même principe que
+  `JWT_SECRET`/`ENCRYPTION_KEY` côté backend).
+  Vérifié par 3 tests réels, pas seulement "l'option est activée dans la
+  config" : (1) fichier `.db` brut illisible sans la clé — en-tête sans la
+  signature SQLite standard, tentative d'ouverture externe échouant avec
+  `"file is not a database"` ; (2) redémarrage complet de l'app (tous
+  processus tués puis relancés) — clé réutilisée depuis le trousseau
+  système, horodatages de fichiers inchangés, aucune régénération ; (3)
+  suppression artificielle du fichier de clé (marqueur conservé) — échec
+  bruyant confirmé (aucune fenêtre créée, sortie propre, aucune
+  régénération silencieuse).
+  Effet de bord découvert et corrigé au passage : ajouter une seconde
+  entrée de build (le worker) désactivait silencieusement
+  l'externalisation d'`electron` et des dépendances réelles par
+  `externalizeDepsPlugin` d'electron-vite (`electron` est en
+  `devDependency`, jamais lu par ce plugin ; l'externalisation venait d'un
+  préréglage interne au mode "lib" mono-entrée, contourné dès qu'on fournit
+  plusieurs entrées) — `index.js` gonflait de 5,6 Ko à plus d'1 Mo et
+  cassait le lancement de l'app. Corrigé en listant explicitement
+  `electron` + modules Node natifs + dépendances réelles dans
+  `rollupOptions.external` (`electron.vite.config.ts`).
 
 - **Sync Stream `scis` utilisait `SELECT *` — corrigé, mais règle à
   respecter pour toute future table (priorité haute, précédent à ne pas
