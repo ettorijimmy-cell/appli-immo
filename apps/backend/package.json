@@ -14,6 +14,7 @@
     "seed:user": "tsx scripts/seed-user.ts",
     "seed:test-sci": "tsx scripts/seed-test-sci.ts",
     "seed:test-immeuble-appartement": "tsx scripts/seed-test-immeuble-appartement.ts",
+    "seed:test-equipement": "tsx scripts/seed-test-equipement.ts",
     "seed:inventaire-meuble": "tsx scripts/seed-inventaire-meuble.ts"
   },
   "dependencies": {
