@@ -1,0 +1,90 @@
+# Source de vérité versionnée pour les Sync Streams PowerSync de ce projet.
+#
+# Ce fichier N'EST PAS lu ni exécuté automatiquement par PowerSync — la
+# configuration réelle vit exclusivement dans le dashboard PowerSync
+# (Client Auth / Sync Streams), collée et déployée manuellement par
+# l'utilisateur ("Save and Deploy"). Ce fichier sert uniquement à garder un
+# historique lisible et versionné (git) de ce qui est censé être déployé,
+# et à servir de base pour préparer/réviser un stream avant de le coller
+# dans le dashboard.
+#
+# Toute divergence constatée entre ce fichier et le contenu réellement
+# déployé dans le dashboard doit être traitée comme un bug de process
+# (oubli de mise à jour de ce fichier après un changement dans le
+# dashboard, ou inversement) — jamais comme un état normal. En cas de
+# doute sur l'état réellement déployé, le dashboard PowerSync fait
+# autorité, pas ce fichier.
+#
+# Règles à respecter pour tout nouveau stream ajouté ici (voir
+# docs/data-dictionary.md, section Authentification et autorisation, et
+# docs/backlog.md) :
+#   - Jamais SELECT * — toujours une liste de colonnes explicite,
+#     correspondant exactement à ce qu'on accepte de voir stocké en clair
+#     sur l'appareil local.
+#   - journal_audit ne doit jamais faire l'objet d'un stream — protégée
+#     structurellement en amont (absente de la publication Postgres), pas
+#     par une simple discipline de requête.
+
+config:
+  edition: 3
+
+streams:
+  # Déployé le 2026-08-13, corrigé le 2026-08-13 (SELECT * initial ->
+  # colonnes explicites après avoir constaté que ps_data__scis contenait
+  # des colonnes non voulues). Testé de bout en bout (Postgres Scaleway ->
+  # PowerSync -> SQLite locale), y compris après restriction des IPs
+  # autorisées côté Postgres.
+  scis:
+    query: >
+      SELECT id, nom, regime_fiscal, statut FROM scis
+      WHERE scis.id IN (
+        SELECT organisation_sci.sci_id FROM organisation_sci
+        INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+        WHERE utilisateurs.id = auth.user_id()
+        AND organisation_sci.date_fin IS NULL
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de la
+  # création de ce fichier — voir docs/backlog.md pour le suivi.
+  # Même logique de portée que scis (organisation_sci -> utilisateurs ->
+  # auth.user_id()), immeubles ayant une FK directe sci_id.
+  # identifiant_fiscal n'existe pas sur cette table (présent sur
+  # appartements) — sans objet ici.
+  immeubles:
+    query: >
+      SELECT id, sci_id, nom, adresse, code_postal, ville, type_habitat,
+      regime_juridique, annee_construction, statut, updated_at FROM immeubles
+      WHERE immeubles.sci_id IN (
+        SELECT organisation_sci.sci_id FROM organisation_sci
+        INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+        WHERE utilisateurs.id = auth.user_id()
+        AND organisation_sci.date_fin IS NULL
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de la
+  # création de ce fichier — voir docs/backlog.md pour le suivi.
+  # Pas de sci_id direct sur appartements : filtrage via immeuble_id ->
+  # immeubles.sci_id -> organisation_sci -> utilisateurs (sous-select à
+  # 3 niveaux, jamais testé à cette profondeur avant ce stream — à
+  # surveiller côté temps de réponse une fois déployé).
+  # identifiant_fiscal EXCLU volontairement de la liste de colonnes
+  # (donnée fiscale nominative du lot, plus sensible que le reste des
+  # colonnes de cette table — voir échange du 2026-08-15).
+  appartements:
+    query: >
+      SELECT id, immeuble_id, numero, type, surface, loyer_reference,
+      nombre_pieces_principales, mode_chauffage, mode_eau_chaude, type_energie,
+      equipement_cuisine, dependances_annexes, nombre_chambres,
+      nombre_salles_de_bain, nombre_wc, autre_piece_1, autre_piece_2, statut,
+      updated_at FROM appartements
+      WHERE appartements.immeuble_id IN (
+        SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+          SELECT organisation_sci.sci_id FROM organisation_sci
+          INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+          WHERE utilisateurs.id = auth.user_id()
+          AND organisation_sci.date_fin IS NULL
+        )
+      )
+    auto_subscribe: true
