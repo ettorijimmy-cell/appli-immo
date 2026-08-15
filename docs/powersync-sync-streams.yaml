@@ -88,3 +88,35 @@ streams:
         )
       )
     auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Pas de statut sur cette table (contrairement à scis/immeubles/
+  # appartements) — aucun pgEnum de statut défini côté Drizzle.
+  # Pas de appartement_id -> immeuble_id -> sci_id direct à 3 niveaux comme
+  # appartements : equipements n'a qu'une FK vers appartements (pas de
+  # immeuble_id propre), d'où un sous-select à 4 niveaux (equipements ->
+  # appartements -> immeubles -> organisation_sci -> utilisateurs), un de
+  # plus que appartements — jamais testé à cette profondeur avant ce
+  # stream, à surveiller côté temps de réponse une fois déployé (voir
+  # aussi l'entrée dette technique sur la mesure encore en attente pour
+  # appartements, docs/backlog.md).
+  # Aucune colonne sensible identifiée sur cette table (vérifié le
+  # 2026-08-15) — les 4 colonnes métier (appartement_id, type,
+  # date_dernier_entretien, intervalle_entretien_mois) sont toutes
+  # incluses, contrairement à identifiant_fiscal exclu sur appartements.
+  equipements:
+    query: >
+      SELECT id, appartement_id, type, date_dernier_entretien,
+      intervalle_entretien_mois, updated_at FROM equipements
+      WHERE equipements.appartement_id IN (
+        SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+            SELECT organisation_sci.sci_id FROM organisation_sci
+            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+            WHERE utilisateurs.id = auth.user_id()
+            AND organisation_sci.date_fin IS NULL
+          )
+        )
+      )
+    auto_subscribe: true
