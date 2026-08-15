@@ -104,11 +104,27 @@ export default defineConfig({
         // REMPLACE celui du plugin plutôt que de s'y ajouter (@powersync/node
         // et better-sqlite3-multiple-ciphers se retrouvaient embarqués tant
         // que cette liste ne les incluait pas explicitement).
+        //
+        // "@powersync/node/worker.js" doit être listé séparément de
+        // "@powersync/node" (déjà couvert par runtimeDependencyNames) :
+        // Rollup compare les entrées de external par égalité de chaîne
+        // exacte, jamais par préfixe. Sans cette entrée, ce sous-chemin
+        // était embarqué dans powersync-worker.js (20,9 Ko, 73 modules,
+        // code interne du SDK inclus) au lieu de rester un require()
+        // externe — et le import.meta.url interne du SDK
+        // (node_modules/@powersync/node/lib/db/SqliteWorker.js, utilisé
+        // pour localiser le binaire natif powersync_x64.dll) se
+        // retrouvait alors relatif à NOTRE fichier de sortie plutôt qu'au
+        // vrai node_modules, avec pour conséquence "Le module spécifié
+        // est introuvable" au chargement de l'extension. Avec cette
+        // entrée : powersync-worker.js redescend à 1,98 Ko (9 modules),
+        // testé et confirmé (powersync_rs_version() répond correctement).
         external: [
           "electron",
           ...builtinModules,
           ...builtinModules.map((mod) => `node:${mod}`),
-          ...runtimeDependencyNames
+          ...runtimeDependencyNames,
+          "@powersync/node/worker.js"
         ],
         output: {
           format: "cjs",
