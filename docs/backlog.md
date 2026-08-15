@@ -550,6 +550,14 @@ les trois parcours ci-dessus).
   est exposé directement, vérifier qu'il ne réutilise pas ces méthodes
   telles quelles.
 
+- **`locataires.anonymise_le` documenté** (`docs/data-dictionary.md` ligne
+  85, commentaire du schéma Drizzle) **comme mécanisme d'anonymisation
+  RGPD mais jamais implémenté côté code** — aucun endpoint, job planifié,
+  ou logique de neutralisation ne pose ou n'exploite ce champ. Découvert
+  lors de la conception du Sync Stream `locataires`. À trancher : soit
+  implémenter réellement le mécanisme, soit retirer la mention de la
+  documentation si ce n'est plus prévu.
+
 ---
 
 ## Maintenance
