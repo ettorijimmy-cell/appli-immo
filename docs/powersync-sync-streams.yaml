@@ -120,3 +120,17 @@ streams:
         )
       )
     auto_subscribe: true
+
+# Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
+# aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
+# que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
+# chiffrées). Pas de besoin de consultation hors-ligne pour ce champ ;
+# l'IBAN/BIC restent consultés à la demande via l'endpoint authentifié
+# dédié GET /scis/:id/comptes-bancaires (ComptesBancairesSciService.
+# findBySciIdDecrypted, seul point de déchiffrement — voir CLAUDE.md,
+# section Sécurité), jamais depuis la base SQLite locale. Vérifié le
+# 2026-08-15 : projection déjà explicite côté backend (jamais de spread
+# de ligne Drizzle brute), et le frontend desktop (SciDetailView.tsx)
+# passe déjà par cet appel API direct, aucune tentative de lecture
+# locale. Absence de ce stream = choix délibéré, pas un oubli à
+# combler lors d'une future extension par domaine.
