@@ -121,6 +121,118 @@ streams:
       )
     auto_subscribe: true
 
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Locataires & baux.
+  # Même profondeur que appartements (3 niveaux : appartement_id ->
+  # immeubles.sci_id -> organisation_sci -> utilisateurs), appartement_id
+  # étant une FK directe sur baux. Aucune colonne exclue — rien de sensible
+  # identifié sur cette table (voir échange du 2026-08-15).
+  baux:
+    query: >
+      SELECT id, appartement_id, type_bail, statut, loyer_mensuel,
+      depot_garantie, provisions_charges, jour_echeance, date_debut,
+      date_fin, date_activation, date_signature, date_resiliation,
+      travaux_realises, honoraires_bailleur, honoraires_locataire,
+      updated_at FROM baux
+      WHERE baux.appartement_id IN (
+        SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+            SELECT organisation_sci.sci_id FROM organisation_sci
+            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+            WHERE utilisateurs.id = auth.user_id()
+            AND organisation_sci.date_fin IS NULL
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Même chaîne de filtrage que baux, un niveau de plus (bail_id ->
+  # appartement_id -> immeubles.sci_id -> organisation_sci -> utilisateurs,
+  # 4 niveaux, comme equipements).
+  # profession et revenus EXCLUS volontairement (donnée financière précise
+  # du garant, pas de besoin hors-ligne — décision du 2026-08-15). Toutes
+  # les autres colonnes métier incluses.
+  garants:
+    query: >
+      SELECT id, bail_id, nom, prenom, email, telephone, type_garantie,
+      adresse, code_postal, ville, date_naissance, lieu_naissance,
+      nationalite, updated_at FROM garants
+      WHERE garants.bail_id IN (
+        SELECT id FROM baux WHERE baux.appartement_id IN (
+          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Table de jonction pure (colocation) — mêmes 4 niveaux que garants
+  # (bail_id -> appartement_id -> immeubles.sci_id -> organisation_sci ->
+  # utilisateurs). Aucune colonne sensible : juste deux UUID + un enum de
+  # rôle. Toutes les colonnes incluses.
+  bail_locataires:
+    query: >
+      SELECT id, bail_id, locataire_id, role, updated_at FROM bail_locataires
+      WHERE bail_locataires.bail_id IN (
+        SELECT id FROM baux WHERE baux.appartement_id IN (
+          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Le niveau le plus profond du projet à ce jour (5 niveaux) : locataires
+  # n'a AUCUNE FK directe vers baux/appartements/immeubles/sci (c'est une
+  # entité indépendante, partagée entre plusieurs baux dans le temps — voir
+  # échange du 2026-08-15) — filtrage obligatoire via la table de jonction
+  # bail_locataires (locataire_id -> bail_id -> appartement_id ->
+  # immeubles.sci_id -> organisation_sci -> utilisateurs). Filtre sur
+  # bail_locataires.archived_at IS NULL : un locataire retiré d'un bail
+  # (ligne de liaison archivée) ne doit pas continuer à donner accès à ce
+  # bail pour le calcul de portée. Jamais testé à cette profondeur — à
+  # surveiller particulièrement côté temps de réponse une fois déployé.
+  # Toutes les colonnes métier incluses, y compris anonymise_le (décision
+  # du 2026-08-15 : mécanisme RGPD non implémenté à ce jour — voir
+  # docs/backlog.md, dette technique — mais la colonne doit déjà être
+  # présente côté client pour le jour où il le sera).
+  locataires:
+    query: >
+      SELECT id, nom, prenom, email, telephone, adresse, code_postal, ville,
+      date_naissance, statut, anonymise_le, updated_at FROM locataires
+      WHERE locataires.id IN (
+        SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+        AND bail_locataires.archived_at IS NULL
+      )
+    auto_subscribe: true
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
