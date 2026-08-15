@@ -59,4 +59,76 @@ const equipements = new Table({
   updated_at: column.text
 });
 
-export const AppSchema = new Schema({ scis, immeubles, appartements, equipements });
+const baux = new Table({
+  appartement_id: column.text,
+  type_bail: column.text,
+  statut: column.text,
+  loyer_mensuel: column.real,
+  depot_garantie: column.real,
+  provisions_charges: column.real,
+  jour_echeance: column.integer,
+  date_debut: column.text,
+  date_fin: column.text,
+  date_activation: column.text,
+  date_signature: column.text,
+  date_resiliation: column.text,
+  travaux_realises: column.text,
+  honoraires_bailleur: column.real,
+  honoraires_locataire: column.real,
+  updated_at: column.text
+});
+
+// profession et revenus volontairement absents — exclus du Sync Stream
+// garants (donnée financière précise du garant, voir
+// docs/powersync-sync-streams.yaml).
+const garants = new Table({
+  bail_id: column.text,
+  nom: column.text,
+  prenom: column.text,
+  email: column.text,
+  telephone: column.text,
+  type_garantie: column.text,
+  adresse: column.text,
+  code_postal: column.text,
+  ville: column.text,
+  date_naissance: column.text,
+  lieu_naissance: column.text,
+  nationalite: column.text,
+  updated_at: column.text
+});
+
+const bail_locataires = new Table({
+  bail_id: column.text,
+  locataire_id: column.text,
+  role: column.text,
+  updated_at: column.text
+});
+
+// anonymise_le inclus bien qu'inexploité côté code à ce jour (mécanisme
+// RGPD documenté mais jamais implémenté — voir docs/backlog.md, dette
+// technique) : la colonne doit déjà être présente côté client pour le
+// jour où il le sera.
+const locataires = new Table({
+  nom: column.text,
+  prenom: column.text,
+  email: column.text,
+  telephone: column.text,
+  adresse: column.text,
+  code_postal: column.text,
+  ville: column.text,
+  date_naissance: column.text,
+  statut: column.text,
+  anonymise_le: column.text,
+  updated_at: column.text
+});
+
+export const AppSchema = new Schema({
+  scis,
+  immeubles,
+  appartements,
+  equipements,
+  baux,
+  garants,
+  bail_locataires,
+  locataires
+});
