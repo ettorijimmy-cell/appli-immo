@@ -36,12 +36,18 @@ function getDb(): PowerSyncDatabase {
       // electron.vite.config.ts) : remplace le driver SQLite par défaut
       // par le fork chiffré. __dirname pointe vers out/main en production
       // comme en dev (même pattern que le chemin du preload ci-dessous).
-      openWorker: (_filename, options) => new Worker(join(__dirname, "powersync-worker.js"), options),
+      // workerData transmet la clé de chiffrement : nécessaire pour que
+      // database.worker.ts puisse la poser dès le constructeur de la base
+      // (voir le commentaire "CONTOURNEMENT NON OFFICIEL" dans ce fichier) —
+      // avant, elle ne transitait que via initializeConnection ci-dessous,
+      // ce qui s'est révélé trop tardif.
+      openWorker: (_filename, options) =>
+        new Worker(join(__dirname, "powersync-worker.js"), { ...options, workerData: { encryptionKey: cle } }),
       initializeConnection: async (connexion) => {
-        const cleEchappee = cle.replaceAll("'", "''");
-        await connexion.execute(`pragma key = '${cleEchappee}'`);
-        // Échoue immédiatement si la clé est fausse — mécanisme natif
-        // SQLite3MultipleCiphers, pas une vérification ajoutée par nous.
+        // La clé est désormais posée dans database.worker.ts, avant
+        // l'ouverture — pas ici. Ce contrôle reste utile en tant que
+        // garde-fou côté thread principal : échoue immédiatement si la
+        // connexion n'est pas réellement déchiffrée.
         await connexion.execute("pragma user_version");
       }
     }
