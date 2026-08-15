@@ -371,6 +371,23 @@ les trois parcours ci-dessus).
   dans la publication — pour celles-ci, la vigilance de rédaction de la
   requête est le seul rempart, contrairement à `journal_audit`.
 
+- **Mesurer le temps de synchro réel du Sync Stream `appartements` (3
+  niveaux) une fois un volume de données représentatif disponible — non
+  fait faute de données de test suffisantes lors du déploiement initial.**
+  Constaté le 2026-08-15 lors du déploiement des Sync Streams `immeubles`
+  et `appartements` (sous-requête imbriquée à 3 niveaux : `appartements` →
+  `immeubles` → `organisation_sci` → `utilisateurs`, jamais testée à cette
+  profondeur auparavant, contre 2 niveaux pour `scis`). Tests 1 et 2
+  (données remontées localement, absence d'`identifiant_fiscal`) validés
+  avec preuve concrète. Test 3 (temps de réponse) volontairement non fait :
+  avec seulement 1 ligne par table (données de seed), `ps_stream_subscriptions`
+  et `ps_sync_state` montrent un `last_synced_at` identique pour `scis`,
+  `immeubles` et `appartements` — PowerSync synchronise les streams
+  souscrits en un seul cycle combiné, sans jalon mesurable par flux à ce
+  volume, donc aucune mesure obtenue à ce stade n'aurait été représentative
+  d'un vrai coût de requête à 3 niveaux. À refaire quand un volume réel sera
+  disponible (ex. migration des ~20 biens réels).
+
 - **Trop-perçu non traité à la résiliation d'un bail réglé en cours de mois**
   (identifié Module 5, lors de la conception de la proration des échéances ;
   complété après revue par financial-logic-reviewer sur ce même chantier).
