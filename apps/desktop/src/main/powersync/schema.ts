@@ -49,4 +49,14 @@ const appartements = new Table({
   updated_at: column.text
 });
 
-export const AppSchema = new Schema({ scis, immeubles, appartements });
+// Pas de statut sur cette table côté Drizzle (aucun pgEnum de statut
+// défini pour equipements, contrairement à scis/immeubles/appartements).
+const equipements = new Table({
+  appartement_id: column.text,
+  type: column.text,
+  date_dernier_entretien: column.text,
+  intervalle_entretien_mois: column.integer,
+  updated_at: column.text
+});
+
+export const AppSchema = new Schema({ scis, immeubles, appartements, equipements });
