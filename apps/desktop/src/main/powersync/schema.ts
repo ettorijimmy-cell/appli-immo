@@ -156,6 +156,17 @@ const remboursements = new Table({
   updated_at: column.text
 });
 
+// Config globale mono-utilisateur (une ligne par type d'alerte, 5 lignes
+// maximum), sans rattachement SCI/utilisateur — synchronisée sans filtre
+// par hiérarchie, voir docs/powersync-sync-streams.yaml. Stream alertes
+// lui-même reporté après le domaine Documents (entite_id polymorphe,
+// dépend de la conception du Sync Stream documents — voir même fichier).
+const parametres_alertes = new Table({
+  type: column.text,
+  seuil_jours_avant: column.integer,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -167,5 +178,6 @@ export const AppSchema = new Schema({
   locataires,
   paiements,
   versements,
-  remboursements
+  remboursements,
+  parametres_alertes
 });
