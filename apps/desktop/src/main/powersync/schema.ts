@@ -122,6 +122,40 @@ const locataires = new Table({
   updated_at: column.text
 });
 
+const paiements = new Table({
+  bail_id: column.text,
+  type: column.text,
+  statut: column.text,
+  montant: column.real,
+  date_echeance: column.text,
+  updated_at: column.text
+});
+
+// reference_rapprochement volontairement absente — exclue du Sync Stream
+// versements (libellé brut de ligne de relevé bancaire importé, hors de
+// notre contrôle, voir docs/powersync-sync-streams.yaml).
+const versements = new Table({
+  paiement_id: column.text,
+  montant: column.real,
+  date_versement: column.text,
+  mode: column.text,
+  updated_at: column.text
+});
+
+// commentaire volontairement absent — exclu du Sync Stream remboursements
+// (texte libre non contraint, saisi manuellement, voir
+// docs/powersync-sync-streams.yaml).
+const remboursements = new Table({
+  bail_id: column.text,
+  paiement_id: column.text,
+  type: column.text,
+  montant_origine: column.real,
+  montant_rembourse: column.real,
+  date_remboursement: column.text,
+  mode: column.text,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -130,5 +164,8 @@ export const AppSchema = new Schema({
   baux,
   garants,
   bail_locataires,
-  locataires
+  locataires,
+  paiements,
+  versements,
+  remboursements
 });
