@@ -233,6 +233,89 @@ streams:
       )
     auto_subscribe: true
 
+  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Finances.
+  # Même profondeur que baux (4 niveaux : bail_id -> appartement_id ->
+  # immeubles.sci_id -> organisation_sci -> utilisateurs), bail_id étant une
+  # FK directe sur paiements. Aucune colonne exclue — rien de sensible
+  # identifié sur cette table (statut est calculé, jamais saisi
+  # directement — voir docs/data-dictionary.md).
+  paiements:
+    query: >
+      SELECT id, bail_id, type, statut, montant, date_echeance, updated_at
+      FROM paiements
+      WHERE paiements.bail_id IN (
+        SELECT id FROM baux WHERE baux.appartement_id IN (
+          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Même chaîne de filtrage que paiements, un niveau de plus (paiement_id ->
+  # bail_id -> appartement_id -> immeubles.sci_id -> organisation_sci ->
+  # utilisateurs, 5 niveaux, comme locataires).
+  # reference_rapprochement EXCLUE volontairement (libellé brut de ligne de
+  # relevé bancaire importé — hors de notre contrôle, potentiellement
+  # porteur d'informations non maîtrisées selon la banque émettrice —
+  # décision du 2026-08-16). Toutes les autres colonnes métier incluses.
+  versements:
+    query: >
+      SELECT id, paiement_id, montant, date_versement, mode, updated_at
+      FROM versements
+      WHERE versements.paiement_id IN (
+        SELECT id FROM paiements WHERE paiements.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Deux FK vers deux niveaux différents (bail_id, ancre stable toujours
+  # présente ; paiement_id, nullable, lien optionnel vers l'échéance
+  # d'origine) — filtrage sur bail_id uniquement, même profondeur que
+  # paiements (4 niveaux), pas besoin de passer par paiement_id puisque tout
+  # paiement lié appartient nécessairement au même bail.
+  # commentaire EXCLU volontairement (texte libre non contraint, saisi
+  # manuellement, contenu imprévisible — décision du 2026-08-16). Toutes les
+  # autres colonnes métier incluses.
+  remboursements:
+    query: >
+      SELECT id, bail_id, paiement_id, type, montant_origine,
+      montant_rembourse, date_remboursement, mode, updated_at
+      FROM remboursements
+      WHERE remboursements.bail_id IN (
+        SELECT id FROM baux WHERE baux.appartement_id IN (
+          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
