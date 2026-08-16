@@ -316,6 +316,32 @@ streams:
       )
     auto_subscribe: true
 
+# Domaine Alertes (2026-08-16) :
+#
+# - alertes REPORTÉ après le domaine Documents (pas encore de Sync Stream
+#   documents à ce jour). Raison : alertes.entite_id est une référence
+#   polymorphe — la table cible dépend de alertes.type (baux pour
+#   bail_fin_proche, paiements pour impaye, documents pour
+#   document_expire/document_expire_proche, equipements pour
+#   entretien_equipement), sans FK possible (voir commentaire du schéma
+#   Drizzle, packages/db/src/schema/alertes.ts). Impossible d'écrire la
+#   branche document_expire/document_expire_proche du filtre tant que le
+#   Sync Stream documents lui-même n'est pas conçu — les deux dépendent
+#   l'un de l'autre. derniere_condition_vraie à EXCLURE quand on y
+#   reviendra (champ interne, jamais exposé à l'utilisateur selon le
+#   commentaire du schéma) — acté dès maintenant pour ne pas l'oublier.
+#
+# - parametres_alertes : config globale mono-utilisateur (une ligne par
+#   type d'alerte, 5 lignes maximum, contrainte d'unicité sur `type`),
+#   sans rattachement SCI/utilisateur d'aucune sorte (pas de colonne de
+#   ce type sur cette table) — synchronisée sans filtre par hiérarchie,
+#   contrairement à tous les streams précédents. Rien de sensible (un enum
+#   type + un entier seuil_jours_avant) — toutes les colonnes incluses.
+  parametres_alertes:
+    query: >
+      SELECT id, type, seuil_jours_avant, updated_at FROM parametres_alertes
+    auto_subscribe: true
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
