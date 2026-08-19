@@ -167,6 +167,24 @@ const parametres_alertes = new Table({
   updated_at: column.text
 });
 
+// Pas de updated_at sur cette table côté Drizzle (pas les auditColumns
+// standard — une valeur IRL publiée n'est jamais modifiée après coup, voir
+// docs/powersync-sync-streams.yaml). date_recuperation en tient lieu.
+const indices_irl = new Table({
+  annee: column.integer,
+  trimestre: column.integer,
+  valeur: column.real,
+  date_recuperation: column.text
+});
+
+const elements_inventaire_meuble = new Table({
+  code: column.text,
+  libelle: column.text,
+  categorie: column.text,
+  ordre_affichage: column.integer,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -179,5 +197,7 @@ export const AppSchema = new Schema({
   paiements,
   versements,
   remboursements,
-  parametres_alertes
+  parametres_alertes,
+  indices_irl,
+  elements_inventaire_meuble
 });
