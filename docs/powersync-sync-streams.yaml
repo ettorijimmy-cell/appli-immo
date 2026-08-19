@@ -342,6 +342,38 @@ streams:
       SELECT id, type, seuil_jours_avant, updated_at FROM parametres_alertes
     auto_subscribe: true
 
+  # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Références
+  # globales.
+  # Table de référence réglementaire (série INSEE BDM 001515333), sans
+  # rattachement SCI/utilisateur — synchronisée sans filtre par hiérarchie,
+  # comme parametres_alertes. Rien de sensible.
+  # Pas de colonne updated_at sur cette table (contrairement à tous les
+  # streams précédents) : indices_irl n'a volontairement pas les
+  # auditColumns standard (une valeur IRL publiée n'est jamais modifiée,
+  # voir commentaire du schéma Drizzle, packages/db/src/schema/
+  # indices-irl.ts) — date_recuperation en tient lieu.
+  # Confirmé le 2026-08-19 (requête directe sur pg_publication_tables,
+  # script jetable check-publication-indices-irl.ts, supprimé après usage) :
+  # indices_irl fait bien partie de la publication Postgres powersync,
+  # contrairement à journal_audit qui en est structurellement exclue —
+  # sans quoi ce stream n'aurait jamais pu recevoir de données.
+  indices_irl:
+    query: >
+      SELECT id, annee, trimestre, valeur, date_recuperation FROM indices_irl
+    auto_subscribe: true
+
+  # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi.
+  # Catalogue de référence fixe (~85 lignes, seed déjà réalisé — voir
+  # commentaire du schéma Drizzle), sans rattachement SCI/utilisateur —
+  # synchronisée sans filtre par hiérarchie. Rien de sensible.
+  elements_inventaire_meuble:
+    query: >
+      SELECT id, code, libelle, categorie, ordre_affichage, updated_at
+      FROM elements_inventaire_meuble
+    auto_subscribe: true
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
