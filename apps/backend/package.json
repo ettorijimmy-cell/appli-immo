@@ -17,6 +17,7 @@
     "seed:test-equipement": "tsx scripts/seed-test-equipement.ts",
     "seed:test-locataire-bail": "tsx scripts/seed-test-locataire-bail.ts",
     "seed:test-finance": "tsx scripts/seed-test-finance.ts",
+    "seed:test-document-diagnostic": "tsx scripts/seed-test-document-diagnostic.ts",
     "seed:inventaire-meuble": "tsx scripts/seed-inventaire-meuble.ts"
   },
   "dependencies": {
