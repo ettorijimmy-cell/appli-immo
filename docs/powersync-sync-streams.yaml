@@ -385,9 +385,16 @@ streams:
       FROM elements_inventaire_meuble
     auto_subscribe: true
 
-  # Préparé le 2026-08-20, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Documents, le
-  # plus sensible de ce chantier.
+  # Préparé le 2026-08-20, corrigé le 2026-08-20 (UNION ALL à 5 branches
+  # initial rejeté par le dashboard PowerSync : "Expected a SELECT
+  # statement, Invalid position for subqueries. Subqueries are only
+  # supported in WHERE clauses" — UNION/set operations explicitement non
+  # supportés par les Sync Streams, voir docs.powersync.com/sync/
+  # supported-sql. Réécrit en un seul SELECT avec un WHERE à 5 blocs OR,
+  # chaque bloc restant un filtre autonome avec sa propre sous-requête IN
+  # — forme explicitement supportée par la doc officielle) — voir
+  # docs/backlog.md pour le suivi. Domaine Documents, le plus sensible de
+  # ce chantier.
   # chemin_stockage EXCLU DÉFINITIVEMENT et ne devra JAMAIS être ajouté à
   # cette liste de colonnes, quelle que soit l'évolution future de ce
   # stream : c'est la clé/chemin du blob chiffré sur disque
@@ -409,8 +416,8 @@ streams:
   # locataire/bail), chacune avec sa propre condition entite_type = '...'
   # AND entite_id IN (chaîne de filtrage habituelle vers la table cible
   # correspondante, jusqu'à 5 niveaux de profondeur pour la branche
-  # locataire — jamais testé à cette profondeur en UNION avant ce stream,
-  # à surveiller côté temps de réponse une fois déployé). Un document lié
+  # locataire — jamais testé à cette profondeur avant ce stream, à
+  # surveiller côté temps de réponse une fois déployé). Un document lié
   # à un état des lieux (entite_type = 'etat_des_lieux') ne remontera pas
   # en local tant que ce domaine n'est pas traité — voir docs/backlog.md.
   documents:
@@ -418,30 +425,15 @@ streams:
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
       nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
       etat_des_lieux_piece_numero, updated_at FROM documents
-      WHERE documents.entite_type = 'sci' AND documents.entite_id IN (
-        SELECT organisation_sci.sci_id FROM organisation_sci
-        INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-        WHERE utilisateurs.id = auth.user_id()
-        AND organisation_sci.date_fin IS NULL
-      )
-      UNION ALL
-      SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
-      nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, updated_at FROM documents
-      WHERE documents.entite_type = 'immeuble' AND documents.entite_id IN (
-        SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+      WHERE (
+        documents.entite_type = 'sci' AND documents.entite_id IN (
           SELECT organisation_sci.sci_id FROM organisation_sci
           INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
           WHERE utilisateurs.id = auth.user_id()
           AND organisation_sci.date_fin IS NULL
         )
-      )
-      UNION ALL
-      SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
-      nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, updated_at FROM documents
-      WHERE documents.entite_type = 'appartement' AND documents.entite_id IN (
-        SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+      ) OR (
+        documents.entite_type = 'immeuble' AND documents.entite_id IN (
           SELECT id FROM immeubles WHERE immeubles.sci_id IN (
             SELECT organisation_sci.sci_id FROM organisation_sci
             INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
@@ -449,13 +441,8 @@ streams:
             AND organisation_sci.date_fin IS NULL
           )
         )
-      )
-      UNION ALL
-      SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
-      nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, updated_at FROM documents
-      WHERE documents.entite_type = 'bail' AND documents.entite_id IN (
-        SELECT id FROM baux WHERE baux.appartement_id IN (
+      ) OR (
+        documents.entite_type = 'appartement' AND documents.entite_id IN (
           SELECT id FROM appartements WHERE appartements.immeuble_id IN (
             SELECT id FROM immeubles WHERE immeubles.sci_id IN (
               SELECT organisation_sci.sci_id FROM organisation_sci
@@ -465,13 +452,8 @@ streams:
             )
           )
         )
-      )
-      UNION ALL
-      SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
-      nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, updated_at FROM documents
-      WHERE documents.entite_type = 'locataire' AND documents.entite_id IN (
-        SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
+      ) OR (
+        documents.entite_type = 'bail' AND documents.entite_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
             SELECT id FROM appartements WHERE appartements.immeuble_id IN (
               SELECT id FROM immeubles WHERE immeubles.sci_id IN (
@@ -483,68 +465,8 @@ streams:
             )
           )
         )
-        AND bail_locataires.archived_at IS NULL
-      )
-    auto_subscribe: true
-
-  # Préparé le 2026-08-20, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
-  # Relation 1:1 avec documents, FK simple document_id (pas de référence
-  # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
-  # Filtrage par document_id IN (la requête documents ci-dessus,
-  # répétée ici en ne sélectionnant que id) : la requête la plus profonde
-  # et la plus complexe de ce chantier à ce jour (union à 5 branches
-  # imbriquée dans un IN, jusqu'à 5 niveaux de profondeur par branche) — à
-  # surveiller particulièrement côté temps de réponse une fois déployé.
-  # Aucune colonne exclue — rien de sensible identifié sur cette table
-  # (que des valeurs réglementaires chiffrées/catégorielles, aucune donnée
-  # nominative ni chemin de fichier).
-  diagnostics:
-    query: >
-      SELECT id, document_id, type, classe_dpe, depenses_theoriques_chauffage,
-      risque_present, updated_at FROM diagnostics
-      WHERE diagnostics.document_id IN (
-        SELECT id FROM documents WHERE documents.entite_type = 'sci' AND documents.entite_id IN (
-          SELECT organisation_sci.sci_id FROM organisation_sci
-          INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-          WHERE utilisateurs.id = auth.user_id()
-          AND organisation_sci.date_fin IS NULL
-        )
-        UNION ALL
-        SELECT id FROM documents WHERE documents.entite_type = 'immeuble' AND documents.entite_id IN (
-          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-            SELECT organisation_sci.sci_id FROM organisation_sci
-            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-            WHERE utilisateurs.id = auth.user_id()
-            AND organisation_sci.date_fin IS NULL
-          )
-        )
-        UNION ALL
-        SELECT id FROM documents WHERE documents.entite_type = 'appartement' AND documents.entite_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
-            )
-          )
-        )
-        UNION ALL
-        SELECT id FROM documents WHERE documents.entite_type = 'bail' AND documents.entite_id IN (
-          SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
-              )
-            )
-          )
-        )
-        UNION ALL
-        SELECT id FROM documents WHERE documents.entite_type = 'locataire' AND documents.entite_id IN (
+      ) OR (
+        documents.entite_type = 'locataire' AND documents.entite_id IN (
           SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
               SELECT id FROM appartements WHERE appartements.immeuble_id IN (
@@ -558,6 +480,84 @@ streams:
             )
           )
           AND bail_locataires.archived_at IS NULL
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-20, corrigé le 2026-08-20 (même correction UNION
+  # ALL -> OR que documents ci-dessus) — voir docs/backlog.md pour le
+  # suivi.
+  # Relation 1:1 avec documents, FK simple document_id (pas de référence
+  # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
+  # Filtrage par document_id IN (la requête documents ci-dessus,
+  # répétée ici en ne sélectionnant que id) : la requête la plus profonde
+  # et la plus complexe de ce chantier à ce jour (5 blocs OR imbriqués
+  # dans un IN, jusqu'à 5 niveaux de profondeur par branche) — à
+  # surveiller particulièrement côté temps de réponse une fois déployé.
+  # Aucune colonne exclue — rien de sensible identifié sur cette table
+  # (que des valeurs réglementaires chiffrées/catégorielles, aucune donnée
+  # nominative ni chemin de fichier).
+  diagnostics:
+    query: >
+      SELECT id, document_id, type, classe_dpe, depenses_theoriques_chauffage,
+      risque_present, updated_at FROM diagnostics
+      WHERE diagnostics.document_id IN (
+        SELECT id FROM documents WHERE (
+          documents.entite_type = 'sci' AND documents.entite_id IN (
+            SELECT organisation_sci.sci_id FROM organisation_sci
+            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+            WHERE utilisateurs.id = auth.user_id()
+            AND organisation_sci.date_fin IS NULL
+          )
+        ) OR (
+          documents.entite_type = 'immeuble' AND documents.entite_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        ) OR (
+          documents.entite_type = 'appartement' AND documents.entite_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        ) OR (
+          documents.entite_type = 'bail' AND documents.entite_id IN (
+            SELECT id FROM baux WHERE baux.appartement_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          )
+        ) OR (
+          documents.entite_type = 'locataire' AND documents.entite_id IN (
+            SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
+              SELECT id FROM baux WHERE baux.appartement_id IN (
+                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                    SELECT organisation_sci.sci_id FROM organisation_sci
+                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                    WHERE utilisateurs.id = auth.user_id()
+                    AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+            AND bail_locataires.archived_at IS NULL
+          )
         )
       )
     auto_subscribe: true
