@@ -550,6 +550,73 @@ les trois parcours ci-dessus).
   est exposé directement, vérifier qu'il ne réutilise pas ces méthodes
   telles quelles.
 
+- **Bug de backfill initial PowerSync — résolu par contournement
+  (2026-08-20).** Découvert sur le Sync Stream `indices_irl` : la donnée
+  vide en base (job planifié jamais déclenché en production, task #159
+  toujours pending) a d'abord été corrigée (`POST
+  /indices-irl/executer-job` déclenché manuellement contre Scaleway,
+  1 ligne réelle 2026/T2/148.37 créée) — mais le Sync Stream est resté
+  bloqué à `total:0/downloaded:0` malgré tout confirmé par ailleurs :
+  table dans la publication Postgres, REPLICA IDENTITY identique aux
+  tables fonctionnelles, souscription active côté client, redéploiement
+  avec nouveau hash de définition (sans effet — le bucket
+  `elements_inventaire_meuble` s'est régénéré normalement au même
+  redéploiement, `indices_irl` jamais initialisé), dashboard PowerSync
+  "All clear".
+  Cause identifiée par élimination : le **backfill initial** du snapshot
+  logique Postgres n'a pas capté cette ligne, née *avant* le déploiement
+  du stream — problème connu de la réplication logique Postgres/PowerSync
+  dans certaines conditions (ordre entre création de la publication et
+  écriture de la donnée, ou redémarrage du slot de réplication
+  entretemps). Vérifié par un test décisif : une ligne insérée *après*
+  coup (`annee=9999, trimestre=9`, marqueur de test) s'est répliquée
+  normalement (`total:1/downloaded:1`) alors que la ligne préexistante
+  restait invisible — la réplication continue fonctionne, seul le
+  backfill initial est en cause.
+  **Contournement appliqué** : suppression ciblée par `id` de la ligne
+  réelle jamais captée (`apps/backend/scripts/
+  delete-indices-irl-backfill-manquant.ts`, script jetable, DELETE
+  explicite sur deux lignes précises — jamais un DELETE générique sur la
+  table), puis re-déclenchement de `POST /indices-irl/executer-job` pour
+  la recapter comme une écriture neuve (nouvel `id`, `date_recuperation`
+  reflétant la vraie date de cette nouvelle captation). `indices_irl` est
+  la seule table de ce chantier où un `DELETE` a été jugé acceptable :
+  aucune contrainte référentielle ne pointe vers `indices_irl.id`
+  (vérifié), et la table n'a de toute façon pas de mécanisme d'archivage
+  standard (`statut`/`archived_at`) par design.
+  **À surveiller pour tout futur Sync Stream déployé avant que sa
+  première donnée n'existe** : si une table reste bloquée à
+  `total:0/downloaded:0` malgré souscription active et donnée source
+  confirmée, tester d'abord si une écriture *nouvelle* se réplique
+  (signe de backfill cassé plutôt qu'un problème de réplication
+  générale) avant de chercher ailleurs.
+  **Incident en cours de route (2026-08-20)** : la ligne réelle
+  2026/T2/148.37 a disparu une seconde fois, de façon inattendue, avant
+  même d'être supprimée volontairement par le contournement ci-dessus
+  (`delete-indices-irl-backfill-manquant.ts` a constaté son absence au
+  lieu de la supprimer lui-même). Cause non confirmée avec certitude.
+  Hypothèse la plus probable, non prouvée : `bail-document-docx
+  .integration.spec.ts` exécute un `DELETE FROM indices_irl` sans
+  condition dans deux tests (protégé en théorie par une transaction
+  annulée en `afterEach`) — si ce fichier avait tourné à un moment donné
+  avec `DATABASE_URL` pointant Scaleway et que le `ROLLBACK` n'avait pas
+  abouti (process interrompu avant la fin), la suppression serait restée
+  définitive. Pistes explorées et écartées faute de preuve : ni un
+  `pnpm test`/`pnpm --filter backend test` lancé manuellement par le
+  propriétaire ou par l'agent durant ce chantier, ni un hook Git
+  (aucun hook actif dans `.git/hooks/`, uniquement des `.sample`), ni le
+  workflow GitHub Actions (`DATABASE_URL` codé en dur vers le Postgres
+  éphémère du runner, aucun accès réseau ni secret vers Scaleway). Aucune
+  trace dans `journal_audit` (table non instrumentée pour ce type
+  d'événement — l'enum `journal_audit_action` n'a même pas de valeur
+  "suppression"). **Garde-fou ajouté en prévention** (pas en réponse
+  prouvée à cet incident) :
+  `apps/backend/src/test-utils/transactional-test.ts`,
+  `createTransactionalTestHooks` refuse désormais de démarrer si
+  `DATABASE_URL` contient l'IP Postgres de production Scaleway
+  (`212.47.241.9`) — protège les 13 fichiers de test d'intégration qui
+  utilisent ce helper, pas seulement `bail-document-docx`.
+
 - **`locataires.anonymise_le` documenté** (`docs/data-dictionary.md` ligne
   85, commentaire du schéma Drizzle) **comme mécanisme d'anonymisation
   RGPD mais jamais implémenté côté code** — aucun endpoint, job planifié,
