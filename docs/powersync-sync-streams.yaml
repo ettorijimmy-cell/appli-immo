@@ -358,9 +358,20 @@ streams:
   # indices_irl fait bien partie de la publication Postgres powersync,
   # contrairement à journal_audit qui en est structurellement exclue —
   # sans quoi ce stream n'aurait jamais pu recevoir de données.
+  # Colonnes réordonnées le 2026-08-19 (aucun changement de comportement,
+  # sélection par nom) : après déploiement, souscription active côté
+  # client mais ps_buckets ne contenait jamais aucune entrée pour ce
+  # stream (contrairement à elements_inventaire_meuble, déployé le même
+  # jour, qui a un bucket fonctionnel dès le premier essai) — REPLICA
+  # IDENTITY vérifié identique aux autres tables, dashboard PowerSync
+  # "All clear". Hypothèse restante : échec d'initialisation du bucket au
+  # tout premier déploiement (source vide à l'époque), jamais retenté
+  # depuis. Ce changement force un nouveau hash de définition côté
+  # PowerSync pour provoquer une réinitialisation du bucket, sans autre
+  # effet — voir docs/backlog.md pour le suivi.
   indices_irl:
     query: >
-      SELECT id, annee, trimestre, valeur, date_recuperation FROM indices_irl
+      SELECT id, date_recuperation, annee, trimestre, valeur FROM indices_irl
     auto_subscribe: true
 
   # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
