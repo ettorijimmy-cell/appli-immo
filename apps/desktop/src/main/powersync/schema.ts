@@ -185,6 +185,40 @@ const elements_inventaire_meuble = new Table({
   updated_at: column.text
 });
 
+// chemin_stockage volontairement absent — EXCLU DÉFINITIVEMENT du Sync
+// Stream documents (clé/chemin du blob chiffré sur disque, ne doit
+// jamais apparaître en clair dans la base SQLite locale, voir
+// docs/powersync-sync-streams.yaml). etat_des_lieux_piece_type et
+// etat_des_lieux_piece_numero restent présents bien que toujours null
+// pour l'instant : la branche entite_type = 'etat_des_lieux' n'est pas
+// encore couverte par la requête (domaine État des lieux pas encore
+// traité, voir docs/backlog.md).
+const documents = new Table({
+  entite_type: column.text,
+  entite_id: column.text,
+  categorie: column.text,
+  statut: column.text,
+  date_expiration: column.text,
+  nom_fichier: column.text,
+  mime_type: column.text,
+  taille_octets: column.integer,
+  etat_des_lieux_piece_type: column.text,
+  etat_des_lieux_piece_numero: column.integer,
+  updated_at: column.text
+});
+
+// risque_present (boolean côté Postgres) mappé en column.integer : pas de
+// type booléen natif dans le SDK PowerSync (SQLite stocke un booléen
+// comme un entier 0/1) — premier cas de ce type dans ce chantier.
+const diagnostics = new Table({
+  document_id: column.text,
+  type: column.text,
+  classe_dpe: column.text,
+  depenses_theoriques_chauffage: column.real,
+  risque_present: column.integer,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -199,5 +233,7 @@ export const AppSchema = new Schema({
   remboursements,
   parametres_alertes,
   indices_irl,
-  elements_inventaire_meuble
+  elements_inventaire_meuble,
+  documents,
+  diagnostics
 });
