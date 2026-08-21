@@ -511,6 +511,20 @@ const etat_des_lieux_inventaire = new Table({
   updated_at: column.text
 });
 
+// Référence polymorphe sur 4 cibles selon type (voir docs/powersync-sync-
+// streams.yaml pour le détail du filtre). derniere_condition_vraie
+// volontairement absente — EXCLUE du Sync Stream (champ interne, jamais
+// exposé à l'utilisateur, voir commentaire du schéma Drizzle,
+// packages/db/src/schema/alertes.ts).
+const alertes = new Table({
+  type: column.text,
+  entite_id: column.text,
+  statut: column.text,
+  message: column.text,
+  date_reference: column.text,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -539,5 +553,6 @@ export const AppSchema = new Schema({
   etat_des_lieux_pieces_autre,
   etat_des_lieux_cles,
   etat_des_lieux_equipements_divers,
-  etat_des_lieux_inventaire
+  etat_des_lieux_inventaire,
+  alertes
 });
