@@ -283,23 +283,22 @@ les trois parcours ci-dessus).
 ## Dette technique
 
 - **IPs autorisées de la base Postgres de production laissées grand ouvertes
-  (0.0.0.0/0, "Allow All") — priorité haute.** Constaté 2026-08-12 pendant
-  le diagnostic de connexion PowerSync (chantier hébergement/synchro) :
-  l'onglet "IPs autorisées" de la console Scaleway pour l'instance Postgres
-  de production ne contient qu'une seule entrée, `0.0.0.0/0`, qui autorise
-  toute adresse IP source à tenter une connexion — la couche réseau
-  n'apporte donc aujourd'hui aucune restriction, la base ne dépendant que
-  des identifiants applicatifs (mot de passe `powersync_role`,
-  `appli_immo_app`, etc.) pour se protéger. Exposition non négligeable :
-  cette base contient des données personnelles (locataires, garants) et
-  financières (paiements, IBAN/BIC chiffrés) réelles. À restreindre dès que
-  la connexion PowerSync sera fonctionnelle (pas avant, pour ne pas
-  entremêler ce chantier de sécurité avec le diagnostic de connexion en
-  cours) aux seules IP réellement nécessaires : les 5 IP PowerSync Cloud
-  région EU (`79.125.70.43`, `18.200.209.88`, `18.234.18.91`,
-  `18.233.128.219`, `34.202.251.156`, voir docs/integrations.md) plus l'IP
-  du propriétaire pour l'administration ponctuelle (psql direct, migrations
-  manuelles).
+  (0.0.0.0/0, "Allow All") — résolu, confirmé directement par le
+  propriétaire.** Constaté 2026-08-12 pendant le diagnostic de connexion
+  PowerSync (chantier hébergement/synchro) : l'onglet "IPs autorisées" de
+  la console Scaleway pour l'instance Postgres de production ne contenait
+  qu'une seule entrée, `0.0.0.0/0`, qui autorisait toute adresse IP source
+  à tenter une connexion — la couche réseau n'apportait donc aucune
+  restriction, la base ne dépendant que des identifiants applicatifs (mot
+  de passe `powersync_role`, `appli_immo_app`, etc.) pour se protéger.
+  Exposition non négligeable à l'époque : cette base contient des données
+  personnelles (locataires, garants) et financières (paiements, IBAN/BIC
+  chiffrés) réelles. Restreint depuis aux seules IP réellement
+  nécessaires : les 5 IP PowerSync Cloud région EU (`79.125.70.43`,
+  `18.200.209.88`, `18.234.18.91`, `18.233.128.219`, `34.202.251.156`,
+  voir docs/integrations.md) plus l'IP personnelle actuelle du
+  propriétaire pour l'administration ponctuelle (psql direct, migrations
+  manuelles) — 6 IP au total, `0.0.0.0/0` n'est plus présent.
 
 - **Chiffrement local de la base SQLite PowerSync — résolu (2026-08-14).**
   Condition posée le 2026-08-13 (voir historique de conception) avant
