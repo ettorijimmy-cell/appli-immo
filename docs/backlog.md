@@ -896,7 +896,7 @@ par le futur module "Révision annuelle" du cahier des charges initial
   document fixe à joindre tel quel) — décision de conception actée
   ci-dessus, pas encore implémentée.
 
-### État des lieux (futur module, priorité 2)
+### État des lieux (en cours, priorité 2)
 
 Porte, en plus de son objet propre (constat d'entrée/sortie par pièce),
 l'inventaire de mobilier à liste légale fermée (décret n° 2015-981)
@@ -1101,6 +1101,19 @@ s'associe correctement par correspondance de numéro, pas de clé
 numéro) confirmées non mélangées ; garde-fou testé (pieceType refusé sur
 `entiteType: "bail"`, 400). Pipeline complet propre.
 
+**Génération du document légal état des lieux — construite et testée,
+absente de cette section jusqu'ici (ajouté 2026-08-21).**
+`EtatDesLieuxDocumentService` (`apps/backend/src/etat-des-lieux-document-docx/`)
+génère le document réel (docxtemplater + pizzip, même pipeline que
+`BailDocumentDocxService`), photos intégrées via `sharp` (retraitement
+EXIF/PNG, voir la section "Insertion de photos dans le document généré"
+ci-dessus — la dépendance est bien installée et utilisée, contrairement à
+ce que cette section affirmait avant correction). Endpoint authentifié +
+journalisation `journal_audit`, bouton "Générer" sur la vue de relecture
+desktop, testé par un test d'intégration Postgres réel. Génération d'un
+document complet réel (dossier `tmp/`) encore en cours de vérification au
+moment de cette mise à jour — pas encore confirmée terminée.
+
 **Hébergement définitif encore à trancher au provisionnement Scaleway
 (tâche déjà en attente).** Deux options : servir les fichiers statiques
 sur un sous-chemin d'`apps/backend`, ou un hébergement statique séparé.
@@ -1191,9 +1204,11 @@ d'ajouter la dépendance (même réflexe que pour
   EXIF `Orientation` **puis supprime ce tag**, empêchant toute
   double-correction en aval. Suivi de `.png()` pour forcer un vrai PNG
   en sortie.
-- N'a **pas** été ajouté en dépendance à ce stade (`apps/backend` ne
-  contient encore aucun code image) — à installer au moment de construire
-  le point d'upload du module État des lieux, pas avant.
+- **Ajouté en dépendance et effectivement utilisé — corrigé (2026-08-21,
+  cette mention affirmait le contraire).** `sharp` figure dans
+  `apps/backend/package.json` et est importé dans
+  `etat-des-lieux-document-docx.service.ts` (ainsi que son test
+  d'intégration) — voir plus haut, `EtatDesLieuxDocumentService`.
 
 **Risque du fork non maintenu par l'auteur officiel de docxtemplater —
 chemin de repli explicite.** `docxtemplater-image-module-free` est un
