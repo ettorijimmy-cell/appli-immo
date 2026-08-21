@@ -663,7 +663,7 @@ session Claude Code, consignée ici a posteriori) :
 3. Charges et fiscalité (détaillé ci-dessous)
 4. Intervention (détaillé ci-dessous)
 
-### Édition d'un bail (futur module, priorité 1)
+### Édition d'un bail (en cours, priorité 1)
 
 État des lieux du schéma réalisé (audit + recherche des modèles-types
 officiels, vérifiés directement sur le texte de l'annexe du décret
@@ -682,32 +682,20 @@ construction de l'immeuble avant de générer ce bail"), jamais une valeur
 par défaut inventée ni un champ vide laissé silencieusement dans un vrai
 document légal généré.
 
-**Champs à ajouter (schéma non encore modifié — décisions arrêtées, pas
-codées)** :
-- `organisations` : adresse, code_postal, ville (le domicile du bailleur
-  particulier est une mention obligatoire du contrat-type).
-- `scis` : adresse, code_postal, ville (siège social) + nom/prénom du
-  gérant (mention utile au bloc signature, pas une mention obligatoire du
-  contrat-type lui-même). Gérant unique confirmé avec l'utilisateur —
-  aucune SCI réelle à cogérance actuellement, donc pas de structure à
-  plusieurs représentants légaux.
-- `immeubles` : `type_habitat` (collectif/individuel), `regime_juridique`
-  (mono_propriete/copropriete), `annee_construction` (integer, nullable) —
-  ces trois mentions sont des caractéristiques du bâtiment, pas du lot,
-  contrairement à une supposition initiale. `annee_construction` en année
-  précise plutôt qu'en tranche officielle ("avant 1949", "1949-1974"...) :
-  une fonction de dérivation dans `packages/core` calculera la tranche du
-  contrat-type à l'affichage, testée sur les bornes exactes de chaque
-  tranche (à vérifier précisément avant de coder, ne pas les supposer
-  approximativement).
-- `appartements` : `identifiant_fiscal` (texte), `nombre_pieces_principales`
-  (integer, distinct du `type` T1-T6 déjà existant qui reste une
-  catégorie commerciale, pas le décompte légal), `mode_chauffage` et
-  `mode_eau_chaude` (individuel/collectif).
-- `baux` : `travaux_realises` (texte, nullable) — mention obligatoire par
-  nature spécifique à chaque bail, sans vocabulaire fixe possible ; gardé
-  en base pour trace plutôt que non stocké du tout.
-- Nouvelle table `diagnostics`, en 1:1 avec `documents` (FK `document_id`,
+**Schéma — déjà en base, vérifié directement dans les fichiers Drizzle
+(2026-08-21) : le paragraphe précédent listant ces champs comme "à
+ajouter" était périmé, corrigé.** Tous les champs suivants existent déjà :
+`organisations.adresse/code_postal/ville`, `scis.adresse/code_postal/
+ville/nom_gerant/prenom_gerant` (+ colonnes bonus non prévues initialement
+ici : `scis.telephone`, `scis.forme_juridique`, `scis.siret`,
+`scis.est_familiale`), `immeubles.type_habitat/regime_juridique/
+annee_construction`, `appartements.identifiant_fiscal/
+nombre_pieces_principales/mode_chauffage/mode_eau_chaude`,
+`baux.travaux_realises`, `garants.adresse/code_postal/ville/profession/
+revenus`. Cohérent avec le fait que `BailDocumentDocxService` (voir plus
+bas) consomme déjà ces colonnes pour générer un document réel.
+
+Table `diagnostics`, en 1:1 avec `documents` (FK `document_id`,
   réutilise le lien polymorphe déjà existant de `documents` plutôt que
   d'en recréer un) : `type` (`dpe` | `crep_plomb` | `erp`) + champs
   optionnels selon le type — `classe_dpe` (enum A-G) et
@@ -738,6 +726,8 @@ codées)** :
   (actuellement `dpe` \| `crep_plomb` \| `erp`) avec une quatrième valeur,
   même sans champ de résultat associé — juste pour permettre la
   détection de présence.
+
+Décisions actées à l'époque sur les champs restants, toujours valables :
 - `garants` : adresse, code_postal, ville, profession, revenus — tous
   confirmés mentions obligatoires de l'acte de cautionnement sous peine de
   nullité absolue (loi ALUR), pas seulement l'adresse initialement
@@ -888,6 +878,23 @@ Architecture livrée (`apps/backend/src/indices-irl/`) :
 Cette infrastructure (table + job + endpoint) est directement réutilisable
 par le futur module "Révision annuelle" du cahier des charges initial
 (`docs/app-spec.md`) — pas seulement pour l'édition du bail.
+
+**Ce qui reste réellement à faire sur ce module (état vérifié le
+2026-08-21)** :
+- Substance de la loi n° 89-462 (articles 3 à 24 environ) au-delà des
+  sections VII (solidarité/indivisibilité) et VIII (clause résolutoire),
+  déjà codées et vérifiées — le reste (obligations bailleur/locataire,
+  révision du loyer, charges/régularisation, dépôt de garantie,
+  résiliation, état des lieux contradictoire) reste à générer section par
+  section.
+- Décision définitive sur la structuration élec/gaz — toujours non
+  tranchée, vérifié dans le code (2026-08-21) : ni une valeur
+  `documents.categorie` dédiée (ex. `elec_gaz`), ni une 4e valeur sur
+  `diagnostics.type` (toujours `dpe` \| `crep_plomb` \| `erp` uniquement)
+  n'existent à ce jour.
+- Attachement effectif de la notice d'information (arrêté du 29 mai 2015,
+  document fixe à joindre tel quel) — décision de conception actée
+  ci-dessus, pas encore implémentée.
 
 ### État des lieux (futur module, priorité 2)
 
