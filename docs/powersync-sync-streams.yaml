@@ -410,16 +410,14 @@ streams:
   # quel.
   # entite_id est une référence polymorphe sur 6 cibles (sci, immeuble,
   # appartement, locataire, bail, etat_des_lieux — voir commentaire du
-  # schéma Drizzle, packages/db/src/schema/documents.ts). etats_des_lieux
-  # n'a pas encore de Sync Stream (domaine pas encore traité) : la requête
-  # ne couvre que les 5 branches connues (sci/immeuble/appartement/
-  # locataire/bail), chacune avec sa propre condition entite_type = '...'
-  # AND entite_id IN (chaîne de filtrage habituelle vers la table cible
-  # correspondante, jusqu'à 5 niveaux de profondeur pour la branche
-  # locataire — jamais testé à cette profondeur avant ce stream, à
-  # surveiller côté temps de réponse une fois déployé). Un document lié
-  # à un état des lieux (entite_type = 'etat_des_lieux') ne remontera pas
-  # en local tant que ce domaine n'est pas traité — voir docs/backlog.md.
+  # schéma Drizzle, packages/db/src/schema/documents.ts). Les 6 branches
+  # sont désormais toutes couvertes (2026-08-21, domaine État des lieux
+  # traité) — chacune avec sa propre condition entite_type = '...' AND
+  # entite_id IN (chaîne de filtrage habituelle vers la table cible
+  # correspondante, jusqu'à 6 niveaux de profondeur pour la branche
+  # etat_des_lieux — un cran de plus que locataire, jamais testé à cette
+  # profondeur avant ce stream, à surveiller côté temps de réponse une
+  # fois déployé).
   documents:
     query: >
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
@@ -481,19 +479,36 @@ streams:
           )
           AND bail_locataires.archived_at IS NULL
         )
+      ) OR (
+        documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
+          SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+            SELECT id FROM baux WHERE baux.appartement_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          )
+        )
       )
     auto_subscribe: true
 
   # Préparé le 2026-08-20, corrigé le 2026-08-20 (même correction UNION
-  # ALL -> OR que documents ci-dessus) — voir docs/backlog.md pour le
-  # suivi.
+  # ALL -> OR que documents ci-dessus), complété le 2026-08-21 (6e branche
+  # etat_des_lieux, domaine État des lieux désormais traité) — voir
+  # docs/backlog.md pour le suivi.
   # Relation 1:1 avec documents, FK simple document_id (pas de référence
   # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
   # Filtrage par document_id IN (la requête documents ci-dessus,
   # répétée ici en ne sélectionnant que id) : la requête la plus profonde
-  # et la plus complexe de ce chantier à ce jour (5 blocs OR imbriqués
-  # dans un IN, jusqu'à 5 niveaux de profondeur par branche) — à
-  # surveiller particulièrement côté temps de réponse une fois déployé.
+  # et la plus complexe de ce chantier à ce jour (6 blocs OR imbriqués
+  # dans un IN, jusqu'à 6 niveaux de profondeur pour la branche
+  # etat_des_lieux) — à surveiller particulièrement côté temps de réponse
+  # une fois déployé.
   # Aucune colonne exclue — rien de sensible identifié sur cette table
   # (que des valeurs réglementaires chiffrées/catégorielles, aucune donnée
   # nominative ni chemin de fichier).
@@ -558,17 +573,30 @@ streams:
             )
             AND bail_locataires.archived_at IS NULL
           )
+        ) OR (
+          documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
+            SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+              SELECT id FROM baux WHERE baux.appartement_id IN (
+                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                    SELECT organisation_sci.sci_id FROM organisation_sci
+                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                    WHERE utilisateurs.id = auth.user_id()
+                    AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+          )
         )
       )
     auto_subscribe: true
 
-# Domaine Documents (2026-08-20) : le Sync Stream documents ne couvre pas
-# encore les documents liés aux états des lieux (entite_type =
-# 'etat_des_lieux') — à compléter une fois le domaine État des lieux
-# traité (ajouter la 6e branche UNION ALL, avec sa propre chaîne de
-# filtrage vers etats_des_lieux, aux deux requêtes ci-dessus documents et
-# diagnostics). D'ici là, tout document rattaché à un état des lieux reste
-# invisible hors-ligne — comportement voulu, pas un bug.
+# Domaine Documents (2026-08-20) : RÉSOLU le 2026-08-21 — la 6e branche
+# etat_des_lieux a été ajoutée aux requêtes documents et diagnostics
+# ci-dessus, une fois le domaine État des lieux traité. Les 6 branches
+# de la référence polymorphe documents.entite_id sont désormais toutes
+# couvertes.
 
   # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi. Domaine État des lieux,
