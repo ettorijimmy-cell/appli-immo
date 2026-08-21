@@ -570,6 +570,364 @@ streams:
 # diagnostics). D'ici là, tout document rattaché à un état des lieux reste
 # invisible hors-ligne — comportement voulu, pas un bug.
 
+  # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi. Domaine État des lieux,
+  # le plus étendu de ce chantier (12 tables). Table racine : bail_id
+  # unique (un seul état des lieux par bail, document unique
+  # entrée+sortie, décret n° 2016-382 art. 3, 2°). Même chaîne de
+  # filtrage que baux lui-même (bail_id -> appartement_id ->
+  # immeubles.sci_id -> organisation_sci -> utilisateurs, 4 niveaux) —
+  # toutes les tables satellites ci-dessous en ajoutent un 5e
+  # (etat_des_lieux_id -> etats_des_lieux.bail_id -> ...). Aucune colonne
+  # exclue — nouvelle_adresse_locataire incluse (cohérent avec
+  # locataires.adresse déjà accepté, décision du 2026-08-20).
+  etats_des_lieux:
+    query: >
+      SELECT id, bail_id, date_entree, date_sortie, nouvelle_adresse_locataire,
+      updated_at FROM etats_des_lieux
+      WHERE etats_des_lieux.bail_id IN (
+        SELECT id FROM baux WHERE baux.appartement_id IN (
+          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Mono-instance (unique sur etat_des_lieux_id). Aucune colonne exclue,
+  # y compris les *_description (contenu de fond du modèle Word réel, pas
+  # une annotation accessoire — décision du 2026-08-20, distincte du
+  # traitement de reference_rapprochement/commentaire ailleurs dans ce
+  # chantier).
+  etat_des_lieux_piece_entree:
+    query: >
+      SELECT id, etat_des_lieux_id, porte_description, porte_etat_entree,
+      porte_etat_sortie, sonnette_description, sonnette_etat_entree,
+      sonnette_etat_sortie, mur_description, mur_etat_entree, mur_etat_sortie,
+      sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_piece_entree
+      WHERE etat_des_lieux_piece_entree.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Mono-instance. Même base que piece_entree sans porte_*/sonnette_*.
+  # Aucune colonne exclue.
+  etat_des_lieux_piece_sejour:
+    query: >
+      SELECT id, etat_des_lieux_id, mur_description, mur_etat_entree,
+      mur_etat_sortie, sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_piece_sejour
+      WHERE etat_des_lieux_piece_sejour.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Mono-instance. Base de piece_sejour + placards/evier/plaques_cuisson/
+  # hotte/electromenager (ce dernier sans colonnes d'état, ligne libre du
+  # modèle réel). Aucune colonne exclue.
+  etat_des_lieux_piece_cuisine:
+    query: >
+      SELECT id, etat_des_lieux_id, mur_description, mur_etat_entree,
+      mur_etat_sortie, sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, placards_description,
+      placards_etat_entree, placards_etat_sortie, evier_description,
+      evier_etat_entree, evier_etat_sortie, plaques_cuisson_description,
+      plaques_cuisson_etat_entree, plaques_cuisson_etat_sortie,
+      hotte_description, hotte_etat_entree, hotte_etat_sortie,
+      electromenager_description, updated_at FROM etat_des_lieux_piece_cuisine
+      WHERE etat_des_lieux_piece_cuisine.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Mono-instance. Relevés de compteurs (décret n° 2016-382, art. 2, 1° f).
+  # numero_compteur inclus (non nominatif, décision du 2026-08-20). Aucune
+  # colonne exclue.
+  etat_des_lieux_compteurs:
+    query: >
+      SELECT id, etat_des_lieux_id, electricite_numero_compteur_entree,
+      electricite_numero_compteur_sortie, electricite_releve_hp_entree,
+      electricite_releve_hp_sortie, electricite_releve_hc_entree,
+      electricite_releve_hc_sortie, electricite_ancien_occupant_entree,
+      electricite_ancien_occupant_sortie, gaz_numero_compteur_entree,
+      gaz_numero_compteur_sortie, gaz_releve_entree, gaz_releve_sortie,
+      eau_releve_froide_entree, eau_releve_froide_sortie,
+      eau_releve_chaude_entree, eau_releve_chaude_sortie, updated_at
+      FROM etat_des_lieux_compteurs
+      WHERE etat_des_lieux_compteurs.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 3
+  # chambres. Aucune colonne exclue.
+  etat_des_lieux_pieces_chambre:
+    query: >
+      SELECT id, etat_des_lieux_id, numero, mur_description, mur_etat_entree,
+      mur_etat_sortie, sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_pieces_chambre
+      WHERE etat_des_lieux_pieces_chambre.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 salles
+  # de bain. Base de pieces_chambre + lavabo/baignoire. Aucune colonne
+  # exclue.
+  etat_des_lieux_pieces_salle_de_bain:
+    query: >
+      SELECT id, etat_des_lieux_id, numero, mur_description, mur_etat_entree,
+      mur_etat_sortie, sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, lavabo_description,
+      lavabo_etat_entree, lavabo_etat_sortie, baignoire_description,
+      baignoire_etat_entree, baignoire_etat_sortie, updated_at
+      FROM etat_des_lieux_pieces_salle_de_bain
+      WHERE etat_des_lieux_pieces_salle_de_bain.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 WC.
+  # Base de pieces_chambre + lavabo/wc (la cuvette, distincte du lavabo).
+  # Aucune colonne exclue.
+  etat_des_lieux_pieces_wc:
+    query: >
+      SELECT id, etat_des_lieux_id, numero, mur_description, mur_etat_entree,
+      mur_etat_sortie, sol_description, sol_etat_entree, sol_etat_sortie,
+      vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, lavabo_description,
+      lavabo_etat_entree, lavabo_etat_sortie, wc_description, wc_etat_entree,
+      wc_etat_sortie, updated_at FROM etat_des_lieux_pieces_wc
+      WHERE etat_des_lieux_pieces_wc.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2
+  # emplacements libres. libelle inclus (contenu de fond, même décision
+  # que les *_description). Aucune colonne exclue.
+  etat_des_lieux_pieces_autre:
+    query: >
+      SELECT id, etat_des_lieux_id, numero, libelle, mur_description,
+      mur_etat_entree, mur_etat_sortie, sol_description, sol_etat_entree,
+      sol_etat_sortie, vitrage_volets_description, vitrage_volets_etat_entree,
+      vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
+      plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
+      eclairage_etat_sortie, prises_description, prises_etat_entree,
+      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_pieces_autre
+      WHERE etat_des_lieux_pieces_autre.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, AUCUNE contrainte d'unicité DB (upsert par id
+  # explicite côté service, etats-des-lieux.service.ts) — sans impact sur
+  # ce filtre, qui ne fait que lire par hiérarchie (décision du
+  # 2026-08-20). commentaire EXCLU (texte libre annexe, même motif que
+  # versements.reference_rapprochement/remboursements.commentaire, décision
+  # du 2026-08-21). libelle_autre inclus.
+  etat_des_lieux_cles:
+    query: >
+      SELECT id, etat_des_lieux_id, type_cle, libelle_autre, nombre_entree,
+      nombre_sortie, updated_at FROM etat_des_lieux_cles
+      WHERE etat_des_lieux_cles.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, AUCUNE contrainte d'unicité DB (même situation que
+  # cles). commentaire EXCLU (même motif). libelle inclus.
+  etat_des_lieux_equipements_divers:
+    query: >
+      SELECT id, etat_des_lieux_id, libelle, nombre_entree, etat_entree,
+      nombre_sortie, etat_sortie, updated_at FROM etat_des_lieux_equipements_divers
+      WHERE etat_des_lieux_equipements_divers.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
+  # Multi-instance, unique sur (etat_des_lieux_id, element_id) —
+  # contrairement à cles/equipements_divers, cette table a bien une
+  # contrainte d'unicité DB (corrigé une prémisse inexacte du 2026-08-21).
+  # Pertinent uniquement si bail.type_bail = 'meuble' (règle applicative,
+  # pas une contrainte de schéma). commentaire EXCLU (même motif que
+  # cles/equipements_divers).
+  etat_des_lieux_inventaire:
+    query: >
+      SELECT id, etat_des_lieux_id, element_id, nombre_entree, etat_entree,
+      nombre_sortie, etat_sortie, updated_at FROM etat_des_lieux_inventaire
+      WHERE etat_des_lieux_inventaire.etat_des_lieux_id IN (
+        SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
+
+# Domaine État des lieux (2026-08-21) : la 6e branche manquante du Sync
+# Stream documents/diagnostics (entite_type = 'etat_des_lieux', voir la
+# note "Domaine Documents" ci-dessus) sera ajoutée dans un second temps,
+# une fois ce lot-ci validé et déployé — pas dans le même lot, décision
+# explicite du propriétaire.
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non
