@@ -615,6 +615,10 @@ les trois parcours ci-dessus).
   `DATABASE_URL` contient l'IP Postgres de production Scaleway
   (`212.47.241.9`) — protège les 13 fichiers de test d'intégration qui
   utilisent ce helper, pas seulement `bail-document-docx`.
+  **Suivi (2026-08-21)** : aucune récidive observée sur le reste du
+  chantier PowerSync depuis cet incident — les domaines Documents, État
+  des lieux et Alertes se sont tous déployés et testés sans problème
+  similaire jusqu'à la clôture complète du chantier.
 
 - **`locataires.anonymise_le` documenté** (`docs/data-dictionary.md` ligne
   85, commentaire du schéma Drizzle) **comme mécanisme d'anonymisation
