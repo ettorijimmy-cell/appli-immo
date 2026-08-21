@@ -219,6 +219,298 @@ const diagnostics = new Table({
   updated_at: column.text
 });
 
+// Domaine État des lieux (12 tables). nouvelle_adresse_locataire incluse
+// (cohérent avec locataires.adresse déjà accepté). date_entree/
+// date_sortie en column.text comme toutes les colonnes date de ce
+// chantier (AppSchema PowerSync n'a pas de type date dédié).
+const etats_des_lieux = new Table({
+  bail_id: column.text,
+  date_entree: column.text,
+  date_sortie: column.text,
+  nouvelle_adresse_locataire: column.text,
+  updated_at: column.text
+});
+
+// Mono-instance (unique sur etat_des_lieux_id côté Postgres — non
+// représenté ici, AppSchema ne porte pas de contraintes). Toutes les
+// colonnes *_description incluses (contenu de fond du modèle Word réel).
+const etat_des_lieux_piece_entree = new Table({
+  etat_des_lieux_id: column.text,
+  porte_description: column.text,
+  porte_etat_entree: column.text,
+  porte_etat_sortie: column.text,
+  sonnette_description: column.text,
+  sonnette_etat_entree: column.text,
+  sonnette_etat_sortie: column.text,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  updated_at: column.text
+});
+
+// Mono-instance. Même base que piece_entree sans porte_*/sonnette_*.
+const etat_des_lieux_piece_sejour = new Table({
+  etat_des_lieux_id: column.text,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  updated_at: column.text
+});
+
+// Mono-instance. Base de piece_sejour + placards/evier/plaques_cuisson/
+// hotte/electromenager (ce dernier sans colonnes d'état associées).
+const etat_des_lieux_piece_cuisine = new Table({
+  etat_des_lieux_id: column.text,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  placards_description: column.text,
+  placards_etat_entree: column.text,
+  placards_etat_sortie: column.text,
+  evier_description: column.text,
+  evier_etat_entree: column.text,
+  evier_etat_sortie: column.text,
+  plaques_cuisson_description: column.text,
+  plaques_cuisson_etat_entree: column.text,
+  plaques_cuisson_etat_sortie: column.text,
+  hotte_description: column.text,
+  hotte_etat_entree: column.text,
+  hotte_etat_sortie: column.text,
+  electromenager_description: column.text,
+  updated_at: column.text
+});
+
+// Mono-instance. Relevés de compteurs — decimal(10,2) côté Postgres
+// mappé en column.real.
+const etat_des_lieux_compteurs = new Table({
+  etat_des_lieux_id: column.text,
+  electricite_numero_compteur_entree: column.text,
+  electricite_numero_compteur_sortie: column.text,
+  electricite_releve_hp_entree: column.real,
+  electricite_releve_hp_sortie: column.real,
+  electricite_releve_hc_entree: column.real,
+  electricite_releve_hc_sortie: column.real,
+  electricite_ancien_occupant_entree: column.real,
+  electricite_ancien_occupant_sortie: column.real,
+  gaz_numero_compteur_entree: column.text,
+  gaz_numero_compteur_sortie: column.text,
+  gaz_releve_entree: column.real,
+  gaz_releve_sortie: column.real,
+  eau_releve_froide_entree: column.real,
+  eau_releve_froide_sortie: column.real,
+  eau_releve_chaude_entree: column.real,
+  eau_releve_chaude_sortie: column.real,
+  updated_at: column.text
+});
+
+// Multi-instance, unique sur (etat_des_lieux_id, numero) côté Postgres —
+// 1 à 3 chambres.
+const etat_des_lieux_pieces_chambre = new Table({
+  etat_des_lieux_id: column.text,
+  numero: column.integer,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  updated_at: column.text
+});
+
+// Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 salles
+// de bain. Base de pieces_chambre + lavabo/baignoire.
+const etat_des_lieux_pieces_salle_de_bain = new Table({
+  etat_des_lieux_id: column.text,
+  numero: column.integer,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  lavabo_description: column.text,
+  lavabo_etat_entree: column.text,
+  lavabo_etat_sortie: column.text,
+  baignoire_description: column.text,
+  baignoire_etat_entree: column.text,
+  baignoire_etat_sortie: column.text,
+  updated_at: column.text
+});
+
+// Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 WC. Base
+// de pieces_chambre + lavabo/wc (la cuvette, distincte du lavabo).
+const etat_des_lieux_pieces_wc = new Table({
+  etat_des_lieux_id: column.text,
+  numero: column.integer,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  lavabo_description: column.text,
+  lavabo_etat_entree: column.text,
+  lavabo_etat_sortie: column.text,
+  wc_description: column.text,
+  wc_etat_entree: column.text,
+  wc_etat_sortie: column.text,
+  updated_at: column.text
+});
+
+// Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2
+// emplacements libres. libelle inclus (contenu de fond).
+const etat_des_lieux_pieces_autre = new Table({
+  etat_des_lieux_id: column.text,
+  numero: column.integer,
+  libelle: column.text,
+  mur_description: column.text,
+  mur_etat_entree: column.text,
+  mur_etat_sortie: column.text,
+  sol_description: column.text,
+  sol_etat_entree: column.text,
+  sol_etat_sortie: column.text,
+  vitrage_volets_description: column.text,
+  vitrage_volets_etat_entree: column.text,
+  vitrage_volets_etat_sortie: column.text,
+  plafond_description: column.text,
+  plafond_etat_entree: column.text,
+  plafond_etat_sortie: column.text,
+  eclairage_description: column.text,
+  eclairage_etat_entree: column.text,
+  eclairage_etat_sortie: column.text,
+  prises_description: column.text,
+  prises_etat_entree: column.text,
+  prises_etat_sortie: column.text,
+  prises_nombre: column.integer,
+  updated_at: column.text
+});
+
+// Multi-instance, AUCUNE contrainte d'unicité côté Postgres (upsert par
+// id explicite côté service). commentaire volontairement absent — EXCLU
+// du Sync Stream (texte libre annexe, même motif que
+// versements.reference_rapprochement/remboursements.commentaire).
+const etat_des_lieux_cles = new Table({
+  etat_des_lieux_id: column.text,
+  type_cle: column.text,
+  libelle_autre: column.text,
+  nombre_entree: column.integer,
+  nombre_sortie: column.integer,
+  updated_at: column.text
+});
+
+// Multi-instance, AUCUNE contrainte d'unicité côté Postgres (même
+// situation que cles). commentaire EXCLU (même motif).
+const etat_des_lieux_equipements_divers = new Table({
+  etat_des_lieux_id: column.text,
+  libelle: column.text,
+  nombre_entree: column.integer,
+  etat_entree: column.text,
+  nombre_sortie: column.integer,
+  etat_sortie: column.text,
+  updated_at: column.text
+});
+
+// Multi-instance, unique sur (etat_des_lieux_id, element_id) côté
+// Postgres — contrairement à cles/equipements_divers, cette table a bien
+// une contrainte d'unicité DB. commentaire EXCLU (même motif que
+// cles/equipements_divers).
+const etat_des_lieux_inventaire = new Table({
+  etat_des_lieux_id: column.text,
+  element_id: column.text,
+  nombre_entree: column.integer,
+  etat_entree: column.text,
+  nombre_sortie: column.integer,
+  etat_sortie: column.text,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -235,5 +527,17 @@ export const AppSchema = new Schema({
   indices_irl,
   elements_inventaire_meuble,
   documents,
-  diagnostics
+  diagnostics,
+  etats_des_lieux,
+  etat_des_lieux_piece_entree,
+  etat_des_lieux_piece_sejour,
+  etat_des_lieux_piece_cuisine,
+  etat_des_lieux_compteurs,
+  etat_des_lieux_pieces_chambre,
+  etat_des_lieux_pieces_salle_de_bain,
+  etat_des_lieux_pieces_wc,
+  etat_des_lieux_pieces_autre,
+  etat_des_lieux_cles,
+  etat_des_lieux_equipements_divers,
+  etat_des_lieux_inventaire
 });
