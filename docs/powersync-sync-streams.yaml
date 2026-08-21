@@ -962,12 +962,18 @@ streams:
   # de FK possible, voir commentaire du schéma Drizzle,
   # packages/db/src/schema/alertes.ts) : bail_fin_proche -> baux, impaye
   # -> paiements, document_expire/document_expire_proche -> documents,
-  # entretien_equipement -> equipements. 4 blocs OR (pas UNION ALL —
-  # leçon retenue du domaine Documents), chacun avec sa propre chaîne de
-  # filtrage vers la table cible correspondante. document_expire et
-  # document_expire_proche partagent la même table cible : un seul bloc
-  # OR avec `type IN (...)` suffit, pas deux blocs séparés.
-  # La branche document_expire(_proche) réutilise intégralement le filtre
+  # entretien_equipement -> equipements. 5 blocs OR (pas UNION ALL — leçon
+  # retenue du domaine Documents), chacun avec sa propre chaîne de
+  # filtrage vers la table cible correspondante.
+  # Corrigé le 2026-08-21 : `alertes.type IN ('document_expire',
+  # 'document_expire_proche')` (liste de valeurs littérales) rejeté par le
+  # dashboard PowerSync — "This expression is not supported by
+  # PowerSync". IN avec une sous-requête SELECT fonctionne partout
+  # ailleurs dans ce chantier ; IN avec des valeurs littérales ne l'est
+  # pas. document_expire et document_expire_proche ont donc chacun leur
+  # propre bloc OR, avec le même filtre vers documents dupliqué deux fois
+  # (5 blocs au total, pas 4) plutôt que mutualisé.
+  # Chacune des deux branches document_expire(_proche) réutilise intégralement le filtre
   # polymorphe à 6 branches de documents (documents.entite_type IN
   # sci/immeuble/appartement/bail/locataire/etat_des_lieux) en sous-
   # requête — la chaîne la plus profonde et la plus complexe de ce
@@ -1013,7 +1019,82 @@ streams:
           )
         )
       ) OR (
-        alertes.type IN ('document_expire', 'document_expire_proche') AND alertes.entite_id IN (
+        alertes.type = 'document_expire' AND alertes.entite_id IN (
+          SELECT id FROM documents WHERE (
+            documents.entite_type = 'sci' AND documents.entite_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          ) OR (
+            documents.entite_type = 'immeuble' AND documents.entite_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          ) OR (
+            documents.entite_type = 'appartement' AND documents.entite_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          ) OR (
+            documents.entite_type = 'bail' AND documents.entite_id IN (
+              SELECT id FROM baux WHERE baux.appartement_id IN (
+                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                    SELECT organisation_sci.sci_id FROM organisation_sci
+                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                    WHERE utilisateurs.id = auth.user_id()
+                    AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+          ) OR (
+            documents.entite_type = 'locataire' AND documents.entite_id IN (
+              SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
+                  )
+                )
+              )
+              AND bail_locataires.archived_at IS NULL
+            )
+          ) OR (
+            documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
+              SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) OR (
+        alertes.type = 'document_expire_proche' AND alertes.entite_id IN (
           SELECT id FROM documents WHERE (
             documents.entite_type = 'sci' AND documents.entite_id IN (
               SELECT organisation_sci.sci_id FROM organisation_sci
