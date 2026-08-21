@@ -386,6 +386,13 @@ les trois parcours ci-dessus).
   volume, donc aucune mesure obtenue à ce stade n'aurait été représentative
   d'un vrai coût de requête à 3 niveaux. À refaire quand un volume réel sera
   disponible (ex. migration des ~20 biens réels).
+  **Contexte ajouté (2026-08-21)** : la mesure elle-même n'a toujours pas
+  été faite — mais des streams bien plus profonds que 3 niveaux ont depuis
+  été déployés et testés sans problème observé (`diagnostics` à 6 niveaux,
+  `alertes`/`document_expire` jusqu'à 7 niveaux d'imbrication). Ça ne
+  remplace pas une vraie mesure sur volume réel, mais l'inquiétude
+  initiale sur la profondeur de requête ne s'est pas concrétisée en
+  pratique jusqu'ici.
 
 - **Trop-perçu non traité à la résiliation d'un bail réglé en cours de mois**
   (identifié Module 5, lors de la conception de la proration des échéances ;
