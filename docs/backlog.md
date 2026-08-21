@@ -625,18 +625,15 @@ les trois parcours ci-dessus).
   implémenter réellement le mécanisme, soit retirer la mention de la
   documentation si ce n'est plus prévu.
 
-- **Sync Stream `documents` incomplet sur la branche `etat_des_lieux`
-  (2026-08-20).** `documents.entite_id` est une référence polymorphe sur
-  6 cibles (`sci`, `immeuble`, `appartement`, `locataire`, `bail`,
-  `etat_des_lieux`). Le Sync Stream `documents` (et `diagnostics`, filtré
-  par `document_id IN (documents)`) ne couvre pour l'instant que les 5
-  branches connues — `etat_des_lieux` est exclue, le domaine État des
-  lieux n'ayant pas encore de Sync Stream lui-même. Tout document
-  rattaché à un état des lieux (photos prises pendant la saisie
-  numérique, `document_entite_type = 'etat_des_lieux'`) reste donc
-  invisible hors-ligne jusqu'à nouvel ordre — comportement voulu, pas un
-  bug. À compléter une fois le domaine État des lieux traité : ajouter
-  une 6e branche `UNION ALL` (filtrage vers `etats_des_lieux`) aux deux
+- **Sync Stream `documents` incomplet sur la branche `etat_des_lieux` —
+  résolu (2026-08-21).** `documents.entite_id` est une référence
+  polymorphe sur 6 cibles (`sci`, `immeuble`, `appartement`, `locataire`,
+  `bail`, `etat_des_lieux`). Le Sync Stream `documents` (et
+  `diagnostics`, filtré par `document_id IN (documents)`) n'a couvert que
+  les 5 branches connues entre le 2026-08-20 et le 2026-08-21 —
+  `etat_des_lieux` était exclue, le domaine État des lieux n'ayant pas
+  encore de Sync Stream lui-même. La 6e branche (filtrage vers
+  `etats_des_lieux`, même chaîne que `baux`) a été ajoutée aux deux
   requêtes dans `docs/powersync-sync-streams.yaml`.
 
 ---
