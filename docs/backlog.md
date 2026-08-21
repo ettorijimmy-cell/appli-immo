@@ -635,6 +635,21 @@ les trois parcours ci-dessus).
   `etats_des_lieux`, même chaîne que `baux`) a été ajoutée aux deux
   requêtes dans `docs/powersync-sync-streams.yaml`.
 
+- **Chantier PowerSync — extension par domaine : terminé (2026-08-21).**
+  Les 8 domaines prévus ont tous été traités et déployés, domaine par
+  domaine : Patrimoine (scis/immeubles/appartements/equipements),
+  Locataires & baux (baux/garants/bail_locataires/locataires), Finances
+  (paiements/versements/remboursements), Alertes
+  (parametres_alertes puis alertes elle-même, terminée en dernier),
+  Références globales (indices_irl/elements_inventaire_meuble), Documents
+  (documents/diagnostics), État des lieux (12 tables). Une seule
+  exclusion volontaire et permanente : `comptes_bancaires_sci`, jamais de
+  Sync Stream (IBAN/BIC chiffrés, consultation exclusivement via
+  l'endpoint authentifié dédié, voir plus bas). **29 Sync Streams au
+  total** — `docs/powersync-sync-streams.yaml` fait foi comme source de
+  vérité versionnée de ce qui est réellement déployé dans le dashboard
+  PowerSync, pas ce fichier.
+
 ---
 
 ## Maintenance
