@@ -319,17 +319,16 @@ streams:
 # Domaine Alertes (2026-08-16) :
 #
 # - alertes REPORTÉ après le domaine Documents (pas encore de Sync Stream
-#   documents à ce jour). Raison : alertes.entite_id est une référence
-#   polymorphe — la table cible dépend de alertes.type (baux pour
-#   bail_fin_proche, paiements pour impaye, documents pour
-#   document_expire/document_expire_proche, equipements pour
-#   entretien_equipement), sans FK possible (voir commentaire du schéma
-#   Drizzle, packages/db/src/schema/alertes.ts). Impossible d'écrire la
-#   branche document_expire/document_expire_proche du filtre tant que le
-#   Sync Stream documents lui-même n'est pas conçu — les deux dépendent
-#   l'un de l'autre. derniere_condition_vraie à EXCLURE quand on y
-#   reviendra (champ interne, jamais exposé à l'utilisateur selon le
-#   commentaire du schéma) — acté dès maintenant pour ne pas l'oublier.
+#   documents à ce jour) — RÉSOLU le 2026-08-21, voir le stream alertes
+#   plus bas dans ce fichier. Raison du report à l'époque :
+#   alertes.entite_id est une référence polymorphe — la table cible
+#   dépend de alertes.type (baux pour bail_fin_proche, paiements pour
+#   impaye, documents pour document_expire/document_expire_proche,
+#   equipements pour entretien_equipement), sans FK possible (voir
+#   commentaire du schéma Drizzle, packages/db/src/schema/alertes.ts).
+#   Impossible d'écrire la branche document_expire/document_expire_proche
+#   du filtre tant que le Sync Stream documents lui-même n'était pas
+#   conçu — les deux dépendaient l'un de l'autre.
 #
 # - parametres_alertes : config globale mono-utilisateur (une ligne par
 #   type d'alerte, 5 lignes maximum, contrainte d'unicité sur `type`),
@@ -950,11 +949,159 @@ streams:
       )
     auto_subscribe: true
 
-# Domaine État des lieux (2026-08-21) : la 6e branche manquante du Sync
-# Stream documents/diagnostics (entite_type = 'etat_des_lieux', voir la
-# note "Domaine Documents" ci-dessus) sera ajoutée dans un second temps,
-# une fois ce lot-ci validé et déployé — pas dans le même lot, décision
-# explicite du propriétaire.
+# Domaine État des lieux (2026-08-21) : RÉSOLU — la 6e branche
+# manquante du Sync Stream documents/diagnostics (entite_type =
+# 'etat_des_lieux') a été ajoutée séparément, voir le bloc documents/
+# diagnostics ci-dessus.
+
+  # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
+  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Alertes, dernier
+  # domaine de ce chantier — voir la note "Domaine Alertes (2026-08-16)"
+  # ci-dessus pour l'historique du report.
+  # entite_id est une référence polymorphe sur 4 cibles selon `type` (pas
+  # de FK possible, voir commentaire du schéma Drizzle,
+  # packages/db/src/schema/alertes.ts) : bail_fin_proche -> baux, impaye
+  # -> paiements, document_expire/document_expire_proche -> documents,
+  # entretien_equipement -> equipements. 4 blocs OR (pas UNION ALL —
+  # leçon retenue du domaine Documents), chacun avec sa propre chaîne de
+  # filtrage vers la table cible correspondante. document_expire et
+  # document_expire_proche partagent la même table cible : un seul bloc
+  # OR avec `type IN (...)` suffit, pas deux blocs séparés.
+  # La branche document_expire(_proche) réutilise intégralement le filtre
+  # polymorphe à 6 branches de documents (documents.entite_type IN
+  # sci/immeuble/appartement/bail/locataire/etat_des_lieux) en sous-
+  # requête — la chaîne la plus profonde et la plus complexe de ce
+  # chantier à ce jour, jusqu'à 7 niveaux d'imbrication (alertes ->
+  # documents -> etats_des_lieux -> baux -> appartements -> immeubles ->
+  # organisation_sci -> utilisateurs) — à surveiller en priorité côté
+  # temps de réponse une fois déployé.
+  # derniere_condition_vraie EXCLU (champ interne, jamais exposé à
+  # l'utilisateur selon le commentaire du schéma — décision actée dès la
+  # découverte de ce domaine, 2026-08-16). Vérifié programmatiquement le
+  # 2026-08-21 : absent de la requête ci-dessous. Toutes les autres
+  # colonnes métier incluses.
+  alertes:
+    query: >
+      SELECT id, type, entite_id, statut, message, date_reference, updated_at
+      FROM alertes
+      WHERE (
+        alertes.type = 'bail_fin_proche' AND alertes.entite_id IN (
+          SELECT id FROM baux WHERE baux.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      ) OR (
+        alertes.type = 'impaye' AND alertes.entite_id IN (
+          SELECT id FROM paiements WHERE paiements.bail_id IN (
+            SELECT id FROM baux WHERE baux.appartement_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          )
+        )
+      ) OR (
+        alertes.type IN ('document_expire', 'document_expire_proche') AND alertes.entite_id IN (
+          SELECT id FROM documents WHERE (
+            documents.entite_type = 'sci' AND documents.entite_id IN (
+              SELECT organisation_sci.sci_id FROM organisation_sci
+              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+              WHERE utilisateurs.id = auth.user_id()
+              AND organisation_sci.date_fin IS NULL
+            )
+          ) OR (
+            documents.entite_type = 'immeuble' AND documents.entite_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          ) OR (
+            documents.entite_type = 'appartement' AND documents.entite_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          ) OR (
+            documents.entite_type = 'bail' AND documents.entite_id IN (
+              SELECT id FROM baux WHERE baux.appartement_id IN (
+                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                    SELECT organisation_sci.sci_id FROM organisation_sci
+                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                    WHERE utilisateurs.id = auth.user_id()
+                    AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+          ) OR (
+            documents.entite_type = 'locataire' AND documents.entite_id IN (
+              SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
+                  )
+                )
+              )
+              AND bail_locataires.archived_at IS NULL
+            )
+          ) OR (
+            documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
+              SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) OR (
+        alertes.type = 'entretien_equipement' AND alertes.entite_id IN (
+          SELECT id FROM equipements WHERE equipements.appartement_id IN (
+            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                SELECT organisation_sci.sci_id FROM organisation_sci
+                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                WHERE utilisateurs.id = auth.user_id()
+                AND organisation_sci.date_fin IS NULL
+              )
+            )
+          )
+        )
+      )
+    auto_subscribe: true
 
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
