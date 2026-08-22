@@ -6,6 +6,8 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateAppartementDto } from "./dto/create-appartement.dto";
 import type { UpdateAppartementDto } from "./dto/update-appartement.dto";
 
+type AppartementRow = typeof appartements.$inferSelect;
+
 @Injectable()
 export class AppartementsService {
   constructor(
@@ -30,14 +32,14 @@ export class AppartementsService {
     if (!appartement) {
       throw new Error("Échec de la création de l'appartement");
     }
-    return appartement;
+    return this.versDto(appartement);
   }
 
   async findAll(immeubleId?: string) {
-    if (immeubleId) {
-      return this.db.select().from(appartements).where(eq(appartements.immeubleId, immeubleId));
-    }
-    return this.db.select().from(appartements);
+    const lignes = immeubleId
+      ? await this.db.select().from(appartements).where(eq(appartements.immeubleId, immeubleId))
+      : await this.db.select().from(appartements);
+    return lignes.map((appartement) => this.versDto(appartement));
   }
 
   async findById(id: string) {
@@ -46,7 +48,7 @@ export class AppartementsService {
       .from(appartements)
       .where(eq(appartements.id, id))
       .limit(1);
-    return appartement ?? null;
+    return appartement ? this.versDto(appartement) : null;
   }
 
   async update(id: string, dto: UpdateAppartementDto) {
@@ -60,7 +62,7 @@ export class AppartementsService {
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }
-    return appartement;
+    return this.versDto(appartement as AppartementRow);
   }
 
   async archive(id: string) {
@@ -74,6 +76,39 @@ export class AppartementsService {
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }
-    return appartement;
+    return this.versDto(appartement as AppartementRow);
+  }
+
+  // identifiant_fiscal (donnée fiscale nominative, packages/db/src/schema/
+  // appartements.ts) n'est ni exposé ici ni réplicable par le Sync Stream
+  // appartements (docs/backlog.md, chantier PowerSync) — aucun DTO
+  // create/update ne permet de le saisir aujourd'hui, et aucun code
+  // frontend n'en dépend en lecture.
+  private versDto(appartement: AppartementRow) {
+    return {
+      id: appartement.id,
+      createdAt: appartement.createdAt,
+      updatedAt: appartement.updatedAt,
+      updatedBy: appartement.updatedBy,
+      version: appartement.version,
+      archivedAt: appartement.archivedAt,
+      immeubleId: appartement.immeubleId,
+      numero: appartement.numero,
+      type: appartement.type,
+      surface: appartement.surface,
+      loyerReference: appartement.loyerReference,
+      nombrePiecesPrincipales: appartement.nombrePiecesPrincipales,
+      modeChauffage: appartement.modeChauffage,
+      modeEauChaude: appartement.modeEauChaude,
+      typeEnergie: appartement.typeEnergie,
+      equipementCuisine: appartement.equipementCuisine,
+      dependancesAnnexes: appartement.dependancesAnnexes,
+      nombreChambres: appartement.nombreChambres,
+      nombreSallesDeBain: appartement.nombreSallesDeBain,
+      nombreWc: appartement.nombreWc,
+      autrePiece1: appartement.autrePiece1,
+      autrePiece2: appartement.autrePiece2,
+      statut: appartement.statut
+    };
   }
 }

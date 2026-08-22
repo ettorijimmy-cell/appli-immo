@@ -315,7 +315,6 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
       .set({ nombrePiecesPrincipales: null, modeChauffage: null, modeEauChaude: null })
       .where(eq(appartements.id, appartement.id));
     const appartementRelu = await appartementsService.findById(appartement.id);
-    expect(appartementRelu?.identifiantFiscal).toBeNull();
     expect(appartementRelu?.nombrePiecesPrincipales).toBeNull();
     expect(appartementRelu?.modeChauffage).toBeNull();
     expect(appartementRelu?.modeEauChaude).toBeNull();
@@ -327,11 +326,51 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     // toucher aux nouveaux champs.
     const misAJour = await appartementsService.update(appartement.id, { surface: "42.50" });
     expect(misAJour.surface).toBe("42.50");
-    expect(misAJour.identifiantFiscal).toBeNull();
 
     const immeubleMisAJour = await immeublesService.update(immeuble.id, { ville: "Marseille" });
     expect(immeubleMisAJour.ville).toBe("Marseille");
     expect(immeubleMisAJour.typeHabitat).toBeNull();
+  });
+
+  it("findAll()/findById()/update() ne renvoient jamais identifiant_fiscal (donnée fiscale nominative, jamais exposée via l'API)", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Identifiant Fiscal",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const immeuble = await immeublesService.create({
+      sciId: sci.id,
+      nom: "Immeuble Identifiant Fiscal",
+      adresse: "9 rue de Test",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const [appartement] = await db
+      .insert(appartements)
+      .values({
+        immeubleId: immeuble.id,
+        numero: "9",
+        type: "T2",
+        identifiantFiscal: "MARQUEUR-IDENTIFIANT-FISCAL-TEST",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      })
+      .returning();
+    if (!appartement) {
+      throw new Error("Échec de la création de l'appartement de test");
+    }
+
+    const relu = await appartementsService.findById(appartement.id);
+    expect(relu).not.toHaveProperty("identifiantFiscal");
+
+    const [depuisFindAll] = await appartementsService.findAll(immeuble.id);
+    expect(depuisFindAll).not.toHaveProperty("identifiantFiscal");
+
+    const misAJour = await appartementsService.update(appartement.id, { surface: "30.00" });
+    expect(misAJour).not.toHaveProperty("identifiantFiscal");
   });
 
   // Vérifie l'infrastructure de timbrage audit centralisée (docs/backlog.md,
