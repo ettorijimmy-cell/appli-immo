@@ -6,6 +6,8 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateVersementDto } from "./dto/create-versement.dto";
 
+type VersementRow = typeof versements.$inferSelect;
+
 @Injectable()
 export class VersementsService {
   constructor(
@@ -14,10 +16,10 @@ export class VersementsService {
   ) {}
 
   async findAll(paiementId?: string) {
-    if (paiementId) {
-      return this.db.select().from(versements).where(eq(versements.paiementId, paiementId));
-    }
-    return this.db.select().from(versements);
+    const lignes = paiementId
+      ? await this.db.select().from(versements).where(eq(versements.paiementId, paiementId))
+      : await this.db.select().from(versements);
+    return lignes.map((versement) => this.versDto(versement));
   }
 
   // Ajoute un encaissement réel à un paiement, sans jamais écraser les
@@ -47,7 +49,7 @@ export class VersementsService {
 
     await this.recalculerStatutPaiement(dto.paiementId, paiement.montant);
 
-    return versement;
+    return this.versDto(versement);
   }
 
   // Annule UN versement précis (docs/data-dictionary.md — jamais une
@@ -80,7 +82,7 @@ export class VersementsService {
       await this.recalculerStatutPaiement(versement.paiementId, paiement.montant);
     }
 
-    return versementAnnule;
+    return this.versDto(versementAnnule as VersementRow);
   }
 
   private async recalculerStatutPaiement(paiementId: string, montantDu: string): Promise<void> {
@@ -91,5 +93,26 @@ export class VersementsService {
     const montantRecu = calculerMontantRecuTotal(versementsActifs);
     const statut = calculerStatutPaiement(montantDu, montantRecu);
     await mettreAJourAvecAudit(this.db, paiements, paiementId, { statut }, this.requestContext.getUtilisateurId());
+  }
+
+  // reference_rapprochement (libellé brut d'une ligne de relevé bancaire,
+  // contenu externe non maîtrisé, packages/db/src/schema/versements.ts)
+  // n'est ni exposé ici ni réplicable par le Sync Stream versements
+  // (docs/backlog.md, chantier PowerSync) — le frontend ne fait que
+  // l'écrire (RapprochementCsvView.tsx) via CreateVersementDto, jamais le
+  // relire.
+  private versDto(versement: VersementRow) {
+    return {
+      id: versement.id,
+      createdAt: versement.createdAt,
+      updatedAt: versement.updatedAt,
+      updatedBy: versement.updatedBy,
+      version: versement.version,
+      archivedAt: versement.archivedAt,
+      paiementId: versement.paiementId,
+      montant: versement.montant,
+      dateVersement: versement.dateVersement,
+      mode: versement.mode
+    };
   }
 }
