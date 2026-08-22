@@ -6,6 +6,8 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateEquipementDto } from "./dto/create-equipement.dto";
 import type { UpdateEquipementDto } from "./dto/update-equipement.dto";
 
+type EquipementRow = typeof equipements.$inferSelect;
+
 @Injectable()
 export class EquipementsService {
   constructor(
@@ -26,14 +28,14 @@ export class EquipementsService {
     if (!equipement) {
       throw new Error("Échec de la création de l'équipement");
     }
-    return equipement;
+    return this.versDto(equipement);
   }
 
   async findAll(appartementId?: string) {
-    if (appartementId) {
-      return this.db.select().from(equipements).where(eq(equipements.appartementId, appartementId));
-    }
-    return this.db.select().from(equipements);
+    const lignes = appartementId
+      ? await this.db.select().from(equipements).where(eq(equipements.appartementId, appartementId))
+      : await this.db.select().from(equipements);
+    return lignes.map((equipement) => this.versDto(equipement));
   }
 
   async findById(id: string) {
@@ -42,7 +44,7 @@ export class EquipementsService {
       .from(equipements)
       .where(eq(equipements.id, id))
       .limit(1);
-    return equipement ?? null;
+    return equipement ? this.versDto(equipement) : null;
   }
 
   async update(id: string, dto: UpdateEquipementDto) {
@@ -56,7 +58,7 @@ export class EquipementsService {
     if (!equipement) {
       throw new NotFoundException("Équipement introuvable");
     }
-    return equipement;
+    return this.versDto(equipement as EquipementRow);
   }
 
   // Pas de colonne `statut` dédiée (voir docs/data-dictionary.md) :
@@ -72,6 +74,21 @@ export class EquipementsService {
     if (!equipement) {
       throw new NotFoundException("Équipement introuvable");
     }
-    return equipement;
+    return this.versDto(equipement as EquipementRow);
+  }
+
+  private versDto(equipement: EquipementRow) {
+    return {
+      id: equipement.id,
+      createdAt: equipement.createdAt,
+      updatedAt: equipement.updatedAt,
+      updatedBy: equipement.updatedBy,
+      version: equipement.version,
+      archivedAt: equipement.archivedAt,
+      appartementId: equipement.appartementId,
+      type: equipement.type,
+      dateDernierEntretien: equipement.dateDernierEntretien,
+      intervalleEntretienMois: equipement.intervalleEntretienMois
+    };
   }
 }
