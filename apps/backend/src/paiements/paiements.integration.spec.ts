@@ -343,20 +343,17 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     // Les champs d'origine ne sont jamais modifiés par l'annulation, ne
     // sert que de trace historique (jamais de suppression physique).
     expect(annule.montant).toBe("850.00");
-    expect(annule.referenceRapprochement).toBe("VIR MAUVAIS LOCATAIRE");
 
     const paiementApresAnnulation = await paiementsService.findById(paiementA.id);
     expect(paiementApresAnnulation?.statut).toBe("impaye");
 
-    const corrige = await versementsService.ajouter({
+    await versementsService.ajouter({
       paiementId: paiementA.id,
       montant: "850.00",
       mode: "virement",
       dateVersement: "2026-09-03",
       referenceRapprochement: "VIR BON LOCATAIRE"
     });
-    expect(corrige.referenceRapprochement).toBe("VIR BON LOCATAIRE");
-
     const paiementCorrige = await paiementsService.findById(paiementA.id);
     expect(paiementCorrige?.statut).toBe("paye");
 
@@ -364,6 +361,30 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     // archivé, jamais supprimé), seul le second compte dans le statut.
     const tousLesVersements = await versementsService.findAll(paiementA.id);
     expect(tousLesVersements).toHaveLength(2);
+  });
+
+  it("ajouter()/annuler()/findAll() ne renvoient jamais reference_rapprochement (contenu externe non maîtrisé)", async () => {
+    const paiement = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "500.00",
+      dateEcheance: "2026-09-01"
+    });
+
+    const versement = await versementsService.ajouter({
+      paiementId: paiement.id,
+      montant: "500.00",
+      mode: "virement",
+      dateVersement: "2026-09-03",
+      referenceRapprochement: "VIR MARQUEUR TEST"
+    });
+    expect(versement).not.toHaveProperty("referenceRapprochement");
+
+    const [depuisFindAll] = await versementsService.findAll(paiement.id);
+    expect(depuisFindAll).not.toHaveProperty("referenceRapprochement");
+
+    const annule = await versementsService.annuler(versement.id);
+    expect(annule).not.toHaveProperty("referenceRapprochement");
   });
 
   it("rapprocherCsv propose un candidat (montant+date+référence) sans rien écrire en base", async () => {

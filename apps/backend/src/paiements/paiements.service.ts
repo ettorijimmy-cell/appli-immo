@@ -17,6 +17,8 @@ import type { CreatePaiementDto } from "./dto/create-paiement.dto";
 import type { RapprocherCsvDto } from "./dto/rapprocher-csv.dto";
 import type { UpdatePaiementDto } from "./dto/update-paiement.dto";
 
+type PaiementRow = typeof paiements.$inferSelect;
+
 @Injectable()
 export class PaiementsService {
   constructor(
@@ -37,19 +39,19 @@ export class PaiementsService {
     if (!paiement) {
       throw new Error("Échec de la création du paiement");
     }
-    return paiement;
+    return this.versDto(paiement);
   }
 
   async findAll(bailId?: string) {
-    if (bailId) {
-      return this.db.select().from(paiements).where(eq(paiements.bailId, bailId));
-    }
-    return this.db.select().from(paiements);
+    const lignes = bailId
+      ? await this.db.select().from(paiements).where(eq(paiements.bailId, bailId))
+      : await this.db.select().from(paiements);
+    return lignes.map((paiement) => this.versDto(paiement));
   }
 
   async findById(id: string) {
     const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
-    return paiement ?? null;
+    return paiement ? this.versDto(paiement) : null;
   }
 
   // Ne touche jamais aux versements (voir VersementsService), mais si
@@ -84,7 +86,7 @@ export class PaiementsService {
     if (!paiement) {
       throw new NotFoundException("Paiement introuvable");
     }
-    return paiement;
+    return this.versDto(paiement as PaiementRow);
   }
 
   // Cascade vers les versements actifs (docs/data-dictionary.md) : un
@@ -114,7 +116,7 @@ export class PaiementsService {
       if (!paiement) {
         throw new NotFoundException("Paiement introuvable");
       }
-      return paiement;
+      return this.versDto(paiement as PaiementRow);
     });
   }
 
@@ -173,7 +175,7 @@ export class PaiementsService {
 
     const propositions = proposerRapprochements(lignes, paiementsARapprocher);
 
-    return { lignes, propositions, paiements: paiementsCandidats };
+    return { lignes, propositions, paiements: paiementsCandidats.map((paiement) => this.versDto(paiement)) };
   }
 
   private async recupererNomsLocatairesParBail(bailIds: string[]): Promise<Map<string, string[]>> {
@@ -198,5 +200,21 @@ export class PaiementsService {
       resultat.set(ligne.bailId, noms);
     }
     return resultat;
+  }
+
+  private versDto(paiement: PaiementRow) {
+    return {
+      id: paiement.id,
+      createdAt: paiement.createdAt,
+      updatedAt: paiement.updatedAt,
+      updatedBy: paiement.updatedBy,
+      version: paiement.version,
+      archivedAt: paiement.archivedAt,
+      bailId: paiement.bailId,
+      type: paiement.type,
+      statut: paiement.statut,
+      montant: paiement.montant,
+      dateEcheance: paiement.dateEcheance
+    };
   }
 }
