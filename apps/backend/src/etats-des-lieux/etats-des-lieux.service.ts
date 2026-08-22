@@ -320,14 +320,14 @@ export class EtatsDesLieuxService {
 
     return {
       ...this.versDto(entete),
-      entree: entree ?? null,
-      sejour: sejour ?? null,
-      cuisine: cuisine ?? null,
+      entree: entree ? this.versDtoPieceEntree(entree) : null,
+      sejour: sejour ? this.versDtoPieceSejour(sejour) : null,
+      cuisine: cuisine ? this.versDtoPieceCuisine(cuisine) : null,
       chambres,
       sallesDeBain,
       wc,
       autres,
-      compteurs: compteurs ?? null,
+      compteurs: compteurs ? this.versDtoCompteurs(compteurs) : null,
       cles,
       equipementsDivers,
       inventaire
@@ -373,19 +373,165 @@ export class EtatsDesLieuxService {
     };
   }
 
+  private versDtoPieceEntree(ligne: typeof etatDesLieuxPieceEntree.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      porteDescription: ligne.porteDescription,
+      porteEtatEntree: ligne.porteEtatEntree,
+      porteEtatSortie: ligne.porteEtatSortie,
+      sonnetteDescription: ligne.sonnetteDescription,
+      sonnetteEtatEntree: ligne.sonnetteEtatEntree,
+      sonnetteEtatSortie: ligne.sonnetteEtatSortie,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre
+    };
+  }
+
+  private versDtoPieceSejour(ligne: typeof etatDesLieuxPieceSejour.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre
+    };
+  }
+
+  private versDtoPieceCuisine(ligne: typeof etatDesLieuxPieceCuisine.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre,
+      placardsDescription: ligne.placardsDescription,
+      placardsEtatEntree: ligne.placardsEtatEntree,
+      placardsEtatSortie: ligne.placardsEtatSortie,
+      evierDescription: ligne.evierDescription,
+      evierEtatEntree: ligne.evierEtatEntree,
+      evierEtatSortie: ligne.evierEtatSortie,
+      plaquesCuissonDescription: ligne.plaquesCuissonDescription,
+      plaquesCuissonEtatEntree: ligne.plaquesCuissonEtatEntree,
+      plaquesCuissonEtatSortie: ligne.plaquesCuissonEtatSortie,
+      hotteDescription: ligne.hotteDescription,
+      hotteEtatEntree: ligne.hotteEtatEntree,
+      hotteEtatSortie: ligne.hotteEtatSortie,
+      electromenagerDescription: ligne.electromenagerDescription
+    };
+  }
+
+  private versDtoCompteurs(ligne: typeof etatDesLieuxCompteurs.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      electriciteNumeroCompteurEntree: ligne.electriciteNumeroCompteurEntree,
+      electriciteNumeroCompteurSortie: ligne.electriciteNumeroCompteurSortie,
+      electriciteReleveHpEntree: ligne.electriciteReleveHpEntree,
+      electriciteReleveHpSortie: ligne.electriciteReleveHpSortie,
+      electriciteReleveHcEntree: ligne.electriciteReleveHcEntree,
+      electriciteReleveHcSortie: ligne.electriciteReleveHcSortie,
+      electriciteAncienOccupantEntree: ligne.electriciteAncienOccupantEntree,
+      electriciteAncienOccupantSortie: ligne.electriciteAncienOccupantSortie,
+      gazNumeroCompteurEntree: ligne.gazNumeroCompteurEntree,
+      gazNumeroCompteurSortie: ligne.gazNumeroCompteurSortie,
+      gazReleveEntree: ligne.gazReleveEntree,
+      gazReleveSortie: ligne.gazReleveSortie,
+      eauReleveFroideEntree: ligne.eauReleveFroideEntree,
+      eauReleveFroideSortie: ligne.eauReleveFroideSortie,
+      eauReleveChaudeEntree: ligne.eauReleveChaudeEntree,
+      eauReleveChaudeSortie: ligne.eauReleveChaudeSortie
+    };
+  }
+
   async submitPieceEntree(etatDesLieuxId: string, dto: SubmitPieceEntreeDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertUnique(etatDesLieuxPieceEntree, etatDesLieuxId, champsPieceEntree(dto));
+    return this.upsertUnique(etatDesLieuxPieceEntree, etatDesLieuxId, champsPieceEntree(dto), (ligne) =>
+      this.versDtoPieceEntree(ligne)
+    );
   }
 
   async submitPieceSejour(etatDesLieuxId: string, dto: SubmitPieceSejourDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertUnique(etatDesLieuxPieceSejour, etatDesLieuxId, champsPieceSejour(dto));
+    return this.upsertUnique(etatDesLieuxPieceSejour, etatDesLieuxId, champsPieceSejour(dto), (ligne) =>
+      this.versDtoPieceSejour(ligne)
+    );
   }
 
   async submitPieceCuisine(etatDesLieuxId: string, dto: SubmitPieceCuisineDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertUnique(etatDesLieuxPieceCuisine, etatDesLieuxId, champsPieceCuisine(dto));
+    return this.upsertUnique(etatDesLieuxPieceCuisine, etatDesLieuxId, champsPieceCuisine(dto), (ligne) =>
+      this.versDtoPieceCuisine(ligne)
+    );
   }
 
   async submitPieceChambre(etatDesLieuxId: string, dto: SubmitPieceChambreDto) {
@@ -415,7 +561,9 @@ export class EtatsDesLieuxService {
 
   async submitCompteurs(etatDesLieuxId: string, dto: SubmitCompteursDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertUnique(etatDesLieuxCompteurs, etatDesLieuxId, champsCompteurs(dto));
+    return this.upsertUnique(etatDesLieuxCompteurs, etatDesLieuxId, champsCompteurs(dto), (ligne) =>
+      this.versDtoCompteurs(ligne)
+    );
   }
 
   async submitCles(etatDesLieuxId: string, dto: SubmitClesDto) {
@@ -487,7 +635,11 @@ export class EtatsDesLieuxService {
   }
 
   // Upsert d'une table 1:1 avec l'état des lieux (contrainte unique sur
-  // etat_des_lieux_id) : entrée, séjour, cuisine, compteurs.
+  // etat_des_lieux_id) : entrée, séjour, cuisine, compteurs. `projeter`
+  // applique la projection explicite propre à la table appelante (versDto*
+  // ci-dessus) plutôt que de renvoyer la ligne brute — cette méthode reste
+  // générique sur T, elle ne peut pas connaître elle-même le bon jeu de
+  // colonnes à exposer.
   private async upsertUnique<
     T extends PgTable & {
       id: AnyColumn;
@@ -495,8 +647,14 @@ export class EtatsDesLieuxService {
       version: AnyColumn;
       updatedAt: AnyColumn;
       updatedBy: AnyColumn;
-    }
-  >(table: T, etatDesLieuxId: string, champs: Record<string, unknown>) {
+    },
+    R
+  >(
+    table: T,
+    etatDesLieuxId: string,
+    champs: Record<string, unknown>,
+    projeter: (ligne: T["$inferSelect"]) => R
+  ): Promise<R> {
     const utilisateurId = this.requestContext.getUtilisateurId();
     const [existant] = await this.db
       .select()
@@ -508,7 +666,7 @@ export class EtatsDesLieuxService {
       if (!ligne) {
         throw new NotFoundException("État des lieux introuvable");
       }
-      return ligne;
+      return projeter(ligne as T["$inferSelect"]);
     }
     const [ligne] = await this.db
       .insert(table)
@@ -517,7 +675,7 @@ export class EtatsDesLieuxService {
     if (!ligne) {
       throw new Error("Échec de l'enregistrement de la pièce");
     }
-    return ligne;
+    return projeter(ligne);
   }
 
   // Upsert d'une table à occurrences multiples, clé (etat_des_lieux_id,
