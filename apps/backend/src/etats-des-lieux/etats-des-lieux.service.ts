@@ -323,10 +323,10 @@ export class EtatsDesLieuxService {
       entree: entree ? this.versDtoPieceEntree(entree) : null,
       sejour: sejour ? this.versDtoPieceSejour(sejour) : null,
       cuisine: cuisine ? this.versDtoPieceCuisine(cuisine) : null,
-      chambres,
-      sallesDeBain,
-      wc,
-      autres,
+      chambres: chambres.map((chambre) => this.versDtoPieceChambre(chambre)),
+      sallesDeBain: sallesDeBain.map((salleDeBain) => this.versDtoPieceSalleDeBain(salleDeBain)),
+      wc: wc.map((piece) => this.versDtoPieceWc(piece)),
+      autres: autres.map((autre) => this.versDtoPieceAutre(autre)),
       compteurs: compteurs ? this.versDtoCompteurs(compteurs) : null,
       cles,
       equipementsDivers,
@@ -513,6 +513,147 @@ export class EtatsDesLieuxService {
     };
   }
 
+  private versDtoPieceChambre(ligne: typeof etatDesLieuxPiecesChambre.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      numero: ligne.numero,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre
+    };
+  }
+
+  private versDtoPieceSalleDeBain(ligne: typeof etatDesLieuxPiecesSalleDeBain.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      numero: ligne.numero,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre,
+      lavaboDescription: ligne.lavaboDescription,
+      lavaboEtatEntree: ligne.lavaboEtatEntree,
+      lavaboEtatSortie: ligne.lavaboEtatSortie,
+      baignoireDescription: ligne.baignoireDescription,
+      baignoireEtatEntree: ligne.baignoireEtatEntree,
+      baignoireEtatSortie: ligne.baignoireEtatSortie
+    };
+  }
+
+  private versDtoPieceWc(ligne: typeof etatDesLieuxPiecesWc.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      numero: ligne.numero,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre,
+      lavaboDescription: ligne.lavaboDescription,
+      lavaboEtatEntree: ligne.lavaboEtatEntree,
+      lavaboEtatSortie: ligne.lavaboEtatSortie,
+      wcDescription: ligne.wcDescription,
+      wcEtatEntree: ligne.wcEtatEntree,
+      wcEtatSortie: ligne.wcEtatSortie
+    };
+  }
+
+  private versDtoPieceAutre(ligne: typeof etatDesLieuxPiecesAutre.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      numero: ligne.numero,
+      libelle: ligne.libelle,
+      murDescription: ligne.murDescription,
+      murEtatEntree: ligne.murEtatEntree,
+      murEtatSortie: ligne.murEtatSortie,
+      solDescription: ligne.solDescription,
+      solEtatEntree: ligne.solEtatEntree,
+      solEtatSortie: ligne.solEtatSortie,
+      vitrageVoletsDescription: ligne.vitrageVoletsDescription,
+      vitrageVoletsEtatEntree: ligne.vitrageVoletsEtatEntree,
+      vitrageVoletsEtatSortie: ligne.vitrageVoletsEtatSortie,
+      plafondDescription: ligne.plafondDescription,
+      plafondEtatEntree: ligne.plafondEtatEntree,
+      plafondEtatSortie: ligne.plafondEtatSortie,
+      eclairageDescription: ligne.eclairageDescription,
+      eclairageEtatEntree: ligne.eclairageEtatEntree,
+      eclairageEtatSortie: ligne.eclairageEtatSortie,
+      prisesDescription: ligne.prisesDescription,
+      prisesEtatEntree: ligne.prisesEtatEntree,
+      prisesEtatSortie: ligne.prisesEtatSortie,
+      prisesNombre: ligne.prisesNombre
+    };
+  }
+
   async submitPieceEntree(etatDesLieuxId: string, dto: SubmitPieceEntreeDto) {
     await this.verifierExiste(etatDesLieuxId);
     return this.upsertUnique(etatDesLieuxPieceEntree, etatDesLieuxId, champsPieceEntree(dto), (ligne) =>
@@ -536,7 +677,13 @@ export class EtatsDesLieuxService {
 
   async submitPieceChambre(etatDesLieuxId: string, dto: SubmitPieceChambreDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertParNumero(etatDesLieuxPiecesChambre, etatDesLieuxId, dto.numero, champsPieceAvecNumero(dto));
+    return this.upsertParNumero(
+      etatDesLieuxPiecesChambre,
+      etatDesLieuxId,
+      dto.numero,
+      champsPieceAvecNumero(dto),
+      (ligne) => this.versDtoPieceChambre(ligne)
+    );
   }
 
   async submitPieceSalleDeBain(etatDesLieuxId: string, dto: SubmitPieceSalleDeBainDto) {
@@ -545,18 +692,23 @@ export class EtatsDesLieuxService {
       etatDesLieuxPiecesSalleDeBain,
       etatDesLieuxId,
       dto.numero,
-      champsPieceSalleDeBain(dto)
+      champsPieceSalleDeBain(dto),
+      (ligne) => this.versDtoPieceSalleDeBain(ligne)
     );
   }
 
   async submitPieceWc(etatDesLieuxId: string, dto: SubmitPieceWcDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertParNumero(etatDesLieuxPiecesWc, etatDesLieuxId, dto.numero, champsPieceWc(dto));
+    return this.upsertParNumero(etatDesLieuxPiecesWc, etatDesLieuxId, dto.numero, champsPieceWc(dto), (ligne) =>
+      this.versDtoPieceWc(ligne)
+    );
   }
 
   async submitPieceAutre(etatDesLieuxId: string, dto: SubmitPieceAutreDto) {
     await this.verifierExiste(etatDesLieuxId);
-    return this.upsertParNumero(etatDesLieuxPiecesAutre, etatDesLieuxId, dto.numero, champsPieceAutre(dto));
+    return this.upsertParNumero(etatDesLieuxPiecesAutre, etatDesLieuxId, dto.numero, champsPieceAutre(dto), (ligne) =>
+      this.versDtoPieceAutre(ligne)
+    );
   }
 
   async submitCompteurs(etatDesLieuxId: string, dto: SubmitCompteursDto) {
@@ -680,6 +832,9 @@ export class EtatsDesLieuxService {
 
   // Upsert d'une table à occurrences multiples, clé (etat_des_lieux_id,
   // numero) : chambres, salles de bain, wc, autres pièces.
+  // Même principe que upsertUnique ci-dessus : `projeter` applique la
+  // projection explicite propre à la table appelante, cette méthode reste
+  // générique sur T.
   private async upsertParNumero<
     T extends PgTable & {
       id: AnyColumn;
@@ -688,8 +843,15 @@ export class EtatsDesLieuxService {
       version: AnyColumn;
       updatedAt: AnyColumn;
       updatedBy: AnyColumn;
-    }
-  >(table: T, etatDesLieuxId: string, numero: number, champs: Record<string, unknown>) {
+    },
+    R
+  >(
+    table: T,
+    etatDesLieuxId: string,
+    numero: number,
+    champs: Record<string, unknown>,
+    projeter: (ligne: T["$inferSelect"]) => R
+  ): Promise<R> {
     const utilisateurId = this.requestContext.getUtilisateurId();
     const [existant] = await this.db
       .select()
@@ -701,7 +863,7 @@ export class EtatsDesLieuxService {
       if (!ligne) {
         throw new NotFoundException("État des lieux introuvable");
       }
-      return ligne;
+      return projeter(ligne as T["$inferSelect"]);
     }
     const [ligne] = await this.db
       .insert(table)
@@ -710,7 +872,7 @@ export class EtatsDesLieuxService {
     if (!ligne) {
       throw new Error("Échec de l'enregistrement de la pièce");
     }
-    return ligne;
+    return projeter(ligne);
   }
 
   // Upsert par id explicite pour une liste (clés, équipements divers) :
