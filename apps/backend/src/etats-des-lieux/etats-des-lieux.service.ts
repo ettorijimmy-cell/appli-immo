@@ -328,8 +328,8 @@ export class EtatsDesLieuxService {
       wc: wc.map((piece) => this.versDtoPieceWc(piece)),
       autres: autres.map((autre) => this.versDtoPieceAutre(autre)),
       compteurs: compteurs ? this.versDtoCompteurs(compteurs) : null,
-      cles,
-      equipementsDivers,
+      cles: cles.map((ligne) => this.versDtoCles(ligne)),
+      equipementsDivers: equipementsDivers.map((ligne) => this.versDtoEquipementDivers(ligne)),
       inventaire
     };
   }
@@ -654,6 +654,70 @@ export class EtatsDesLieuxService {
     };
   }
 
+  // commentaire est exclu du Sync Stream (texte libre non maîtrisé,
+  // réplication locale non chiffrée) mais reste légitimement exposé ici :
+  // affiché dans ClesSection.tsx (app desktop authentifiée) — même
+  // décision que RemboursementsService.versDto pour commentaire.
+  private versDtoCles(ligne: typeof etatDesLieuxCles.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      typeCle: ligne.typeCle,
+      libelleAutre: ligne.libelleAutre,
+      nombreEntree: ligne.nombreEntree,
+      nombreSortie: ligne.nombreSortie,
+      commentaire: ligne.commentaire
+    };
+  }
+
+  // commentaire : même décision que versDtoCles ci-dessus — affiché dans
+  // EquipementsDiversSection.tsx.
+  private versDtoEquipementDivers(ligne: typeof etatDesLieuxEquipementsDivers.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      libelle: ligne.libelle,
+      nombreEntree: ligne.nombreEntree,
+      etatEntree: ligne.etatEntree,
+      nombreSortie: ligne.nombreSortie,
+      etatSortie: ligne.etatSortie,
+      commentaire: ligne.commentaire
+    };
+  }
+
+  // commentaire : même décision que versDtoCles ci-dessus — affiché dans
+  // InventaireSection.tsx. Utilisé uniquement par le chemin d'écriture
+  // (upsertEtArchiverParElementId) : le chemin de lecture (findById) a sa
+  // propre projection déjà explicite, enrichie du libellé/catégorie de
+  // l'élément via jointure sur elements_inventaire_meuble.
+  private versDtoInventaire(ligne: typeof etatDesLieuxInventaire.$inferSelect) {
+    return {
+      id: ligne.id,
+      createdAt: ligne.createdAt,
+      updatedAt: ligne.updatedAt,
+      updatedBy: ligne.updatedBy,
+      version: ligne.version,
+      archivedAt: ligne.archivedAt,
+      etatDesLieuxId: ligne.etatDesLieuxId,
+      elementId: ligne.elementId,
+      nombreEntree: ligne.nombreEntree,
+      etatEntree: ligne.etatEntree,
+      nombreSortie: ligne.nombreSortie,
+      etatSortie: ligne.etatSortie,
+      commentaire: ligne.commentaire
+    };
+  }
+
   async submitPieceEntree(etatDesLieuxId: string, dto: SubmitPieceEntreeDto) {
     await this.verifierExiste(etatDesLieuxId);
     return this.upsertUnique(etatDesLieuxPieceEntree, etatDesLieuxId, champsPieceEntree(dto), (ligne) =>
@@ -733,7 +797,8 @@ export class EtatsDesLieuxService {
           commentaire: ligne.commentaire
         })
       })),
-      dto.idsASupprimer ?? []
+      dto.idsASupprimer ?? [],
+      (ligne) => this.versDtoCles(ligne)
     );
   }
 
@@ -753,7 +818,8 @@ export class EtatsDesLieuxService {
           commentaire: ligne.commentaire
         })
       })),
-      dto.idsASupprimer ?? []
+      dto.idsASupprimer ?? [],
+      (ligne) => this.versDtoEquipementDivers(ligne)
     );
   }
 
@@ -884,7 +950,9 @@ export class EtatsDesLieuxService {
   // `idsASupprimer` sont archivés (jamais de DELETE sur une table
   // métier, CLAUDE.md). Sans cette contrainte, une soumission de sortie
   // qui ne renverrait pas les lignes déjà saisies à l'entrée les aurait
-  // silencieusement effacées.
+  // silencieusement effacées. Même principe que upsertUnique/
+  // upsertParNumero : `projeter` applique la projection explicite propre
+  // à la table appelante, cette méthode reste générique sur T.
   private async upsertEtArchiverParId<
     T extends PgTable & {
       id: AnyColumn;
@@ -893,13 +961,15 @@ export class EtatsDesLieuxService {
       version: AnyColumn;
       updatedAt: AnyColumn;
       updatedBy: AnyColumn;
-    }
+    },
+    R
   >(
     table: T,
     etatDesLieuxId: string,
     lignes: { id?: string | undefined; champs: Record<string, unknown> }[],
-    idsASupprimer: string[]
-  ) {
+    idsASupprimer: string[],
+    projeter: (ligne: T["$inferSelect"]) => R
+  ): Promise<R[]> {
     const utilisateurId = this.requestContext.getUtilisateurId();
     return this.db.transaction(async (tx) => {
       const existantes = await tx
@@ -932,10 +1002,11 @@ export class EtatsDesLieuxService {
         }
       }
 
-      return tx
+      const lignesActives = await tx
         .select()
         .from(table)
         .where(and(eq(table.etatDesLieuxId, etatDesLieuxId), isNull(table.archivedAt)));
+      return lignesActives.map((ligne) => projeter(ligne as T["$inferSelect"]));
     });
   }
 
@@ -983,12 +1054,13 @@ export class EtatsDesLieuxService {
         );
       }
 
-      return tx
+      const lignesActives = await tx
         .select()
         .from(etatDesLieuxInventaire)
         .where(
           and(eq(etatDesLieuxInventaire.etatDesLieuxId, etatDesLieuxId), isNull(etatDesLieuxInventaire.archivedAt))
         );
+      return lignesActives.map((ligne) => this.versDtoInventaire(ligne));
     });
   }
 }
