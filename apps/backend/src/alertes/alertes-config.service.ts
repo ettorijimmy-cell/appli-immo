@@ -18,6 +18,8 @@ const SEUILS_PAR_DEFAUT: Partial<Record<AlerteType, number>> = {
 
 export const TYPES_AVEC_SEUIL_CONFIGURABLE = Object.keys(SEUILS_PAR_DEFAUT) as AlerteType[];
 
+type ParametreAlerteRow = typeof parametresAlertes.$inferSelect;
+
 @Injectable()
 export class AlertesConfigService {
   constructor(
@@ -35,10 +37,10 @@ export class AlertesConfigService {
     for (const type of TYPES_AVEC_SEUIL_CONFIGURABLE) {
       const existant = parType.get(type);
       if (existant) {
-        resultats.push(existant);
+        resultats.push(this.versDto(existant));
         continue;
       }
-      resultats.push(await this.creerAvecDefaut(type));
+      resultats.push(this.versDto(await this.creerAvecDefaut(type)));
     }
     return resultats;
   }
@@ -69,7 +71,7 @@ export class AlertesConfigService {
       if (!cree) {
         throw new Error("Échec de la création du paramètre d'alerte");
       }
-      return cree;
+      return this.versDto(cree);
     }
     const [maj] = await mettreAJourAvecAudit(
       this.db,
@@ -81,7 +83,7 @@ export class AlertesConfigService {
     if (!maj) {
       throw new Error("Échec de la mise à jour du paramètre d'alerte");
     }
-    return maj;
+    return this.versDto(maj as ParametreAlerteRow);
   }
 
   private async creerAvecDefaut(type: AlerteType) {
@@ -107,5 +109,18 @@ export class AlertesConfigService {
       throw new Error(`Échec de la création du paramètre d'alerte par défaut pour '${type}'`);
     }
     return existant;
+  }
+
+  private versDto(parametre: ParametreAlerteRow) {
+    return {
+      id: parametre.id,
+      createdAt: parametre.createdAt,
+      updatedAt: parametre.updatedAt,
+      updatedBy: parametre.updatedBy,
+      version: parametre.version,
+      archivedAt: parametre.archivedAt,
+      type: parametre.type,
+      seuilJoursAvant: parametre.seuilJoursAvant
+    };
   }
 }
