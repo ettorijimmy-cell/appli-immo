@@ -8,6 +8,8 @@ import { UsersService } from "../users/users.service";
 import type { CreateSciDto } from "./dto/create-sci.dto";
 import type { UpdateSciDto } from "./dto/update-sci.dto";
 
+type SciRow = typeof scis.$inferSelect;
+
 @Injectable()
 export class ScisService {
   constructor(
@@ -47,17 +49,18 @@ export class ScisService {
 
       await tx.insert(organisationSci).values(rattachement);
 
-      return sci;
+      return this.versDto(sci);
     });
   }
 
   async findAll() {
-    return this.db.select().from(scis);
+    const lignes = await this.db.select().from(scis);
+    return lignes.map((sci) => this.versDto(sci));
   }
 
   async findById(id: string) {
     const [sci] = await this.db.select().from(scis).where(eq(scis.id, id)).limit(1);
-    return sci ?? null;
+    return sci ? this.versDto(sci) : null;
   }
 
   async update(id: string, dto: UpdateSciDto) {
@@ -71,7 +74,7 @@ export class ScisService {
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
     }
-    return sci;
+    return this.versDto(sci as SciRow);
   }
 
   async archive(id: string) {
@@ -85,6 +88,29 @@ export class ScisService {
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
     }
-    return sci;
+    return this.versDto(sci as SciRow);
+  }
+
+  private versDto(sci: SciRow) {
+    return {
+      id: sci.id,
+      createdAt: sci.createdAt,
+      updatedAt: sci.updatedAt,
+      updatedBy: sci.updatedBy,
+      version: sci.version,
+      archivedAt: sci.archivedAt,
+      nom: sci.nom,
+      regimeFiscal: sci.regimeFiscal,
+      formeJuridique: sci.formeJuridique,
+      siret: sci.siret,
+      adresse: sci.adresse,
+      codePostal: sci.codePostal,
+      ville: sci.ville,
+      nomGerant: sci.nomGerant,
+      prenomGerant: sci.prenomGerant,
+      telephone: sci.telephone,
+      estFamiliale: sci.estFamiliale,
+      statut: sci.statut
+    };
   }
 }
