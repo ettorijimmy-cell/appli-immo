@@ -20,6 +20,8 @@ import type { CreateBailDto } from "./dto/create-bail.dto";
 import type { ResilierBailDto } from "./dto/resilier-bail.dto";
 import type { UpdateBailDto } from "./dto/update-bail.dto";
 
+type BailRow = typeof baux.$inferSelect;
+
 @Injectable()
 export class BauxService {
   constructor(
@@ -56,19 +58,19 @@ export class BauxService {
     if (!bail) {
       throw new Error("Échec de la création du bail");
     }
-    return bail;
+    return this.versDto(bail);
   }
 
   async findAll(appartementId?: string) {
-    if (appartementId) {
-      return this.db.select().from(baux).where(eq(baux.appartementId, appartementId));
-    }
-    return this.db.select().from(baux);
+    const lignes = appartementId
+      ? await this.db.select().from(baux).where(eq(baux.appartementId, appartementId))
+      : await this.db.select().from(baux);
+    return lignes.map((bail) => this.versDto(bail));
   }
 
   async findById(id: string) {
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
-    return bail ?? null;
+    return bail ? this.versDto(bail) : null;
   }
 
   async update(id: string, dto: UpdateBailDto) {
@@ -115,7 +117,7 @@ export class BauxService {
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
     }
-    return bail;
+    return this.versDto(bail as BailRow);
   }
 
   // Transactionnel : l'activation du bail et le passage de l'appartement à
@@ -230,7 +232,7 @@ export class BauxService {
         dateEcheance: bail.dateDebut
       });
 
-      return bailActive;
+      return this.versDto(bailActive as BailRow);
     });
   }
 
@@ -403,7 +405,31 @@ export class BauxService {
         }
       }
 
-      return { ...bailResilie, tropPercu };
+      const bailResilieDto = this.versDto(bailResilie as BailRow);
+      return {
+        id: bailResilieDto.id,
+        createdAt: bailResilieDto.createdAt,
+        updatedAt: bailResilieDto.updatedAt,
+        updatedBy: bailResilieDto.updatedBy,
+        version: bailResilieDto.version,
+        archivedAt: bailResilieDto.archivedAt,
+        appartementId: bailResilieDto.appartementId,
+        typeBail: bailResilieDto.typeBail,
+        statut: bailResilieDto.statut,
+        loyerMensuel: bailResilieDto.loyerMensuel,
+        depotGarantie: bailResilieDto.depotGarantie,
+        provisionsCharges: bailResilieDto.provisionsCharges,
+        jourEcheance: bailResilieDto.jourEcheance,
+        dateDebut: bailResilieDto.dateDebut,
+        dateFin: bailResilieDto.dateFin,
+        dateActivation: bailResilieDto.dateActivation,
+        dateSignature: bailResilieDto.dateSignature,
+        dateResiliation: bailResilieDto.dateResiliation,
+        travauxRealises: bailResilieDto.travauxRealises,
+        honorairesBailleur: bailResilieDto.honorairesBailleur,
+        honorairesLocataire: bailResilieDto.honorairesLocataire,
+        tropPercu
+      };
     });
   }
 
@@ -428,6 +454,32 @@ export class BauxService {
     if (!bailArchive) {
       throw new NotFoundException("Bail introuvable");
     }
-    return bailArchive;
+    return this.versDto(bailArchive as BailRow);
+  }
+
+  private versDto(bail: BailRow) {
+    return {
+      id: bail.id,
+      createdAt: bail.createdAt,
+      updatedAt: bail.updatedAt,
+      updatedBy: bail.updatedBy,
+      version: bail.version,
+      archivedAt: bail.archivedAt,
+      appartementId: bail.appartementId,
+      typeBail: bail.typeBail,
+      statut: bail.statut,
+      loyerMensuel: bail.loyerMensuel,
+      depotGarantie: bail.depotGarantie,
+      provisionsCharges: bail.provisionsCharges,
+      jourEcheance: bail.jourEcheance,
+      dateDebut: bail.dateDebut,
+      dateFin: bail.dateFin,
+      dateActivation: bail.dateActivation,
+      dateSignature: bail.dateSignature,
+      dateResiliation: bail.dateResiliation,
+      travauxRealises: bail.travauxRealises,
+      honorairesBailleur: bail.honorairesBailleur,
+      honorairesLocataire: bail.honorairesLocataire
+    };
   }
 }
