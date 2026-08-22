@@ -9,6 +9,8 @@ import {
   baux,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
+  garants,
+  locataires,
   organisations,
   paiements,
   utilisateurs,
@@ -368,6 +370,59 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     const garantEnBase = await garantsService.findById(garant.id);
     expect(garantEnBase).not.toBeNull();
     expect(garantEnBase?.archivedAt).not.toBeNull();
+  });
+
+  it("GarantsService ne renvoie jamais profession/revenus (données financières précises)", async () => {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+    const [garant] = await db
+      .insert(garants)
+      .values({
+        bailId: bail.id,
+        nom: "Martin",
+        prenom: "Sophie",
+        typeGarantie: "personne_physique",
+        profession: "MARQUEUR-PROFESSION-TEST",
+        revenus: "3500.00"
+      })
+      .returning();
+    if (!garant) {
+      throw new Error("Échec de la création du garant de test");
+    }
+
+    const relu = await garantsService.findById(garant.id);
+    expect(relu).not.toHaveProperty("profession");
+    expect(relu).not.toHaveProperty("revenus");
+
+    const [depuisFindAll] = await garantsService.findAll(bail.id);
+    expect(depuisFindAll).not.toHaveProperty("profession");
+    expect(depuisFindAll).not.toHaveProperty("revenus");
+
+    const misAJour = await garantsService.update(garant.id, { telephone: "0600000000" });
+    expect(misAJour).not.toHaveProperty("profession");
+    expect(misAJour).not.toHaveProperty("revenus");
+  });
+
+  it("LocatairesService ne renvoie jamais anonymise_le (champ interne au mécanisme RGPD)", async () => {
+    const [locataire] = await db
+      .insert(locataires)
+      .values({
+        nom: "Petit",
+        prenom: "Julien",
+        anonymiseLe: new Date()
+      })
+      .returning();
+    if (!locataire) {
+      throw new Error("Échec de la création du locataire de test");
+    }
+
+    const relu = await locatairesService.findById(locataire.id);
+    expect(relu).not.toHaveProperty("anonymiseLe");
+
+    const [depuisFindAll] = await locatairesService.findAll();
+    expect(depuisFindAll).not.toHaveProperty("anonymiseLe");
+
+    const misAJour = await locatairesService.update(locataire.id, { telephone: "0600000000" });
+    expect(misAJour).not.toHaveProperty("anonymiseLe");
   });
 
   // Vérifie que mettreAJourAvecAudit (packages/db) fonctionne aussi bien
