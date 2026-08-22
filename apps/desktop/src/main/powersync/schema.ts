@@ -188,11 +188,8 @@ const elements_inventaire_meuble = new Table({
 // chemin_stockage volontairement absent — EXCLU DÉFINITIVEMENT du Sync
 // Stream documents (clé/chemin du blob chiffré sur disque, ne doit
 // jamais apparaître en clair dans la base SQLite locale, voir
-// docs/powersync-sync-streams.yaml). etat_des_lieux_piece_type et
-// etat_des_lieux_piece_numero restent présents bien que toujours null
-// pour l'instant : la branche entite_type = 'etat_des_lieux' n'est pas
-// encore couverte par la requête (domaine État des lieux pas encore
-// traité, voir docs/backlog.md).
+// docs/powersync-sync-streams.yaml). document_precedent_id (versioning,
+// docs/backlog.md) inclus : même nature que entite_id, rien de sensible.
 const documents = new Table({
   entite_type: column.text,
   entite_id: column.text,
@@ -204,6 +201,7 @@ const documents = new Table({
   taille_octets: column.integer,
   etat_des_lieux_piece_type: column.text,
   etat_des_lieux_piece_numero: column.integer,
+  document_precedent_id: column.text,
   updated_at: column.text
 });
 

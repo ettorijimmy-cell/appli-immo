@@ -421,7 +421,7 @@ streams:
     query: >
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
       nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, updated_at FROM documents
+      etat_des_lieux_piece_numero, document_precedent_id, updated_at FROM documents
       WHERE (
         documents.entite_type = 'sci' AND documents.entite_id IN (
           SELECT organisation_sci.sci_id FROM organisation_sci
