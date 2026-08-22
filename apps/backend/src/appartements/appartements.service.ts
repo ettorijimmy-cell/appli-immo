@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, mettreAJourAvecAudit, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { appartements, baux, mettreAJourAvecAudit, type Database } from "db";
+import { and, eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateAppartementDto } from "./dto/create-appartement.dto";
@@ -52,6 +52,9 @@ export class AppartementsService {
   }
 
   async update(id: string, dto: UpdateAppartementDto) {
+    if (dto.statut === "loue") {
+      await this.verifierBailActifOuPreavisExiste(id);
+    }
     const [appartement] = await mettreAJourAvecAudit(
       this.db,
       appartements,
@@ -77,6 +80,25 @@ export class AppartementsService {
       throw new NotFoundException("Appartement introuvable");
     }
     return this.versDto(appartement as AppartementRow);
+  }
+
+  // Gap 2 — concurrence Module 3 (docs/backlog.md, dette technique) :
+  // empêche un appartement "loué fantôme" (statut forcé manuellement sans
+  // bail réel derrière) tout en préservant la correction légitime d'une
+  // désynchronisation existante — peu importe comment le bail actif/en
+  // préavis est arrivé à cet état, seule son existence compte, jamais
+  // l'obligation de passer par activer().
+  private async verifierBailActifOuPreavisExiste(appartementId: string): Promise<void> {
+    const [bail] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .where(and(eq(baux.appartementId, appartementId), inArray(baux.statut, ["actif", "preavis"])))
+      .limit(1);
+    if (!bail) {
+      throw new ConflictException(
+        "Impossible de passer cet appartement en 'loué' : aucun bail actif ou en préavis n'existe pour cet appartement."
+      );
+    }
   }
 
   // identifiant_fiscal (donnée fiscale nominative, packages/db/src/schema/

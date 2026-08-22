@@ -1,4 +1,5 @@
-import { date, decimal, integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { date, decimal, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -16,65 +17,79 @@ export const bailStatutEnum = pgEnum("bail_statut", [
   "archive"
 ]);
 
-export const baux = pgTable("baux", {
-  ...auditColumns,
-  appartementId: uuid("appartement_id")
-    .notNull()
-    .references(() => appartements.id),
-  typeBail: bailTypeBailEnum("type_bail").notNull(),
-  statut: bailStatutEnum("statut").notNull().default("brouillon"),
-  // Pré-rempli depuis appartements.loyer_reference à la création si non
-  // fourni explicitement (packages/core, preremplirLoyerBail) — reste
-  // modifiable ensuite, un bail peut différer de la référence.
-  loyerMensuel: decimal("loyer_mensuel", { precision: 10, scale: 2 }),
-  depotGarantie: decimal("depot_garantie", { precision: 10, scale: 2 }),
-  // Provisions mensuelles pour charges, en plus du loyer HC (loyer_mensuel).
-  // null traité comme 0 dans tout calcul (docs/data-dictionary.md).
-  provisionsCharges: decimal("provisions_charges", { precision: 10, scale: 2 }),
-  // Jour du mois de l'échéance de loyer, borné à 28 pour rester valide sur
-  // tous les mois. Renseignable progressivement, mais requis pour activer()
-  // (voir docs/data-dictionary.md — sans lui, impossible de générer la
-  // première échéance).
-  jourEcheance: integer("jour_echeance"),
-  dateDebut: date("date_debut").notNull(),
-  dateFin: date("date_fin"),
-  // Posée une seule fois par activer(), jamais modifiée ensuite (pas dans
-  // UpdateBailDto). Distincte de date_debut : un bail peut rester en
-  // brouillon après sa date de début contractuelle, l'occupation réelle ne
-  // commence qu'à l'activation si celle-ci est postérieure — utilisé par
-  // resilier() pour déterminer le début réel d'occupation à proratiser
-  // (docs/data-dictionary.md).
-  dateActivation: date("date_activation"),
-  // Date de signature du bail, distincte de date_debut : un bail est
-  // souvent signé plusieurs semaines avant la date de prise d'effet
-  // (confirmé avec l'utilisateur). Sert de référence pour le régime de
-  // clause résolutoire (décret n° 2026-596, la loi parle de contrats
-  // "conclus" à telle date) et pour la mention "Fait à ..., le" du
-  // document généré. Nullable — repli documenté sur date_debut tant
-  // qu'elle n'est pas renseignée (docs/data-dictionary.md).
-  dateSignature: date("date_signature"),
-  // Posée une seule fois par resilier(), jamais modifiée ensuite (pas dans
-  // UpdateBailDto) — même principe d'immutabilité que date_activation.
-  // Timestamp (pas juste une date) : sert à départager plusieurs baux
-  // résiliés sur un même appartement quand dateFin coïncide ou n'ordonne
-  // pas correctement (docs/data-dictionary.md, section "versements &
-  // remboursements"). NULL pour les baux résiliés avant l'introduction de
-  // cette colonne — repli documenté sur updated_at pour ces cas legacy
-  // uniquement, jamais la méthode de tri normale.
-  dateResiliation: timestamp("date_resiliation", { withTimezone: true }),
-  // Mention obligatoire du contrat-type ("travaux effectués depuis le
-  // dernier bail"), par nature spécifique à chaque bail et sans
-  // vocabulaire fixe possible — gardé en base pour trace plutôt que non
-  // stocké du tout (docs/backlog.md, section "Édition d'un bail").
-  travauxRealises: text("travaux_realises"),
-  // Section IX du contrat-type ("Honoraires de location") — nullable,
-  // "néant" affiché dans le document généré tant qu'aucun des deux n'est
-  // renseigné. Rattaché au bail (pas à la SCI/organisation) : les
-  // honoraires d'agence concernent une location précise, jamais un
-  // attribut permanent du bailleur (docs/backlog.md, section "Édition
-  // d'un bail"). Sans objet dans l'usage actuel (particulier/SCI gérant
-  // en direct, sans professionnel) — prêt le jour où ce cas se présente,
-  // sans changement de code à ce moment-là.
-  honorairesBailleur: decimal("honoraires_bailleur", { precision: 10, scale: 2 }),
-  honorairesLocataire: decimal("honoraires_locataire", { precision: 10, scale: 2 })
-});
+export const baux = pgTable(
+  "baux",
+  {
+    ...auditColumns,
+    appartementId: uuid("appartement_id")
+      .notNull()
+      .references(() => appartements.id),
+    typeBail: bailTypeBailEnum("type_bail").notNull(),
+    statut: bailStatutEnum("statut").notNull().default("brouillon"),
+    // Pré-rempli depuis appartements.loyer_reference à la création si non
+    // fourni explicitement (packages/core, preremplirLoyerBail) — reste
+    // modifiable ensuite, un bail peut différer de la référence.
+    loyerMensuel: decimal("loyer_mensuel", { precision: 10, scale: 2 }),
+    depotGarantie: decimal("depot_garantie", { precision: 10, scale: 2 }),
+    // Provisions mensuelles pour charges, en plus du loyer HC (loyer_mensuel).
+    // null traité comme 0 dans tout calcul (docs/data-dictionary.md).
+    provisionsCharges: decimal("provisions_charges", { precision: 10, scale: 2 }),
+    // Jour du mois de l'échéance de loyer, borné à 28 pour rester valide sur
+    // tous les mois. Renseignable progressivement, mais requis pour activer()
+    // (voir docs/data-dictionary.md — sans lui, impossible de générer la
+    // première échéance).
+    jourEcheance: integer("jour_echeance"),
+    dateDebut: date("date_debut").notNull(),
+    dateFin: date("date_fin"),
+    // Posée une seule fois par activer(), jamais modifiée ensuite (pas dans
+    // UpdateBailDto). Distincte de date_debut : un bail peut rester en
+    // brouillon après sa date de début contractuelle, l'occupation réelle ne
+    // commence qu'à l'activation si celle-ci est postérieure — utilisé par
+    // resilier() pour déterminer le début réel d'occupation à proratiser
+    // (docs/data-dictionary.md).
+    dateActivation: date("date_activation"),
+    // Date de signature du bail, distincte de date_debut : un bail est
+    // souvent signé plusieurs semaines avant la date de prise d'effet
+    // (confirmé avec l'utilisateur). Sert de référence pour le régime de
+    // clause résolutoire (décret n° 2026-596, la loi parle de contrats
+    // "conclus" à telle date) et pour la mention "Fait à ..., le" du
+    // document généré. Nullable — repli documenté sur date_debut tant
+    // qu'elle n'est pas renseignée (docs/data-dictionary.md).
+    dateSignature: date("date_signature"),
+    // Posée une seule fois par resilier(), jamais modifiée ensuite (pas dans
+    // UpdateBailDto) — même principe d'immutabilité que date_activation.
+    // Timestamp (pas juste une date) : sert à départager plusieurs baux
+    // résiliés sur un même appartement quand dateFin coïncide ou n'ordonne
+    // pas correctement (docs/data-dictionary.md, section "versements &
+    // remboursements"). NULL pour les baux résiliés avant l'introduction de
+    // cette colonne — repli documenté sur updated_at pour ces cas legacy
+    // uniquement, jamais la méthode de tri normale.
+    dateResiliation: timestamp("date_resiliation", { withTimezone: true }),
+    // Mention obligatoire du contrat-type ("travaux effectués depuis le
+    // dernier bail"), par nature spécifique à chaque bail et sans
+    // vocabulaire fixe possible — gardé en base pour trace plutôt que non
+    // stocké du tout (docs/backlog.md, section "Édition d'un bail").
+    travauxRealises: text("travaux_realises"),
+    // Section IX du contrat-type ("Honoraires de location") — nullable,
+    // "néant" affiché dans le document généré tant qu'aucun des deux n'est
+    // renseigné. Rattaché au bail (pas à la SCI/organisation) : les
+    // honoraires d'agence concernent une location précise, jamais un
+    // attribut permanent du bailleur (docs/backlog.md, section "Édition
+    // d'un bail"). Sans objet dans l'usage actuel (particulier/SCI gérant
+    // en direct, sans professionnel) — prêt le jour où ce cas se présente,
+    // sans changement de code à ce moment-là.
+    honorairesBailleur: decimal("honoraires_bailleur", { precision: 10, scale: 2 }),
+    honorairesLocataire: decimal("honoraires_locataire", { precision: 10, scale: 2 })
+  },
+  (table) => [
+    // Concurrence (docs/backlog.md, dette technique Module 3) : garantit au
+    // niveau base qu'au plus un bail actif/en préavis existe par
+    // appartement, même si deux appels concurrents à activer() passent
+    // tous les deux la vérification applicative avant qu'aucun ne
+    // committe — voir BauxService.activer()/estViolationIndexBauxActifUnique
+    // pour la traduction de la violation en ConflictException propre.
+    uniqueIndex("baux_appartement_id_actif_unique")
+      .on(table.appartementId)
+      .where(sql`${table.statut} IN ('actif', 'preavis')`)
+  ]
+);

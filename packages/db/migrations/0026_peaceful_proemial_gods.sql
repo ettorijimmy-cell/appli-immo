@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "baux_appartement_id_actif_unique" ON "baux" USING btree ("appartement_id") WHERE "baux"."statut" IN ('actif', 'preavis');

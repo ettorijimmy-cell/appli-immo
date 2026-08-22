@@ -215,6 +215,65 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     await expect(bauxService.activer(bail.id)).rejects.toThrow(/brouillon/i);
   });
 
+  // Gap 1 — concurrence Module 3 (docs/backlog.md, dette technique) :
+  // preuve directe que l'index unique partiel garantit la cohérence au
+  // niveau base, indépendamment de la pré-vérification applicative de
+  // activer() (déjà couverte par les deux tests ci-dessus). Une vraie
+  // course entre deux appels concurrents à activer() n'est pas testable
+  // avec ce harnais (chaque test tourne dans une seule transaction
+  // partagée, annulée par ROLLBACK — deux véritables connexions
+  // concurrentes ne verraient de toute façon aucune des fixtures, jamais
+  // committées) : ce test contourne donc le service et écrit directement
+  // en base pour vérifier que Postgres, lui, rejette bien la situation que
+  // le service ne pourra jamais laisser passer.
+  it("index unique partiel baux_appartement_id_actif_unique : rejette une deuxième ligne actif/preavis sur le même appartement", async () => {
+    await db.insert(baux).values({
+      appartementId,
+      typeBail: "vide",
+      statut: "actif",
+      dateDebut: "2026-08-01"
+    });
+
+    await expect(
+      db.insert(baux).values({
+        appartementId,
+        typeBail: "vide",
+        statut: "preavis",
+        dateDebut: "2026-09-01"
+      })
+    ).rejects.toMatchObject({ code: "23505", constraint_name: "baux_appartement_id_actif_unique" });
+  });
+
+  // Gap 2 — concurrence Module 3 (docs/backlog.md, dette technique) :
+  // empêche l'appartement "loué fantôme" (statut forcé manuellement sans
+  // bail réel) tout en préservant la correction légitime d'une
+  // désynchronisation existante. La transition normale via activer() (elle
+  // écrit directement sur `appartements`, jamais via
+  // AppartementsService.update()) reste couverte par le tout premier test
+  // de ce fichier — non affectée par cette garde puisqu'elle n'y passe pas.
+  it("update() refuse de passer un appartement à 'loué' sans bail actif ou en préavis réel", async () => {
+    await expect(appartementsService.update(appartementId, { statut: "loue" })).rejects.toThrow(
+      /aucun bail actif ou en préavis/i
+    );
+
+    const appartementInchange = await appartementsService.findById(appartementId);
+    expect(appartementInchange?.statut).toBe("vacant");
+  });
+
+  it("update() autorise 'loué' pour corriger une désynchronisation existante, tant qu'un bail actif ou en préavis existe réellement", async () => {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+    await bauxService.activer(bail.id);
+
+    // Désynchronisation simulée : le champ miroir est remis à vacant à la
+    // main (Module 2) alors que le bail est toujours réellement actif —
+    // même scénario que le test "refuse d'activer un second bail..."
+    // ci-dessus, mais ici on corrige plutôt que d'activer un second bail.
+    await appartementsService.update(appartementId, { statut: "vacant" });
+
+    const corrige = await appartementsService.update(appartementId, { statut: "loue" });
+    expect(corrige.statut).toBe("loue");
+  });
+
   it("résilie un bail actif et repasse l'appartement à vacant", async () => {
     const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
     await bauxService.activer(bail.id);

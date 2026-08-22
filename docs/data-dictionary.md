@@ -100,6 +100,20 @@ déclenche la transition automatique du statut de l'appartement associé
 seules voies pour changer `statut` : jamais via une mise à jour générique du
 bail (`apps/backend/src/baux/baux.service.ts`, `UpdateBailDto` ne porte pas
 ce champ).
+
+**Concurrence (docs/backlog.md, dette technique Module 3, résolue)** :
+index unique partiel Postgres `baux_appartement_id_actif_unique` sur
+`(appartement_id) WHERE statut IN ('actif', 'preavis')` — garantit au
+niveau base qu'un appartement n'a jamais plus d'un bail `actif`/`preavis`
+simultané, même si deux appels concurrents à `activer()` passaient tous
+les deux la pré-vérification applicative avant qu'aucun ne committe.
+`activer()` traduit une violation de cet index en `ConflictException`
+propre (`estViolationIndexBauxActifUnique`) plutôt que de laisser remonter
+l'erreur SQL brute. `AppartementsService.update()` applique la même
+logique côté appartement : `statut: 'loue'` est rejeté (`ConflictException`)
+si aucun bail `actif`/`preavis` n'existe réellement — la correction
+légitime d'une désynchronisation existante reste possible, seule
+l'existence du bail compte, jamais le chemin par lequel il y est arrivé.
 | Champ | Type | Description |
 |---|---|---|
 | type_bail | enum | `vide` \| `meuble` |

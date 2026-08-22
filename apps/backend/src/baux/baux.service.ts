@@ -22,6 +22,22 @@ import type { UpdateBailDto } from "./dto/update-bail.dto";
 
 type BailRow = typeof baux.$inferSelect;
 
+// Fonction pure, exportée séparément de la classe pour rester testable sans
+// connexion DB (voir baux.service.spec.ts). Le driver `postgres` (utilisé
+// par Drizzle) peuple `code` (SQLSTATE) et `constraint_name` sur les
+// erreurs de violation de contrainte — 23505 = unique_violation. On
+// vérifie aussi le nom de la contrainte pour ne jamais absorber par erreur
+// une violation d'un autre index unique.
+export function estViolationIndexBauxActifUnique(erreur: unknown): boolean {
+  return (
+    erreur instanceof Error &&
+    "code" in erreur &&
+    (erreur as { code?: unknown }).code === "23505" &&
+    "constraint_name" in erreur &&
+    (erreur as { constraint_name?: unknown }).constraint_name === "baux_appartement_id_actif_unique"
+  );
+}
+
 @Injectable()
 export class BauxService {
   constructor(
@@ -190,13 +206,35 @@ export class BauxService {
       // historique du moment administratif de l'activation, mais n'entre
       // plus dans aucun calcul financier (docs/data-dictionary.md).
       const dateActivation = new Date().toISOString().slice(0, 10);
-      const [bailActive] = await mettreAJourAvecAudit(
-        tx,
-        baux,
-        id,
-        { statut: "actif", dateActivation },
-        utilisateurId
-      );
+      // La pré-vérification bauxConcurrents ci-dessus couvre le cas normal
+      // (séquentiel), mais ne protège pas contre une vraie course entre deux
+      // appels concurrents à activer() qui passeraient tous les deux la
+      // lecture avant qu'aucun ne committe (docs/backlog.md, dette
+      // technique Module 3). L'index unique partiel
+      // baux_appartement_id_actif_unique (packages/db/src/schema/baux.ts)
+      // est la garantie réelle : Postgres sérialise les écritures
+      // concurrentes au niveau de l'index B-tree lui-même, indépendamment
+      // de tout verrou applicatif. Ce catch ne fait que traduire la
+      // violation en erreur métier propre plutôt que de laisser remonter
+      // une erreur SQL brute à l'UI.
+      let bailActive: BailRow | undefined;
+      try {
+        const resultat = await mettreAJourAvecAudit(
+          tx,
+          baux,
+          id,
+          { statut: "actif", dateActivation },
+          utilisateurId
+        );
+        bailActive = resultat[0] as BailRow | undefined;
+      } catch (erreur) {
+        if (estViolationIndexBauxActifUnique(erreur)) {
+          throw new ConflictException(
+            "Impossible d'activer ce bail : un autre bail est déjà actif ou en préavis sur cet appartement."
+          );
+        }
+        throw erreur;
+      }
       if (!bailActive) {
         throw new Error("Échec de l'activation du bail");
       }

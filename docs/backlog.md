@@ -102,18 +102,25 @@ appartement depuis l'écran Patrimoine sans naviguer par menus multiples.
 (`apps/backend/src/baux/baux.service.ts`) vérifie désormais directement la
 table `baux` (pas seulement le champ miroir `appartements.statut`) pour
 empêcher deux baux actifs simultanés sur le même appartement — corrigé
-avant de considérer le module terminé. Deux points restent volontairement
-non traités, risque jugé faible en usage mono-utilisateur desktop actuel,
-à revisiter avant l'ouverture SaaS multi-utilisateur :
-- Pas de verrou explicite (`SELECT ... FOR UPDATE`) ni d'index unique
-  partiel Postgres sur `baux(appartement_id) WHERE statut IN ('actif',
-  'preavis')` : deux appels concurrents à `activer()` pourraient en théorie
-  passer tous les deux la vérification avant qu'aucun ne committe.
-- `UpdateAppartementDto` permet toujours de forcer manuellement
-  `statut: 'loue'` sans qu'un bail actif n'existe réellement (décision
-  Module 2 assumée pour la correction de saisie) — rien ne garantit la
-  cohérence entre `appartements.statut` et l'état réel de `baux` en dehors
-  du chemin activer()/resilier().
+avant de considérer le module terminé. Deux points supplémentaires,
+identifiés au même moment et longtemps restés volontairement non traités
+(risque jugé faible en usage mono-utilisateur desktop), sont désormais
+résolus :
+- Concurrence entre deux appels à `activer()` — résolu par un index unique
+  partiel Postgres `baux_appartement_id_actif_unique` sur
+  `baux(appartement_id) WHERE statut IN ('actif', 'preavis')`, qui garantit
+  la cohérence au niveau base indépendamment de tout verrou applicatif
+  (`SELECT ... FOR UPDATE` jugé superflu en complément — un index unique
+  B-tree sérialise déjà les écritures concurrentes). `activer()` traduit
+  une violation de cet index en `ConflictException` propre plutôt que de
+  laisser remonter l'erreur SQL brute (`estViolationIndexBauxActifUnique`).
+- `UpdateAppartementDto` permettant de forcer `statut: 'loue'` sans bail
+  réel — résolu : `AppartementsService.update()` rejette (`ConflictException`)
+  toute tentative de passer un appartement à `'loue'` si aucun bail
+  `actif`/`preavis` n'existe réellement pour lui, tout en préservant la
+  correction légitime d'une désynchronisation existante (la vérification ne
+  porte que sur l'existence du bail, jamais sur le chemin par lequel il est
+  arrivé à cet état).
 - Tests packages/core sur les règles de transition de statut
 
 **Critère de complétion** : créer un bail avec deux colocataires, vérifier
