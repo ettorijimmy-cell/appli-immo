@@ -6,6 +6,8 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateRemboursementDto } from "./dto/create-remboursement.dto";
 
+type RemboursementRow = typeof remboursements.$inferSelect;
+
 @Injectable()
 export class RemboursementsService {
   constructor(
@@ -14,10 +16,10 @@ export class RemboursementsService {
   ) {}
 
   async findAll(bailId?: string) {
-    if (bailId) {
-      return this.db.select().from(remboursements).where(eq(remboursements.bailId, bailId));
-    }
-    return this.db.select().from(remboursements);
+    const lignes = bailId
+      ? await this.db.select().from(remboursements).where(eq(remboursements.bailId, bailId))
+      : await this.db.select().from(remboursements);
+    return lignes.map((remboursement) => this.versDto(remboursement));
   }
 
   // Toujours un acte humain explicite (docs/data-dictionary.md, section
@@ -72,7 +74,7 @@ export class RemboursementsService {
     if (!remboursement) {
       throw new Error("Échec de la création du remboursement");
     }
-    return remboursement;
+    return this.versDto(remboursement);
   }
 
   async archive(id: string) {
@@ -86,6 +88,29 @@ export class RemboursementsService {
     if (!remboursement) {
       throw new NotFoundException("Remboursement introuvable");
     }
-    return remboursement;
+    return this.versDto(remboursement as RemboursementRow);
+  }
+
+  // commentaire est exclu du Sync Stream remboursements (texte libre non
+  // maîtrisé, réplication locale non chiffrée) mais reste légitimement
+  // exposé ici : affiché dans BailTabs.tsx (app desktop authentifiée) —
+  // deux décisions distinctes, confirmé avec l'utilisateur.
+  private versDto(remboursement: RemboursementRow) {
+    return {
+      id: remboursement.id,
+      createdAt: remboursement.createdAt,
+      updatedAt: remboursement.updatedAt,
+      updatedBy: remboursement.updatedBy,
+      version: remboursement.version,
+      archivedAt: remboursement.archivedAt,
+      bailId: remboursement.bailId,
+      paiementId: remboursement.paiementId,
+      type: remboursement.type,
+      montantOrigine: remboursement.montantOrigine,
+      montantRembourse: remboursement.montantRembourse,
+      commentaire: remboursement.commentaire,
+      dateRemboursement: remboursement.dateRemboursement,
+      mode: remboursement.mode
+    };
   }
 }
