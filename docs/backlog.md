@@ -465,17 +465,22 @@ les trois parcours ci-dessus).
   montant exact vérifié, non-régression des 3 scénarios de prorata
   préexistants.
 
-- **Versioning des documents (historique des versions) — absent du MVP
-  construit.** Prévu au cahier des charges initial, jamais retranscrit dans
-  le backlog détaillé du Module 4 lors de la Phase 10 — un écart de
-  transcription Phase 1 → Phase 10, pas une décision de scope délibérée à
-  l'origine. Identifié lors du démarrage du Module 4 (docs/backlog.md),
-  avant tout code : confirmé hors périmètre du Module 4 MVP tel que
-  construit. Proposition déjà validée si/quand implémenté :
-  `document_precedent_id` (auto-référence nullable vers `documents.id`),
-  chaînant un nouvel upload à la version qu'il remplace — la version
-  courante restant la seule non chaînée par une version plus récente,
-  jamais de suppression physique de l'ancienne (cohérent avec CLAUDE.md).
+- **Versioning des documents (historique des versions) — résolu.** Prévu au
+  cahier des charges initial, jamais retranscrit dans le backlog détaillé du
+  Module 4 lors de la Phase 10 (écart de transcription, pas une décision de
+  scope délibérée), confirmé hors périmètre du Module 4 MVP tel que
+  construit à l'époque. Implémenté depuis : `document_precedent_id`
+  (auto-référence nullable vers `documents.id`) chaîne un nouvel upload à la
+  version qu'il remplace ; `DocumentsService.remplacerDocument()` crée la
+  nouvelle ligne puis archive l'ancienne (même mécanisme que `archiver()`)
+  dans la même transaction — jamais de suppression physique, jamais deux
+  versions `valide` simultanées dans une même chaîne. Endpoint dédié `POST
+  /documents/:id/remplacer`. Seule la version courante (non archivée) peut
+  être remplacée ; un upload sans lien de version reste toujours possible
+  via `DocumentsService.upload()`, y compris pour une entité ayant déjà un
+  document archivé manuellement. Voir docs/data-dictionary.md, section
+  documents, pour le détail. Affichage d'un historique de versions côté
+  desktop : hors périmètre, sujet UX futur.
 
 - **Tableau de bord — dépenses réelles, rentabilité nette et comparaison
   provisions/charges réelles impossibles** tant qu'aucun module de suivi

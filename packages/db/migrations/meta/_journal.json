@@ -176,6 +176,13 @@
       "when": 1786123720923,
       "tag": "0024_secret_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787426603555,
+      "tag": "0025_robust_robin_chapel",
+      "breakpoints": true
     }
   ]
 }

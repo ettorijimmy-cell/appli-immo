@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerStatutDocument } from "core";
 import {
   appartements,
@@ -17,6 +17,7 @@ import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateDocumentDto, DocumentCategorie, DocumentEntiteType } from "./dto/create-document.dto";
+import type { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import type { UpdateDocumentDto } from "./dto/update-document.dto";
 import { construireCheminStockage } from "./storage/construire-chemin-stockage";
 import { DocumentStorageService } from "./storage/document-storage.service";
@@ -43,11 +44,7 @@ export class DocumentsService {
 
   async upload(dto: CreateDocumentDto, fichier: Express.Multer.File) {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
-    if ((dto.etatDesLieuxPieceType || dto.etatDesLieuxPieceNumero !== undefined) && dto.entiteType !== "etat_des_lieux") {
-      throw new BadRequestException(
-        "etatDesLieuxPieceType/etatDesLieuxPieceNumero ne sont valables que pour entiteType 'etat_des_lieux'."
-      );
-    }
+    this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
 
     // L'id est généré ici (plutôt que laissé au $defaultFn du schéma) car il
     // fait partie du chemin de stockage — il doit être connu avant l'écriture
@@ -76,6 +73,73 @@ export class DocumentsService {
       throw new Error("Échec de l'enregistrement du document");
     }
     return this.versDto(document);
+  }
+
+  // Versioning (docs/backlog.md, dette technique) : crée la nouvelle version
+  // chaînée à `documentPrecedentId`, puis archive l'ancienne — dans la même
+  // transaction pour ne jamais laisser un état intermédiaire incohérent
+  // (nouvelle version créée mais ancienne toujours 'valide', ou l'inverse)
+  // si l'une des deux écritures échoue. entiteType/entiteId/le chemin de
+  // stockage sont hérités de l'ancienne version, jamais re-saisis. Le blob
+  // est écrit sur le storage avant la transaction, même ordre que upload()
+  // — le storage n'est de toute façon jamais couvert par une transaction
+  // SQL.
+  async remplacerDocument(documentPrecedentId: string, dto: RemplacerDocumentDto, fichier: Express.Multer.File) {
+    const [ancien] = await this.db.select().from(documents).where(eq(documents.id, documentPrecedentId)).limit(1);
+    if (!ancien) {
+      throw new NotFoundException("Document à remplacer introuvable");
+    }
+    // Garde l'invariant "une seule version courante non chaînée par chaîne"
+    // (docs/data-dictionary.md, section documents) : on ne remplace jamais
+    // une version déjà archivée, qu'elle le soit via un remplacement
+    // précédent ou via archiver() manuel — dans ce dernier cas, un nouvel
+    // upload sans lien de version reste possible via upload(), jamais
+    // bloqué par cette garde.
+    if (ancien.archivedAt !== null) {
+      throw new ConflictException("Seule la version courante (non archivée) d'un document peut être remplacée.");
+    }
+    this.verifierPieceValideSelonEntiteType(ancien.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
+
+    const documentId = uuidv7();
+    const cheminStockage = construireCheminStockage(ancien.entiteType, ancien.entiteId, documentId);
+    await this.storage.enregistrer(fichier.buffer, cheminStockage);
+
+    const utilisateurId = this.requestContext.getUtilisateurId();
+    return this.db.transaction(async (tx) => {
+      const [nouveau] = await tx
+        .insert(documents)
+        .values({
+          id: documentId,
+          entiteType: ancien.entiteType,
+          entiteId: ancien.entiteId,
+          categorie: dto.categorie,
+          dateExpiration: dto.dateExpiration ?? null,
+          nomFichier: fichier.originalname,
+          mimeType: fichier.mimetype,
+          tailleOctets: fichier.size,
+          cheminStockage,
+          etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
+          etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null,
+          documentPrecedentId
+        })
+        .returning();
+      if (!nouveau) {
+        throw new Error("Échec de l'enregistrement du nouveau document");
+      }
+
+      const [archive] = await mettreAJourAvecAudit(
+        tx,
+        documents,
+        documentPrecedentId,
+        { archivedAt: new Date(), statut: "archive" },
+        utilisateurId
+      );
+      if (!archive) {
+        throw new Error("Échec de l'archivage de l'ancienne version");
+      }
+
+      return this.versDto(nouveau);
+    });
   }
 
   async findAll(filtres: FindAllDocumentsFiltres) {
@@ -185,8 +249,24 @@ export class DocumentsService {
       tailleOctets: document.tailleOctets,
       etatDesLieuxPieceType: document.etatDesLieuxPieceType,
       etatDesLieuxPieceNumero: document.etatDesLieuxPieceNumero,
+      documentPrecedentId: document.documentPrecedentId,
       statut: calculerStatutDocument(document.dateExpiration, document.archivedAt !== null, dateReference)
     };
+  }
+
+  // Partagé entre upload() et remplacerDocument() : etatDesLieuxPieceType/
+  // Numero n'ont de sens que pour entiteType = 'etat_des_lieux' (voir
+  // docs/data-dictionary.md, section documents).
+  private verifierPieceValideSelonEntiteType(
+    entiteType: DocumentEntiteType,
+    etatDesLieuxPieceType: string | undefined,
+    etatDesLieuxPieceNumero: number | undefined
+  ): void {
+    if ((etatDesLieuxPieceType || etatDesLieuxPieceNumero !== undefined) && entiteType !== "etat_des_lieux") {
+      throw new BadRequestException(
+        "etatDesLieuxPieceType/etatDesLieuxPieceNumero ne sont valables que pour entiteType 'etat_des_lieux'."
+      );
+    }
   }
 
   // Le lien polymorphe n'a pas de contrainte de clé étrangère possible

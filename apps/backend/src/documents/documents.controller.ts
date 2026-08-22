@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { DocumentsService, type FindAllDocumentsFiltres } from "./documents.service";
 import { CreateDocumentDto, type DocumentCategorie, type DocumentEntiteType } from "./dto/create-document.dto";
+import { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import { UpdateDocumentDto } from "./dto/update-document.dto";
 
 const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
@@ -29,6 +30,25 @@ export class DocumentsController {
       throw new NotFoundException("Aucun fichier reçu");
     }
     return this.documentsService.upload(dto, fichier);
+  }
+
+  // Nouvelle version chaînée à documentPrecedentId (l':id de la route),
+  // ancienne version archivée automatiquement — voir DocumentsService
+  // .remplacerDocument(). Route dédiée plutôt qu'un flag sur POST /documents
+  // : les deux créent une ligne, mais celle-ci en cascade une seconde
+  // écriture (archivage) avec ses propres règles de rejet (409 si la
+  // version ciblée n'est plus la version courante).
+  @Post(":id/remplacer")
+  @UseInterceptors(FileInterceptor("fichier", { limits: { fileSize: TAILLE_MAX_OCTETS } }))
+  remplacer(
+    @Param("id") id: string,
+    @UploadedFile() fichier: Express.Multer.File | undefined,
+    @Body() dto: RemplacerDocumentDto
+  ) {
+    if (!fichier) {
+      throw new NotFoundException("Aucun fichier reçu");
+    }
+    return this.documentsService.remplacerDocument(id, dto, fichier);
   }
 
   @Get()

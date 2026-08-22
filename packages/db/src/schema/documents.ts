@@ -1,4 +1,4 @@
-import { date, integer, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { date, integer, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 
 export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
@@ -71,5 +71,13 @@ export const documents = pgTable("documents", {
   // entrée/séjour/cuisine à instance unique) — jamais renseignés pour les
   // 5 autres entiteType.
   etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
-  etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero")
+  etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero"),
+  // Versioning (docs/backlog.md, dette technique) : auto-référence vers la
+  // ligne que ce document remplace. La version courante d'une chaîne est
+  // celle qu'aucune autre ligne ne référence ici. DocumentsService
+  // .remplacerDocument() archive automatiquement l'ancienne version dans
+  // la même transaction que la création de la nouvelle — jamais de
+  // suppression physique (CLAUDE.md), jamais deux versions 'valide'
+  // simultanées dans une même chaîne.
+  documentPrecedentId: uuid("document_precedent_id").references((): AnyPgColumn => documents.id)
 });

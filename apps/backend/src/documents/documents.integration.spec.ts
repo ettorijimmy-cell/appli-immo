@@ -244,6 +244,97 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     expect(avecArchives.find((d) => d.id === document.id)?.statut).toBe("archive");
   });
 
+  it("remplacerDocument() : chaîne la nouvelle version, archive l'ancienne, sans jamais la supprimer physiquement", async () => {
+    const contenuOriginal = "diagnostic DPE 2025";
+    const ancien = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "dpe", dateExpiration: "2026-06-01" },
+      fichierTest(contenuOriginal, "dpe-2025.pdf")
+    );
+
+    const contenuNouveau = "diagnostic DPE 2026, renouvelé";
+    const nouveau = await documentsService.remplacerDocument(
+      ancien.id,
+      { categorie: "dpe", dateExpiration: "2027-06-01" },
+      fichierTest(contenuNouveau, "dpe-2026.pdf")
+    );
+
+    expect(nouveau.documentPrecedentId).toBe(ancien.id);
+    expect(nouveau.statut).toBe("valide");
+    expect(nouveau.entiteType).toBe("appartement");
+    expect(nouveau.entiteId).toBe(appartementId);
+    expect(nouveau.nomFichier).toBe("dpe-2026.pdf");
+
+    // L'ancienne version est archivée automatiquement (même mécanisme que
+    // archiver()), jamais supprimée physiquement — son contenu reste
+    // accessible.
+    const ancienRelu = await documentsService.findById(ancien.id);
+    expect(ancienRelu?.statut).toBe("archive");
+    expect(ancienRelu?.archivedAt).not.toBeNull();
+    const { contenu: contenuAncienToujoursLisible } = await documentsService.telecharger(ancien.id);
+    expect(contenuAncienToujoursLisible.toString("utf8")).toBe(contenuOriginal);
+
+    // Une seule version 'valide' dans la chaîne : l'ancienne n'apparaît
+    // plus dans la liste par défaut, seule la nouvelle y figure.
+    const sansArchives = await documentsService.findAll({ entiteId: appartementId });
+    expect(sansArchives.find((d) => d.id === ancien.id)).toBeUndefined();
+    expect(sansArchives.find((d) => d.id === nouveau.id)?.statut).toBe("valide");
+  });
+
+  it("remplacerDocument() : rejette le remplacement d'une version déjà archivée (via un remplacement précédent)", async () => {
+    const original = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "dpe" },
+      fichierTest("v1")
+    );
+    await documentsService.remplacerDocument(original.id, { categorie: "dpe" }, fichierTest("v2"));
+
+    await expect(
+      documentsService.remplacerDocument(original.id, { categorie: "dpe" }, fichierTest("v3"))
+    ).rejects.toThrow(/version courante/i);
+  });
+
+  it("remplacerDocument() : rejette le remplacement d'une version archivée manuellement, mais upload() reste possible sans lien de version", async () => {
+    const document = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "assurance" },
+      fichierTest("assurance archivée manuellement")
+    );
+    await documentsService.archiver(document.id);
+
+    await expect(
+      documentsService.remplacerDocument(document.id, { categorie: "assurance" }, fichierTest("tentative"))
+    ).rejects.toThrow(/version courante/i);
+
+    // Un nouvel upload indépendant, sans document_precedent_id, reste
+    // possible pour la même entité — l'archivage manuel ne bloque jamais
+    // upload().
+    const nouveauSansLien = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "assurance" },
+      fichierTest("nouvelle assurance")
+    );
+    expect(nouveauSansLien.documentPrecedentId).toBeNull();
+    expect(nouveauSansLien.statut).toBe("valide");
+  });
+
+  it("remplacerDocument() : rejette un documentPrecedentId inexistant", async () => {
+    await expect(
+      documentsService.remplacerDocument(randomUUID(), { categorie: "dpe" }, fichierTest("peu importe"))
+    ).rejects.toThrow();
+  });
+
+  it("remplacerDocument() : garde etatDesLieuxPieceType/Numero valables uniquement pour entiteType 'etat_des_lieux', comme upload()", async () => {
+    const ancien = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "photo" },
+      fichierTest("photo v1")
+    );
+
+    await expect(
+      documentsService.remplacerDocument(
+        ancien.id,
+        { categorie: "photo", etatDesLieuxPieceType: "cuisine" },
+        fichierTest("photo v2")
+      )
+    ).rejects.toThrow(/etat_des_lieux/);
+  });
+
   it("telecharger() journalise un accès à un document sensible (journal_audit)", async () => {
     const document = await documentsService.upload(
       { entiteType: "appartement", entiteId: appartementId, categorie: "piece_identite" },

@@ -297,12 +297,23 @@ quotidien. Convention de bord : le jour de `date_expiration` lui-même est
 encore valide (expiration en fin de journée) — `expire` seulement à partir
 du lendemain.
 
-**Écart connu (identifié au démarrage du Module 4)** : le versioning des
-documents (historique des versions) était prévu au cahier des charges
-initial mais n'a jamais été retranscrit dans `docs/backlog.md` lors de la
-rédaction détaillée du Module 4 — absent du MVP construit. Voir
-`docs/backlog.md`, section dette technique, pour la proposition déjà
-validée (`document_precedent_id`) si/quand implémenté.
+**Versioning des documents (dette technique résolue)** : `document_precedent_id`
+(auto-référence nullable vers `documents.id`) chaîne un nouvel upload à la
+version qu'il remplace. `DocumentsService.remplacerDocument()` crée la
+nouvelle ligne puis archive l'ancienne (`archived_at` posé, `statut =
+archive`) dans la même transaction — jamais de suppression physique, jamais
+deux versions `valide` simultanées dans une même chaîne. La version courante
+d'une chaîne est celle qu'aucune autre ligne ne référence via
+`document_precedent_id`. Seule la version courante (non archivée) peut être
+remplacée : `remplacerDocument()` rejette (409) toute tentative sur une
+ligne déjà archivée, qu'elle le soit via un remplacement précédent ou via
+`archiver()` manuel — un nouvel upload sans lien de version reste toujours
+possible via `DocumentsService.upload()`, y compris pour une entité qui a
+déjà un document archivé. Endpoint dédié `POST /documents/:id/remplacer`
+(multipart, même mécanique que `POST /documents`), distinct de l'upload
+simple plutôt qu'un flag conditionnel sur celui-ci. Affichage d'un
+historique de versions côté desktop : hors périmètre de ce chantier (sujet
+UX futur).
 
 ## paiements
 Rattaché à un bail (`baux`, Module 3). `montant` est la somme attendue à
