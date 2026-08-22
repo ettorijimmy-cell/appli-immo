@@ -10,6 +10,8 @@ export interface FindAllAlertesFiltres {
   type?: AlerteType;
 }
 
+type AlerteRow = typeof alertes.$inferSelect;
+
 @Injectable()
 export class AlertesService {
   constructor(
@@ -25,10 +27,11 @@ export class AlertesService {
     if (filtres.type) {
       conditions.push(eq(alertes.type, filtres.type));
     }
-    return this.db
+    const lignes = await this.db
       .select()
       .from(alertes)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
+    return lignes.map((alerte) => this.versDto(alerte));
   }
 
   async traiter(id: string) {
@@ -50,6 +53,26 @@ export class AlertesService {
     if (!alerte) {
       throw new NotFoundException("Alerte introuvable");
     }
-    return alerte;
+    return this.versDto(alerte as AlerteRow);
+  }
+
+  // derniere_condition_vraie est un champ interne au job de génération
+  // d'alertes (voir packages/db/src/schema/alertes.ts) — jamais exposé à
+  // l'utilisateur, même principe que documents.chemin_stockage
+  // (DocumentsService.versDto).
+  private versDto(alerte: AlerteRow) {
+    return {
+      id: alerte.id,
+      createdAt: alerte.createdAt,
+      updatedAt: alerte.updatedAt,
+      updatedBy: alerte.updatedBy,
+      version: alerte.version,
+      archivedAt: alerte.archivedAt,
+      type: alerte.type,
+      entiteId: alerte.entiteId,
+      statut: alerte.statut,
+      message: alerte.message,
+      dateReference: alerte.dateReference
+    };
   }
 }

@@ -415,6 +415,28 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       expect(memesAlerte[0]?.statut).toBe("traitee");
     });
 
+    it("findAll() et traiter() ne renvoient jamais derniere_condition_vraie (champ interne au job)", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5,
+        dateFin: "2026-07-20"
+      });
+      await bauxService.activer(bail.id);
+
+      await alertesJobService.genererAlertes("2026-07-01");
+      const [alerte] = await alertesService.findAll({ type: "bail_fin_proche" });
+      if (!alerte) {
+        throw new Error("Alerte bail_fin_proche attendue introuvable");
+      }
+      expect(alerte).not.toHaveProperty("derniereConditionVraie");
+
+      const traitee = await alertesService.traiter(alerte.id);
+      expect(traitee).not.toHaveProperty("derniereConditionVraie");
+    });
+
     it("traitee : une nouvelle occurrence (condition passée par faux puis revenue vraie) crée une nouvelle alerte, sans jamais réécrire l'ancienne", async () => {
       const bail = await bauxService.create({
         appartementId,
