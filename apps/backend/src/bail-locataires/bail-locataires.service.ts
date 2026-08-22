@@ -5,6 +5,8 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailLocataireDto } from "./dto/create-bail-locataire.dto";
 
+type BailLocataireRow = typeof bailLocataires.$inferSelect;
+
 @Injectable()
 export class BailLocatairesService {
   constructor(
@@ -24,7 +26,7 @@ export class BailLocatairesService {
     if (!lien) {
       throw new Error("Échec du rattachement du locataire au bail");
     }
-    return lien;
+    return this.versDto(lien);
   }
 
   async findAll(bailId?: string, locataireId?: string) {
@@ -32,13 +34,14 @@ export class BailLocatairesService {
       ...(bailId ? [eq(bailLocataires.bailId, bailId)] : []),
       ...(locataireId ? [eq(bailLocataires.locataireId, locataireId)] : [])
     ];
-    if (conditions.length === 0) {
-      return this.db.select().from(bailLocataires);
-    }
-    return this.db
-      .select()
-      .from(bailLocataires)
-      .where(conditions.length === 1 ? conditions[0] : and(...conditions));
+    const lignes =
+      conditions.length === 0
+        ? await this.db.select().from(bailLocataires)
+        : await this.db
+            .select()
+            .from(bailLocataires)
+            .where(conditions.length === 1 ? conditions[0] : and(...conditions));
+    return lignes.map((lien) => this.versDto(lien));
   }
 
   // Retire un locataire d'un bail — archive le lien, ne le supprime jamais
@@ -54,6 +57,20 @@ export class BailLocatairesService {
     if (!lien) {
       throw new NotFoundException("Rattachement introuvable");
     }
-    return lien;
+    return this.versDto(lien as BailLocataireRow);
+  }
+
+  private versDto(lien: BailLocataireRow) {
+    return {
+      id: lien.id,
+      createdAt: lien.createdAt,
+      updatedAt: lien.updatedAt,
+      updatedBy: lien.updatedBy,
+      version: lien.version,
+      archivedAt: lien.archivedAt,
+      bailId: lien.bailId,
+      locataireId: lien.locataireId,
+      role: lien.role
+    };
   }
 }
