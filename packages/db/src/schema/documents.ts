@@ -17,8 +17,19 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   "bail",
   "assurance",
   "etat_des_lieux",
+  // "diagnostic" reste le seau générique pour tout diagnostic non encore
+  // distingué (ex. amiante — hors périmètre à ce jour, docs/backlog.md,
+  // section "Édition d'un bail"). dpe/elec_gaz/crep_plomb/erp existent en
+  // valeurs dédiées uniquement pour permettre à BailDocumentDocxService de
+  // détecter leur présence en pièce annexée (section PIECES ANNEXEES) —
+  // aucun résultat structuré n'est stocké ici (voir la table `diagnostics`,
+  // 1:1 avec documents, pour ça — encore non reliée à aucun module/UI à ce
+  // jour, docs/backlog.md).
   "diagnostic",
   "dpe",
+  "elec_gaz",
+  "crep_plomb",
+  "erp",
   "piece_identite",
   "rib",
   "caf",

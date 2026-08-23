@@ -8,6 +8,7 @@ import {
   bailLocataires,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
+  documents,
   immeubles,
   indicesIrl,
   journalAudit,
@@ -300,6 +301,13 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // Aucun bail précédent sur cet appartement : jamais la mention du loyer
     // du précédent locataire (art. 3, loi n° 89-462).
     expect(texte).not.toContain("le précédent locataire ayant quitté");
+
+    // Aucun document diagnostic rattaché : les 4 lignes de la section
+    // PIECES ANNEXEES restent absentes.
+    expect(texte).not.toContain("Diagnostic de performance énergétique");
+    expect(texte).not.toContain("Constat de risque d'exposition au plomb");
+    expect(texte).not.toContain("installation intérieure d'électricité et de gaz");
+    expect(texte).not.toContain("risques naturels et technologiques");
 
     // Garant présent (avecGarant par défaut) : le paragraphe d'engagement
     // de caution solidaire doit apparaître (phrase précise, distincte de
@@ -722,5 +730,71 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const texte = texteDuDocx(buffer);
     expect(texte).not.toContain("le précédent locataire ayant quitté");
+  });
+
+  // Écriture directe en base : seule la présence d'un document catégorisé
+  // compte ici, pas le cycle d'upload chiffré complet (hors sujet pour ce
+  // test — voir documents.integration.spec.ts pour l'upload réel).
+  async function creerDocumentTest(
+    entiteType: "appartement" | "immeuble",
+    entiteId: string,
+    categorie: "dpe" | "crep_plomb" | "elec_gaz" | "erp" | "diagnostic",
+    archive = false
+  ) {
+    await db.insert(documents).values({
+      entiteType,
+      entiteId,
+      categorie,
+      nomFichier: "test.pdf",
+      mimeType: "application/pdf",
+      tailleOctets: 1,
+      cheminStockage: `test/${randomUUID()}.enc`,
+      archivedAt: archive ? new Date() : null
+    });
+  }
+
+  it("mentionne les diagnostics présents en pièce annexée, rattachés à l'immeuble ou à l'appartement indifféremment", async () => {
+    const { bail, appartement, immeuble } = await creerDossierComplet();
+    await creerDocumentTest("appartement", appartement.id, "dpe");
+    await creerDocumentTest("appartement", appartement.id, "crep_plomb");
+    await creerDocumentTest("immeuble", immeuble.id, "elec_gaz");
+    await creerDocumentTest("immeuble", immeuble.id, "erp");
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain("Diagnostic de performance énergétique (DPE).");
+    expect(texte).toContain("Constat de risque d'exposition au plomb (CREP).");
+    expect(texte).toContain("État de l'installation intérieure d'électricité et de gaz.");
+    expect(texte).toContain("État des risques naturels et technologiques (ERP).");
+  });
+
+  it("ignore un document diagnostic archivé (ne le compte pas comme présent)", async () => {
+    const { bail, appartement } = await creerDossierComplet();
+    await creerDocumentTest("appartement", appartement.id, "dpe", true);
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).not.toContain("Diagnostic de performance énergétique");
+  });
+
+  it("ne confond jamais la catégorie générique 'diagnostic' avec une des 4 valeurs dédiées", async () => {
+    const { bail, appartement } = await creerDossierComplet();
+    await creerDocumentTest("appartement", appartement.id, "diagnostic");
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).not.toContain("Diagnostic de performance énergétique");
+    expect(texte).not.toContain("Constat de risque d'exposition au plomb");
+    expect(texte).not.toContain("installation intérieure d'électricité et de gaz");
+    expect(texte).not.toContain("risques naturels et technologiques");
   });
 });

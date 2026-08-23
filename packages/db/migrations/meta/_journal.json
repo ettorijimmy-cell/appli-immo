@@ -190,6 +190,13 @@
       "when": 1787430804542,
       "tag": "0026_peaceful_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787503584333,
+      "tag": "0027_premium_havok",
+      "breakpoints": true
     }
   ]
 }

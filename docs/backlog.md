@@ -925,11 +925,19 @@ par le futur module "Révision annuelle" du cahier des charges initial
   révision du loyer, charges/régularisation, dépôt de garantie,
   résiliation, état des lieux contradictoire) reste à générer section par
   section.
-- Décision définitive sur la structuration élec/gaz — toujours non
-  tranchée, vérifié dans le code (2026-08-21) : ni une valeur
-  `documents.categorie` dédiée (ex. `elec_gaz`), ni une 4e valeur sur
-  `diagnostics.type` (toujours `dpe` \| `crep_plomb` \| `erp` uniquement)
-  n'existent à ce jour.
+- **Structuration élec/gaz et détection des diagnostics en pièce annexée
+  — tranchée et implémentée (2026-08-23).** Décision : valeurs dédiées
+  sur `documents.categorie` (`elec_gaz`, `crep_plomb`, `erp` — `dpe`
+  existait déjà), pas d'élargissement de `diagnostics.type` — cette
+  dernière table reste réservée aux diagnostics à résultat structuré cité
+  dans le corps du bail (aucun à ce jour) et n'est encore reliée à aucun
+  module/UI (schéma seul, migration 0027). `BailDocumentDocxService`
+  détecte la présence de chacun des 4 diagnostics (`documents.categorie`,
+  non archivé, rattaché à l'appartement OU à l'immeuble du bail — rien
+  n'impose l'un ou l'autre) et affiche la ligne correspondante en section
+  PIECES ANNEXEES (formulation reprise du décret n° 2015-587, annexe 1,
+  section XI.B). Formulaire d'upload et filtre Documents (desktop) mis à
+  jour avec les 3 nouvelles valeurs.
 - Attachement effectif de la notice d'information (arrêté du 29 mai 2015,
   document fixe à joindre tel quel) — décision de conception actée
   ci-dessus, pas encore implémentée.

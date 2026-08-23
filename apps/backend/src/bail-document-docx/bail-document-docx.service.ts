@@ -20,6 +20,7 @@ import {
   appartements,
   bailLocataires,
   baux,
+  documents,
   garants,
   immeubles,
   indicesIrl,
@@ -30,7 +31,7 @@ import {
   type Database
 } from "db";
 import Docxtemplater from "docxtemplater";
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import PizZip from "pizzip";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
@@ -212,6 +213,27 @@ export class BailDocumentDocxService {
       dateVersementLoyerPrecedent = dernierVersement?.dateVersement ?? null;
     }
 
+    // Présence des diagnostics en pièce annexée (section XI du contrat-type,
+    // décret n° 2015-587) : simple détection de présence, jamais un résultat
+    // structuré (la table `diagnostics`, prévue pour ça, n'est reliée à
+    // aucun module/UI à ce jour — docs/data-dictionary.md). Rien n'impose
+    // qu'un diagnostic soit rattaché à l'immeuble ou à l'appartement : les
+    // deux niveaux sont vérifiés pour chacune des 4 catégories.
+    const documentsDiagnostics = await this.db
+      .select({ categorie: documents.categorie })
+      .from(documents)
+      .where(
+        and(
+          or(
+            and(eq(documents.entiteType, "appartement"), eq(documents.entiteId, appartement.id)),
+            and(eq(documents.entiteType, "immeuble"), eq(documents.entiteId, immeuble.id))
+          ),
+          inArray(documents.categorie, ["dpe", "elec_gaz", "crep_plomb", "erp"]),
+          isNull(documents.archivedAt)
+        )
+      );
+    const categoriesDiagnosticsPresentes = new Set(documentsDiagnostics.map((d) => d.categorie));
+
     // Durée légale : bail vide dérivé automatiquement de scis.est_familiale
     // (déjà validé non-null ci-dessus, aucun choix humain requis) ; bail
     // meublé, rien dans le schéma ne distingue standard/étudiant — choix
@@ -351,7 +373,13 @@ export class BailDocumentDocxService {
       // enregistré pour le bail précédent — données antérieures au
       // rapprochement CSV, ou paiement jamais tracé).
       mentionLoyerPrecedentComplete: montantLoyerPrecedent !== null && dateVersementLoyerPrecedent !== null,
-      mentionLoyerPrecedentMontantSeul: montantLoyerPrecedent !== null && dateVersementLoyerPrecedent === null
+      mentionLoyerPrecedentMontantSeul: montantLoyerPrecedent !== null && dateVersementLoyerPrecedent === null,
+      // Section XI (annexes) : simple présence, immeuble ou appartement
+      // confondus (voir documentsDiagnostics ci-dessus).
+      diagnosticDpePresent: categoriesDiagnosticsPresentes.has("dpe"),
+      diagnosticElecGazPresent: categoriesDiagnosticsPresentes.has("elec_gaz"),
+      diagnosticCrepPresent: categoriesDiagnosticsPresentes.has("crep_plomb"),
+      diagnosticErpPresent: categoriesDiagnosticsPresentes.has("erp")
     });
 
     const utilisateurId = this.requestContext.getUtilisateurId();
@@ -385,6 +413,10 @@ export class BailDocumentDocxService {
       colocation: boolean;
       mentionLoyerPrecedentComplete: boolean;
       mentionLoyerPrecedentMontantSeul: boolean;
+      diagnosticDpePresent: boolean;
+      diagnosticElecGazPresent: boolean;
+      diagnosticCrepPresent: boolean;
+      diagnosticErpPresent: boolean;
     }
   ): Buffer {
     const contenu = readFileSync(this.templatePath, "binary");
