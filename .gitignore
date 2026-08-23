@@ -20,7 +20,15 @@ backups/
 # stockage local de blobs documents (données réelles, jamais versionnées)
 # doit être ignoré ici.
 /apps/backend/storage/
-tmp/
+# tmp/ reste le dossier de travail (sorties de génération jetables, PDFs de
+# test, fragments...), mais les deux modèles Word sont la source de vérité
+# du contenu légal généré (bail, état des lieux) — sans backup ailleurs
+# (pnpm backup:local ne sauvegarde que Postgres). Versionnés malgré leur
+# nature binaire pour bénéficier de l'historique/sauvegarde git, plutôt que
+# de dépendre d'une copie manuelle sur un seul poste.
+tmp/*
+!tmp/Modèle bail.docx
+!tmp/Modèle état des lieux.docx
 
 .vscode/*
 !.vscode/extensions.json

@@ -6,6 +6,7 @@ import {
   ajouterMois,
   calculerDureeBail,
   calculerLibelleDepotGarantie,
+  calculerLoyerPrecedentLocataire,
   calculerMontantEcheanceLoyer,
   determinerRegimeClauseResolutoire,
   irlEstPerime,
@@ -23,11 +24,13 @@ import {
   immeubles,
   indicesIrl,
   locataires,
+  paiements,
   scis,
+  versements,
   type Database
 } from "db";
 import Docxtemplater from "docxtemplater";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import PizZip from "pizzip";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
@@ -166,6 +169,49 @@ export class BailDocumentDocxService {
     const servitudeResidencePrincipale = dto.servitudeResidencePrincipale ?? false;
     const servitudeApplicable = servitudeResidencePrincipale && regime === "depuis_2026_10_01";
 
+    // Mention obligatoire loi n° 89-462, art. 3 : montant et date de
+    // versement du dernier loyer du précédent locataire, si celui-ci a
+    // quitté le logement moins de 18 mois avant la signature du bail
+    // (dateReference, pas dateDebut — le texte parle de la signature).
+    // "Précédent locataire" = le bail le plus récemment terminé (résilié ou
+    // archivé — jamais un brouillon, qui n'a jamais représenté une
+    // occupation réelle même s'il porte une date_fin) sur ce même
+    // appartement, hors le bail en cours de génération.
+    const [bailPrecedent] = await this.db
+      .select()
+      .from(baux)
+      .where(
+        and(
+          eq(baux.appartementId, appartement.id),
+          ne(baux.id, bailId),
+          inArray(baux.statut, ["resilie", "archive"]),
+          isNotNull(baux.dateFin)
+        )
+      )
+      .orderBy(desc(baux.dateFin), desc(baux.dateResiliation))
+      .limit(1);
+    const montantLoyerPrecedent = calculerLoyerPrecedentLocataire(
+      bailPrecedent ? { loyerMensuel: bailPrecedent.loyerMensuel, dateFin: bailPrecedent.dateFin } : null,
+      dateReference
+    );
+    let dateVersementLoyerPrecedent: string | null = null;
+    if (montantLoyerPrecedent !== null && bailPrecedent) {
+      const [dernierVersement] = await this.db
+        .select({ dateVersement: versements.dateVersement })
+        .from(versements)
+        .innerJoin(paiements, eq(versements.paiementId, paiements.id))
+        .where(
+          and(
+            eq(paiements.bailId, bailPrecedent.id),
+            eq(paiements.type, "loyer"),
+            isNull(versements.archivedAt)
+          )
+        )
+        .orderBy(desc(versements.dateVersement))
+        .limit(1);
+      dateVersementLoyerPrecedent = dernierVersement?.dateVersement ?? null;
+    }
+
     // Durée légale : bail vide dérivé automatiquement de scis.est_familiale
     // (déjà validé non-null ci-dessus, aucun choix humain requis) ; bail
     // meublé, rien dans le schéma ne distingue standard/étudiant — choix
@@ -260,7 +306,10 @@ export class BailDocumentDocxService {
       // Balise du bloc signature ("Fait à ..., le ...") — malgré son nom
       // hérité du modèle, la valeur est date_signature (repli dateDebut),
       // jamais littéralement dateDebut (voir dateReference ci-dessus).
-      "date de début du bail": dateReference
+      "date de début du bail": dateReference,
+
+      "montant loyer précédent locataire": montantLoyerPrecedent ?? VIDE,
+      "date de versement loyer précédent locataire": dateVersementLoyerPrecedent ?? VIDE
     };
 
     const buffer = this.rendreDocument(donneesBalises, {
@@ -291,7 +340,18 @@ export class BailDocumentDocxService {
       // (docs/backlog.md, "Édition d'un bail") — l'inventaire lui-même
       // reste différé au futur module État des lieux, seule cette ligne
       // du bail vide/meublé est concernée ici.
-      meuble: bail.typeBail === "meuble"
+      meuble: bail.typeBail === "meuble",
+      // Clause d'extinction de solidarité (art. 8-1, VI, loi n° 89-462) :
+      // n'a de sens qu'en cas de colocation réelle (plusieurs locataires
+      // effectivement liés au bail), jamais pour un locataire seul.
+      colocation: liensLocataires.length > 1,
+      // Mention obligatoire loi n° 89-462, art. 3 (loyer du précédent
+      // locataire) : deux variantes mutuellement exclusives selon que la
+      // date de versement a pu être retrouvée ou non (aucun versement
+      // enregistré pour le bail précédent — données antérieures au
+      // rapprochement CSV, ou paiement jamais tracé).
+      mentionLoyerPrecedentComplete: montantLoyerPrecedent !== null && dateVersementLoyerPrecedent !== null,
+      mentionLoyerPrecedentMontantSeul: montantLoyerPrecedent !== null && dateVersementLoyerPrecedent === null
     });
 
     const utilisateurId = this.requestContext.getUtilisateurId();
@@ -322,6 +382,9 @@ export class BailDocumentDocxService {
       eauChaudeCollective: boolean;
       aGarant: boolean;
       meuble: boolean;
+      colocation: boolean;
+      mentionLoyerPrecedentComplete: boolean;
+      mentionLoyerPrecedentMontantSeul: boolean;
     }
   ): Buffer {
     const contenu = readFileSync(this.templatePath, "binary");

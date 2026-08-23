@@ -12,10 +12,11 @@ import {
   indicesIrl,
   journalAudit,
   organisations,
+  paiements,
   utilisateurs,
   type Database
 } from "db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import PizZip from "pizzip";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
@@ -39,6 +40,8 @@ import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { VersementsModule } from "../versements/versements.module";
+import { VersementsService } from "../versements/versements.service";
 import { BailDocumentDocxModule } from "./bail-document-docx.module";
 import { BailDocumentDocxService } from "./bail-document-docx.service";
 
@@ -77,6 +80,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   let garantsService: GarantsService;
   let bauxService: BauxService;
   let bailLocatairesService: BailLocatairesService;
+  let versementsService: VersementsService;
   let bailDocumentDocxService: BailDocumentDocxService;
   let requestContextService: RequestContextService;
   let db: Database;
@@ -100,6 +104,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
         GarantsModule,
         BauxModule,
         BailLocatairesModule,
+        VersementsModule,
         BailDocumentDocxModule
       ]
     })
@@ -114,6 +119,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     garantsService = moduleRef.get(GarantsService);
     bauxService = moduleRef.get(BauxService);
     bailLocatairesService = moduleRef.get(BailLocatairesService);
+    versementsService = moduleRef.get(VersementsService);
     bailDocumentDocxService = moduleRef.get(BailDocumentDocxService);
     requestContextService = moduleRef.get(RequestContextService);
 
@@ -151,35 +157,11 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     await rootDb.$client.end();
   });
 
-  // Assemble un dossier complet (SCI, immeuble, appartement, locataire,
-  // bail, garant) avec TOUS les champs requis par validerCompletudeGenerationBail
-  // renseignés — `surcharges` permet à un test de rendre un champ précis
-  // manquant ou de changer le régime, sans dupliquer tout le montage.
-  async function creerDossierComplet(
-    options: {
-      dateDebut?: string;
-      avecGarant?: boolean;
-      avecIrl?: boolean;
-      typeBail?: "vide" | "meuble";
-    } = {}
-  ) {
-    const dateDebut = options.dateDebut ?? "2026-07-01";
-    const avecGarant = options.avecGarant ?? true;
-    const avecIrl = options.avecIrl ?? true;
-    const typeBail = options.typeBail ?? "vide";
-
-    if (avecIrl) {
-      // annee 9999 : valeur délibérément hors de toute plage réaliste,
-      // pour ne jamais entrer en collision avec une vraie ligne publiée
-      // par l'INSEE et déjà présente en base dev (contrainte d'unicité
-      // (annee, trimestre) partagée avec les données réelles, pas
-      // seulement entre transactions de test isolées — un vrai bug
-      // constaté : ce test entrait en conflit avec la ligne 2026-Q2
-      // réellement synchronisée pendant ce chantier). date_recuperation
-      // = maintenant, jamais périmée par défaut.
-      await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
-    }
-
+  // Assemble uniquement SCI/immeuble/appartement (partie commune à tous
+  // les dossiers de test), pour permettre à un même appartement de porter
+  // plusieurs baux successifs (bail précédent + nouveau bail) sans dupliquer
+  // ce montage.
+  async function creerAppartementDeBase() {
     const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     await scisService.update(sci.id, { telephone: "0555555555", estFamiliale: true });
 
@@ -211,6 +193,40 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       equipementCuisine: "Plaques, four, réfrigérateur",
       dependancesAnnexes: "Cave"
     });
+
+    return { sci, immeuble, appartement };
+  }
+
+  // Assemble un dossier complet (SCI, immeuble, appartement, locataire,
+  // bail, garant) avec TOUS les champs requis par validerCompletudeGenerationBail
+  // renseignés — `surcharges` permet à un test de rendre un champ précis
+  // manquant ou de changer le régime, sans dupliquer tout le montage.
+  async function creerDossierComplet(
+    options: {
+      dateDebut?: string;
+      avecGarant?: boolean;
+      avecIrl?: boolean;
+      typeBail?: "vide" | "meuble";
+    } = {}
+  ) {
+    const dateDebut = options.dateDebut ?? "2026-07-01";
+    const avecGarant = options.avecGarant ?? true;
+    const avecIrl = options.avecIrl ?? true;
+    const typeBail = options.typeBail ?? "vide";
+
+    if (avecIrl) {
+      // annee 9999 : valeur délibérément hors de toute plage réaliste,
+      // pour ne jamais entrer en collision avec une vraie ligne publiée
+      // par l'INSEE et déjà présente en base dev (contrainte d'unicité
+      // (annee, trimestre) partagée avec les données réelles, pas
+      // seulement entre transactions de test isolées — un vrai bug
+      // constaté : ce test entrait en conflit avec la ligne 2026-Q2
+      // réellement synchronisée pendant ce chantier). date_recuperation
+      // = maintenant, jamais périmée par défaut.
+      await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+    }
+
+    const { sci, immeuble, appartement } = await creerAppartementDeBase();
 
     const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
@@ -277,6 +293,13 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // Vraie valeur IRL insérée, jamais un texte à compléter.
     expect(texte).toContain("148.37");
     expect(texte).not.toContain("non disponible");
+
+    // Locataire seul (pas de colocation) : jamais la clause d'extinction de
+    // solidarité (art. 8-1, réservée aux baux à plusieurs locataires).
+    expect(texte).not.toContain("article 8-1");
+    // Aucun bail précédent sur cet appartement : jamais la mention du loyer
+    // du précédent locataire (art. 3, loi n° 89-462).
+    expect(texte).not.toContain("le précédent locataire ayant quitté");
 
     // Garant présent (avecGarant par défaut) : le paragraphe d'engagement
     // de caution solidaire doit apparaître (phrase précise, distincte de
@@ -499,5 +522,205 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const liensEnBase = await db.select().from(bailLocataires).where(eq(bailLocataires.bailId, bail.id));
     expect(liensEnBase).toHaveLength(2);
+  });
+
+  it("mentionne la clause d'extinction de solidarité (art. 8-1) en cas de colocation réelle", async () => {
+    const { bail, locataire } = await creerDossierComplet();
+    const colocataire = await locatairesService.create({ nom: "Colocataire", prenom: "Second" });
+    await locatairesService.update(colocataire.id, { adresse: "X", codePostal: "X", ville: "X" });
+    await bailLocatairesService.create({
+      bailId: bail.id,
+      locataireId: colocataire.id,
+      role: "colocataire"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain(locataire.nom);
+    expect(texte).toContain(
+      "Conformément à l'article 8-1, VI, alinéa 1er, de la loi n° 89-462 du 6 juillet 1989, la solidarité d'un des colocataires et celle de la personne qui s'est portée caution pour lui prennent fin à la date d'effet du congé régulièrement délivré et lorsqu'un nouveau colocataire figure au bail. A défaut, elles s'éteignent au plus tard à l'expiration d'un délai de six mois après la date d'effet du congé."
+    );
+  });
+
+  it("mentionne le loyer du précédent locataire (montant et date de versement) quand celui-ci est parti moins de 18 mois avant la signature", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    // Bail précédent, activé puis résilié moins de 18 mois avant la
+    // signature du nouveau bail — avec un versement de loyer enregistré,
+    // seule source possible de la "date de versement" exigée par l'article
+    // 3 de la loi n° 89-462.
+    const bailPrecedent = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2024-01-01",
+      loyerMensuel: "600.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bailPrecedent.id);
+    const [paiementLoyerPrecedent] = await db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.bailId, bailPrecedent.id), eq(paiements.type, "loyer")));
+    if (!paiementLoyerPrecedent) {
+      throw new Error("Échéance de loyer introuvable pour le bail précédent");
+    }
+    await versementsService.ajouter({
+      paiementId: paiementLoyerPrecedent.id,
+      montant: "600.00",
+      mode: "virement",
+      dateVersement: "2024-01-05"
+    });
+    await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
+
+    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    await locatairesService.update(locataire.id, {
+      adresse: "1 rue du Locataire",
+      codePostal: "19100",
+      ville: "Brive",
+      dateNaissance: "1990-05-12",
+      telephone: "0611111111",
+      email: "ilan.devos@example.com"
+    });
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-06-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: "Claire",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1965-03-20",
+      lieuNaissance: "Lyon",
+      nationalite: "Française"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain(
+      "Conformément à l'article 3 de la loi n° 89-462 du 6 juillet 1989, le précédent locataire ayant quitté le logement moins de dix-huit mois avant la signature du présent bail, il est précisé que le montant du dernier loyer qui lui a été appliqué s'élevait à 600.00 € et que ce loyer a été versé le 2024-01-05."
+    );
+  });
+
+  it("mentionne le montant seul du loyer précédent quand aucun versement n'est retrouvé pour le bail précédent", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    // Bail précédent activé (échéance de loyer générée) mais SANS versement
+    // enregistré dessus — données antérieures au suivi strict des
+    // versements, ou paiement jamais tracé.
+    const bailPrecedent = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2024-01-01",
+      loyerMensuel: "600.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bailPrecedent.id);
+    await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
+
+    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    await locatairesService.update(locataire.id, {
+      adresse: "1 rue du Locataire",
+      codePostal: "19100",
+      ville: "Brive",
+      dateNaissance: "1990-05-12",
+      telephone: "0611111111",
+      email: "ilan.devos@example.com"
+    });
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-06-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: "Claire",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1965-03-20",
+      lieuNaissance: "Lyon",
+      nationalite: "Française"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain(
+      "Conformément à l'article 3 de la loi n° 89-462 du 6 juillet 1989, le précédent locataire ayant quitté le logement moins de dix-huit mois avant la signature du présent bail, il est précisé que le montant du dernier loyer qui lui a été appliqué s'élevait à 600.00 €."
+    );
+    expect(texte).not.toContain("et que ce loyer a été versé le");
+  });
+
+  it("ne mentionne jamais le loyer du précédent locataire si celui-ci est parti il y a plus de 18 mois", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    const bailPrecedent = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2020-01-01",
+      loyerMensuel: "600.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bailPrecedent.id);
+    // Largement plus de 18 mois avant le nouveau bail (2026-06-01).
+    await bauxService.resilier(bailPrecedent.id, { dateFin: "2022-01-15" });
+
+    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    await locatairesService.update(locataire.id, {
+      adresse: "1 rue du Locataire",
+      codePostal: "19100",
+      ville: "Brive",
+      dateNaissance: "1990-05-12",
+      telephone: "0611111111",
+      email: "ilan.devos@example.com"
+    });
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-06-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: "Claire",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1965-03-20",
+      lieuNaissance: "Lyon",
+      nationalite: "Française"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).not.toContain("le précédent locataire ayant quitté");
   });
 });
