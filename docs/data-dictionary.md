@@ -538,6 +538,51 @@ packages/core : 183 tests, tous passants après la Phase 3 (renommage du
 paramètre `montantPaye`→`montantRecu` de `calculerStatutPaiement` sans
 impact sur les tests, positionnels).
 
+### Motif de retenue dépôt de garantie (2026-08-24)
+
+Complète la dette technique identifiée ci-dessus (`remboursements.commentaire`
+texte libre jugé insuffisant, `docs/backlog.md`) : ajoute un motif structuré
+et une pièce jointe chiffrée, sans nouveau chantier de conception séparé —
+décisions tranchées avec l'utilisateur avant tout code.
+
+- **`remboursements.motif_retenue`** (nouvel enum `remboursement_motif_retenue`,
+  nullable) : `degradation_locative` \| `reparations_locatives_non_effectuees`
+  \| `charges_impayees` \| `loyers_impayes` \| `autre`. Catégories issues de la
+  pratique/jurisprudence, pas de la loi n° 89-462 elle-même — l'art. 22 impose
+  seulement que toute retenue soit "dûment justifiée", sans nomenclature.
+  "Ménage non fait" volontairement fondu dans
+  `reparations_locatives_non_effectuees` (même fondement juridique : entretien
+  courant à la charge du locataire, pas une dégradation) plutôt qu'une valeur
+  séparée.
+- **Pièce jointe : 4 colonnes dédiées sur `remboursements`**
+  (`piece_justificative_chemin/nom_fichier/mime_type/taille_octets`), pas une
+  7e cible sur le lien polymorphe `documents`. Choix délibéré : relation 1:1
+  stricte (un seul justificatif par remboursement, pas de système de motifs
+  multiples pour l'instant), aucun cycle de vie expiration/versioning à gérer
+  ici contrairement à `documents` — la 7e cible aurait forcé à faire cohabiter
+  deux sémantiques différentes (entité patrimoniale vs. transaction
+  financière) dans le même enum `document_entite_type`.
+  `piece_justificative_chemin` suit exactement les mêmes règles que
+  `documents.chemin_stockage` : chiffré (`DocumentStorageService.enregistrer`,
+  `{ chiffrer: true }` — donnée personnelle, contrairement à l'exception
+  `ReferencesService`), jamais exposé au frontend (projection explicite dans
+  `RemboursementsService.versDto`), jamais dans le Sync Stream PowerSync.
+- **Règle de complétude, appliquée dans `RemboursementsService.create()`** :
+  motif et pièce jointe sont exigés **ensemble**, uniquement quand
+  `type = depot_garantie` ET `montant_rembourse < montant_origine` (retenue
+  réelle) — rejet strict (`BadRequestException`) si l'un manque dans ce cas,
+  ou si l'un des deux est fourni hors de ce cas (remboursement intégral,
+  trop-perçu). Un remboursement partiel du dépôt est toujours une retenue au
+  sens de la loi, même s'il s'agit d'un versement échelonné négocié — aucune
+  exception à cette règle.
+- **Endpoint combiné** : `POST /remboursements` accepte un corps multipart
+  (`FileInterceptor("pieceJustificative")`), même pattern que
+  `DocumentsController.upload()`, fichier optionnel (contrairement à
+  `documents`, la plupart des remboursements n'en ont pas). Téléchargement via
+  `GET /remboursements/:id/piece-justificative`, avec le même mécanisme
+  d'audit que `documents.telecharger()` (`AuditService.logAccesDonneeSensible`,
+  `entiteType: "remboursement_piece_justificative"`).
+
 ## alertes
 | Champ | Type | Description |
 |---|---|---|

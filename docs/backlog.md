@@ -432,24 +432,24 @@ les trois parcours ci-dessus).
   Confirmé visuellement dans Electron le 2026-08-24.
 
 - **Remboursement du dépôt de garantie — modélisé sommairement, motif de
-  retenue toujours insuffisant.** Le chantier "versements & remboursements"
-  a modélisé le remboursement lui-même (table `remboursements`, type
-  `depot_garantie`, `docs/data-dictionary.md`), avec un simple champ
+  retenue toujours insuffisant — résolu (2026-08-24).** Le chantier
+  "versements & remboursements" avait modélisé le remboursement lui-même
+  (table `remboursements`, type `depot_garantie`), avec un simple champ
   `commentaire` texte libre pour justifier un écart entre montant reçu et
-  montant remboursé (ex. retenue pour dégradations). **Ce champ n'est pas
-  jugé suffisant** : le besoin réel est un motif de retenue **structuré**
-  (catégorie de dégradation + pièce justificative attachée — photo,
-  devis...), pas un texte libre non catégorisé, non exploitable pour des
-  statistiques ou un futur contentieux. Rattachement naturel à un état des
-  lieux de sortie **catégorisé** (Module 4, Documents — état des lieux
-  existe comme document mais sans structure de catégories de dégradation
-  aujourd'hui) : à concevoir comme un vrai sujet à part entière avant
-  d'être codé, pas une simple extension du champ `commentaire` actuel.
-  L'utilisateur a redemandé ce point explicitement le 2026-07-30, après la
-  mise en place du remboursement sommaire — confirmant que ce n'est pas
-  une fonctionnalité accessoire, mais un gap identifié et maintenu
-  volontairement ouvert le temps de concevoir la structure de catégories
-  avec lui.
+  montant remboursé — jugé insuffisant (pas de catégorie exploitable pour
+  des statistiques ou un futur contentieux, pas de pièce jointe possible).
+  L'utilisateur avait redemandé ce point explicitement le 2026-07-30.
+  Résolu par l'ajout d'un motif structuré (`remboursements.motif_retenue`,
+  enum `degradation_locative` \| `reparations_locatives_non_effectuees`
+  \| `charges_impayees` \| `loyers_impayes` \| `autre`, catégories issues
+  de la pratique/jurisprudence — la loi n° 89-462 art. 22 impose une
+  justification mais aucune nomenclature) et d'une pièce jointe chiffrée
+  (4 colonnes dédiées sur `remboursements`, pas une 7e cible sur le lien
+  polymorphe `documents` — relation 1:1 stricte, aucun cycle de vie à
+  gérer, voir `docs/data-dictionary.md`, section "Motif de retenue dépôt de
+  garantie"). Les deux sont exigés ensemble uniquement pour une retenue
+  réelle (`type=depot_garantie` ET `montant_rembourse < montant_origine`),
+  validé dans `RemboursementsService.create()`, rejet strict sinon.
 
 - **Aucune validation que `date_fin` ≥ `date_debut` à la résiliation —
   corrigé.** (Identifié par financial-logic-reviewer lors du correctif
@@ -1335,6 +1335,14 @@ Portée envisagée :
   Module 4 (Documents).
 - Objectif final : dashboard recettes vs dépenses, rentabilité nette par
   bien (actuellement affichés en revenu brut uniquement, Module 7).
+- Les remboursements (dépôt de garantie, trop-perçu) ne sont visibles que
+  dans l'onglet Bail, jamais agrégés dans une vue financière transversale
+  (constaté lors du chantier motif de retenue dépôt de garantie,
+  2026-08-24). Le futur module Charges et fiscalité devra inclure les
+  remboursements comme flux financier sortant, au même titre que les
+  futures charges/achats, pas seulement les loyers comme flux entrant —
+  objectif : vue complète recettes (loyers) vs dépenses (remboursements,
+  futures charges).
 
 Ce module mérite sa propre phase de conception dédiée (comme les Phases
 1-12 initiales) avant d'être développé — pas à traiter comme un ticket

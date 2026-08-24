@@ -7,9 +7,12 @@ import {
   listPaiements,
   listRemboursements,
   listVersements,
+  REMBOURSEMENT_MOTIFS_RETENUE,
+  telechargerPieceJustificativeRemboursement,
   type Paiement,
   type PaiementMode,
-  type Remboursement
+  type Remboursement,
+  type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import { telechargerNoticeInformation } from "../references/api";
@@ -726,6 +729,38 @@ function BailActuelDetail({
 
 const PAIEMENT_MODES_REMBOURSEMENT: PaiementMode[] = ["virement", "cheque", "especes", "caf"];
 
+function libelleMotifRetenue(motif: RemboursementMotifRetenue | null): string | null {
+  return REMBOURSEMENT_MOTIFS_RETENUE.find((m) => m.value === motif)?.libelle ?? null;
+}
+
+// Ligne d'historique d'un remboursement (dépôt de garantie avec ou sans
+// retenue, ou trop-perçu) : ajoute le motif + un lien de téléchargement du
+// justificatif quand la retenue en a un — jamais les deux sans l'autre
+// (RemboursementsService.create()).
+function LigneRemboursement({ remboursement }: { remboursement: Remboursement }): React.JSX.Element {
+  const motif = libelleMotifRetenue(remboursement.motifRetenue);
+  return (
+    <span>
+      {remboursement.montantRembourse} € {remboursement.commentaire ? `(${remboursement.commentaire})` : ""}
+      {motif && <span className="text-amber-800"> — Retenue : {motif}</span>}
+      {remboursement.pieceJustificativeNomFichier && (
+        <>
+          {" "}
+          <button
+            type="button"
+            onClick={() => {
+              void telechargerPieceJustificativeRemboursement(remboursement.id);
+            }}
+            className="text-indigo-700 underline hover:text-indigo-900"
+          >
+            Voir le justificatif
+          </button>
+        </>
+      )}
+    </span>
+  );
+}
+
 // Uniquement une fois le bail résilié (docs/data-dictionary.md, section
 // "versements & remboursements") : rembourser un dépôt encore en cours de
 // bail n'a pas de sens. Plusieurs remboursements partiels successifs sont
@@ -786,7 +821,7 @@ function DepotGarantieSection({
         <ul className="text-sm text-slate-600">
           {remboursementsActifs.map((r) => (
             <li key={r.id}>
-              {r.dateRemboursement} — {r.montantRembourse} € {r.commentaire ? `(${r.commentaire})` : ""}
+              {r.dateRemboursement} — <LigneRemboursement remboursement={r} />
             </li>
           ))}
         </ul>
@@ -893,15 +928,33 @@ function RemboursementsSection({ bail, version }: { bail: Bail; version: number 
         <p className="text-sm text-slate-500">Aucun remboursement enregistré.</p>
       ) : (
         <ul className="text-sm text-slate-600">
-          {remboursements.map((r) => (
-            <li key={r.id} className="flex items-center justify-between border-b border-slate-100 py-1">
-              <span>
-                {r.dateRemboursement} — {r.type === "trop_percu" ? "Trop-perçu" : "Dépôt de garantie"}
-                {r.commentaire ? ` (${r.commentaire})` : ""}
-              </span>
-              <span className="font-medium">{r.montantRembourse} €</span>
-            </li>
-          ))}
+          {remboursements.map((r) => {
+            const motif = libelleMotifRetenue(r.motifRetenue);
+            return (
+              <li key={r.id} className="flex items-center justify-between border-b border-slate-100 py-1">
+                <span>
+                  {r.dateRemboursement} — {r.type === "trop_percu" ? "Trop-perçu" : "Dépôt de garantie"}
+                  {r.commentaire ? ` (${r.commentaire})` : ""}
+                  {motif && <span className="text-amber-800"> — Retenue : {motif}</span>}
+                  {r.pieceJustificativeNomFichier && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void telechargerPieceJustificativeRemboursement(r.id);
+                        }}
+                        className="text-indigo-700 underline hover:text-indigo-900"
+                      >
+                        Voir le justificatif
+                      </button>
+                    </>
+                  )}
+                </span>
+                <span className="font-medium">{r.montantRembourse} €</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -1043,24 +1096,40 @@ function NewRemboursementDepotForm({
   const [dateRemboursement, setDateRemboursement] = useState(new Date().toISOString().slice(0, 10));
   const [mode, setMode] = useState<PaiementMode>("virement");
   const [commentaire, setCommentaire] = useState("");
+  const [motifRetenue, setMotifRetenue] = useState<RemboursementMotifRetenue | "">("");
+  const [pieceJustificative, setPieceJustificative] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Toute retenue sur un dépôt de garantie (montant remboursé < montant
+  // reçu) exige un motif structuré et un justificatif — même règle que
+  // RemboursementsService.create() côté backend (docs/backlog.md, motif de
+  // retenue dépôt de garantie).
+  const retenueDetectee = montantEnCentimes(montantRembourse) < montantEnCentimes(montantOrigine);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError(null);
+    if (retenueDetectee && (!motifRetenue || !pieceJustificative)) {
+      setError("Motif de retenue et justificatif requis : le montant remboursé est inférieur au montant reçu.");
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await createRemboursement({
-        bailId,
-        paiementId,
-        type: "depot_garantie",
-        montantOrigine,
-        montantRembourse,
-        ...(commentaire ? { commentaire } : {}),
-        dateRemboursement,
-        mode
-      });
+      await createRemboursement(
+        {
+          bailId,
+          paiementId,
+          type: "depot_garantie",
+          montantOrigine,
+          montantRembourse,
+          ...(commentaire ? { commentaire } : {}),
+          dateRemboursement,
+          mode,
+          ...(retenueDetectee && motifRetenue ? { motifRetenue } : {})
+        },
+        retenueDetectee && pieceJustificative ? pieceJustificative : undefined
+      );
       onCreated();
     } catch {
       setError("Impossible de créer le remboursement (dépasse-t-il le montant reçu ?)");
@@ -1130,6 +1199,42 @@ function NewRemboursementDepotForm({
           />
         </div>
       </div>
+
+      {retenueDetectee && (
+        <div className="grid grid-cols-2 gap-3 rounded-md border border-amber-200 bg-amber-50 p-2">
+          <div className="space-y-1">
+            <label htmlFor="remboursement-depot-motif" className="text-xs font-medium text-amber-900">
+              Motif de la retenue
+            </label>
+            <select
+              id="remboursement-depot-motif"
+              required
+              value={motifRetenue}
+              onChange={(e) => setMotifRetenue(e.target.value as RemboursementMotifRetenue)}
+              className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+            >
+              <option value="">— Sélectionner —</option>
+              {REMBOURSEMENT_MOTIFS_RETENUE.map(({ value, libelle }) => (
+                <option key={value} value={value}>
+                  {libelle}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="remboursement-depot-justificatif" className="text-xs font-medium text-amber-900">
+              Justificatif (photo, devis...)
+            </label>
+            <input
+              id="remboursement-depot-justificatif"
+              type="file"
+              required
+              onChange={(e) => setPieceJustificative(e.target.files?.[0] ?? null)}
+              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"
+            />
+          </div>
+        </div>
+      )}
 
       {error && (
         <p role="alert" className="text-sm text-red-600">

@@ -295,12 +295,22 @@ streams:
   # paiements (4 niveaux), pas besoin de passer par paiement_id puisque tout
   # paiement lié appartient nécessairement au même bail.
   # commentaire EXCLU volontairement (texte libre non contraint, saisi
-  # manuellement, contenu imprévisible — décision du 2026-08-16). Toutes les
-  # autres colonnes métier incluses.
+  # manuellement, contenu imprévisible — décision du 2026-08-16).
+  # Motif de retenue dépôt de garantie (2026-08-24, docs/backlog.md) :
+  # motif_retenue inclus (enum catégoriel fermé, rien de sensible).
+  # piece_justificative_chemin EXCLU DÉFINITIVEMENT, même raison exacte que
+  # documents.chemin_stockage plus haut dans ce fichier (clé du blob chiffré
+  # — sa présence en clair permettrait de localiser/déchiffrer le contenu
+  # réel du justificatif). piece_justificative_nom_fichier/mime_type/
+  # taille_octets inclus par le même précédent que documents.nom_fichier
+  # (utilité pratique hors-ligne, disque déjà chiffré). Toutes les autres
+  # colonnes métier incluses.
   remboursements:
     query: >
       SELECT id, bail_id, paiement_id, type, montant_origine,
-      montant_rembourse, date_remboursement, mode, updated_at
+      montant_rembourse, date_remboursement, mode, motif_retenue,
+      piece_justificative_nom_fichier, piece_justificative_mime_type,
+      piece_justificative_taille_octets, updated_at
       FROM remboursements
       WHERE remboursements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
