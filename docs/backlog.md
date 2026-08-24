@@ -956,9 +956,28 @@ par le futur module "Révision annuelle" du cahier des charges initial
   PIECES ANNEXEES (formulation reprise du décret n° 2015-587, annexe 1,
   section XI.B). Formulaire d'upload et filtre Documents (desktop) mis à
   jour avec les 3 nouvelles valeurs.
-- Attachement effectif de la notice d'information (arrêté du 29 mai 2015,
-  document fixe à joindre tel quel) — décision de conception actée
-  ci-dessus, pas encore implémentée.
+- **Attachement effectif de la notice d'information — tranché et
+  implémenté (2026-08-24).** Décision : (A) mention textuelle
+  inconditionnelle en section PIECES ANNEXEES ("Une notice d'information
+  relative aux droits et obligations des locataires et des bailleurs.",
+  item 3 de la liste officielle) — jamais de fusion de fichiers, incohérent
+  avec le pattern déjà établi dans toute l'app (l'utilisateur assemble
+  lui-même le dossier final) ; (B) le PDF lui-même (arrêté du 29 mai 2015,
+  modifié par l'arrêté du 16 février 2023 — seule source officielle
+  identifiée : aucun PDF distinct de l'export Légifrance n'existe, ni sur
+  service-public.gouv.fr ni sur les sites préfectoraux, qui renvoient tous
+  vers le même texte Légifrance) est hébergé comme fichier fixe, public,
+  non rattaché à une entité — `references/notice-information-bail.pdf`
+  dans le même bucket Object Storage que les documents, jamais chiffré
+  (aucune donnée utilisateur), aucune ligne `documents` (nouveau module
+  `apps/backend/src/references`, réutilise `DocumentStorageService` en
+  instance séparée — jamais `DocumentsModule` en entier, qui dépend de
+  Postgres sans rapport avec ce cas). Script réutilisable
+  `pnpm upload:notice-information` pour les futures mises à jour de
+  l'arrêté. Boutons desktop ("Générer le document" du bail — jusqu'ici
+  totalement absent de l'UI, seul l'endpoint existait — et "Télécharger la
+  notice d'information") ajoutés ensemble dans `BailActuelDetail`
+  (BailTabs.tsx), même zone que Activer/Résilier le bail.
 
 ### État des lieux (en cours, priorité 2)
 

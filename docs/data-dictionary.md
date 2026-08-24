@@ -281,6 +281,21 @@ route authentifiée qui journalise l'accès dans `journal_audit`
 jamais via une URL publique ou un chemin de fichier exposé au frontend
 (CLAUDE.md, section Règles importantes).
 
+**Exception délibérée — fichiers de référence (2026-08-24)** : les
+fichiers fixes, publics, partagés par toute l'app et non rattachés à une
+entité (ex. la notice d'information légale annexée au bail, arrêté du
+29 mai 2015) vivent sous le préfixe `references/` (pas
+`documents/<entite_type>/...`), **jamais chiffrés** (aucune donnée
+utilisateur — chiffrer un texte légal public serait un contre-sens) et
+sans ligne `documents` associée (aucun `entite_type` ne représente
+"aucune entité"). Nouveau module `apps/backend/src/references`
+(`ReferencesService`/`ReferencesController`, route `GET
+/references/:slug`) — réutilise `DocumentStorageService` en instance
+séparée (`chiffrer: false` sur `enregistrer`/`lire`), jamais
+`DocumentsModule` en entier, qui dépendrait alors inutilement de
+Postgres. Script réutilisable `pnpm --filter backend
+upload:notice-information` pour déposer/mettre à jour ces fichiers.
+
 **Décision produit (`ENCRYPTION_KEY` dev/prod, tranchée avec l'utilisateur,
 2026-08-11)** : la clé de production (Scaleway Serverless Containers) est
 générée indépendamment de celle utilisée en développement local — jamais

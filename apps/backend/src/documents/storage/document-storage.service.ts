@@ -56,29 +56,36 @@ export class DocumentStorageService {
     }
   }
 
-  async enregistrer(contenu: Buffer, chemin: string): Promise<string> {
-    const chiffre = this.encryptionService.encryptBuffer(contenu);
+  // `chiffrer` (défaut true) : à désactiver uniquement pour un fichier de
+  // référence public, partagé par toute l'app, sans donnée utilisateur
+  // (ex. notice d'information légale — voir ReferencesService) — jamais
+  // pour un document rattaché à une entité (bail/locataire/etc.), toujours
+  // chiffré comme aujourd'hui.
+  async enregistrer(contenu: Buffer, chemin: string, options?: { chiffrer?: boolean }): Promise<string> {
+    const chiffrer = options?.chiffrer ?? true;
+    const donnees = chiffrer ? this.encryptionService.encryptBuffer(contenu) : contenu;
     if (this.s3) {
-      await this.s3.client.send(new PutObjectCommand({ Bucket: this.s3.bucket, Key: chemin, Body: chiffre }));
+      await this.s3.client.send(new PutObjectCommand({ Bucket: this.s3.bucket, Key: chemin, Body: donnees }));
     } else {
       const cheminAbsolu = path.join(this.localStorageDir!, chemin);
       await mkdir(path.dirname(cheminAbsolu), { recursive: true });
-      await writeFile(cheminAbsolu, chiffre);
+      await writeFile(cheminAbsolu, donnees);
     }
     return chemin;
   }
 
-  async lire(chemin: string): Promise<Buffer> {
-    let chiffre: Buffer;
+  async lire(chemin: string, options?: { chiffrer?: boolean }): Promise<Buffer> {
+    const chiffrer = options?.chiffrer ?? true;
+    let donnees: Buffer;
     if (this.s3) {
       const reponse = await this.s3.client.send(new GetObjectCommand({ Bucket: this.s3.bucket, Key: chemin }));
       if (!reponse.Body) {
         throw new Error(`Objet vide reçu du bucket pour la clé ${chemin}`);
       }
-      chiffre = Buffer.from(await reponse.Body.transformToByteArray());
+      donnees = Buffer.from(await reponse.Body.transformToByteArray());
     } else {
-      chiffre = await readFile(path.join(this.localStorageDir!, chemin));
+      donnees = await readFile(path.join(this.localStorageDir!, chemin));
     }
-    return this.encryptionService.decryptBuffer(chiffre);
+    return chiffrer ? this.encryptionService.decryptBuffer(donnees) : donnees;
   }
 }

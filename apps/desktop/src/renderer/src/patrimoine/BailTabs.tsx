@@ -12,6 +12,7 @@ import {
   type Remboursement
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { telechargerNoticeInformation } from "../references/api";
 import { getRemboursementsEnAttente, type RemboursementEnAttente } from "../tableau-de-bord/api";
 import {
   activerBail,
@@ -20,6 +21,7 @@ import {
   createBail,
   createBailLocataire,
   createGarant,
+  genererDocumentBail,
   getLocataire,
   listBailLocataires,
   listBaux,
@@ -349,6 +351,10 @@ function BailActuelDetail({
   const [dateFinResiliation, setDateFinResiliation] = useState("");
   const [isActionInProgress, setIsActionInProgress] = useState(false);
   const [tropPercuMessage, setTropPercuMessage] = useState<string | null>(null);
+  const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [isDownloadingNotice, setIsDownloadingNotice] = useState(false);
+  const [noticeError, setNoticeError] = useState<string | null>(null);
   // Un remboursement peut être créé depuis DepotGarantieSection (dépôt) ou
   // ailleurs (carte "Remboursements en attente" du Tableau de bord, pour un
   // trop-perçu — dans ce cas ce compteur ne bouge qu'au prochain montage de
@@ -416,6 +422,30 @@ function BailActuelDetail({
       setActionError(err instanceof ApiError ? err.message : "Impossible de résilier le bail");
     } finally {
       setIsActionInProgress(false);
+    }
+  }
+
+  async function handleGenererDocument(): Promise<void> {
+    setDocumentError(null);
+    setIsGeneratingDocument(true);
+    try {
+      await genererDocumentBail(bail.id);
+    } catch (err) {
+      setDocumentError(err instanceof ApiError ? err.message : "Impossible de générer le document");
+    } finally {
+      setIsGeneratingDocument(false);
+    }
+  }
+
+  async function handleTelechargerNotice(): Promise<void> {
+    setNoticeError(null);
+    setIsDownloadingNotice(true);
+    try {
+      await telechargerNoticeInformation();
+    } catch (err) {
+      setNoticeError(err instanceof ApiError ? err.message : "Impossible de télécharger la notice");
+    } finally {
+      setIsDownloadingNotice(false);
     }
   }
 
@@ -509,6 +539,18 @@ function BailActuelDetail({
         </p>
       )}
 
+      {documentError && (
+        <p role="alert" className="text-sm text-red-600">
+          {documentError}
+        </p>
+      )}
+
+      {noticeError && (
+        <p role="alert" className="text-sm text-red-600">
+          {noticeError}
+        </p>
+      )}
+
       {tropPercuMessage && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{tropPercuMessage}</p>
       )}
@@ -549,6 +591,29 @@ function BailActuelDetail({
             </button>
           </>
         )}
+      </div>
+
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => {
+            void handleGenererDocument();
+          }}
+          disabled={isGeneratingDocument}
+          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+        >
+          {isGeneratingDocument ? "Génération…" : "Générer le document"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void handleTelechargerNotice();
+          }}
+          disabled={isDownloadingNotice}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {isDownloadingNotice ? "Téléchargement…" : "Télécharger la notice d'information"}
+        </button>
       </div>
 
       <div>

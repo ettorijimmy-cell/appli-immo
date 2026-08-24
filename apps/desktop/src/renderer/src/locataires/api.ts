@@ -1,4 +1,4 @@
-import { authenticatedFetch } from "../lib/authenticated-fetch";
+import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
 export type LocataireStatut = "actif" | "ancien" | "archive";
 export type LocataireStatutModifiable = "actif" | "ancien";
@@ -194,6 +194,27 @@ export function resilierBail(id: string, dateFin?: string): Promise<Bail & { tro
 
 export function archiveBail(id: string): Promise<Bail> {
   return authenticatedFetch<Bail>(`/baux/${id}/archiver`, { method: "PATCH" });
+}
+
+// Déclenche le téléchargement du .docx généré côté backend (même méthode
+// que genererDocumentEtatDesLieux, etats-des-lieux/api.ts) — le backend
+// bloque déjà avec un message explicite (champsManquants) si des données
+// obligatoires manquent ; l'appelant se contente de relayer ce message
+// (ApiError).
+export async function genererDocumentBail(id: string): Promise<void> {
+  const { blob, nomFichier } = await authenticatedFetchBlob(`/baux/${id}/document-docx`, {
+    method: "POST"
+  });
+  const url = URL.createObjectURL(blob);
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = nomFichier ?? "bail.docx";
+  lien.target = "_blank";
+  lien.rel = "noopener noreferrer";
+  document.body.appendChild(lien);
+  lien.click();
+  document.body.removeChild(lien);
+  URL.revokeObjectURL(url);
 }
 
 export function listGarants(bailId: string): Promise<Garant[]> {

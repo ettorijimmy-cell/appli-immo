@@ -309,6 +309,13 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     expect(texte).not.toContain("installation intérieure d'électricité et de gaz");
     expect(texte).not.toContain("risques naturels et technologiques");
 
+    // Mention obligatoire et inconditionnelle (item 3, liste officielle
+    // décret n° 2015-587, annexe 1, section XI) : toujours présente, quel
+    // que soit le bail.
+    expect(texte).toContain(
+      "Une notice d'information relative aux droits et obligations des locataires et des bailleurs."
+    );
+
     // Garant présent (avecGarant par défaut) : le paragraphe d'engagement
     // de caution solidaire doit apparaître (phrase précise, distincte de
     // la mention "caution solidaire" du bloc signature qui reste toujours
