@@ -867,9 +867,27 @@ selon la date :
   savoir si un logement y est soumis (désignation d'urbanisme rare,
   propre à certaines communes) — paramètre de génération explicite
   (`servitudeResidencePrincipale` du DTO), jamais déduit silencieusement,
-  affiché à la fois en section II.B (nouvelle mention) et en section VIII
-  (motif de résiliation supplémentaire), uniquement à partir du 1er
-  octobre 2026. À modéliser en base si le besoin se confirme.
+  uniquement à partir du 1er octobre 2026. À modéliser en base si le
+  besoin se confirme.
+  - **Section II.B (DESTINATION EXCLUSIVE DES LOCAUX)** : nouvelle
+    mention — présente depuis l'implémentation initiale de ce module.
+  - **Section VIII (motif de résiliation supplémentaire) — trou réel,
+    corrigé le 2026-08-24.** Cette section affirmait déjà cette double
+    présence, mais seule II.B était réellement câblée dans le vrai
+    template (`{#clauseResolutoireApres}` n'avait jamais reçu le motif
+    correspondant) — écart constaté en vérifiant le code, pas supposé.
+    Fondement légal vérifié Légifrance (deux fetches indépendants
+    concordants) : le décret n° 2026-596 lui-même modifie l'annexe 1 du
+    décret 2015-587 pour ajouter ce motif à la clause résolutoire, avec
+    un délai de mise en demeure propre fixé par le maire — art. L. 481-4,
+    II du code de l'urbanisme (jamais les six semaines/un mois des autres
+    motifs). Texte inséré verbatim, gardé par le flag `servitude`
+    existant (aucun nouveau flag). `construireTexteClauseResolutoire`
+    (packages/core, jusqu'ici orpheline et non appelée) mise à jour avec
+    la même formulation verbatim + référence L. 481-4, mais reste non
+    appelée par le service — le texte réellement généré vient du
+    `.docx`, pas de cette fonction (même écart que documenté ailleurs
+    dans ce fichier pour le reste de son texte).
 
 **Section VII (solidarité/indivisibilité) — complétée** : règle
 d'extinction de la solidarité à 6 mois après le congé (article 8-1 de la

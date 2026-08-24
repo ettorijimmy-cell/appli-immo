@@ -58,12 +58,20 @@ describe("construireTexteClauseResolutoire", () => {
     expect(secondMotif).not.toContain("six semaines");
   });
 
-  it("mentionne la servitude de résidence principale uniquement si applicable", () => {
+  it("mentionne la servitude de résidence principale uniquement si applicable, avec sa référence légale propre (L. 481-4, II)", () => {
     const sansServitude = construireTexteClauseResolutoire("depuis_2026_10_01", false);
     expect(sansServitude).not.toContain("résidence principale");
+    expect(sansServitude).not.toContain("L. 481-4");
 
     const avecServitude = construireTexteClauseResolutoire("depuis_2026_10_01", true);
     expect(avecServitude).toContain("résidence principale");
+    expect(avecServitude).toContain("L. 151-14-1 du code de l'urbanisme");
+    expect(avecServitude).toContain("L. 481-4");
+  });
+
+  it("ne mentionne jamais la servitude avant le 1er octobre 2026 (motif ajouté par le même décret que le régime obligatoire)", () => {
+    const texte = construireTexteClauseResolutoire("avant_2026_10_01", true);
+    expect(texte).not.toContain("résidence principale");
   });
 
   it("ne mentionne jamais de pénalité/amende — l'article 4 i) de la loi 1989 les interdit sans exception", () => {

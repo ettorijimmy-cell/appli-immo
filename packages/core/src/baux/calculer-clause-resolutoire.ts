@@ -52,9 +52,16 @@ export function construireTexteClauseResolutoire(
     "Le contrat de location est résilié de plein droit pour défaut de paiement du loyer ou des charges aux termes convenus ou pour non versement du dépôt de garantie. La clause de résiliation de plein droit ne produit effet que six semaines après la date d'un commandement de payer demeuré infructueux. " +
     "Il en est de même, un mois après un commandement demeuré infructueux, en cas de non-souscription d'une assurance des risques locatifs, ou en cas de non-respect de l'obligation d'user paisiblement des locaux loués constaté par une décision de justice.";
 
+  // Motif ajouté par le même décret n° 2026-596 (annexe 1, section clause
+  // résolutoire) : non-respect de la servitude de résidence principale
+  // (art. L. 151-14-1 du code de l'urbanisme, issu de la loi n° 2024-1039)
+  // — délai de mise en demeure distinct, fixé par le maire selon l'art.
+  // L. 481-4, II du code de l'urbanisme, jamais les six semaines/un mois
+  // ci-dessus. Texte verbatim (vérifié Légifrance, deux fetches
+  // indépendants concordants), pas une paraphrase.
   if (servitudeResidencePrincipale) {
     texte +=
-      " Le logement étant soumis à une servitude de résidence principale, la résiliation de plein droit s'applique également en cas de non-respect de l'occupation exclusive à titre de résidence principale, dans le délai de mise en demeure fixé par le maire.";
+      " Il en est de même, lorsque le logement est soumis à l'obligation prévue à l'article L. 151-14-1 du code de l'urbanisme, pour le non-respect de l'obligation de l'occuper exclusivement à titre de résidence principale. Dans ce dernier cas, la clause ne peut produire effet qu'à l'expiration d'un délai de mise en demeure fixé par le maire conformément au II de l'article L. 481-4 du code de l'urbanisme.";
   }
 
   return texte;

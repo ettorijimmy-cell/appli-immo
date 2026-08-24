@@ -379,7 +379,15 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const texte = texteDuDocx(buffer);
     expect(texte).toContain("six semaines");
     expect(texte).not.toContain("deux mois après la date d'un commandement");
+    // Section II.B (DESTINATION EXCLUSIVE DES LOCAUX).
     expect(texte).toContain("Servitude de résidence principale");
+    // Section VIII (CLAUSE RESOLUTOIRE) : motif ajouté par le décret
+    // n° 2026-596 lui-même (art. L. 151-14-1 du code de l'urbanisme, délai
+    // de mise en demeure du maire selon l'art. L. 481-4, II du même code) —
+    // même flag servitude, deuxième mention distincte dans le document.
+    expect(texte).toContain(
+      "Il en est de même, lorsque le logement est soumis à l'obligation prévue à l'article L. 151-14-1 du code de l'urbanisme, pour le non-respect de l'obligation de l'occuper exclusivement à titre de résidence principale. Dans ce dernier cas, la clause ne peut produire effet qu'à l'expiration d'un délai de mise en demeure fixé par le maire conformément au II de l'article L. 481-4 du code de l'urbanisme."
+    );
   });
 
   it("ne mentionne jamais la servitude si le paramètre n'est pas explicitement fourni, même après le 1er octobre 2026", async () => {
@@ -391,6 +399,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const texte = texteDuDocx(buffer);
     expect(texte).not.toContain("Servitude de résidence principale");
+    expect(texte).not.toContain("L. 481-4");
   });
 
   it("bloque avec la liste COMPLÈTE des champs manquants, pas seulement le premier trouvé", async () => {
