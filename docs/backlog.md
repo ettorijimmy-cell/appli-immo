@@ -401,25 +401,35 @@ les trois parcours ci-dessus).
   initiale sur la profondeur de requête ne s'est pas concrétisée en
   pratique jusqu'ici.
 
-- **Trop-perçu non traité à la résiliation d'un bail réglé en cours de mois**
-  (identifié Module 5, lors de la conception de la proration des échéances ;
-  complété après revue par financial-logic-reviewer sur ce même chantier).
-  `BauxService.resilier()` proratise l'échéance de loyer du mois de
-  `date_fin` uniquement si elle est encore `impaye`/`partiel`
-  (`docs/data-dictionary.md`, section baux). Deux chemins mènent au même
-  trop-perçu non traité, ni calculé, ni signalé, ni remboursé :
+- **Trop-perçu non traité à la résiliation d'un bail réglé en cours de mois
+  — résolu (commit `4868648`).** Identifié Module 5, lors de la conception
+  de la proration des échéances ; complété après revue par
+  financial-logic-reviewer sur ce même chantier. `BauxService.resilier()`
+  proratise l'échéance de loyer du mois de `date_fin` uniquement si elle
+  est encore `impaye`/`partiel` (`docs/data-dictionary.md`, section baux).
+  Deux chemins menaient au même trop-perçu non traité, ni calculé, ni
+  signalé, ni remboursé :
   1. L'échéance est déjà réglée intégralement (`statut=paye`) au moment de
      la résiliation : le système ne la touche pas du tout.
   2. L'échéance est `partiel` mais le montant déjà versé (`montant_paye`)
      dépasse le nouveau montant proratisé (plus petit que le montant
      mensuel plein) : le recalcul du statut (`calculerStatutPaiement`) la
      fait alors basculer à `paye`, ce qui est correct en soi (tout ce qui
-     est dû est réglé), mais laisse le même trop-perçu résiduel non traité
-     que le cas 1, sans qu'aucun test ni note ne le couvre jusqu'ici.
-  Nécessite une notion de remboursement/avoir absente du modèle de données
-  actuel (le dépôt de garantie mis à part). Candidat probable pour le
-  Module 7 (régularisation) ou une extension ultérieure du modèle
-  `paiements` — décision volontairement différée, pas un oubli.
+     est dû est réglé), mais laissait le même trop-perçu résiduel non
+     traité que le cas 1.
+  Résolu par le chantier "versements & remboursements" (table
+  `remboursements`, type `trop_percu`) : `BauxService.resilier()` calcule
+  et expose `tropPercu` (les deux chemins ci-dessus, via la même
+  comparaison `montantRecu`/`montantProratise` — jamais écrit en base,
+  décision D3), `TableauDeBordService.getRemboursementsEnAttente()`
+  recalcule la même chose à la volée pour rester visible tant qu'aucun
+  remboursement ne le couvre, et `RemboursementsSection`
+  (`apps/desktop/src/renderer/src/patrimoine/BailTabs.tsx`) affiche le
+  bandeau "Trop-perçu signalé" avec bouton "Créer le remboursement" sur
+  tout bail résilié concerné — même pattern que le remboursement du dépôt
+  de garantie, toujours un acte humain explicite via
+  `RemboursementsService.create()`, jamais d'automatisation silencieuse.
+  Confirmé visuellement dans Electron le 2026-08-24.
 
 - **Remboursement du dépôt de garantie — modélisé sommairement, motif de
   retenue toujours insuffisant.** Le chantier "versements & remboursements"
