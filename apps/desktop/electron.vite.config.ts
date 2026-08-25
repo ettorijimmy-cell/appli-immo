@@ -58,9 +58,34 @@ function cspPlugin(): Plugin {
       // minimal : blob: uniquement, jamais d'origine distante. Même
       // directive en dev et en prod — l'affichage des vignettes est une
       // fonctionnalité du produit, pas une commodité de développement.
+      //
+      // object-src 'self' blob: + frame-src 'self' blob: — même mécanisme,
+      // pour l'aperçu inline des documents (PDF) dans DocumentApercuModal
+      // (<embed src="blob:..." type="application/pdf">,
+      // documents/DocumentApercuModal.tsx, 2026-08-24). object-src régit
+      // <object>/<embed>/<applet> — sans directive explicite, default-src
+      // 'self' s'applique en repli et bloque le chargement ("Loading plugin
+      // data... violates... default-src"). frame-src s'est révélé
+      // NÉCESSAIRE EN PLUS : le lecteur PDF intégré de Chromium (PDFium)
+      // pour <embed type="application/pdf"> ne se contente pas de charger
+      // un "plugin" au sens strict — en interne, il navigue une frame
+      // dédiée (MimeHandlerView) vers l'URL de la ressource pour la rendre,
+      // ce qui est gouverné par frame-src, pas object-src (constaté par le
+      // test réel : object-src seul laissait encore l'erreur Electron
+      // "Failed to load URL... ERR_BLOCKED_BY_CSP" — un échec de
+      // NAVIGATION, distinct du rejet de ressource résolu par object-src).
+      // Aucune balise <iframe> n'est utilisée dans notre propre code, mais
+      // frame-src reste nécessaire pour cette navigation interne au
+      // navigateur. Même contenu que img-src ci-dessus (blob authentifié
+      // généré en mémoire par le renderer depuis /documents/:id/contenu,
+      // jamais une origine distante) : scope minimal identique, blob:
+      // uniquement. N'affaiblit rien d'autre — script-src reste 'self'
+      // strict (jamais blob: ni unsafe-inline/unsafe-eval, la protection
+      // qui compte contre l'injection de code), connect-src reste scopé à
+      // l'API applicative.
       const csp = isDev
-        ? `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self' ${apiUrl}`
-        : `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self' ${apiUrl}`;
+        ? `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; connect-src 'self' ${apiUrl}`
+        : `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; connect-src 'self' ${apiUrl}`;
       // Recherche d'un placeholder littéral, pas une regex sur la balise :
       // insensible à toute mise en forme HTML environnante. Échec bruyant
       // si absent plutôt qu'un remplacement silencieusement ignoré (cause
