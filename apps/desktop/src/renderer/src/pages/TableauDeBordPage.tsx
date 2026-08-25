@@ -3,6 +3,7 @@ import { AlertesListView } from "../alertes/AlertesListView";
 import { AccesRapidesView } from "../tableau-de-bord/AccesRapidesView";
 import { getRevenusLocatifs, type RevenusLocatifs } from "../tableau-de-bord/api";
 import { CartesSyntheseView } from "../tableau-de-bord/CartesSyntheseView";
+import { ChecklistDocumentaireCard } from "../tableau-de-bord/ChecklistDocumentaireCard";
 import { DerniereSauvegardeView } from "../tableau-de-bord/DerniereSauvegardeView";
 import { EnTeteView } from "../tableau-de-bord/EnTeteView";
 import { ProvisionsCollecteesView } from "../tableau-de-bord/ProvisionsCollecteesView";
@@ -27,6 +28,7 @@ export function TableauDeBordPage(): React.JSX.Element {
 
       <EnTeteView />
       <RemboursementsEnAttenteView />
+      <ChecklistDocumentaireCard />
       <CartesSyntheseView />
 
       <div className="flex items-center gap-2 text-sm">

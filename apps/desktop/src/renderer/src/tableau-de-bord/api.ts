@@ -89,3 +89,49 @@ export interface RemboursementEnAttente {
 export function getRemboursementsEnAttente(): Promise<RemboursementEnAttente[]> {
   return authenticatedFetch<RemboursementEnAttente[]>("/tableau-de-bord/remboursements-en-attente");
 }
+
+export interface ChecklistAppartement {
+  appartementId: string;
+  immeubleId: string;
+  categoriesManquantes: string[];
+}
+
+export interface ChecklistLocataire {
+  locataireId: string;
+  bailId: string;
+}
+
+export interface ChecklistGarant {
+  garantId: string;
+  bailId: string;
+}
+
+export interface ChecklistDocumentaire {
+  appartements: ChecklistAppartement[];
+  locataires: ChecklistLocataire[];
+  garants: ChecklistGarant[];
+}
+
+// Calculée à la volée côté backend, jamais stockée (même philosophie que
+// getRemboursementsEnAttente ci-dessus) — ne renvoie que les entités avec
+// au moins un document manquant.
+export function getChecklistDocumentaire(): Promise<ChecklistDocumentaire> {
+  return authenticatedFetch<ChecklistDocumentaire>("/tableau-de-bord/checklist-documentaire");
+}
+
+export interface CompletudeCategorie {
+  categorie: string;
+  document: { id: string; nomFichier: string } | null;
+}
+
+// Vue détaillée pour une seule entité (statut complet, y compris les
+// catégories déjà satisfaites) — même détection que getChecklistDocumentaire
+// ci-dessus (evaluerCompletudeCategories, packages/core), jamais dupliquée.
+export function getCompletudeDocumentaire(
+  entiteType: "appartement" | "locataire" | "garant",
+  entiteId: string
+): Promise<CompletudeCategorie[]> {
+  return authenticatedFetch<CompletudeCategorie[]>(
+    `/tableau-de-bord/completude-documents?entiteType=${entiteType}&entiteId=${encodeURIComponent(entiteId)}`
+  );
+}

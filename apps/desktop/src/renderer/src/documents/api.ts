@@ -1,6 +1,13 @@
-import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
+import { authenticatedFetch } from "../lib/authenticated-fetch";
 
-export type DocumentEntiteType = "sci" | "immeuble" | "appartement" | "locataire" | "bail" | "etat_des_lieux";
+export type DocumentEntiteType =
+  | "sci"
+  | "immeuble"
+  | "appartement"
+  | "locataire"
+  | "bail"
+  | "etat_des_lieux"
+  | "garant";
 export type DocumentEtatDesLieuxPieceType =
   | "entree"
   | "sejour"
@@ -95,16 +102,24 @@ export async function archiveDocument(id: string): Promise<DocumentMetier> {
   return authenticatedFetch<DocumentMetier>(`/documents/${id}/archiver`, { method: "PATCH" });
 }
 
-export async function ouvrirDocument(id: string): Promise<void> {
-  const { blob, nomFichier } = await authenticatedFetchBlob(`/documents/${id}/contenu`);
-  const url = URL.createObjectURL(blob);
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = nomFichier ?? "document";
-  lien.target = "_blank";
-  lien.rel = "noopener noreferrer";
-  document.body.appendChild(lien);
-  lien.click();
-  document.body.removeChild(lien);
-  URL.revokeObjectURL(url);
+// Nouvelle version chaînée à l'ancienne (documentPrecedentId côté backend,
+// jamais re-saisi ici) : l'ancienne est archivée automatiquement dans la
+// même transaction. entiteType/entiteId ne se re-saisissent pas — hérités
+// de la version remplacée.
+export async function remplacerDocument(
+  documentId: string,
+  fichier: File,
+  meta: { categorie: DocumentCategorie; dateExpiration?: string }
+): Promise<DocumentMetier> {
+  const formData = new FormData();
+  formData.append("fichier", fichier);
+  formData.append("categorie", meta.categorie);
+  if (meta.dateExpiration) {
+    formData.append("dateExpiration", meta.dateExpiration);
+  }
+  return authenticatedFetch<DocumentMetier>(`/documents/${documentId}/remplacer`, {
+    method: "POST",
+    body: formData
+  });
 }
+

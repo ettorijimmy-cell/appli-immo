@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { archiveDocument, listDocuments, ouvrirDocument, type DocumentEntiteType, type DocumentMetier } from "./api";
+import { archiveDocument, listDocuments, type DocumentEntiteType, type DocumentMetier } from "./api";
+import { ChecklistCategoriesEntite } from "./ChecklistCategoriesEntite";
+import { DocumentApercuModal } from "./DocumentApercuModal";
 import { DocumentUploadDropzone } from "./DocumentUploadDropzone";
 import { CATEGORIE_LABELS, STATUT_BADGE_CLASSNAMES, STATUT_LABELS } from "./labels";
+import { useDocumentApercu } from "./use-document-apercu";
 
 // Section Documents embarquée dans une fiche (locataire, appartement...) —
 // même composant que l'écran centralisé (documents/api.ts), scopé à une
@@ -15,6 +18,7 @@ export function DocumentsForEntite({
 }): React.JSX.Element {
   const [documents, setDocuments] = useState<DocumentMetier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { apercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -36,6 +40,8 @@ export function DocumentsForEntite({
 
   return (
     <div className="space-y-3">
+      <ChecklistCategoriesEntite entiteType={entiteType} entiteId={entiteId} onChanged={refresh} />
+
       <DocumentUploadDropzone entiteType={entiteType} entiteId={entiteId} onUploaded={refresh} />
 
       {isLoading ? (
@@ -50,7 +56,7 @@ export function DocumentsForEntite({
                 <button
                   type="button"
                   onClick={() => {
-                    void ouvrirDocument(document.id);
+                    void ouvrir(document.id);
                   }}
                   className="text-indigo-700 hover:text-indigo-800 hover:underline"
                 >
@@ -78,6 +84,8 @@ export function DocumentsForEntite({
           ))}
         </ul>
       )}
+
+      {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
     </div>
   );
 }

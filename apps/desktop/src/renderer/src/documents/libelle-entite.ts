@@ -1,6 +1,6 @@
 import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
-import { getLocataire } from "../locataires/api";
+import { getGarant, getLocataire } from "../locataires/api";
 import { getAppartement, getImmeuble } from "../patrimoine/api";
 import { getSci } from "../scis/api";
 import type { DocumentEntiteType } from "./api";
@@ -59,6 +59,10 @@ export async function resoudreLibelleEntite(
           const etatDesLieux = await getEtatDesLieuxById(entiteId);
           const contexte = await chargerContexteBail(etatDesLieux.bailId, cache.contexteBail);
           return `État des lieux — ${contexte.immeubleNom} n°${contexte.appartementNumero}`;
+        }
+        case "garant": {
+          const garant = await getGarant(entiteId);
+          return `${garant.prenom} ${garant.nom} (garant)`;
         }
       }
     } catch {

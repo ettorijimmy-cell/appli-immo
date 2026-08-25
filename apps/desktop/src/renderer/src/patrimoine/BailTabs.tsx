@@ -1,6 +1,7 @@
 import { calculerMontantRecuTotal, centimesVersMontant, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
 import {
   createRemboursement,
@@ -350,6 +351,7 @@ function BailActuelDetail({
   const [actionError, setActionError] = useState<string | null>(null);
   const [showAttachForm, setShowAttachForm] = useState(false);
   const [showGarantForm, setShowGarantForm] = useState(false);
+  const [garantsDocumentsOuverts, setGarantsDocumentsOuverts] = useState<Set<string>>(new Set());
   const [showEditForm, setShowEditForm] = useState(false);
   const [dateFinResiliation, setDateFinResiliation] = useState("");
   const [isActionInProgress, setIsActionInProgress] = useState(false);
@@ -692,26 +694,55 @@ function BailActuelDetail({
         {garants.filter((garant) => garant.archivedAt === null).length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">Aucun garant.</p>
         ) : (
-          <ul className="mt-1 text-sm">
+          <ul className="mt-1 space-y-1 text-sm">
             {garants
               .filter((garant) => garant.archivedAt === null)
-              .map((garant) => (
-                <li key={garant.id} className="flex items-center justify-between py-0.5">
-                  <span>
-                    {garant.prenom} {garant.nom}{" "}
-                    <span className="text-slate-400">({garant.typeGarantie})</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleRetirerGarant(garant.id);
-                    }}
-                    className="text-xs text-slate-500 hover:text-red-600"
-                  >
-                    Retirer
-                  </button>
-                </li>
-              ))}
+              .map((garant) => {
+                const documentsOuverts = garantsDocumentsOuverts.has(garant.id);
+                return (
+                  <li key={garant.id} className="rounded-md border border-transparent py-0.5">
+                    <div className="flex items-center justify-between">
+                      <span>
+                        {garant.prenom} {garant.nom}{" "}
+                        <span className="text-slate-400">({garant.typeGarantie})</span>
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setGarantsDocumentsOuverts((precedent) => {
+                              const suivant = new Set(precedent);
+                              if (suivant.has(garant.id)) {
+                                suivant.delete(garant.id);
+                              } else {
+                                suivant.add(garant.id);
+                              }
+                              return suivant;
+                            })
+                          }
+                          className="text-xs text-slate-500 hover:text-slate-700"
+                        >
+                          {documentsOuverts ? "▾ Documents" : "▸ Documents"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleRetirerGarant(garant.id);
+                          }}
+                          className="text-xs text-slate-500 hover:text-red-600"
+                        >
+                          Retirer
+                        </button>
+                      </span>
+                    </div>
+                    {documentsOuverts && (
+                      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                        <DocumentsForEntite entiteType="garant" entiteId={garant.id} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
           </ul>
         )}
       </div>

@@ -221,6 +221,10 @@ export function listGarants(bailId: string): Promise<Garant[]> {
   return authenticatedFetch<Garant[]>(`/garants?bailId=${encodeURIComponent(bailId)}`);
 }
 
+export function getGarant(id: string): Promise<Garant> {
+  return authenticatedFetch<Garant>(`/garants/${id}`);
+}
+
 export function createGarant(input: CreateGarantInput): Promise<Garant> {
   return authenticatedFetch<Garant>("/garants", { method: "POST", body: JSON.stringify(input) });
 }

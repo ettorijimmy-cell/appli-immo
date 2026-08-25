@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
-import { archiveDocument, listDocuments, ouvrirDocument, type DocumentCategorie, type DocumentMetier, type DocumentStatut } from "./api";
+import { archiveDocument, listDocuments, type DocumentCategorie, type DocumentMetier, type DocumentStatut } from "./api";
+import { DocumentApercuModal } from "./DocumentApercuModal";
 import { creerCacheLibellesEntites, resoudreLibelleEntite } from "./libelle-entite";
 import { CATEGORIE_LABELS, ENTITE_TYPE_LABELS, STATUT_BADGE_CLASSNAMES, STATUT_LABELS } from "./labels";
+import { useDocumentApercu } from "./use-document-apercu";
 
 const CATEGORIES: DocumentCategorie[] = [
   "bail",
@@ -34,6 +36,7 @@ export function DocumentsListView(): React.JSX.Element {
   const [filtreCategorie, setFiltreCategorie] = useState<DocumentCategorie | "toutes">("toutes");
   const [filtreStatut, setFiltreStatut] = useState<DocumentStatut | "tous">("tous");
   const [recherche, setRecherche] = useState("");
+  const { apercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -147,7 +150,7 @@ export function DocumentsListView(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={() => {
-                      void ouvrirDocument(document.id);
+                      void ouvrir(document.id);
                     }}
                     className="text-indigo-700 hover:text-indigo-800 hover:underline"
                   >
@@ -184,6 +187,8 @@ export function DocumentsListView(): React.JSX.Element {
           </tbody>
         </table>
       )}
+
+      {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
     </div>
   );
 }

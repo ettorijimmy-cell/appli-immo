@@ -44,8 +44,9 @@ function construireValeursInitiales(elements: ElementDef[], row: PieceRow | null
 }
 
 // Première image inline de l'app (aucun mécanisme de vignette n'existait
-// avant — le reste du module Documents n'affiche que des liens de
-// téléchargement, voir DocumentsForEntite.tsx/ouvrirDocument). L'endpoint
+// avant — le reste du module Documents utilise désormais le même principe
+// via useDocumentApercu/DocumentApercuModal, voir documents/DocumentsForEntite.tsx).
+// L'endpoint
 // /documents/:id/contenu exige un header Authorization, donc pas de
 // <img src="..."> direct : on récupère le blob déchiffré via le même
 // mécanisme authentifié que le reste du module (authenticatedFetchBlob),
