@@ -583,6 +583,58 @@ décisions tranchées avec l'utilisateur avant tout code.
   d'audit que `documents.telecharger()` (`AuditService.logAccesDonneeSensible`,
   `entiteType: "remboursement_piece_justificative"`).
 
+### Checklist documentaire (2026-08-24)
+
+Complète la carte "Documents expirés" ci-dessus — voir aussi
+`docs/backlog.md`, section Modules futurs, pour l'historique de la
+décision de la traiter séparément. `TableauDeBordService.getChecklistDocumentaire()`,
+calculée à la volée (même philosophie que "Remboursements en attente" :
+volume négligeable à l'échelle de l'app, ~20 logements, CLAUDE.md).
+Portée simple, sans distinction obligatoire/recommandé, tranchée avec
+l'utilisateur avant tout code :
+
+- **Par appartement (non archivé)** : DPE, élec/gaz, CREP, ERP —
+  document `statut='valide'` (calculé via `calculerStatutDocument`,
+  expiration comprise) rattaché à l'appartement OU à son immeuble
+  parent, même logique de détection que `BailDocumentDocxService`. Un
+  diagnostic expiré compte comme **manquant** ici (contrairement à
+  l'annexe d'un bail déjà signé, qui ne regarde que l'archivage) — deux
+  besoins différents, pas une incohérence à corriger.
+- **Par locataire actif** (rattaché via `bail_locataires` non archivé à
+  un bail `statut IN ('actif', 'preavis')`, jamais les locataires
+  historiques) : pièce d'identité.
+- **Par garant actif** (`bailId` pointant vers un bail
+  `statut IN ('actif', 'preavis')`, garant lui-même non archivé) : pièce
+  d'identité.
+
+Ne renvoie que les entités avec au moins un document manquant, jamais un
+état exhaustif — même convention que "Remboursements en attente".
+
+**Blocage découvert en implémentant le volet garant** : `documents.entite_type`
+ne comportait que 6 valeurs (sci, immeuble, appartement, locataire, bail,
+etat_des_lieux) — aucun moyen d'attacher un document à un garant.
+Résolu en ajoutant `garant` comme 7e cible du lien polymorphe existant
+(même mécanisme que locataire/bail, décision reprise avec l'utilisateur
+plutôt que travaillée en silence) : migration Drizzle,
+`DocumentsService.verifierEntiteExiste()` étendu, `documentEntiteTypeEnum`
+mis à jour, et la 7e branche ajoutée aux 4 requêtes du Sync Stream
+PowerSync qui filtrent par `documents.entite_type`
+(`docs/powersync-sync-streams.yaml` : streams `documents`, `diagnostics`,
+et les deux branches `document_expire`/`document_expire_proche` du
+stream `alertes`).
+
+**Gap connu, non traité dans ce chantier** : aucune interface desktop
+n'existe encore pour attacher un document à un garant (contrairement à
+locataire/appartement, qui ont déjà `DocumentsForEntite`) — la checklist
+signalera donc les garants comme "manquants" sans qu'un utilisateur
+puisse actuellement corriger ça depuis l'écran Garants. À traiter avec
+le pendant desktop de la checklist.
+
+**`locataires.lieu_naissance`** (colonne ajoutée dans le même chantier) :
+même besoin que `garants.lieu_naissance`, absent jusqu'ici côté
+locataires — déclaration fiscale annuelle du bailleur, date + lieu de
+naissance du locataire requis.
+
 ## alertes
 | Champ | Type | Description |
 |---|---|---|

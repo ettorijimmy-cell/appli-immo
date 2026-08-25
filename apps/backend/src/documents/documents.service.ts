@@ -5,6 +5,7 @@ import {
   baux,
   documents,
   etatsDesLieux,
+  garants,
   immeubles,
   locataires,
   mettreAJourAvecAudit,
@@ -302,6 +303,8 @@ export class DocumentsService {
             .from(etatsDesLieux)
             .where(eq(etatsDesLieux.id, entiteId))
             .limit(1);
+        case "garant":
+          return this.db.select({ id: garants.id }).from(garants).where(eq(garants.id, entiteId)).limit(1);
       }
     })();
     if (!ligne) {

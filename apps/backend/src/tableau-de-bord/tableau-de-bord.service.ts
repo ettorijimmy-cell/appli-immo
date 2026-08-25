@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   calculerBornesMoisCalendaire,
   calculerJoursOccupes,
@@ -10,14 +10,19 @@ import {
   calculerStatutDocument,
   centimesVersMontant,
   dateVersJourOrdinal,
+  evaluerCompletudeCategories,
   montantEnCentimes,
+  type CompletudeCategorie,
+  type DocumentPourCompletude,
   type IntervalleOccupationBail
 } from "core";
 import {
   alertes,
   appartements,
+  bailLocataires,
   baux,
   documents,
+  garants,
   immeubles,
   paiements,
   remboursements,
@@ -25,11 +30,61 @@ import {
   versements,
   type Database
 } from "db";
-import { and, eq, gte, inArray, isNotNull, isNull, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
 
 function dateDuJour(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Mêmes 4 catégories que la détection de présence en annexe du bail
+// (BailDocumentDocxService), mais un critère plus strict : 'valide' au sens
+// de calculerStatutDocument (expiration comprise), pas seulement "non
+// archivé" — un diagnostic expiré compte comme "présent" pour l'annexe d'un
+// bail déjà signé, mais comme "manquant" pour la checklist (docs/backlog.md,
+// checklist documentaire — deux besoins différents, pas une incohérence).
+const CATEGORIES_DIAGNOSTIC_APPARTEMENT = ["dpe", "elec_gaz", "crep_plomb", "erp"] as const;
+
+// Adapte une ligne `documents` brute vers la forme attendue par
+// evaluerCompletudeCategories (packages/core) — même fonction de détection
+// que getChecklistDocumentaire()/getCompletudeDocumentaire() ci-dessous,
+// jamais dupliquée.
+function mapDocumentPourCompletude(document: {
+  id: string;
+  categorie: string;
+  nomFichier: string;
+  dateExpiration: string | null;
+  archivedAt: Date | null;
+  createdAt: Date;
+}): DocumentPourCompletude {
+  return {
+    id: document.id,
+    categorie: document.categorie,
+    nomFichier: document.nomFichier,
+    dateExpiration: document.dateExpiration,
+    archive: document.archivedAt !== null,
+    createdAt: document.createdAt.toISOString()
+  };
+}
+
+function groupeDocumentsParEntite(
+  lignes: Array<{
+    id: string;
+    entiteId: string;
+    categorie: string;
+    nomFichier: string;
+    dateExpiration: string | null;
+    archivedAt: Date | null;
+    createdAt: Date;
+  }>
+): Map<string, DocumentPourCompletude[]> {
+  const groupes = new Map<string, DocumentPourCompletude[]>();
+  for (const ligne of lignes) {
+    const liste = groupes.get(ligne.entiteId) ?? [];
+    liste.push(mapDocumentPourCompletude(ligne));
+    groupes.set(ligne.entiteId, liste);
+  }
+  return groupes;
 }
 
 function enumererMois(periodeDebut: string, periodeFin: string): string[] {
@@ -278,6 +333,188 @@ export class TableauDeBordService {
     }
 
     return resultats;
+  }
+
+  // Checklist documentaire (docs/backlog.md) : calculée à la volée, jamais
+  // stockée — même philosophie que getRemboursementsEnAttente() ci-dessus,
+  // volume négligeable à l'échelle de l'app (~20 logements, CLAUDE.md). Ne
+  // renvoie QUE les entités avec au moins un document manquant, jamais un
+  // état exhaustif de tout ce qui va bien.
+  async getChecklistDocumentaire() {
+    const dateReference = dateDuJour();
+
+    // --- Appartements : DPE/élec-gaz/CREP/ERP, rattachés à l'appartement OU
+    // à son immeuble parent (même logique de détection que
+    // BailDocumentDocxService). Appartements archivés exclus : un bien qui
+    // ne fait plus partie du parc n'a plus besoin d'être diagnostiqué.
+    const tousAppartements = await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
+    const appartementIds = tousAppartements.map((a) => a.id);
+    const immeubleIds = [...new Set(tousAppartements.map((a) => a.immeubleId))];
+
+    const documentsDiagnostics =
+      appartementIds.length > 0
+        ? await this.db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                or(
+                  and(eq(documents.entiteType, "appartement"), inArray(documents.entiteId, appartementIds)),
+                  and(eq(documents.entiteType, "immeuble"), inArray(documents.entiteId, immeubleIds))
+                ),
+                inArray(documents.categorie, [...CATEGORIES_DIAGNOSTIC_APPARTEMENT])
+              )
+            )
+            .orderBy(desc(documents.createdAt))
+        : [];
+
+    const documentsParAppartement = new Map<string, DocumentPourCompletude[]>();
+    const documentsParImmeuble = new Map<string, DocumentPourCompletude[]>();
+    for (const d of documentsDiagnostics) {
+      const cible = d.entiteType === "immeuble" ? documentsParImmeuble : documentsParAppartement;
+      const liste = cible.get(d.entiteId) ?? [];
+      liste.push(mapDocumentPourCompletude(d));
+      cible.set(d.entiteId, liste);
+    }
+
+    const appartementsChecklist = tousAppartements.reduce<
+      Array<{ appartementId: string; immeubleId: string; categoriesManquantes: string[] }>
+    >((liste, appartement) => {
+      const documentsCombines = [
+        ...(documentsParAppartement.get(appartement.id) ?? []),
+        ...(documentsParImmeuble.get(appartement.immeubleId) ?? [])
+      ];
+      const completude = evaluerCompletudeCategories(
+        documentsCombines,
+        [...CATEGORIES_DIAGNOSTIC_APPARTEMENT],
+        dateReference
+      );
+      const categoriesManquantes = completude.filter((c) => c.document === null).map((c) => c.categorie);
+      if (categoriesManquantes.length > 0) {
+        liste.push({ appartementId: appartement.id, immeubleId: appartement.immeubleId, categoriesManquantes });
+      }
+      return liste;
+    }, []);
+
+    // --- Locataires actifs : rattachés via bail_locataires non archivé à
+    // un bail statut actif/préavis (décision tranchée avec l'utilisateur —
+    // pas les locataires historiques).
+    const locatairesActifs = await this.db
+      .select({ locataireId: bailLocataires.locataireId, bailId: bailLocataires.bailId })
+      .from(bailLocataires)
+      .innerJoin(baux, eq(bailLocataires.bailId, baux.id))
+      .where(and(isNull(bailLocataires.archivedAt), inArray(baux.statut, ["actif", "preavis"])));
+
+    const locataireIds = [...new Set(locatairesActifs.map((l) => l.locataireId))];
+    const documentsPieceIdentiteLocataires =
+      locataireIds.length > 0
+        ? await this.db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                eq(documents.entiteType, "locataire"),
+                inArray(documents.entiteId, locataireIds),
+                eq(documents.categorie, "piece_identite")
+              )
+            )
+            .orderBy(desc(documents.createdAt))
+        : [];
+    const documentsParLocataire = groupeDocumentsParEntite(documentsPieceIdentiteLocataires);
+
+    const locatairesChecklist = locatairesActifs
+      .filter(
+        (l) =>
+          evaluerCompletudeCategories(
+            documentsParLocataire.get(l.locataireId) ?? [],
+            ["piece_identite"],
+            dateReference
+          )[0]?.document === null
+      )
+      .map((l) => ({ locataireId: l.locataireId, bailId: l.bailId }));
+
+    // --- Garants actifs : bailId pointant vers un bail statut actif/
+    // préavis, garant lui-même non archivé (contrairement à locataires,
+    // garants.bailId est une FK directe — un garant appartient à un seul
+    // bail dès sa création, pas de table de jonction à filtrer).
+    const garantsActifs = await this.db
+      .select({ id: garants.id, bailId: garants.bailId })
+      .from(garants)
+      .innerJoin(baux, eq(garants.bailId, baux.id))
+      .where(and(isNull(garants.archivedAt), inArray(baux.statut, ["actif", "preavis"])));
+
+    const garantIds = garantsActifs.map((g) => g.id);
+    const documentsPieceIdentiteGarants =
+      garantIds.length > 0
+        ? await this.db
+            .select()
+            .from(documents)
+            .where(
+              and(
+                eq(documents.entiteType, "garant"),
+                inArray(documents.entiteId, garantIds),
+                eq(documents.categorie, "piece_identite")
+              )
+            )
+            .orderBy(desc(documents.createdAt))
+        : [];
+    const documentsParGarant = groupeDocumentsParEntite(documentsPieceIdentiteGarants);
+
+    const garantsChecklist = garantsActifs
+      .filter(
+        (g) =>
+          evaluerCompletudeCategories(documentsParGarant.get(g.id) ?? [], ["piece_identite"], dateReference)[0]
+            ?.document === null
+      )
+      .map((g) => ({ garantId: g.id, bailId: g.bailId }));
+
+    return { appartements: appartementsChecklist, locataires: locatairesChecklist, garants: garantsChecklist };
+  }
+
+  // Vue détaillée pour une entité précise (desktop, DocumentsForEntite) —
+  // contrairement à getChecklistDocumentaire() ci-dessus, renvoie le statut
+  // COMPLET (y compris les catégories déjà satisfaites, avec le document
+  // trouvé) plutôt que seulement ce qui manque. Réutilise la même fonction
+  // de détection (evaluerCompletudeCategories) — seule la forme du résultat
+  // diffère, jamais la règle de "qu'est-ce qui compte comme valide"
+  // (docs/backlog.md, checklist documentaire).
+  async getCompletudeDocumentaire(
+    entiteType: "appartement" | "locataire" | "garant",
+    entiteId: string
+  ): Promise<CompletudeCategorie[]> {
+    const dateReference = dateDuJour();
+
+    if (entiteType === "appartement") {
+      const [appartement] = await this.db.select().from(appartements).where(eq(appartements.id, entiteId)).limit(1);
+      if (!appartement) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+      const documentsCombines = await this.db
+        .select()
+        .from(documents)
+        .where(
+          or(
+            and(eq(documents.entiteType, "appartement"), eq(documents.entiteId, entiteId)),
+            and(eq(documents.entiteType, "immeuble"), eq(documents.entiteId, appartement.immeubleId))
+          )
+        )
+        .orderBy(desc(documents.createdAt));
+      return evaluerCompletudeCategories(
+        documentsCombines.map(mapDocumentPourCompletude),
+        [...CATEGORIES_DIAGNOSTIC_APPARTEMENT],
+        dateReference
+      );
+    }
+
+    if (entiteType !== "locataire" && entiteType !== "garant") {
+      throw new BadRequestException("entiteType doit être appartement, locataire ou garant.");
+    }
+    const documentsDeLEntite = await this.db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.entiteType, entiteType), eq(documents.entiteId, entiteId)))
+      .orderBy(desc(documents.createdAt));
+    return evaluerCompletudeCategories(documentsDeLEntite.map(mapDocumentPourCompletude), ["piece_identite"], dateReference);
   }
 
   async getSynthese(periodeDebut: string, periodeFin: string) {

@@ -7,7 +7,8 @@ export const DOCUMENT_ENTITE_TYPES = [
   "appartement",
   "locataire",
   "bail",
-  "etat_des_lieux"
+  "etat_des_lieux",
+  "garant"
 ] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 

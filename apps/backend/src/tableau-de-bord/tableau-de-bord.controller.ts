@@ -39,4 +39,17 @@ export class TableauDeBordController {
   getRemboursementsEnAttente() {
     return this.tableauDeBordService.getRemboursementsEnAttente();
   }
+
+  @Get("checklist-documentaire")
+  getChecklistDocumentaire() {
+    return this.tableauDeBordService.getChecklistDocumentaire();
+  }
+
+  @Get("completude-documents")
+  getCompletudeDocumentaire(
+    @Query("entiteType") entiteType: "appartement" | "locataire" | "garant",
+    @Query("entiteId") entiteId: string
+  ) {
+    return this.tableauDeBordService.getCompletudeDocumentaire(entiteType, entiteId);
+  }
 }

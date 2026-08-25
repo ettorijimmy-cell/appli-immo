@@ -16,6 +16,11 @@ export const locataires = pgTable("locataires", {
   codePostal: text("code_postal"),
   ville: text("ville"),
   dateNaissance: date("date_naissance"),
+  // Même besoin que garants.lieu_naissance (déclaration fiscale annuelle
+  // du bailleur, date + lieu de naissance du locataire requis) — jamais
+  // renseigné jusqu'ici côté locataires, docs/backlog.md, checklist
+  // documentaire.
+  lieuNaissance: text("lieu_naissance"),
   statut: locataireStatutEnum("statut").notNull().default("actif"),
   // Renseigné lors d'une anonymisation RGPD : les champs identifiants sont
   // alors neutralisés applicativement, la ligne elle-même n'est jamais

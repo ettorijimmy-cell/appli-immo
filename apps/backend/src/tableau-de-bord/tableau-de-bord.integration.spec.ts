@@ -20,13 +20,19 @@ import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
+import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module";
+import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
 import { CommonModule } from "../common/common.module";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { GarantsModule } from "../garants/garants.module";
+import { GarantsService } from "../garants/garants.service";
 import { ImmeublesModule } from "../immeubles/immeubles.module";
 import { ImmeublesService } from "../immeubles/immeubles.service";
+import { LocatairesModule } from "../locataires/locataires.module";
+import { LocatairesService } from "../locataires/locataires.service";
 import { PaiementsModule } from "../paiements/paiements.module";
 import { PaiementsService } from "../paiements/paiements.service";
 import { ScisModule } from "../scis/scis.module";
@@ -55,6 +61,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   let paiementsService: PaiementsService;
   let versementsService: VersementsService;
   let remboursementsService: RemboursementsService;
+  let locatairesService: LocatairesService;
+  let garantsService: GarantsService;
+  let bailLocatairesService: BailLocatairesService;
   let tableauDeBordService: TableauDeBordService;
   let db: Database;
   let sciId: string;
@@ -79,6 +88,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         PaiementsModule,
         VersementsModule,
         RemboursementsModule,
+        LocatairesModule,
+        GarantsModule,
+        BailLocatairesModule,
         TableauDeBordModule
       ]
     })
@@ -88,6 +100,9 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     scisService = moduleRef.get(ScisService);
     immeublesService = moduleRef.get(ImmeublesService);
+    locatairesService = moduleRef.get(LocatairesService);
+    garantsService = moduleRef.get(GarantsService);
+    bailLocatairesService = moduleRef.get(BailLocatairesService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     paiementsService = moduleRef.get(PaiementsService);
@@ -765,6 +780,296 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
       const enAttente = await tableauDeBordService.getRemboursementsEnAttente();
       expect(enAttente.find((r) => r.bailId === bail.id)).toBeUndefined();
+    });
+  });
+
+  // Écriture directe en base : seule la présence catégorisée compte ici, pas
+  // le cycle d'upload chiffré complet (même principe que
+  // bail-document-docx.integration.spec.ts). Partagée entre
+  // getChecklistDocumentaire et getCompletudeDocumentaire — même détection
+  // réutilisée côté service (evaluerCompletudeCategories, packages/core).
+  async function creerDocumentTest(
+    entiteType: "appartement" | "immeuble" | "locataire" | "garant",
+    entiteId: string,
+    categorie: "dpe" | "elec_gaz" | "crep_plomb" | "erp" | "piece_identite",
+    options: { archive?: boolean; dateExpiration?: string } = {}
+  ) {
+    await db.insert(documents).values({
+      entiteType,
+      entiteId,
+      categorie,
+      nomFichier: "test.pdf",
+      mimeType: "application/pdf",
+      tailleOctets: 1,
+      cheminStockage: `test/${randomUUID()}.enc`,
+      archivedAt: options.archive ? new Date() : null,
+      dateExpiration: options.dateExpiration ?? null
+    });
+  }
+
+  describe("getChecklistDocumentaire", () => {
+    it("appartement : signale les 4 catégories manquantes, les retire une à une (immeuble parent inclus), ignore un CREP expiré", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "50",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+
+      let checklist = await tableauDeBordService.getChecklistDocumentaire();
+      let entree = checklist.appartements.find((a) => a.appartementId === appartement.id);
+      expect(entree?.categoriesManquantes.slice().sort()).toEqual(["crep_plomb", "dpe", "elec_gaz", "erp"]);
+
+      // DPE rattaché à l'appartement lui-même.
+      await creerDocumentTest("appartement", appartement.id, "dpe");
+      // Élec/gaz rattaché à l'IMMEUBLE parent — même logique de détection
+      // que BailDocumentDocxService (immeuble ou appartement, indifféremment).
+      await creerDocumentTest("immeuble", immeubleId, "elec_gaz");
+      // CREP présent mais expiré : compte comme MANQUANT pour la checklist
+      // (contrairement à l'annexe du bail, qui ne regarde que l'archivage).
+      await creerDocumentTest("appartement", appartement.id, "crep_plomb", { dateExpiration: "2020-01-01" });
+
+      checklist = await tableauDeBordService.getChecklistDocumentaire();
+      entree = checklist.appartements.find((a) => a.appartementId === appartement.id);
+      expect(entree?.categoriesManquantes.slice().sort()).toEqual(["crep_plomb", "erp"]);
+
+      // ERP valide + un CREP non expiré cette fois : plus rien ne manque.
+      await creerDocumentTest("appartement", appartement.id, "erp");
+      await creerDocumentTest("appartement", appartement.id, "crep_plomb");
+
+      checklist = await tableauDeBordService.getChecklistDocumentaire();
+      expect(checklist.appartements.find((a) => a.appartementId === appartement.id)).toBeUndefined();
+    });
+
+    it("appartement archivé : jamais signalé, même sans aucun diagnostic", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "53",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      await appartementsService.archive(appartement.id);
+
+      const checklist = await tableauDeBordService.getChecklistDocumentaire();
+      expect(checklist.appartements.find((a) => a.appartementId === appartement.id)).toBeUndefined();
+    });
+
+    it("locataires : actif sans pièce apparaît, retiré du bail ou bail non actif n'apparaissent jamais", async () => {
+      const appartementActif = await appartementsService.create({
+        immeubleId,
+        numero: "54",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bailActif = await bauxService.create({
+        appartementId: appartementActif.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bailActif.id);
+
+      const appartementBrouillon = await appartementsService.create({
+        immeubleId,
+        numero: "55",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bailBrouillon = await bauxService.create({
+        appartementId: appartementBrouillon.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+
+      const locataireActifSansPiece = await locatairesService.create({ nom: "Un", prenom: "Test" });
+      await bailLocatairesService.create({
+        bailId: bailActif.id,
+        locataireId: locataireActifSansPiece.id,
+        role: "titulaire"
+      });
+
+      const locataireRetireDuBail = await locatairesService.create({ nom: "Deux", prenom: "Test" });
+      const liaisonRetiree = await bailLocatairesService.create({
+        bailId: bailActif.id,
+        locataireId: locataireRetireDuBail.id,
+        role: "colocataire"
+      });
+      await bailLocatairesService.archive(liaisonRetiree.id);
+
+      const locataireBailNonActif = await locatairesService.create({ nom: "Trois", prenom: "Test" });
+      await bailLocatairesService.create({
+        bailId: bailBrouillon.id,
+        locataireId: locataireBailNonActif.id,
+        role: "titulaire"
+      });
+
+      const checklist = await tableauDeBordService.getChecklistDocumentaire();
+      expect(checklist.locataires.some((l) => l.locataireId === locataireActifSansPiece.id)).toBe(true);
+      expect(checklist.locataires.some((l) => l.locataireId === locataireRetireDuBail.id)).toBe(false);
+      expect(checklist.locataires.some((l) => l.locataireId === locataireBailNonActif.id)).toBe(false);
+
+      await creerDocumentTest("locataire", locataireActifSansPiece.id, "piece_identite");
+      const apresUpload = await tableauDeBordService.getChecklistDocumentaire();
+      expect(apresUpload.locataires.some((l) => l.locataireId === locataireActifSansPiece.id)).toBe(false);
+    });
+
+    it("garants : actif sans pièce apparaît, garant archivé ou bail non actif n'apparaissent jamais", async () => {
+      const appartementActif = await appartementsService.create({
+        immeubleId,
+        numero: "56",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bailActif = await bauxService.create({
+        appartementId: appartementActif.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bailActif.id);
+
+      const appartementBrouillon = await appartementsService.create({
+        immeubleId,
+        numero: "57",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bailBrouillon = await bauxService.create({
+        appartementId: appartementBrouillon.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+
+      const garantActifSansPiece = await garantsService.create({
+        bailId: bailActif.id,
+        nom: "Un",
+        prenom: "Garant",
+        typeGarantie: "personne_physique"
+      });
+      const garantArchive = await garantsService.create({
+        bailId: bailActif.id,
+        nom: "Deux",
+        prenom: "Garant",
+        typeGarantie: "personne_physique"
+      });
+      await garantsService.archive(garantArchive.id);
+      const garantBailNonActif = await garantsService.create({
+        bailId: bailBrouillon.id,
+        nom: "Trois",
+        prenom: "Garant",
+        typeGarantie: "personne_physique"
+      });
+
+      const checklist = await tableauDeBordService.getChecklistDocumentaire();
+      expect(checklist.garants.some((g) => g.garantId === garantActifSansPiece.id)).toBe(true);
+      expect(checklist.garants.some((g) => g.garantId === garantArchive.id)).toBe(false);
+      expect(checklist.garants.some((g) => g.garantId === garantBailNonActif.id)).toBe(false);
+
+      await creerDocumentTest("garant", garantActifSansPiece.id, "piece_identite");
+      const apresUpload = await tableauDeBordService.getChecklistDocumentaire();
+      expect(apresUpload.garants.some((g) => g.garantId === garantActifSansPiece.id)).toBe(false);
+    });
+  });
+
+  describe("getCompletudeDocumentaire", () => {
+    it("appartement : renvoie les 4 catégories, present via l'appartement OU l'immeuble parent, sinon document null", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "60",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+
+      let completude = await tableauDeBordService.getCompletudeDocumentaire("appartement", appartement.id);
+      expect(completude.map((c) => c.categorie).sort()).toEqual(["crep_plomb", "dpe", "elec_gaz", "erp"]);
+      expect(completude.every((c) => c.document === null)).toBe(true);
+
+      await creerDocumentTest("appartement", appartement.id, "dpe");
+      await creerDocumentTest("immeuble", immeubleId, "elec_gaz");
+
+      completude = await tableauDeBordService.getCompletudeDocumentaire("appartement", appartement.id);
+      const dpe = completude.find((c) => c.categorie === "dpe");
+      const elecGaz = completude.find((c) => c.categorie === "elec_gaz");
+      const erp = completude.find((c) => c.categorie === "erp");
+      expect(dpe?.document?.nomFichier).toBe("test.pdf");
+      expect(elecGaz?.document).not.toBeNull();
+      expect(erp?.document).toBeNull();
+    });
+
+    it("appartement inconnu : rejette explicitement", async () => {
+      await expect(
+        tableauDeBordService.getCompletudeDocumentaire("appartement", randomUUID())
+      ).rejects.toThrow();
+    });
+
+    it("locataire : une seule catégorie (pièce d'identité), present ou manquant", async () => {
+      const locataire = await locatairesService.create({ nom: "Complétude", prenom: "Test" });
+
+      let completude = await tableauDeBordService.getCompletudeDocumentaire("locataire", locataire.id);
+      expect(completude).toEqual([{ categorie: "piece_identite", document: null }]);
+
+      await creerDocumentTest("locataire", locataire.id, "piece_identite");
+      completude = await tableauDeBordService.getCompletudeDocumentaire("locataire", locataire.id);
+      expect(completude[0]?.document).not.toBeNull();
+    });
+
+    it("garant : une seule catégorie (pièce d'identité), present ou manquant", async () => {
+      const appartement = await appartementsService.create({
+        immeubleId,
+        numero: "61",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      const garant = await garantsService.create({
+        bailId: bail.id,
+        nom: "Complétude",
+        prenom: "Garant",
+        typeGarantie: "personne_physique"
+      });
+
+      let completude = await tableauDeBordService.getCompletudeDocumentaire("garant", garant.id);
+      expect(completude).toEqual([{ categorie: "piece_identite", document: null }]);
+
+      await creerDocumentTest("garant", garant.id, "piece_identite");
+      completude = await tableauDeBordService.getCompletudeDocumentaire("garant", garant.id);
+      expect(completude[0]?.document).not.toBeNull();
     });
   });
 

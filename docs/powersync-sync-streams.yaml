@@ -417,12 +417,13 @@ streams:
   # révélateur selon le nom donné par l'utilisateur à l'upload (ex.
   # "CNI_Jean_Dupont.jpg") — pas de mécanisme d'anonymisation, accepté tel
   # quel.
-  # entite_id est une référence polymorphe sur 6 cibles (sci, immeuble,
-  # appartement, locataire, bail, etat_des_lieux — voir commentaire du
-  # schéma Drizzle, packages/db/src/schema/documents.ts). Les 6 branches
+  # entite_id est une référence polymorphe sur 7 cibles (sci, immeuble,
+  # appartement, locataire, bail, etat_des_lieux, garant — voir commentaire
+  # du schéma Drizzle, packages/db/src/schema/documents.ts). Les 7 branches
   # sont désormais toutes couvertes (2026-08-21, domaine État des lieux
-  # traité) — chacune avec sa propre condition entite_type = '...' AND
-  # entite_id IN (chaîne de filtrage habituelle vers la table cible
+  # traité ; 2026-08-24, 7e branche garant ajoutée — checklist documentaire,
+  # docs/backlog.md) — chacune avec sa propre condition entite_type = '...'
+  # AND entite_id IN (chaîne de filtrage habituelle vers la table cible
   # correspondante, jusqu'à 6 niveaux de profondeur pour la branche
   # etat_des_lieux — un cran de plus que locataire, jamais testé à cette
   # profondeur avant ce stream, à surveiller côté temps de réponse une
@@ -473,6 +474,21 @@ streams:
           )
         )
       ) OR (
+        documents.entite_type = 'garant' AND documents.entite_id IN (
+          SELECT id FROM garants WHERE garants.bail_id IN (
+            SELECT id FROM baux WHERE baux.appartement_id IN (
+              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                  SELECT organisation_sci.sci_id FROM organisation_sci
+                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                  WHERE utilisateurs.id = auth.user_id()
+                  AND organisation_sci.date_fin IS NULL
+                )
+              )
+            )
+          )
+        )
+      ) OR (
         documents.entite_type = 'locataire' AND documents.entite_id IN (
           SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -508,8 +524,8 @@ streams:
 
   # Préparé le 2026-08-20, corrigé le 2026-08-20 (même correction UNION
   # ALL -> OR que documents ci-dessus), complété le 2026-08-21 (6e branche
-  # etat_des_lieux, domaine État des lieux désormais traité) — voir
-  # docs/backlog.md pour le suivi.
+  # etat_des_lieux, domaine État des lieux désormais traité), complété le
+  # 2026-08-24 (7e branche garant) — voir docs/backlog.md pour le suivi.
   # Relation 1:1 avec documents, FK simple document_id (pas de référence
   # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
   # Filtrage par document_id IN (la requête documents ci-dessus,
@@ -567,6 +583,21 @@ streams:
             )
           )
         ) OR (
+          documents.entite_type = 'garant' AND documents.entite_id IN (
+            SELECT id FROM garants WHERE garants.bail_id IN (
+              SELECT id FROM baux WHERE baux.appartement_id IN (
+                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                    SELECT organisation_sci.sci_id FROM organisation_sci
+                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                    WHERE utilisateurs.id = auth.user_id()
+                    AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+          )
+        ) OR (
           documents.entite_type = 'locataire' AND documents.entite_id IN (
             SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -603,7 +634,8 @@ streams:
 
 # Domaine Documents (2026-08-20) : RÉSOLU le 2026-08-21 — la 6e branche
 # etat_des_lieux a été ajoutée aux requêtes documents et diagnostics
-# ci-dessus, une fois le domaine État des lieux traité. Les 6 branches
+# ci-dessus, une fois le domaine État des lieux traité. Complété le
+# 2026-08-24 (7e branche garant, checklist documentaire) — les 7 branches
 # de la référence polymorphe documents.entite_id sont désormais toutes
 # couvertes.
 
@@ -984,8 +1016,8 @@ streams:
   # propre bloc OR, avec le même filtre vers documents dupliqué deux fois
   # (5 blocs au total, pas 4) plutôt que mutualisé.
   # Chacune des deux branches document_expire(_proche) réutilise intégralement le filtre
-  # polymorphe à 6 branches de documents (documents.entite_type IN
-  # sci/immeuble/appartement/bail/locataire/etat_des_lieux) en sous-
+  # polymorphe à 7 branches de documents (documents.entite_type IN
+  # sci/immeuble/appartement/bail/garant/locataire/etat_des_lieux) en sous-
   # requête — la chaîne la plus profonde et la plus complexe de ce
   # chantier à ce jour, jusqu'à 7 niveaux d'imbrication (alertes ->
   # documents -> etats_des_lieux -> baux -> appartements -> immeubles ->
@@ -1071,6 +1103,21 @@ streams:
               )
             )
           ) OR (
+            documents.entite_type = 'garant' AND documents.entite_id IN (
+              SELECT id FROM garants WHERE garants.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
+                  )
+                )
+              )
+            )
+          ) OR (
             documents.entite_type = 'locataire' AND documents.entite_id IN (
               SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -1141,6 +1188,21 @@ streams:
                     INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
                     WHERE utilisateurs.id = auth.user_id()
                     AND organisation_sci.date_fin IS NULL
+                  )
+                )
+              )
+            )
+          ) OR (
+            documents.entite_type = 'garant' AND documents.entite_id IN (
+              SELECT id FROM garants WHERE garants.bail_id IN (
+                SELECT id FROM baux WHERE baux.appartement_id IN (
+                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
+                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+                      SELECT organisation_sci.sci_id FROM organisation_sci
+                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
+                      WHERE utilisateurs.id = auth.user_id()
+                      AND organisation_sci.date_fin IS NULL
+                    )
                   )
                 )
               )

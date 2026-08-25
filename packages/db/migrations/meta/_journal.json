@@ -204,6 +204,20 @@
       "when": 1787590903647,
       "tag": "0028_public_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787597580311,
+      "tag": "0029_flippant_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787597830850,
+      "tag": "0030_common_thena",
+      "breakpoints": true
     }
   ]
 }

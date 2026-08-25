@@ -1,0 +1,1 @@
+ALTER TABLE "locataires" ADD COLUMN "lieu_naissance" text;

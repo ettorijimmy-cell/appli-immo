@@ -527,17 +527,21 @@ les trois parcours ci-dessus).
   `reference_rapprochement` ont été retirées de `paiements` à la Phase 3
   (contract) de ce chantier.
 
-- **Checklist documentaire — non construite.** Prévue au cahier des
-  charges initial ("checklist documentaire", "indicateur visuel documents
-  manquants"), jamais implémentée : identifié en concevant la carte
-  "Documents expirés" du Module 7, qui n'affiche donc que les documents
-  expirés (statut déjà calculé), jamais "manquants" (aucune notion de
-  documents attendus par entité n'existe dans le modèle). Nécessite de
-  définir explicitement quelles catégories de documents sont attendues par
-  type d'entité (bail, appartement, locataire) et si elles sont
-  obligatoires ou simplement recommandées — mérite sa propre réflexion
-  avant développement, pas une règle improvisée dans un module tableau de
-  bord.
+- **Checklist documentaire — backend résolu (2026-08-24), pendant desktop
+  restant.** Prévue au cahier des charges initial ("checklist
+  documentaire", "indicateur visuel documents manquants"), jamais
+  implémentée jusqu'ici : identifié en concevant la carte "Documents
+  expirés" du Module 7, qui n'affichait donc que les documents expirés
+  (statut déjà calculé), jamais "manquants". Portée simple retenue (pas
+  de distinction obligatoire/recommandé) : DPE/élec-gaz/CREP/ERP par
+  appartement, pièce d'identité par locataire actif et par garant actif —
+  voir `docs/data-dictionary.md`, section "Checklist documentaire", pour
+  le détail (règle de complétude, calcul à la volée, et le blocage
+  découvert en cours de route : ajout de `garant` comme 7e cible du lien
+  polymorphe `documents.entite_type`, absent jusque-là). Reste à faire :
+  la carte sur le Tableau de bord desktop, et un moyen d'attacher un
+  document à un garant depuis l'UI (inexistant aujourd'hui, contrairement
+  à locataire/appartement).
 
 - **Retours d'API non projetés explicitement — 13 services, motif pas
   occurrence isolée.** Découvert en corrigeant `DocumentsService.versDto`
