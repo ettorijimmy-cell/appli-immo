@@ -1,10 +1,10 @@
 import {
   appartements,
+  bien,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   diagnostics,
   documents,
-  immeubles,
   scis
 } from "db";
 import { eq } from "drizzle-orm";
@@ -36,9 +36,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    const [immeuble] = await db.select().from(immeubles).where(eq(immeubles.sciId, sci.id)).limit(1);
-    if (!immeuble) {
-      console.error(`Aucun immeuble pour "${sci.nom}" — lancer seed:test-immeuble-appartement d'abord.`);
+    const [bienTrouve] = await db.select().from(bien).where(eq(bien.sciId, sci.id)).limit(1);
+    if (!bienTrouve) {
+      console.error(`Aucun bien pour "${sci.nom}" — lancer seed:test-bien-appartement d'abord.`);
       process.exitCode = 1;
       return;
     }
@@ -46,10 +46,10 @@ async function main(): Promise<void> {
     const [appartement] = await db
       .select()
       .from(appartements)
-      .where(eq(appartements.immeubleId, immeuble.id))
+      .where(eq(appartements.bienId, bienTrouve.id))
       .limit(1);
     if (!appartement) {
-      console.error(`Aucun appartement pour l'immeuble "${immeuble.nom}" — lancer seed:test-immeuble-appartement d'abord.`);
+      console.error(`Aucun appartement pour le bien "${bienTrouve.nom}" — lancer seed:test-bien-appartement d'abord.`);
       process.exitCode = 1;
       return;
     }

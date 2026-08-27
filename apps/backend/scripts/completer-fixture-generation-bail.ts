@@ -2,16 +2,20 @@ import {
   appartements,
   bailLocataires,
   baux,
+  bien,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   garants,
-  immeubles,
   indicesIrl,
   locataires,
   scis
 } from "db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { irlEstPerime, validerCompletudeGenerationBail, type DonneesCompletudeGenerationBail } from "core";
+import { BienService } from "../src/bien/bien.service";
+import type { UpdateBienDto } from "../src/bien/dto/update-bien.dto";
+import { RequestContextService } from "../src/common/request-context";
+import { UsersService } from "../src/users/users.service";
 
 // Complète, de façon idempotente, les champs obligatoires à la génération
 // du document de bail (packages/core, validerCompletudeGenerationBail) sur
@@ -22,6 +26,14 @@ import { irlEstPerime, validerCompletudeGenerationBail, type DonneesCompletudeGe
 // null sont complétés, en base réutilisable à volonté. N'invente jamais
 // l'indice IRL (donnée économique réelle, pas une donnée de test) :
 // signalé seulement si absent/périmé, jamais fabriqué.
+//
+// Migré le 2026-08-27 (dette différée de la migration bien, docs/backlog.md) :
+// immeubles -> bien (immeubles renommée immeubles_legacy, définitivement en
+// lecture seule — décision utilisateur). La correction du bien passe
+// désormais par BienService.update() (chemin applicatif réel), pas par un
+// update Drizzle direct dans l'ancienne table. Ce script tourne aussi
+// contre Scaleway (voir usage ci-dessous) — même rigueur que le reste de
+// cette session sur ce correctif.
 //
 // Usage : DATABASE_URL="postgresql://...scaleway..." pnpm --filter backend
 // exec tsx scripts/completer-fixture-generation-bail.ts [--nom-sci="..."]
@@ -34,7 +46,7 @@ function parseArg(flag: string): string | undefined {
 
 const VALEURS_TEST = {
   sci: { telephone: "0611111111", estFamiliale: true },
-  immeuble: {
+  bien: {
     anneeConstruction: 1980,
     typeHabitat: "collectif" as const,
     regimeJuridique: "copropriete" as const
@@ -54,14 +66,14 @@ async function diagnostiquerBail(
   db: ReturnType<typeof createDbClient>,
   bailId: string,
   appartementId: string,
-  immeubleId: string,
+  bienId: string,
   sciId: string
 ): Promise<void> {
   const [bail] = await db.select().from(baux).where(eq(baux.id, bailId)).limit(1);
   const [appartement] = await db.select().from(appartements).where(eq(appartements.id, appartementId)).limit(1);
-  const [immeuble] = await db.select().from(immeubles).where(eq(immeubles.id, immeubleId)).limit(1);
+  const [bienRow] = await db.select().from(bien).where(eq(bien.id, bienId)).limit(1);
   const [sci] = await db.select().from(scis).where(eq(scis.id, sciId)).limit(1);
-  if (!bail || !appartement || !immeuble || !sci) return;
+  if (!bail || !appartement || !bienRow || !sci) return;
 
   const liens = await db
     .select()
@@ -91,6 +103,7 @@ async function diagnostiquerBail(
     !derniereValeurIrl || irlEstPerime(derniereValeurIrl.dateRecuperation.toISOString().slice(0, 10), aujourdhui);
 
   const donnees: DonneesCompletudeGenerationBail = {
+    bienType: bienRow.type,
     sci: {
       telephone: sci.telephone,
       estFamiliale: sci.estFamiliale,
@@ -99,9 +112,9 @@ async function diagnostiquerBail(
       ville: sci.ville
     },
     immeuble: {
-      anneeConstruction: immeuble.anneeConstruction,
-      typeHabitat: immeuble.typeHabitat,
-      regimeJuridique: immeuble.regimeJuridique
+      anneeConstruction: bienRow.anneeConstruction,
+      typeHabitat: bienRow.typeHabitat,
+      regimeJuridique: bienRow.regimeJuridique
     },
     appartement: {
       equipementCuisine: appartement.equipementCuisine,
@@ -135,6 +148,9 @@ async function main(): Promise<void> {
   const nomSci = parseArg("nom-sci") ?? "SCI Test PowerSync";
   const databaseUrl = process.env.DATABASE_URL ?? DEFAULT_DEV_DATABASE_URL;
   const db = createDbClient(databaseUrl);
+  const requestContext = new RequestContextService();
+  const usersService = new UsersService(db);
+  const bienService = new BienService(db, usersService, requestContext);
   const { host, pathname } = new URL(databaseUrl);
   console.log(`Connexion à : ${host}${pathname}\n`);
 
@@ -146,21 +162,21 @@ async function main(): Promise<void> {
       return;
     }
 
-    const immeublesDeLaSci = await db.select().from(immeubles).where(eq(immeubles.sciId, sci.id));
-    const appartementsParImmeuble = new Map<string, (typeof appartements.$inferSelect)[]>();
-    for (const immeuble of immeublesDeLaSci) {
-      appartementsParImmeuble.set(
-        immeuble.id,
-        await db.select().from(appartements).where(eq(appartements.immeubleId, immeuble.id))
+    const biensDeLaSci = await db.select().from(bien).where(eq(bien.sciId, sci.id));
+    const appartementsParBien = new Map<string, (typeof appartements.$inferSelect)[]>();
+    for (const bienRow of biensDeLaSci) {
+      appartementsParBien.set(
+        bienRow.id,
+        await db.select().from(appartements).where(eq(appartements.bienId, bienRow.id))
       );
     }
 
     console.log(`=== Diagnostic AVANT correction — SCI "${sci.nom}" (${sci.id}) ===`);
-    for (const immeuble of immeublesDeLaSci) {
-      for (const appartement of appartementsParImmeuble.get(immeuble.id) ?? []) {
+    for (const bienRow of biensDeLaSci) {
+      for (const appartement of appartementsParBien.get(bienRow.id) ?? []) {
         const bauxDeLAppartement = await db.select().from(baux).where(eq(baux.appartementId, appartement.id));
         for (const bail of bauxDeLAppartement) {
-          await diagnostiquerBail(db, bail.id, appartement.id, immeuble.id, sci.id);
+          await diagnostiquerBail(db, bail.id, appartement.id, bienRow.id, sci.id);
         }
       }
     }
@@ -178,21 +194,21 @@ async function main(): Promise<void> {
       console.log(`SCI "${sci.nom}" déjà complète.`);
     }
 
-    // Immeubles
-    for (const immeuble of immeublesDeLaSci) {
-      const immeubleAMettreAJour: Partial<typeof immeubles.$inferInsert> = {};
-      if (immeuble.anneeConstruction === null) immeubleAMettreAJour.anneeConstruction = VALEURS_TEST.immeuble.anneeConstruction;
-      if (immeuble.typeHabitat === null) immeubleAMettreAJour.typeHabitat = VALEURS_TEST.immeuble.typeHabitat;
-      if (immeuble.regimeJuridique === null) immeubleAMettreAJour.regimeJuridique = VALEURS_TEST.immeuble.regimeJuridique;
-      if (Object.keys(immeubleAMettreAJour).length > 0) {
-        await db.update(immeubles).set({ ...immeubleAMettreAJour, updatedAt: new Date() }).where(eq(immeubles.id, immeuble.id));
-        console.log(`  Immeuble "${immeuble.nom}" (${immeuble.id}) complété :`, immeubleAMettreAJour);
+    // Biens
+    for (const bienRow of biensDeLaSci) {
+      const bienAMettreAJour: Pick<UpdateBienDto, "anneeConstruction" | "typeHabitat" | "regimeJuridique"> = {};
+      if (bienRow.anneeConstruction === null) bienAMettreAJour.anneeConstruction = VALEURS_TEST.bien.anneeConstruction;
+      if (bienRow.typeHabitat === null) bienAMettreAJour.typeHabitat = VALEURS_TEST.bien.typeHabitat;
+      if (bienRow.regimeJuridique === null) bienAMettreAJour.regimeJuridique = VALEURS_TEST.bien.regimeJuridique;
+      if (Object.keys(bienAMettreAJour).length > 0) {
+        await bienService.update(bienRow.id, bienAMettreAJour);
+        console.log(`  Bien "${bienRow.nom}" (${bienRow.id}) complété :`, bienAMettreAJour);
       } else {
-        console.log(`  Immeuble "${immeuble.nom}" (${immeuble.id}) déjà complet.`);
+        console.log(`  Bien "${bienRow.nom}" (${bienRow.id}) déjà complet.`);
       }
 
       // Appartements
-      for (const appartement of appartementsParImmeuble.get(immeuble.id) ?? []) {
+      for (const appartement of appartementsParBien.get(bienRow.id) ?? []) {
         const appartementAMettreAJour: Partial<typeof appartements.$inferInsert> = {};
         if (appartement.equipementCuisine === null)
           appartementAMettreAJour.equipementCuisine = VALEURS_TEST.appartement.equipementCuisine;
@@ -264,11 +280,11 @@ async function main(): Promise<void> {
     }
 
     console.log(`\n=== Diagnostic APRÈS correction ===`);
-    for (const immeuble of immeublesDeLaSci) {
-      for (const appartement of appartementsParImmeuble.get(immeuble.id) ?? []) {
+    for (const bienRow of biensDeLaSci) {
+      for (const appartement of appartementsParBien.get(bienRow.id) ?? []) {
         const bauxDeLAppartement = await db.select().from(baux).where(eq(baux.appartementId, appartement.id));
         for (const bail of bauxDeLAppartement) {
-          await diagnostiquerBail(db, bail.id, appartement.id, immeuble.id, sci.id);
+          await diagnostiquerBail(db, bail.id, appartement.id, bienRow.id, sci.id);
         }
       }
     }
