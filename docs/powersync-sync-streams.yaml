@@ -51,11 +51,20 @@ streams:
   # auth.user_id()), immeubles ayant une FK directe sci_id.
   # identifiant_fiscal n'existe pas sur cette table (présent sur
   # appartements) — sans objet ici.
+  # Table renommée immeubles_legacy le 2026-08-27 (décision utilisateur,
+  # docs/backlog.md, audit du sort de la table immeubles) : lecture seule
+  # définitive côté backend (ImmeublesService n'expose plus que
+  # findAll/findById) — documents.entite_type='immeuble' (branche du stream
+  # documents/diagnostics/alertes plus bas dans ce fichier) continue de
+  # référencer cette table (sous son nouveau nom) directement, pour que les
+  # documents historiques restent consultables. Les streams
+  # bien/bien_immeuble_detail ci-dessous s'ajoutent à celui-ci, ils ne le
+  # remplacent pas.
   immeubles:
     query: >
       SELECT id, sci_id, nom, adresse, code_postal, ville, type_habitat,
-      regime_juridique, annee_construction, statut, updated_at FROM immeubles
-      WHERE immeubles.sci_id IN (
+      regime_juridique, annee_construction, statut, updated_at FROM immeubles_legacy
+      WHERE immeubles_legacy.sci_id IN (
         SELECT organisation_sci.sci_id FROM organisation_sci
         INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
         WHERE utilisateurs.id = auth.user_id()
@@ -63,28 +72,79 @@ streams:
       )
     auto_subscribe: true
 
+  # Ajouté le 2026-08-26 (migration bien, docs/backlog.md) — nouveau niveau
+  # générique au-dessus d'appartement, remplaçant à terme immeubles comme
+  # source de vérité pour l'UI (voir Étape 4/5 de la migration), sans le
+  # retirer pour l'instant (voir commentaire du stream immeubles ci-dessus).
+  # Scoping direct via bien.organisation_id, peuplé à la création (même
+  # mécanisme que organisation_sci.organisation_id pour scis/immeubles) —
+  # un seul niveau de sous-select, sans branche conditionnelle selon
+  # bien.type ni bien.proprietaire_type : couvre aussi bien un immeuble
+  # multi-lots détenu par une SCI qu'une maison ou un parking détenu en
+  # nom propre (proprietaire_type='personne_physique', sci_id NULL).
+  # sci_id inclus à titre informationnel uniquement (jamais utilisé pour le
+  # scoping — voir packages/db/src/schema/bien.ts).
+  # type_habitat/regime_juridique déplacés depuis bien_immeuble_detail le
+  # 2026-08-26 : mentions légales du LOGEMENT (contrat-type, décret
+  # n° 2015-587), pas des données de gestion de copropriété — dérivés
+  # automatiquement pour type='maison' (jamais null pour ce type), requis
+  # explicitement pour tout autre type.
+  bien:
+    query: >
+      SELECT id, type, proprietaire_type, sci_id, organisation_id, adresse,
+      code_postal, ville, nom, annee_construction, date_acquisition,
+      valeur_acquisition, type_habitat, regime_juridique, statut, updated_at
+      FROM bien
+      WHERE bien.organisation_id IN (
+        SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+      )
+    auto_subscribe: true
+
+  # Ajouté le 2026-08-26 (migration bien). Extension 1:1 de bien pour le
+  # seul type 'immeuble' (packages/db/src/schema/bien-immeuble-detail.ts).
+  # Pas de filtre bien.type='immeuble' explicite dans la sous-requête :
+  # seuls les biens de type immeuble ont une ligne dans cette table
+  # (invariant applicatif posé à l'écriture, pas à la lecture) — la portée
+  # par bien_id suffit, inutile de la dupliquer ici.
+  # type_habitat/regime_juridique déplacés vers bien le 2026-08-26 (même
+  # jour que la création de ce stream) : ne reste ici que syndic/nb_lots/
+  # charges_copro_annuelles, purement administratifs, sans équivalent pour
+  # un bien non-immeuble.
+  bien_immeuble_detail:
+    query: >
+      SELECT id, bien_id, syndic, nb_lots, charges_copro_annuelles,
+      updated_at FROM bien_immeuble_detail
+      WHERE bien_immeuble_detail.bien_id IN (
+        SELECT id FROM bien WHERE bien.organisation_id IN (
+          SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+        )
+      )
+    auto_subscribe: true
+
   # Préparé le 2026-08-15, pas encore déployé/testé au moment de la
   # création de ce fichier — voir docs/backlog.md pour le suivi.
-  # Pas de sci_id direct sur appartements : filtrage via immeuble_id ->
-  # immeubles.sci_id -> organisation_sci -> utilisateurs (sous-select à
-  # 3 niveaux, jamais testé à cette profondeur avant ce stream — à
-  # surveiller côté temps de réponse une fois déployé).
+  # Migré le 2026-08-26 (migration bien, docs/backlog.md) : scoping via
+  # bien_id -> bien.organisation_id -> utilisateurs, à la place de l'ancien
+  # immeuble_id -> immeubles.sci_id -> organisation_sci -> utilisateurs.
+  # Même profondeur de sous-select (2 niveaux), mais un hop en moins réel :
+  # bien.organisation_id est peuplé directement à la création (aucune
+  # jointure organisation_sci ni condition date_fin à ce niveau, contrairement
+  # à l'ancien chemin via immeubles.sci_id). Couvre tous les types de bien
+  # (immeuble, maison, appartement_isole, parking, bureau, local_commercial)
+  # sans branche conditionnelle sur bien.type ni sur proprietaire_type.
   # identifiant_fiscal EXCLU volontairement de la liste de colonnes
   # (donnée fiscale nominative du lot, plus sensible que le reste des
   # colonnes de cette table — voir échange du 2026-08-15).
   appartements:
     query: >
-      SELECT id, immeuble_id, numero, type, surface, loyer_reference,
+      SELECT id, bien_id, numero, type, surface, loyer_reference,
       nombre_pieces_principales, mode_chauffage, mode_eau_chaude, type_energie,
       equipement_cuisine, dependances_annexes, nombre_chambres,
       nombre_salles_de_bain, nombre_wc, autre_piece_1, autre_piece_2, statut,
       updated_at FROM appartements
-      WHERE appartements.immeuble_id IN (
-        SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-          SELECT organisation_sci.sci_id FROM organisation_sci
-          INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-          WHERE utilisateurs.id = auth.user_id()
-          AND organisation_sci.date_fin IS NULL
+      WHERE appartements.bien_id IN (
+        SELECT id FROM bien WHERE bien.organisation_id IN (
+          SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
         )
       )
     auto_subscribe: true
@@ -93,14 +153,15 @@ streams:
   # ce bloc — voir docs/backlog.md pour le suivi.
   # Pas de statut sur cette table (contrairement à scis/immeubles/
   # appartements) — aucun pgEnum de statut défini côté Drizzle.
-  # Pas de appartement_id -> immeuble_id -> sci_id direct à 3 niveaux comme
-  # appartements : equipements n'a qu'une FK vers appartements (pas de
-  # immeuble_id propre), d'où un sous-select à 4 niveaux (equipements ->
-  # appartements -> immeubles -> organisation_sci -> utilisateurs), un de
-  # plus que appartements — jamais testé à cette profondeur avant ce
-  # stream, à surveiller côté temps de réponse une fois déployé (voir
-  # aussi l'entrée dette technique sur la mesure encore en attente pour
-  # appartements, docs/backlog.md).
+  # Pas de appartement_id -> bien_id direct comme appartements : equipements
+  # n'a qu'une FK vers appartements (pas de bien_id propre), d'où un sous-
+  # select à 3 niveaux (equipements -> appartements -> bien -> utilisateurs),
+  # un de plus qu'appartements — migré le 2026-08-26 (migration bien) vers
+  # la chaîne bien_id -> bien.organisation_id, à la place de l'ancienne
+  # chaîne immeuble_id -> immeubles.sci_id -> organisation_sci — jamais
+  # testé à cette profondeur avant ce stream, à surveiller côté temps de
+  # réponse une fois déployé (voir aussi l'entrée dette technique sur la
+  # mesure encore en attente pour appartements, docs/backlog.md).
   # Aucune colonne sensible identifiée sur cette table (vérifié le
   # 2026-08-15) — les 4 colonnes métier (appartement_id, type,
   # date_dernier_entretien, intervalle_entretien_mois) sont toutes
@@ -110,12 +171,9 @@ streams:
       SELECT id, appartement_id, type, date_dernier_entretien,
       intervalle_entretien_mois, updated_at FROM equipements
       WHERE equipements.appartement_id IN (
-        SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-            SELECT organisation_sci.sci_id FROM organisation_sci
-            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-            WHERE utilisateurs.id = auth.user_id()
-            AND organisation_sci.date_fin IS NULL
+        SELECT id FROM appartements WHERE appartements.bien_id IN (
+          SELECT id FROM bien WHERE bien.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
           )
         )
       )
@@ -123,10 +181,10 @@ streams:
 
   # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi. Domaine Locataires & baux.
-  # Même profondeur que appartements (3 niveaux : appartement_id ->
-  # immeubles.sci_id -> organisation_sci -> utilisateurs), appartement_id
-  # étant une FK directe sur baux. Aucune colonne exclue — rien de sensible
-  # identifié sur cette table (voir échange du 2026-08-15).
+  # Même profondeur que appartements (2 niveaux : appartement_id ->
+  # bien_id -> bien.organisation_id -> utilisateurs, migré le 2026-08-26),
+  # appartement_id étant une FK directe sur baux. Aucune colonne exclue —
+  # rien de sensible identifié sur cette table (voir échange du 2026-08-15).
   baux:
     query: >
       SELECT id, appartement_id, type_bail, statut, loyer_mensuel,
@@ -135,12 +193,9 @@ streams:
       travaux_realises, honoraires_bailleur, honoraires_locataire,
       updated_at FROM baux
       WHERE baux.appartement_id IN (
-        SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-            SELECT organisation_sci.sci_id FROM organisation_sci
-            INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-            WHERE utilisateurs.id = auth.user_id()
-            AND organisation_sci.date_fin IS NULL
+        SELECT id FROM appartements WHERE appartements.bien_id IN (
+          SELECT id FROM bien WHERE bien.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
           )
         )
       )
@@ -149,8 +204,8 @@ streams:
   # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi.
   # Même chaîne de filtrage que baux, un niveau de plus (bail_id ->
-  # appartement_id -> immeubles.sci_id -> organisation_sci -> utilisateurs,
-  # 4 niveaux, comme equipements).
+  # appartement_id -> bien_id -> bien.organisation_id -> utilisateurs,
+  # 3 niveaux, comme equipements — migré le 2026-08-26).
   # profession et revenus EXCLUS volontairement (donnée financière précise
   # du garant, pas de besoin hors-ligne — décision du 2026-08-15). Toutes
   # les autres colonnes métier incluses.
@@ -161,12 +216,9 @@ streams:
       nationalite, updated_at FROM garants
       WHERE garants.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -175,21 +227,18 @@ streams:
 
   # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi.
-  # Table de jonction pure (colocation) — mêmes 4 niveaux que garants
-  # (bail_id -> appartement_id -> immeubles.sci_id -> organisation_sci ->
-  # utilisateurs). Aucune colonne sensible : juste deux UUID + un enum de
-  # rôle. Toutes les colonnes incluses.
+  # Table de jonction pure (colocation) — mêmes 3 niveaux que garants
+  # (bail_id -> appartement_id -> bien_id -> bien.organisation_id ->
+  # utilisateurs, migré le 2026-08-26). Aucune colonne sensible : juste
+  # deux UUID + un enum de rôle. Toutes les colonnes incluses.
   bail_locataires:
     query: >
       SELECT id, bail_id, locataire_id, role, updated_at FROM bail_locataires
       WHERE bail_locataires.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -198,12 +247,13 @@ streams:
 
   # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi.
-  # Le niveau le plus profond du projet à ce jour (5 niveaux) : locataires
-  # n'a AUCUNE FK directe vers baux/appartements/immeubles/sci (c'est une
-  # entité indépendante, partagée entre plusieurs baux dans le temps — voir
-  # échange du 2026-08-15) — filtrage obligatoire via la table de jonction
-  # bail_locataires (locataire_id -> bail_id -> appartement_id ->
-  # immeubles.sci_id -> organisation_sci -> utilisateurs). Filtre sur
+  # Le niveau le plus profond du projet à ce jour (4 niveaux, migré le
+  # 2026-08-26) : locataires n'a AUCUNE FK directe vers baux/appartements/
+  # bien (c'est une entité indépendante, partagée entre plusieurs baux dans
+  # le temps — voir échange du 2026-08-15) — filtrage obligatoire via la
+  # table de jonction bail_locataires (locataire_id -> bail_id ->
+  # appartement_id -> bien_id -> bien.organisation_id -> utilisateurs).
+  # Filtre sur
   # bail_locataires.archived_at IS NULL : un locataire retiré d'un bail
   # (ligne de liaison archivée) ne doit pas continuer à donner accès à ce
   # bail pour le calcul de portée. Jamais testé à cette profondeur — à
@@ -219,12 +269,9 @@ streams:
       WHERE locataires.id IN (
         SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -235,23 +282,20 @@ streams:
 
   # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi. Domaine Finances.
-  # Même profondeur que baux (4 niveaux : bail_id -> appartement_id ->
-  # immeubles.sci_id -> organisation_sci -> utilisateurs), bail_id étant une
-  # FK directe sur paiements. Aucune colonne exclue — rien de sensible
-  # identifié sur cette table (statut est calculé, jamais saisi
-  # directement — voir docs/data-dictionary.md).
+  # Même profondeur que baux (3 niveaux : bail_id -> appartement_id ->
+  # bien_id -> bien.organisation_id -> utilisateurs, migré le 2026-08-26),
+  # bail_id étant une FK directe sur paiements. Aucune colonne exclue —
+  # rien de sensible identifié sur cette table (statut est calculé, jamais
+  # saisi directement — voir docs/data-dictionary.md).
   paiements:
     query: >
       SELECT id, bail_id, type, statut, montant, date_echeance, updated_at
       FROM paiements
       WHERE paiements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -261,8 +305,8 @@ streams:
   # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi.
   # Même chaîne de filtrage que paiements, un niveau de plus (paiement_id ->
-  # bail_id -> appartement_id -> immeubles.sci_id -> organisation_sci ->
-  # utilisateurs, 5 niveaux, comme locataires).
+  # bail_id -> appartement_id -> bien_id -> bien.organisation_id ->
+  # utilisateurs, 4 niveaux, comme locataires — migré le 2026-08-26).
   # reference_rapprochement EXCLUE volontairement (libellé brut de ligne de
   # relevé bancaire importé — hors de notre contrôle, potentiellement
   # porteur d'informations non maîtrisées selon la banque émettrice —
@@ -274,12 +318,9 @@ streams:
       WHERE versements.paiement_id IN (
         SELECT id FROM paiements WHERE paiements.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -314,12 +355,9 @@ streams:
       FROM remboursements
       WHERE remboursements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -417,17 +455,22 @@ streams:
   # révélateur selon le nom donné par l'utilisateur à l'upload (ex.
   # "CNI_Jean_Dupont.jpg") — pas de mécanisme d'anonymisation, accepté tel
   # quel.
-  # entite_id est une référence polymorphe sur 7 cibles (sci, immeuble,
+  # entite_id est une référence polymorphe sur 8 cibles (sci, immeuble, bien,
   # appartement, locataire, bail, etat_des_lieux, garant — voir commentaire
-  # du schéma Drizzle, packages/db/src/schema/documents.ts). Les 7 branches
+  # du schéma Drizzle, packages/db/src/schema/documents.ts). Les 8 branches
   # sont désormais toutes couvertes (2026-08-21, domaine État des lieux
-  # traité ; 2026-08-24, 7e branche garant ajoutée — checklist documentaire,
-  # docs/backlog.md) — chacune avec sa propre condition entite_type = '...'
-  # AND entite_id IN (chaîne de filtrage habituelle vers la table cible
-  # correspondante, jusqu'à 6 niveaux de profondeur pour la branche
-  # etat_des_lieux — un cran de plus que locataire, jamais testé à cette
-  # profondeur avant ce stream, à surveiller côté temps de réponse une
-  # fois déployé).
+  # traité ; 2026-08-24, 7e branche garant ajoutée — checklist documentaire ;
+  # 2026-08-26, 8e branche bien ajoutée — migration bien, docs/backlog.md :
+  # seul chemin possible pour un bien non-immeuble ou un immeuble créé après
+  # cette date via BienService, la branche 'immeuble' restant réservée aux
+  # documents déjà rattachés à une ligne immeubles existante) — chacune avec
+  # sa propre condition entite_type = '...' AND entite_id IN (chaîne de
+  # filtrage habituelle vers la table cible correspondante, jusqu'à 5
+  # niveaux de profondeur pour la branche etat_des_lieux — un cran de plus
+  # que locataire, migré le 2026-08-26 vers la chaîne bien_id ->
+  # bien.organisation_id pour les branches appartement/bail/garant/
+  # locataire/etat_des_lieux — jamais testé à cette profondeur avant ce
+  # stream, à surveiller côté temps de réponse une fois déployé).
   documents:
     query: >
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
@@ -442,7 +485,7 @@ streams:
         )
       ) OR (
         documents.entite_type = 'immeuble' AND documents.entite_id IN (
-          SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+          SELECT id FROM immeubles_legacy WHERE immeubles_legacy.sci_id IN (
             SELECT organisation_sci.sci_id FROM organisation_sci
             INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
             WHERE utilisateurs.id = auth.user_id()
@@ -450,25 +493,25 @@ streams:
           )
         )
       ) OR (
+        documents.entite_type = 'bien' AND documents.entite_id IN (
+          SELECT id FROM bien WHERE bien.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+          )
+        )
+      ) OR (
         documents.entite_type = 'appartement' AND documents.entite_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
       ) OR (
         documents.entite_type = 'bail' AND documents.entite_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -477,12 +520,9 @@ streams:
         documents.entite_type = 'garant' AND documents.entite_id IN (
           SELECT id FROM garants WHERE garants.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
@@ -492,12 +532,9 @@ streams:
         documents.entite_type = 'locataire' AND documents.entite_id IN (
           SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
@@ -508,12 +545,9 @@ streams:
         documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
           SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
@@ -525,15 +559,16 @@ streams:
   # Préparé le 2026-08-20, corrigé le 2026-08-20 (même correction UNION
   # ALL -> OR que documents ci-dessus), complété le 2026-08-21 (6e branche
   # etat_des_lieux, domaine État des lieux désormais traité), complété le
-  # 2026-08-24 (7e branche garant) — voir docs/backlog.md pour le suivi.
+  # 2026-08-24 (7e branche garant) et le 2026-08-26 (8e branche bien,
+  # migration bien) — voir docs/backlog.md pour le suivi.
   # Relation 1:1 avec documents, FK simple document_id (pas de référence
   # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
   # Filtrage par document_id IN (la requête documents ci-dessus,
   # répétée ici en ne sélectionnant que id) : la requête la plus profonde
-  # et la plus complexe de ce chantier à ce jour (6 blocs OR imbriqués
-  # dans un IN, jusqu'à 6 niveaux de profondeur pour la branche
-  # etat_des_lieux) — à surveiller particulièrement côté temps de réponse
-  # une fois déployé.
+  # et la plus complexe de ce chantier à ce jour (7 blocs OR imbriqués
+  # dans un IN, jusqu'à 5 niveaux de profondeur pour la branche
+  # etat_des_lieux, migré le 2026-08-26) — à surveiller particulièrement
+  # côté temps de réponse une fois déployé.
   # Aucune colonne exclue — rien de sensible identifié sur cette table
   # (que des valeurs réglementaires chiffrées/catégorielles, aucune donnée
   # nominative ni chemin de fichier).
@@ -551,7 +586,7 @@ streams:
           )
         ) OR (
           documents.entite_type = 'immeuble' AND documents.entite_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+            SELECT id FROM immeubles_legacy WHERE immeubles_legacy.sci_id IN (
               SELECT organisation_sci.sci_id FROM organisation_sci
               INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
               WHERE utilisateurs.id = auth.user_id()
@@ -559,25 +594,25 @@ streams:
             )
           )
         ) OR (
+          documents.entite_type = 'bien' AND documents.entite_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+            )
+          )
+        ) OR (
           documents.entite_type = 'appartement' AND documents.entite_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
         ) OR (
           documents.entite_type = 'bail' AND documents.entite_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
@@ -586,12 +621,9 @@ streams:
           documents.entite_type = 'garant' AND documents.entite_id IN (
             SELECT id FROM garants WHERE garants.bail_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
-                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                    SELECT organisation_sci.sci_id FROM organisation_sci
-                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                    WHERE utilisateurs.id = auth.user_id()
-                    AND organisation_sci.date_fin IS NULL
+                SELECT id FROM appartements WHERE appartements.bien_id IN (
+                  SELECT id FROM bien WHERE bien.organisation_id IN (
+                    SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                   )
                 )
               )
@@ -601,12 +633,9 @@ streams:
           documents.entite_type = 'locataire' AND documents.entite_id IN (
             SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
-                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                    SELECT organisation_sci.sci_id FROM organisation_sci
-                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                    WHERE utilisateurs.id = auth.user_id()
-                    AND organisation_sci.date_fin IS NULL
+                SELECT id FROM appartements WHERE appartements.bien_id IN (
+                  SELECT id FROM bien WHERE bien.organisation_id IN (
+                    SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                   )
                 )
               )
@@ -617,12 +646,9 @@ streams:
           documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
             SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
-                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                    SELECT organisation_sci.sci_id FROM organisation_sci
-                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                    WHERE utilisateurs.id = auth.user_id()
-                    AND organisation_sci.date_fin IS NULL
+                SELECT id FROM appartements WHERE appartements.bien_id IN (
+                  SELECT id FROM bien WHERE bien.organisation_id IN (
+                    SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                   )
                 )
               )
@@ -635,18 +661,18 @@ streams:
 # Domaine Documents (2026-08-20) : RÉSOLU le 2026-08-21 — la 6e branche
 # etat_des_lieux a été ajoutée aux requêtes documents et diagnostics
 # ci-dessus, une fois le domaine État des lieux traité. Complété le
-# 2026-08-24 (7e branche garant, checklist documentaire) — les 7 branches
-# de la référence polymorphe documents.entite_id sont désormais toutes
-# couvertes.
+# 2026-08-24 (7e branche garant, checklist documentaire) et le 2026-08-26
+# (8e branche bien, migration bien) — les 8 branches de la référence
+# polymorphe documents.entite_id sont désormais toutes couvertes.
 
   # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
   # ce bloc — voir docs/backlog.md pour le suivi. Domaine État des lieux,
   # le plus étendu de ce chantier (12 tables). Table racine : bail_id
   # unique (un seul état des lieux par bail, document unique
   # entrée+sortie, décret n° 2016-382 art. 3, 2°). Même chaîne de
-  # filtrage que baux lui-même (bail_id -> appartement_id ->
-  # immeubles.sci_id -> organisation_sci -> utilisateurs, 4 niveaux) —
-  # toutes les tables satellites ci-dessous en ajoutent un 5e
+  # filtrage que baux lui-même (bail_id -> appartement_id -> bien_id ->
+  # bien.organisation_id -> utilisateurs, 3 niveaux, migré le 2026-08-26) —
+  # toutes les tables satellites ci-dessous en ajoutent un 4e
   # (etat_des_lieux_id -> etats_des_lieux.bail_id -> ...). Aucune colonne
   # exclue — nouvelle_adresse_locataire incluse (cohérent avec
   # locataires.adresse déjà accepté, décision du 2026-08-20).
@@ -656,12 +682,9 @@ streams:
       updated_at FROM etats_des_lieux
       WHERE etats_des_lieux.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
-          SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-            SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-              SELECT organisation_sci.sci_id FROM organisation_sci
-              INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-              WHERE utilisateurs.id = auth.user_id()
-              AND organisation_sci.date_fin IS NULL
+          SELECT id FROM appartements WHERE appartements.bien_id IN (
+            SELECT id FROM bien WHERE bien.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -688,12 +711,9 @@ streams:
       WHERE etat_des_lieux_piece_entree.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -716,12 +736,9 @@ streams:
       WHERE etat_des_lieux_piece_sejour.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -750,12 +767,9 @@ streams:
       WHERE etat_des_lieux_piece_cuisine.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -781,12 +795,9 @@ streams:
       WHERE etat_des_lieux_compteurs.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -809,12 +820,9 @@ streams:
       WHERE etat_des_lieux_pieces_chambre.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -841,12 +849,9 @@ streams:
       WHERE etat_des_lieux_pieces_salle_de_bain.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -872,12 +877,9 @@ streams:
       WHERE etat_des_lieux_pieces_wc.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -901,12 +903,9 @@ streams:
       WHERE etat_des_lieux_pieces_autre.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -928,12 +927,9 @@ streams:
       WHERE etat_des_lieux_cles.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -951,12 +947,9 @@ streams:
       WHERE etat_des_lieux_equipements_divers.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -978,12 +971,9 @@ streams:
       WHERE etat_des_lieux_inventaire.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -1019,9 +1009,9 @@ streams:
   # polymorphe à 7 branches de documents (documents.entite_type IN
   # sci/immeuble/appartement/bail/garant/locataire/etat_des_lieux) en sous-
   # requête — la chaîne la plus profonde et la plus complexe de ce
-  # chantier à ce jour, jusqu'à 7 niveaux d'imbrication (alertes ->
-  # documents -> etats_des_lieux -> baux -> appartements -> immeubles ->
-  # organisation_sci -> utilisateurs) — à surveiller en priorité côté
+  # chantier à ce jour, jusqu'à 6 niveaux d'imbrication (alertes ->
+  # documents -> etats_des_lieux -> baux -> appartements -> bien ->
+  # utilisateurs, migré le 2026-08-26) — à surveiller en priorité côté
   # temps de réponse une fois déployé.
   # derniere_condition_vraie EXCLU (champ interne, jamais exposé à
   # l'utilisateur selon le commentaire du schéma — décision actée dès la
@@ -1035,12 +1025,9 @@ streams:
       WHERE (
         alertes.type = 'bail_fin_proche' AND alertes.entite_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )
@@ -1049,12 +1036,9 @@ streams:
         alertes.type = 'impaye' AND alertes.entite_id IN (
           SELECT id FROM paiements WHERE paiements.bail_id IN (
             SELECT id FROM baux WHERE baux.appartement_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
@@ -1071,7 +1055,7 @@ streams:
             )
           ) OR (
             documents.entite_type = 'immeuble' AND documents.entite_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT id FROM immeubles_legacy WHERE immeubles_legacy.sci_id IN (
                 SELECT organisation_sci.sci_id FROM organisation_sci
                 INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
                 WHERE utilisateurs.id = auth.user_id()
@@ -1079,25 +1063,25 @@ streams:
               )
             )
           ) OR (
+            documents.entite_type = 'bien' AND documents.entite_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
+          ) OR (
             documents.entite_type = 'appartement' AND documents.entite_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
           ) OR (
             documents.entite_type = 'bail' AND documents.entite_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
-                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                    SELECT organisation_sci.sci_id FROM organisation_sci
-                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                    WHERE utilisateurs.id = auth.user_id()
-                    AND organisation_sci.date_fin IS NULL
+                SELECT id FROM appartements WHERE appartements.bien_id IN (
+                  SELECT id FROM bien WHERE bien.organisation_id IN (
+                    SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                   )
                 )
               )
@@ -1106,12 +1090,9 @@ streams:
             documents.entite_type = 'garant' AND documents.entite_id IN (
               SELECT id FROM garants WHERE garants.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1121,12 +1102,9 @@ streams:
             documents.entite_type = 'locataire' AND documents.entite_id IN (
               SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1137,12 +1115,9 @@ streams:
             documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
               SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1161,7 +1136,7 @@ streams:
             )
           ) OR (
             documents.entite_type = 'immeuble' AND documents.entite_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
+              SELECT id FROM immeubles_legacy WHERE immeubles_legacy.sci_id IN (
                 SELECT organisation_sci.sci_id FROM organisation_sci
                 INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
                 WHERE utilisateurs.id = auth.user_id()
@@ -1169,25 +1144,25 @@ streams:
               )
             )
           ) OR (
+            documents.entite_type = 'bien' AND documents.entite_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
+          ) OR (
             documents.entite_type = 'appartement' AND documents.entite_id IN (
-              SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                  SELECT organisation_sci.sci_id FROM organisation_sci
-                  INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                  WHERE utilisateurs.id = auth.user_id()
-                  AND organisation_sci.date_fin IS NULL
+              SELECT id FROM appartements WHERE appartements.bien_id IN (
+                SELECT id FROM bien WHERE bien.organisation_id IN (
+                  SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                 )
               )
             )
           ) OR (
             documents.entite_type = 'bail' AND documents.entite_id IN (
               SELECT id FROM baux WHERE baux.appartement_id IN (
-                SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                  SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                    SELECT organisation_sci.sci_id FROM organisation_sci
-                    INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                    WHERE utilisateurs.id = auth.user_id()
-                    AND organisation_sci.date_fin IS NULL
+                SELECT id FROM appartements WHERE appartements.bien_id IN (
+                  SELECT id FROM bien WHERE bien.organisation_id IN (
+                    SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                   )
                 )
               )
@@ -1196,12 +1171,9 @@ streams:
             documents.entite_type = 'garant' AND documents.entite_id IN (
               SELECT id FROM garants WHERE garants.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1211,12 +1183,9 @@ streams:
             documents.entite_type = 'locataire' AND documents.entite_id IN (
               SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1227,12 +1196,9 @@ streams:
             documents.entite_type = 'etat_des_lieux' AND documents.entite_id IN (
               SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
                 SELECT id FROM baux WHERE baux.appartement_id IN (
-                  SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-                    SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                      SELECT organisation_sci.sci_id FROM organisation_sci
-                      INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                      WHERE utilisateurs.id = auth.user_id()
-                      AND organisation_sci.date_fin IS NULL
+                  SELECT id FROM appartements WHERE appartements.bien_id IN (
+                    SELECT id FROM bien WHERE bien.organisation_id IN (
+                      SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
                     )
                   )
                 )
@@ -1243,12 +1209,9 @@ streams:
       ) OR (
         alertes.type = 'entretien_equipement' AND alertes.entite_id IN (
           SELECT id FROM equipements WHERE equipements.appartement_id IN (
-            SELECT id FROM appartements WHERE appartements.immeuble_id IN (
-              SELECT id FROM immeubles WHERE immeubles.sci_id IN (
-                SELECT organisation_sci.sci_id FROM organisation_sci
-                INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
-                WHERE utilisateurs.id = auth.user_id()
-                AND organisation_sci.date_fin IS NULL
+            SELECT id FROM appartements WHERE appartements.bien_id IN (
+              SELECT id FROM bien WHERE bien.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
           )

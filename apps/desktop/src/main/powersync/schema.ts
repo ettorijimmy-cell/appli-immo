@@ -12,6 +12,9 @@ const scis = new Table({
   statut: column.text
 });
 
+// Conservée telle quelle lors de la migration bien (2026-08-26) : la table
+// immeubles n'est pas retirée à ce stade — voir le commentaire du stream
+// immeubles correspondant dans docs/powersync-sync-streams.yaml.
 const immeubles = new Table({
   sci_id: column.text,
   nom: column.text,
@@ -25,11 +28,47 @@ const immeubles = new Table({
   updated_at: column.text
 });
 
+// Ajoutée le 2026-08-26 (migration bien, docs/backlog.md) — voir le stream
+// bien correspondant dans docs/powersync-sync-streams.yaml pour le détail
+// du scoping (bien.organisation_id, direct, sans branche conditionnelle
+// selon type/proprietaire_type).
+const bien = new Table({
+  type: column.text,
+  proprietaire_type: column.text,
+  sci_id: column.text,
+  organisation_id: column.text,
+  adresse: column.text,
+  code_postal: column.text,
+  ville: column.text,
+  nom: column.text,
+  annee_construction: column.integer,
+  date_acquisition: column.text,
+  valeur_acquisition: column.real,
+  // Déplacés depuis bien_immeuble_detail le 2026-08-26 — voir
+  // docs/powersync-sync-streams.yaml.
+  type_habitat: column.text,
+  regime_juridique: column.text,
+  statut: column.text,
+  updated_at: column.text
+});
+
+// Ajoutée le 2026-08-26 (migration bien). Extension 1:1 de bien pour le
+// seul type 'immeuble' — voir docs/powersync-sync-streams.yaml.
+const bien_immeuble_detail = new Table({
+  bien_id: column.text,
+  syndic: column.text,
+  nb_lots: column.integer,
+  charges_copro_annuelles: column.real,
+  updated_at: column.text
+});
+
 // identifiant_fiscal volontairement absent — exclu du Sync Stream
 // appartements (donnée fiscale nominative du lot, voir
 // docs/powersync-sync-streams.yaml).
+// immeuble_id -> bien_id (migration bien, 2026-08-26) : voir le stream
+// appartements correspondant dans docs/powersync-sync-streams.yaml.
 const appartements = new Table({
-  immeuble_id: column.text,
+  bien_id: column.text,
   numero: column.text,
   type: column.text,
   surface: column.real,
@@ -526,6 +565,8 @@ const alertes = new Table({
 export const AppSchema = new Schema({
   scis,
   immeubles,
+  bien,
+  bien_immeuble_detail,
   appartements,
   equipements,
   baux,
