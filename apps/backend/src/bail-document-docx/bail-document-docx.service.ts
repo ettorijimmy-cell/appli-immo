@@ -20,9 +20,9 @@ import {
   appartements,
   bailLocataires,
   baux,
+  bien,
   documents,
   garants,
-  immeubles,
   indicesIrl,
   locataires,
   paiements,
@@ -73,16 +73,21 @@ export class BailDocumentDocxService {
       throw new NotFoundException("Appartement introuvable");
     }
 
-    const [immeuble] = await this.db
-      .select()
-      .from(immeubles)
-      .where(eq(immeubles.id, appartement.immeubleId))
-      .limit(1);
-    if (!immeuble) {
-      throw new NotFoundException("Immeuble introuvable");
+    // typeHabitat/regimeJuridique vivent sur bien directement (déplacés
+    // depuis bien_immeuble_detail le 2026-08-26) : dérivés automatiquement
+    // pour type='maison' (jamais null), requis explicitement pour tout
+    // autre type — validerCompletudeGenerationBail bloque la génération
+    // plus bas avec un message clair si absents, plutôt que d'imprimer une
+    // mention légale devinée.
+    const [bienRow] = await this.db.select().from(bien).where(eq(bien.id, appartement.bienId)).limit(1);
+    if (!bienRow) {
+      throw new NotFoundException("Bien introuvable");
     }
 
-    const [sci] = await this.db.select().from(scis).where(eq(scis.id, immeuble.sciId)).limit(1);
+    if (!bienRow.sciId) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    const [sci] = await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
     }
@@ -122,6 +127,7 @@ export class BailDocumentDocxService {
     // manquants en un seul appel, jamais un blocage au premier trouvé
     // (packages/core, validerCompletudeGenerationBail).
     const donneesCompletude: DonneesCompletudeGenerationBail = {
+      bienType: bienRow.type,
       sci: {
         telephone: sci.telephone,
         estFamiliale: sci.estFamiliale,
@@ -130,9 +136,9 @@ export class BailDocumentDocxService {
         ville: sci.ville
       },
       immeuble: {
-        anneeConstruction: immeuble.anneeConstruction,
-        typeHabitat: immeuble.typeHabitat,
-        regimeJuridique: immeuble.regimeJuridique
+        anneeConstruction: bienRow.anneeConstruction,
+        typeHabitat: bienRow.typeHabitat,
+        regimeJuridique: bienRow.regimeJuridique
       },
       appartement: {
         equipementCuisine: appartement.equipementCuisine,
@@ -217,8 +223,8 @@ export class BailDocumentDocxService {
     // décret n° 2015-587) : simple détection de présence, jamais un résultat
     // structuré (la table `diagnostics`, prévue pour ça, n'est reliée à
     // aucun module/UI à ce jour — docs/data-dictionary.md). Rien n'impose
-    // qu'un diagnostic soit rattaché à l'immeuble ou à l'appartement : les
-    // deux niveaux sont vérifiés pour chacune des 4 catégories.
+    // qu'un diagnostic soit rattaché au bien ou à l'appartement : les deux
+    // niveaux sont vérifiés pour chacune des 4 catégories.
     const documentsDiagnostics = await this.db
       .select({ categorie: documents.categorie })
       .from(documents)
@@ -226,7 +232,7 @@ export class BailDocumentDocxService {
         and(
           or(
             and(eq(documents.entiteType, "appartement"), eq(documents.entiteId, appartement.id)),
-            and(eq(documents.entiteType, "immeuble"), eq(documents.entiteId, immeuble.id))
+            and(eq(documents.entiteType, "bien"), eq(documents.entiteId, bienRow.id))
           ),
           inArray(documents.categorie, ["dpe", "elec_gaz", "crep_plomb", "erp"]),
           isNull(documents.archivedAt)
@@ -286,10 +292,10 @@ export class BailDocumentDocxService {
       surface: appartement.surface ?? VIDE,
       "liste des dépendances": appartement.dependancesAnnexes ?? VIDE,
       "Equipement de la cuisine": appartement.equipementCuisine ?? VIDE,
-      "adresse appartement": immeuble.adresse,
-      "code postal appartement": immeuble.codePostal ?? VIDE,
-      "ville appartement": immeuble.ville ?? VIDE,
-      "Année construction immeuble": immeuble.anneeConstruction?.toString() ?? VIDE,
+      "adresse appartement": bienRow.adresse,
+      "code postal appartement": bienRow.codePostal ?? VIDE,
+      "ville appartement": bienRow.ville ?? VIDE,
+      "Année construction immeuble": bienRow.anneeConstruction?.toString() ?? VIDE,
 
       "date début bail": bail.dateDebut,
       // Nom de balise hérité du modèle ("+ 3ans" figé dans le libellé de la
@@ -324,7 +330,7 @@ export class BailDocumentDocxService {
       "un mois appartement vide ou deux mois appartement meublé": calculerLibelleDepotGarantie(bail.typeBail),
       "montant dépôt de garantie": bail.depotGarantie ?? VIDE,
 
-      "Ville de l’appartement": immeuble.ville ?? VIDE,
+      "Ville de l’appartement": bienRow.ville ?? VIDE,
       // Balise du bloc signature ("Fait à ..., le ...") — malgré son nom
       // hérité du modèle, la valeur est date_signature (repli dateDebut),
       // jamais littéralement dateDebut (voir dateReference ci-dessus).
@@ -342,10 +348,10 @@ export class BailDocumentDocxService {
       // d'habitat/régime juridique de l'immeuble, chauffage/eau chaude de
       // l'appartement) — noms de balises confirmés avec l'utilisateur,
       // à ne plus renommer sans le transmettre au propriétaire.
-      collectif: immeuble.typeHabitat === "collectif",
-      individuel: immeuble.typeHabitat === "individuel",
-      copropriete: immeuble.regimeJuridique === "copropriete",
-      monopropriete: immeuble.regimeJuridique === "mono_propriete",
+      collectif: bienRow.typeHabitat === "collectif",
+      individuel: bienRow.typeHabitat === "individuel",
+      copropriete: bienRow.regimeJuridique === "copropriete",
+      monopropriete: bienRow.regimeJuridique === "mono_propriete",
       chauffageIndividuel: appartement.modeChauffage === "individuel",
       chauffageCollectif: appartement.modeChauffage === "collectif",
       eauChaudeIndividuelle: appartement.modeEauChaude === "individuel",

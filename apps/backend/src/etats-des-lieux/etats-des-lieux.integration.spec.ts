@@ -17,10 +17,10 @@ import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
@@ -40,7 +40,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let etatsDesLieuxService: EtatsDesLieuxService;
@@ -59,7 +59,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         BauxModule,
         EtatsDesLieuxModule
@@ -70,7 +70,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     etatsDesLieuxService = moduleRef.get(EtatsDesLieuxService);
@@ -106,15 +106,19 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
       codePostal: "75001",
       ville: "Paris"
     });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble État des lieux Test",
       adresse: "1 rue de l'État des lieux",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T3",
       nombrePiecesPrincipales: 3,
@@ -168,10 +172,14 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
       codePostal: "75001",
       ville: "Paris"
     });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Composition Incomplète",
       adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
@@ -179,7 +187,7 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     // nombreSallesDeBain/nombreWc restent null) — appartement créé avant
     // l'introduction de ces champs, ou pas encore configuré.
     const appartementIncomplet = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "2",
       type: "T2",
       nombrePiecesPrincipales: 2,

@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BailDocumentDocxModule } from "./bail-document-docx/bail-document-docx.module";
 import { BailLocatairesModule } from "./bail-locataires/bail-locataires.module";
 import { BauxModule } from "./baux/baux.module";
+import { BienModule } from "./bien/bien.module";
 import { CommonModule } from "./common/common.module";
 import { ComptesBancairesSciModule } from "./comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { EncryptionModule } from "./crypto/encryption.module";
@@ -40,6 +41,7 @@ import { VersementsModule } from "./versements/versements.module";
     ScisModule,
     ComptesBancairesSciModule,
     ImmeublesModule,
+    BienModule,
     AppartementsModule,
     EquipementsModule,
     LocatairesModule,

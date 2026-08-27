@@ -6,10 +6,10 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   appartements,
   bailLocataires,
+  bien as bienTable,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   documents,
-  immeubles,
   indicesIrl,
   journalAudit,
   organisations,
@@ -28,13 +28,13 @@ import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module"
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { GarantsModule } from "../garants/garants.module";
 import { GarantsService } from "../garants/garants.service";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
@@ -75,7 +75,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let locatairesService: LocatairesService;
   let garantsService: GarantsService;
@@ -99,7 +99,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         LocatairesModule,
         GarantsModule,
@@ -114,7 +114,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     locatairesService = moduleRef.get(LocatairesService);
     garantsService = moduleRef.get(GarantsService);
@@ -166,7 +166,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     await scisService.update(sci.id, { telephone: "0555555555", estFamiliale: true });
 
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Docx Test",
       adresse: "17 avenue du Test",
@@ -177,11 +179,11 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
     // annee_construction n'est exposée par aucun DTO à ce jour (gap
     // pré-existant, voir le rapport de ce chantier) — écriture directe en
-    // base pour ce test, en attendant que le formulaire immeuble l'expose.
-    await db.update(immeubles).set({ anneeConstruction: 1998 }).where(eq(immeubles.id, immeuble.id));
+    // base pour ce test, en attendant que le formulaire bien l'expose.
+    await db.update(bienTable).set({ anneeConstruction: 1998 }).where(eq(bienTable.id, bien.id));
 
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "rdc",
       type: "T3",
       surface: "60.00",
@@ -195,7 +197,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       dependancesAnnexes: "Cave"
     });
 
-    return { sci, immeuble, appartement };
+    return { sci, bien, appartement };
   }
 
   // Assemble un dossier complet (SCI, immeuble, appartement, locataire,
@@ -227,7 +229,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
     }
 
-    const { sci, immeuble, appartement } = await creerAppartementDeBase();
+    const { sci, bien, appartement } = await creerAppartementDeBase();
 
     const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
@@ -263,7 +265,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       });
     }
 
-    return { sci, immeuble, appartement, locataire, bail };
+    return { sci, bien, appartement, locataire, bail };
   }
 
   it("génère un .docx complet quand toutes les données requises sont présentes (régime avant le 1er octobre 2026)", async () => {
@@ -410,14 +412,14 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   });
 
   it("bloque avec la liste COMPLÈTE des champs manquants, pas seulement le premier trouvé", async () => {
-    const { immeuble, appartement, bail } = await creerDossierComplet();
+    const { bien, appartement, bail } = await creerDossierComplet();
 
     // Rend PLUSIEURS champs manquants à la fois, sur des entités
     // différentes. equipementCuisine/anneeConstruction ne peuvent pas être
     // remis à null via l'API (un DTO optionnel omis signifie "ne pas
     // modifier", pas "effacer") : écriture directe en base pour simuler
     // une donnée jamais renseignée.
-    await db.update(immeubles).set({ anneeConstruction: null }).where(eq(immeubles.id, immeuble.id));
+    await db.update(bienTable).set({ anneeConstruction: null }).where(eq(bienTable.id, bien.id));
     await db.update(appartements).set({ equipementCuisine: null }).where(eq(appartements.id, appartement.id));
 
     let erreur: unknown;
@@ -752,7 +754,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // compte ici, pas le cycle d'upload chiffré complet (hors sujet pour ce
   // test — voir documents.integration.spec.ts pour l'upload réel).
   async function creerDocumentTest(
-    entiteType: "appartement" | "immeuble",
+    entiteType: "appartement" | "bien",
     entiteId: string,
     categorie: "dpe" | "crep_plomb" | "elec_gaz" | "erp" | "diagnostic",
     archive = false
@@ -769,12 +771,12 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
   }
 
-  it("mentionne les diagnostics présents en pièce annexée, rattachés à l'immeuble ou à l'appartement indifféremment", async () => {
-    const { bail, appartement, immeuble } = await creerDossierComplet();
+  it("mentionne les diagnostics présents en pièce annexée, rattachés au bien ou à l'appartement indifféremment", async () => {
+    const { bail, appartement, bien } = await creerDossierComplet();
     await creerDocumentTest("appartement", appartement.id, "dpe");
     await creerDocumentTest("appartement", appartement.id, "crep_plomb");
-    await creerDocumentTest("immeuble", immeuble.id, "elec_gaz");
-    await creerDocumentTest("immeuble", immeuble.id, "erp");
+    await creerDocumentTest("bien", bien.id, "elec_gaz");
+    await creerDocumentTest("bien", bien.id, "erp");
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})

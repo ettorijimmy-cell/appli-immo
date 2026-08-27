@@ -28,6 +28,8 @@ import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module"
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
@@ -36,8 +38,6 @@ import { DocumentsModule } from "../documents/documents.module";
 import { DocumentsService } from "../documents/documents.service";
 import { EtatsDesLieuxModule } from "../etats-des-lieux/etats-des-lieux.module";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
@@ -95,7 +95,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let locatairesService: LocatairesService;
   let bauxService: BauxService;
@@ -119,7 +119,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         LocatairesModule,
         BauxModule,
@@ -135,7 +135,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     locatairesService = moduleRef.get(LocatairesService);
     bauxService = moduleRef.get(BauxService);
@@ -195,7 +195,9 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
       ville: "Paris"
     });
 
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble EDL Test",
       adresse: "12 rue des Lilas",
@@ -206,7 +208,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     });
 
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "3B",
       type: "T3",
       surface: "55.00",
@@ -245,7 +247,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
 
     const etatDesLieux = await etatsDesLieuxService.create({ bailId: bail.id });
 
-    return { sci, immeuble, appartement, locataireTitulaire, bail, etatDesLieux };
+    return { sci, bien, appartement, locataireTitulaire, bail, etatDesLieux };
   }
 
   // Remplit toutes les sections avec des données réalistes (entrée
@@ -598,7 +600,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
   let cheminModeleCasse: string;
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let locatairesService: LocatairesService;
   let bauxService: BauxService;
@@ -646,7 +648,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         LocatairesModule,
         BauxModule,
@@ -662,7 +664,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     locatairesService = moduleRef.get(LocatairesService);
     bauxService = moduleRef.get(BauxService);
@@ -715,7 +717,9 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
       codePostal: "75001",
       ville: "Paris"
     });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Garde-fou",
       adresse: "1 rue du Test",
@@ -725,7 +729,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 2,

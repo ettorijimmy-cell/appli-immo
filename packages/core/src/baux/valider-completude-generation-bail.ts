@@ -25,7 +25,17 @@
  * `irlEstPerime` vrai sur la plus récente) — jamais un texte à compléter
  * inséré dans le document, la génération bloque comme pour tout autre
  * champ manquant.
+ *
+ * Pour un bien non résidentiel (parking/bureau/local_commercial, voir
+ * `estTypeResidentiel`), le document actuel (contrat-type résidentiel,
+ * décret n° 2015-587) ne s'applique pas : la génération est bloquée par un
+ * message dédié, AVANT toute autre vérification — jamais une liste vide
+ * (faussement "complet") ni une exigence de champs sans objet
+ * (équipement de cuisine, nombre de pièces... pour un parking) — audit du
+ * 2026-08-27, docs/backlog.md.
  */
+
+import { estTypeResidentiel, type TypeBien } from "../biens/type-bien";
 
 export interface DonneesCompletudeSci {
   telephone: string | null;
@@ -62,6 +72,7 @@ export interface DonneesCompletudeGarant {
 }
 
 export interface DonneesCompletudeGenerationBail {
+  bienType: TypeBien;
   sci: DonneesCompletudeSci;
   immeuble: DonneesCompletudeImmeuble;
   appartement: DonneesCompletudeAppartement;
@@ -71,6 +82,10 @@ export interface DonneesCompletudeGenerationBail {
 }
 
 export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenerationBail): string[] {
+  if (!estTypeResidentiel(donnees.bienType)) {
+    return ["Génération de bail non disponible pour ce type de bien"];
+  }
+
   const manquants: string[] = [];
 
   if (donnees.sci.telephone === null) {

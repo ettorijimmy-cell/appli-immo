@@ -2,6 +2,7 @@ import { IsIn, IsInt, IsNumberString, IsOptional, IsString, Max, Min, MinLength 
 
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
+const TYPES_ENERGIE = ["electrique", "gaz", "les_deux"] as const;
 // "archive" en est exclu : l'archivage passe exclusivement par l'endpoint
 // dédié /appartements/:id/archiver, qui pose aussi archivedAt — un statut
 // "archive" posé ici casserait l'invariant archive <=> archivedAt renseigné.
@@ -48,6 +49,14 @@ export class UpdateAppartementDto {
   @IsOptional()
   @IsIn(MODES_PRODUCTION)
   modeEauChaude?: (typeof MODES_PRODUCTION)[number];
+
+  // Bug corrigé le 2026-08-27 (audit champs conditionnels, docs/backlog.md) :
+  // colonne appartements.type_energie sans aucun chemin d'écriture
+  // applicatif jusqu'ici (aucun DTO ne l'exposait), alors qu'elle est déjà
+  // lue par EtatDesLieuxDocumentDocxService.
+  @IsOptional()
+  @IsIn(TYPES_ENERGIE)
+  typeEnergie?: (typeof TYPES_ENERGIE)[number];
 
   // Composition réelle du logement (module État des lieux) — source de
   // vérité pour le nombre d'étapes du parcours mobile et le plafond

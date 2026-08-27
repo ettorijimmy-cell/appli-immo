@@ -13,8 +13,8 @@ export class AppartementsController {
   }
 
   @Get()
-  findAll(@Query("immeubleId") immeubleId?: string) {
-    return this.appartementsService.findAll(immeubleId);
+  findAll(@Query("bienId") bienId?: string) {
+    return this.appartementsService.findAll(bienId);
   }
 
   @Get(":id")

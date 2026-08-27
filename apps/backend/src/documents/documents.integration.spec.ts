@@ -19,12 +19,12 @@ import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
@@ -48,7 +48,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let documentsService: DocumentsService;
   let requestContextService: RequestContextService;
@@ -78,7 +78,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         DocumentsModule
       ]
@@ -88,7 +88,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     documentsService = moduleRef.get(DocumentsService);
     requestContextService = moduleRef.get(RequestContextService);
@@ -118,15 +118,19 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     userId = user.id;
 
     const sci = await scisService.create(userId, { nom: "SCI Documents Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Documents Test",
       adresse: "1 rue des Documents",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 3,

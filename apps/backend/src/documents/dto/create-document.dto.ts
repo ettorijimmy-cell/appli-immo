@@ -8,7 +8,12 @@ export const DOCUMENT_ENTITE_TYPES = [
   "locataire",
   "bail",
   "etat_des_lieux",
-  "garant"
+  "garant",
+  // Migration bien (2026-08-26, docs/backlog.md) : seul chemin possible
+  // pour rattacher un document à un bien créé via BienService, y compris
+  // un immeuble créé après cette date — 'immeuble' reste réservé aux
+  // documents déjà rattachés à une ligne immeubles existante.
+  "bien"
 ] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 

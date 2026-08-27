@@ -3,6 +3,7 @@ import { calculerStatutEtatDesLieux, validerCompletudeEtatDesLieux } from "core"
 import {
   appartements,
   baux,
+  bien,
   elementsInventaireMeuble,
   etatDesLieuxCles,
   etatDesLieuxCompteurs,
@@ -221,6 +222,7 @@ export class EtatsDesLieuxService {
     }
     const [appartement] = await this.db
       .select({
+        bienId: appartements.bienId,
         nombreChambres: appartements.nombreChambres,
         nombreSallesDeBain: appartements.nombreSallesDeBain,
         nombreWc: appartements.nombreWc
@@ -231,12 +233,16 @@ export class EtatsDesLieuxService {
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }
+    const [bienParent] = await this.db.select({ type: bien.type }).from(bien).where(eq(bien.id, appartement.bienId)).limit(1);
+    if (!bienParent) {
+      throw new NotFoundException("Bien introuvable");
+    }
     // Étape obligatoire AVANT toute création : la composition réelle du
     // logement pilote le nombre d'étapes du parcours mobile pas-à-pas —
     // jamais un état des lieux démarré à zéro étape ou deviné (même
     // principe que validerCompletudeGenerationBail pour la génération du
     // bail, packages/core).
-    const champsManquants = validerCompletudeEtatDesLieux(appartement);
+    const champsManquants = validerCompletudeEtatDesLieux({ ...appartement, bienType: bienParent.type });
     if (champsManquants.length > 0) {
       throw new BadRequestException({
         message: `Configuration de l'appartement incomplète : ${champsManquants.join(", ")}`,

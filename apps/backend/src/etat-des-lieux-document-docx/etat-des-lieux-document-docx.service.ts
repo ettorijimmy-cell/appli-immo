@@ -13,9 +13,9 @@ import {
   appartements,
   bailLocataires,
   baux,
+  bien,
   elementsInventaireMeuble,
   equipements,
-  immeubles,
   locataires,
   scis,
   type Database
@@ -199,15 +199,14 @@ export class EtatDesLieuxDocumentDocxService {
     if (!appartement) {
       throw new NotFoundException("Appartement introuvable");
     }
-    const [immeuble] = await this.db
-      .select()
-      .from(immeubles)
-      .where(eq(immeubles.id, appartement.immeubleId))
-      .limit(1);
-    if (!immeuble) {
-      throw new NotFoundException("Immeuble introuvable");
+    const [bienRow] = await this.db.select().from(bien).where(eq(bien.id, appartement.bienId)).limit(1);
+    if (!bienRow) {
+      throw new NotFoundException("Bien introuvable");
     }
-    const [sci] = await this.db.select().from(scis).where(eq(scis.id, immeuble.sciId)).limit(1);
+    if (!bienRow.sciId) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    const [sci] = await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
     }
@@ -236,6 +235,7 @@ export class EtatDesLieuxDocumentDocxService {
     // seulement le premier trouvé (même principe que
     // validerCompletudeGenerationBail côté bail).
     const donneesCompletude: DonneesCompletudeEtatDesLieuxAppartement = {
+      bienType: bienRow.type,
       nombreChambres: appartement.nombreChambres,
       nombreSallesDeBain: appartement.nombreSallesDeBain,
       nombreWc: appartement.nombreWc
@@ -438,7 +438,7 @@ export class EtatDesLieuxDocumentDocxService {
     const donneesBalises: Record<string, unknown> = {
       "Nom de la SCI": sci.nom,
       "Adresse de la SCI": formaterAdresse(sci.adresse, sci.codePostal, sci.ville),
-      "Adresse de l’appartement": formaterAdresse(immeuble.adresse, immeuble.codePostal, immeuble.ville),
+      "Adresse de l’appartement": formaterAdresse(bienRow.adresse, bienRow.codePostal, bienRow.ville),
       "Nom prénom du locataire": formaterListeNoms(locatairesDuBail.map((l) => `${l.prenom} ${l.nom}`)),
 
       "Date début bail": donnees.dateEntree ?? VIDE,

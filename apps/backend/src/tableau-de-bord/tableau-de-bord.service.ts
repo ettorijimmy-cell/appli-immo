@@ -21,9 +21,9 @@ import {
   appartements,
   bailLocataires,
   baux,
+  bien,
   documents,
   garants,
-  immeubles,
   paiements,
   remboursements,
   scis,
@@ -344,12 +344,12 @@ export class TableauDeBordService {
     const dateReference = dateDuJour();
 
     // --- Appartements : DPE/élec-gaz/CREP/ERP, rattachés à l'appartement OU
-    // à son immeuble parent (même logique de détection que
+    // à son bien parent (même logique de détection que
     // BailDocumentDocxService). Appartements archivés exclus : un bien qui
     // ne fait plus partie du parc n'a plus besoin d'être diagnostiqué.
     const tousAppartements = await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
     const appartementIds = tousAppartements.map((a) => a.id);
-    const immeubleIds = [...new Set(tousAppartements.map((a) => a.immeubleId))];
+    const bienIds = [...new Set(tousAppartements.map((a) => a.bienId))];
 
     const documentsDiagnostics =
       appartementIds.length > 0
@@ -360,7 +360,7 @@ export class TableauDeBordService {
               and(
                 or(
                   and(eq(documents.entiteType, "appartement"), inArray(documents.entiteId, appartementIds)),
-                  and(eq(documents.entiteType, "immeuble"), inArray(documents.entiteId, immeubleIds))
+                  and(eq(documents.entiteType, "bien"), inArray(documents.entiteId, bienIds))
                 ),
                 inArray(documents.categorie, [...CATEGORIES_DIAGNOSTIC_APPARTEMENT])
               )
@@ -369,20 +369,20 @@ export class TableauDeBordService {
         : [];
 
     const documentsParAppartement = new Map<string, DocumentPourCompletude[]>();
-    const documentsParImmeuble = new Map<string, DocumentPourCompletude[]>();
+    const documentsParBien = new Map<string, DocumentPourCompletude[]>();
     for (const d of documentsDiagnostics) {
-      const cible = d.entiteType === "immeuble" ? documentsParImmeuble : documentsParAppartement;
+      const cible = d.entiteType === "appartement" ? documentsParAppartement : documentsParBien;
       const liste = cible.get(d.entiteId) ?? [];
       liste.push(mapDocumentPourCompletude(d));
       cible.set(d.entiteId, liste);
     }
 
     const appartementsChecklist = tousAppartements.reduce<
-      Array<{ appartementId: string; immeubleId: string; categoriesManquantes: string[] }>
+      Array<{ appartementId: string; bienId: string | null; categoriesManquantes: string[] }>
     >((liste, appartement) => {
       const documentsCombines = [
         ...(documentsParAppartement.get(appartement.id) ?? []),
-        ...(documentsParImmeuble.get(appartement.immeubleId) ?? [])
+        ...(documentsParBien.get(appartement.bienId) ?? [])
       ];
       const completude = evaluerCompletudeCategories(
         documentsCombines,
@@ -391,7 +391,7 @@ export class TableauDeBordService {
       );
       const categoriesManquantes = completude.filter((c) => c.document === null).map((c) => c.categorie);
       if (categoriesManquantes.length > 0) {
-        liste.push({ appartementId: appartement.id, immeubleId: appartement.immeubleId, categoriesManquantes });
+        liste.push({ appartementId: appartement.id, bienId: appartement.bienId, categoriesManquantes });
       }
       return liste;
     }, []);
@@ -495,7 +495,7 @@ export class TableauDeBordService {
         .where(
           or(
             and(eq(documents.entiteType, "appartement"), eq(documents.entiteId, entiteId)),
-            and(eq(documents.entiteType, "immeuble"), eq(documents.entiteId, appartement.immeubleId))
+            and(eq(documents.entiteType, "bien"), eq(documents.entiteId, appartement.bienId))
           )
         )
         .orderBy(desc(documents.createdAt));
@@ -518,18 +518,29 @@ export class TableauDeBordService {
   }
 
   async getSynthese(periodeDebut: string, periodeFin: string) {
-    // Volontairement AUCUN filtre archivedAt sur scis/immeubles/appartements
+    // Volontairement AUCUN filtre archivedAt sur scis/bien/appartements
     // ici : le revenu perçu sur la période est un fait historique, jamais
     // invalidé par un archivage survenu APRÈS coup (ex. appartement vendu
-    // le mois suivant). Sans ça, les totaux SCI/immeuble divergeraient
+    // le mois suivant). Sans ça, les totaux SCI/bien divergeraient
     // silencieusement de getRevenusLocatifs dès qu'un bien quitte le
     // portefeuille — voir docs/data-dictionary.md, section Tableau de bord.
     // Le statut archivé est renvoyé (`archive: boolean`) pour permettre au
     // frontend de masquer la LIGNE de détail par défaut (ArchiveToggle,
     // comme ailleurs dans l'app), sans jamais faire varier les totaux.
-    const [tousLesScis, tousLesImmeubles, tousLesAppartements, tousLesBaux, versementsPeriode] = await Promise.all([
+    //
+    // Migré le 2026-08-26 (migration bien, Étape 4) : hiérarchie construite
+    // depuis bien/appartements.bien_id, plus immeubles/appartements.
+    // immeuble_id — sans ce changement, tout appartement créé après cette
+    // date (bien_id seul renseigné, AppartementsService n'écrit plus
+    // immeuble_id) disparaissait silencieusement de cette synthèse. Ne
+    // couvre que les biens rattachés à une SCI (bien.sci_id), exactement
+    // comme le comportement précédent avec immeubles.sci_id NOT NULL — un
+    // bien en nom propre (proprietaire_type='personne_physique') n'a pas
+    // sa place dans cette vue organisée par SCI, avant comme après cette
+    // migration (pas une régression introduite ici).
+    const [tousLesScis, tousLesBiens, tousLesAppartements, tousLesBaux, versementsPeriode] = await Promise.all([
       this.db.select().from(scis),
-      this.db.select().from(immeubles),
+      this.db.select().from(bien),
       this.db.select().from(appartements),
       this.db.select().from(baux),
       this.db
@@ -600,10 +611,10 @@ export class TableauDeBordService {
     }
 
     return tousLesScis.map((sci) => {
-      const immeublesDeCetteSci = tousLesImmeubles.filter((immeuble) => immeuble.sciId === sci.id);
-      const immeublesCalcules = immeublesDeCetteSci.map((immeuble) => {
-        const appartementsDeCetImmeuble = tousLesAppartements.filter((a) => a.immeubleId === immeuble.id);
-        const appartementsResultat = appartementsDeCetImmeuble.map((appartement) => {
+      const biensDeCetteSci = tousLesBiens.filter((b) => b.sciId === sci.id);
+      const biensCalcules = biensDeCetteSci.map((b) => {
+        const appartementsDeCeBien = tousLesAppartements.filter((a) => a.bienId === b.id);
+        const appartementsResultat = appartementsDeCeBien.map((appartement) => {
           const synthese = syntheseParAppartement.get(appartement.id);
           return {
             id: appartement.id,
@@ -614,40 +625,40 @@ export class TableauDeBordService {
             archive: appartement.archivedAt !== null
           };
         });
-        const revenuNetImmeubleCentimes = appartementsResultat.reduce(
+        const revenuNetBienCentimes = appartementsResultat.reduce(
           (total, a) => total + montantEnCentimes(a.revenuNet),
           0
         );
         const idsExclusOccupation = new Set(
-          appartementsDeCetImmeuble.filter((a) => estArchiveAvantPeriode(a.archivedAt)).map((a) => a.id)
+          appartementsDeCeBien.filter((a) => estArchiveAvantPeriode(a.archivedAt)).map((a) => a.id)
         );
         const appartementsPourOccupation = appartementsResultat.filter((a) => !idsExclusOccupation.has(a.id));
-        const tauxOccupationImmeuble =
+        const tauxOccupationBien =
           appartementsPourOccupation.length > 0
             ? appartementsPourOccupation.reduce((total, a) => total + a.tauxOccupation, 0) /
               appartementsPourOccupation.length
             : 0;
         return {
           resultat: {
-            id: immeuble.id,
-            nom: immeuble.nom,
-            revenuNet: centimesVersMontant(revenuNetImmeubleCentimes),
-            tauxOccupation: Number(tauxOccupationImmeuble.toFixed(4)),
-            archive: immeuble.archivedAt !== null,
+            id: b.id,
+            nom: b.nom ?? b.adresse,
+            revenuNet: centimesVersMontant(revenuNetBienCentimes),
+            tauxOccupation: Number(tauxOccupationBien.toFixed(4)),
+            archive: b.archivedAt !== null,
             appartements: appartementsResultat
           },
           nbPourOccupation: appartementsPourOccupation.length
         };
       });
-      const immeublesResultat = immeublesCalcules.map((i) => i.resultat);
-      const revenuNetSciCentimes = immeublesResultat.reduce((total, i) => total + montantEnCentimes(i.revenuNet), 0);
-      const appartementsTotalPourOccupation = immeublesCalcules.reduce(
+      const biensResultat = biensCalcules.map((i) => i.resultat);
+      const revenuNetSciCentimes = biensResultat.reduce((total, i) => total + montantEnCentimes(i.revenuNet), 0);
+      const appartementsTotalPourOccupation = biensCalcules.reduce(
         (total, i) => total + i.nbPourOccupation,
         0
       );
       const tauxOccupationSci =
         appartementsTotalPourOccupation > 0
-          ? immeublesCalcules.reduce(
+          ? biensCalcules.reduce(
               (total, i) => total + i.resultat.tauxOccupation * i.nbPourOccupation,
               0
             ) / appartementsTotalPourOccupation
@@ -658,7 +669,7 @@ export class TableauDeBordService {
         revenuNet: centimesVersMontant(revenuNetSciCentimes),
         tauxOccupation: Number(tauxOccupationSci.toFixed(4)),
         archive: sci.archivedAt !== null,
-        immeubles: immeublesResultat
+        biens: biensResultat
       };
     });
   }

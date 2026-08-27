@@ -24,13 +24,13 @@ import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
 import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module";
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { GarantsModule } from "../garants/garants.module";
 import { GarantsService } from "../garants/garants.service";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
@@ -52,7 +52,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let locatairesService: LocatairesService;
   let garantsService: GarantsService;
@@ -74,7 +74,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         LocatairesModule,
         GarantsModule,
@@ -87,7 +87,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     locatairesService = moduleRef.get(LocatairesService);
     garantsService = moduleRef.get(GarantsService);
@@ -120,15 +120,19 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     userId = user.id;
 
     const sci = await scisService.create(userId, { nom: "SCI Baux Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Baux Test",
       adresse: "1 rue du Bail",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 3,
@@ -515,15 +519,19 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       // Appartement SANS loyer_reference : preremplirLoyerBail ne peut alors
       // rien préremplir, loyer_mensuel reste null.
       const sciSansLoyer = await scisService.create(userId, { nom: "SCI Sans Loyer", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-      const immeubleSansLoyer = await immeublesService.create({
+      const bienSansLoyer = await bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "sci",
         sciId: sciSansLoyer.id,
         nom: "Immeuble Sans Loyer",
         adresse: "9 rue du Test",
+        codePostal: "75001",
+        ville: "Paris",
         typeHabitat: "collectif",
         regimeJuridique: "copropriete"
       });
       const appartementSansLoyer = await appartementsService.create({
-        immeubleId: immeubleSansLoyer.id,
+        bienId: bienSansLoyer.id,
         numero: "9",
         type: "T1",
         nombrePiecesPrincipales: 3,

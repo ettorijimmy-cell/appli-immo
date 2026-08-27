@@ -3,10 +3,11 @@ import { calculerStatutDocument } from "core";
 import {
   appartements,
   baux,
+  bien,
   documents,
   etatsDesLieux,
   garants,
-  immeubles,
+  immeublesLegacy,
   locataires,
   mettreAJourAvecAudit,
   scis,
@@ -279,9 +280,9 @@ export class DocumentsService {
           return this.db.select({ id: scis.id }).from(scis).where(eq(scis.id, entiteId)).limit(1);
         case "immeuble":
           return this.db
-            .select({ id: immeubles.id })
-            .from(immeubles)
-            .where(eq(immeubles.id, entiteId))
+            .select({ id: immeublesLegacy.id })
+            .from(immeublesLegacy)
+            .where(eq(immeublesLegacy.id, entiteId))
             .limit(1);
         case "appartement":
           return this.db
@@ -305,6 +306,13 @@ export class DocumentsService {
             .limit(1);
         case "garant":
           return this.db.select({ id: garants.id }).from(garants).where(eq(garants.id, entiteId)).limit(1);
+        // Migration bien (2026-08-26, docs/backlog.md) : sans ce cas, aucun
+        // document ne peut se rattacher à un bien non-immeuble (maison,
+        // parking, bureau, local_commercial), ni à un immeuble créé après
+        // cette date via BienService — 'immeuble' ci-dessus reste réservé
+        // aux documents déjà rattachés à une ligne immeubles existante.
+        case "bien":
+          return this.db.select({ id: bien.id }).from(bien).where(eq(bien.id, entiteId)).limit(1);
       }
     })();
     if (!ligne) {

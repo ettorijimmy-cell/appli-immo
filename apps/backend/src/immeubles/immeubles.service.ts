@@ -1,77 +1,31 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { immeubles, mettreAJourAvecAudit, type Database } from "db";
+import { Injectable, Inject } from "@nestjs/common";
+import { immeublesLegacy, type Database } from "db";
 import { eq } from "drizzle-orm";
-import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import type { CreateImmeubleDto } from "./dto/create-immeuble.dto";
-import type { UpdateImmeubleDto } from "./dto/update-immeuble.dto";
 
-type ImmeubleRow = typeof immeubles.$inferSelect;
+type ImmeubleRow = typeof immeublesLegacy.$inferSelect;
 
+// Lecture seule depuis le 2026-08-27 (décision utilisateur, docs/backlog.md,
+// audit du sort de la table immeubles) : create()/update()/archive()
+// retirés, la table a été renommée immeubles_legacy et ne doit plus
+// recevoir aucune écriture applicative. findAll()/findById() restent
+// nécessaires à documents.service.ts (verifierEntiteExiste, cas
+// entiteType === 'immeuble') pour que les documents historiques déjà
+// rattachés à une ligne de cette table restent consultables.
 @Injectable()
 export class ImmeublesService {
-  constructor(
-    @Inject(DATABASE_CONNECTION) private readonly db: Database,
-    private readonly requestContext: RequestContextService
-  ) {}
-
-  async create(dto: CreateImmeubleDto) {
-    const [immeuble] = await this.db
-      .insert(immeubles)
-      .values({
-        sciId: dto.sciId,
-        nom: dto.nom,
-        adresse: dto.adresse,
-        codePostal: dto.codePostal,
-        ville: dto.ville,
-        typeHabitat: dto.typeHabitat,
-        regimeJuridique: dto.regimeJuridique
-      })
-      .returning();
-    if (!immeuble) {
-      throw new Error("Échec de la création de l'immeuble");
-    }
-    return this.versDto(immeuble);
-  }
+  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
 
   async findAll(sciId?: string) {
     const lignes = sciId
-      ? await this.db.select().from(immeubles).where(eq(immeubles.sciId, sciId))
-      : await this.db.select().from(immeubles);
+      ? await this.db.select().from(immeublesLegacy).where(eq(immeublesLegacy.sciId, sciId))
+      : await this.db.select().from(immeublesLegacy);
     return lignes.map((immeuble) => this.versDto(immeuble));
   }
 
   async findById(id: string) {
-    const [immeuble] = await this.db.select().from(immeubles).where(eq(immeubles.id, id)).limit(1);
+    const [immeuble] = await this.db.select().from(immeublesLegacy).where(eq(immeublesLegacy.id, id)).limit(1);
     return immeuble ? this.versDto(immeuble) : null;
-  }
-
-  async update(id: string, dto: UpdateImmeubleDto) {
-    const [immeuble] = await mettreAJourAvecAudit(
-      this.db,
-      immeubles,
-      id,
-      { ...dto },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!immeuble) {
-      throw new NotFoundException("Immeuble introuvable");
-    }
-    return this.versDto(immeuble as ImmeubleRow);
-  }
-
-  async archive(id: string) {
-    const [immeuble] = await mettreAJourAvecAudit(
-      this.db,
-      immeubles,
-      id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!immeuble) {
-      throw new NotFoundException("Immeuble introuvable");
-    }
-    return this.versDto(immeuble as ImmeubleRow);
   }
 
   private versDto(immeuble: ImmeubleRow) {

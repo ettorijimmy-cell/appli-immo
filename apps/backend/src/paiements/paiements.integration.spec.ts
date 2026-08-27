@@ -13,11 +13,11 @@ import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module"
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
@@ -44,7 +44,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let locatairesService: LocatairesService;
   let bauxService: BauxService;
@@ -67,7 +67,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         LocatairesModule,
         BauxModule,
@@ -81,7 +81,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     locatairesService = moduleRef.get(LocatairesService);
     bauxService = moduleRef.get(BauxService);
@@ -115,15 +115,19 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     userId = user.id;
 
     const sci = await scisService.create(userId, { nom: "SCI Paiements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Paiements Test",
       adresse: "1 rue des Paiements",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 3,
@@ -458,15 +462,19 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     // Second appartement/bail avec exactement le même montant et la même
     // échéance, mais un locataire différent.
     const sci2 = await scisService.create(userId, { nom: "SCI Paiements Test 2", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble2 = await immeublesService.create({
+    const bien2 = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci2.id,
       nom: "Immeuble Paiements Test 2",
       adresse: "2 rue des Paiements",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement2 = await appartementsService.create({
-      immeubleId: immeuble2.id,
+      bienId: bien2.id,
       numero: "2",
       type: "T2",
       nombrePiecesPrincipales: 3,

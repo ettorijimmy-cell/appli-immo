@@ -13,11 +13,11 @@ import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { PaiementsModule } from "../paiements/paiements.module";
 import { PaiementsService } from "../paiements/paiements.service";
 import { ScisModule } from "../scis/scis.module";
@@ -53,7 +53,7 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let paiementsService: PaiementsService;
@@ -76,7 +76,7 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         BauxModule,
         PaiementsModule,
@@ -89,7 +89,7 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     paiementsService = moduleRef.get(PaiementsService);
@@ -120,15 +120,19 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
     }
 
     const sci = await scisService.create(user.id, { nom: "SCI Remboursements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Remboursements Test",
       adresse: "1 rue des Remboursements",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 3,

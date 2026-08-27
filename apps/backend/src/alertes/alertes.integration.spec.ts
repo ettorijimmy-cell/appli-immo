@@ -19,13 +19,13 @@ import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { EquipementsModule } from "../equipements/equipements.module";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { PaiementsModule } from "../paiements/paiements.module";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
@@ -48,7 +48,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let versementsService: VersementsService;
@@ -71,7 +71,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         BauxModule,
         PaiementsModule,
@@ -86,7 +86,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     versementsService = moduleRef.get(VersementsService);
@@ -117,15 +117,19 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
     }
 
     const sci = await scisService.create(user.id, { nom: "SCI Alertes Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Alertes Test",
       adresse: "1 rue des Alertes",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "1",
       type: "T2",
       nombrePiecesPrincipales: 3,

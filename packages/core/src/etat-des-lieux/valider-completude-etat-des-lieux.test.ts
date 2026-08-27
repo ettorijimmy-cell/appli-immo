@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { validerCompletudeEtatDesLieux } from "./valider-completude-etat-des-lieux";
 
-const COMPLET = { nombreChambres: 2, nombreSallesDeBain: 1, nombreWc: 1 };
+const COMPLET = { bienType: "immeuble" as const, nombreChambres: 2, nombreSallesDeBain: 1, nombreWc: 1 };
 
 describe("validerCompletudeEtatDesLieux", () => {
   it("aucun champ manquant quand la composition est complète, y compris à zéro", () => {
     expect(validerCompletudeEtatDesLieux(COMPLET)).toEqual([]);
-    expect(validerCompletudeEtatDesLieux({ nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0 })).toEqual([]);
+    expect(
+      validerCompletudeEtatDesLieux({ ...COMPLET, nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0 })
+    ).toEqual([]);
   });
 
   it("liste les trois champs manquants en un seul appel, pas un blocage au premier trouvé", () => {
     const manquants = validerCompletudeEtatDesLieux({
+      ...COMPLET,
       nombreChambres: null,
       nombreSallesDeBain: null,
       nombreWc: null
@@ -27,4 +30,17 @@ describe("validerCompletudeEtatDesLieux", () => {
       "Nombre de WC de l'appartement"
     ]);
   });
+
+  it.each(["parking", "bureau", "local_commercial"] as const)(
+    "bloque avec un message dédié pour un bien non résidentiel (%s), sans exiger la composition",
+    (bienType) => {
+      const manquants = validerCompletudeEtatDesLieux({
+        bienType,
+        nombreChambres: null,
+        nombreSallesDeBain: null,
+        nombreWc: null
+      });
+      expect(manquants).toEqual(["État des lieux non disponible pour ce type de bien"]);
+    }
+  );
 });

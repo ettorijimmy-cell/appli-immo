@@ -9,9 +9,19 @@
  * `autrePiece1`/`autrePiece2` ne sont volontairement PAS vérifiés ici :
  * 0, 1 ou 2 "autres pièces" sont des états légitimes, jamais traités
  * comme une donnée manquante.
+ *
+ * Pour un bien non résidentiel (parking/bureau/local_commercial, voir
+ * `estTypeResidentiel`), la notion même de composition du logement
+ * (chambres/salles de bain/WC) n'a pas de sens : l'état des lieux est
+ * bloqué par un message dédié, AVANT toute autre vérification — même
+ * principe que `validerCompletudeGenerationBail` (audit du 2026-08-27,
+ * docs/backlog.md).
  */
 
+import { estTypeResidentiel, type TypeBien } from "../biens/type-bien";
+
 export interface DonneesCompletudeEtatDesLieuxAppartement {
+  bienType: TypeBien;
   nombreChambres: number | null;
   nombreSallesDeBain: number | null;
   nombreWc: number | null;
@@ -20,6 +30,10 @@ export interface DonneesCompletudeEtatDesLieuxAppartement {
 export function validerCompletudeEtatDesLieux(
   appartement: DonneesCompletudeEtatDesLieuxAppartement
 ): string[] {
+  if (!estTypeResidentiel(appartement.bienType)) {
+    return ["État des lieux non disponible pour ce type de bien"];
+  }
+
   const manquants: string[] = [];
 
   if (appartement.nombreChambres === null) {

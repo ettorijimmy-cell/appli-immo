@@ -3,10 +3,11 @@ import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
   appartements,
+  bien as bienTable,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   equipements,
-  immeubles,
+  immeublesLegacy,
   organisations,
   scis,
   utilisateurs,
@@ -17,6 +18,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
@@ -30,26 +33,34 @@ import { ImmeublesModule } from "./immeubles.module";
 import { ImmeublesService } from "./immeubles.service";
 
 // Vérifie le critère de complétion du Module 2 (docs/backlog.md) :
-// parcourir la hiérarchie SCI -> immeuble -> appartement, plus l'archivage
-// (jamais de suppression physique) pour les trois entités. Tourne contre
-// un vrai Postgres — voir scis.integration.spec.ts pour le fonctionnement
-// général.
+// parcourir la hiérarchie SCI -> Bien -> Appartement -> Équipement, plus
+// l'archivage (jamais de suppression physique) pour les entités
+// concernées. Migré le 2026-08-26 (Étape 4, migration bien,
+// docs/backlog.md) : AppartementsService ne s'appuie plus sur immeubleId,
+// toute création d'appartement passe désormais par un bien (BienService).
+// ImmeublesService passé en lecture seule le 2026-08-27 (table immeubles
+// renommée immeubles_legacy, décision utilisateur, docs/backlog.md) :
+// findAll()/findById() couverts ci-dessous, indépendamment de la chaîne
+// appartement. Tourne contre un vrai Postgres — voir
+// scis.integration.spec.ts pour le fonctionnement général.
 //
 // Chaque test tourne dans sa propre transaction annulée dans afterEach (voir
 // test-utils/transactional-test.ts), setup (organisation + utilisateur)
 // compris.
-describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipement (intégration Postgres réelle)", () => {
+describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
   let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let equipementsService: EquipementsService;
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
 
   beforeEach(async () => {
     db = await begin();
@@ -63,6 +74,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
         AuthModule,
         ScisModule,
         ImmeublesModule,
+        BienModule,
         AppartementsModule,
         EquipementsModule
       ]
@@ -73,6 +85,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
 
     scisService = moduleRef.get(ScisService);
     immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     equipementsService = moduleRef.get(EquipementsService);
     requestContextService = moduleRef.get(RequestContextService);
@@ -100,6 +113,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
     userId = user.id;
+    organisationId = organisation.id;
   });
 
   afterEach(async () => {
@@ -111,36 +125,41 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     await rootDb.$client.end();
   });
 
-  it("parcourt la hiérarchie complète SCI -> Immeuble -> Appartement -> Équipement", async () => {
+  it("parcourt la hiérarchie complète SCI -> Bien -> Appartement -> Équipement", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Patrimoine Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
 
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Test",
       adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
-    expect(immeuble.sciId).toBe(sci.id);
+    expect(bien.sciId).toBe(sci.id);
+    expect(bien.organisationId).toBe(organisationId);
 
-    const immeublesForSci = await immeublesService.findAll(sci.id);
-    expect(immeublesForSci).toHaveLength(1);
-    expect(immeublesForSci[0]?.id).toBe(immeuble.id);
+    const biensForSci = await bienService.findAll(sci.id);
+    expect(biensForSci).toHaveLength(1);
+    expect(biensForSci[0]?.id).toBe(bien.id);
 
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "12",
       type: "T2",
       nombrePiecesPrincipales: 3,
       modeChauffage: "individuel",
       modeEauChaude: "individuel"
     });
-    expect(appartement.immeubleId).toBe(immeuble.id);
+    expect(appartement.bienId).toBe(bien.id);
     expect(appartement.statut).toBe("vacant");
 
-    const appartementsForImmeuble = await appartementsService.findAll(immeuble.id);
-    expect(appartementsForImmeuble).toHaveLength(1);
-    expect(appartementsForImmeuble[0]?.id).toBe(appartement.id);
+    const appartementsForBien = await appartementsService.findAll(bien.id);
+    expect(appartementsForBien).toHaveLength(1);
+    expect(appartementsForBien[0]?.id).toBe(appartement.id);
 
     const equipement = await equipementsService.create({
       appartementId: appartement.id,
@@ -154,41 +173,86 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     expect(equipementsForAppartement[0]?.id).toBe(equipement.id);
   });
 
-  it("met à jour et archive un immeuble sans le supprimer", async () => {
+  it("met à jour et archive un bien de type immeuble sans le supprimer", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Archive Test", regimeFiscal: "IS", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble à modifier",
       adresse: "2 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
 
-    const updated = await immeublesService.update(immeuble.id, { ville: "Paris" });
+    const updated = await bienService.update(bien.id, { ville: "Paris" });
     expect(updated.ville).toBe("Paris");
     expect(updated.statut).toBe("actif");
 
-    const archived = await immeublesService.archive(immeuble.id);
+    const archived = await bienService.archive(bien.id);
     expect(archived.statut).toBe("archive");
     expect(archived.archivedAt).not.toBeNull();
+  });
 
-    // Jamais de suppression physique : la ligne existe toujours.
-    const [rowEnBase] = await db.select().from(immeubles).where(eq(immeubles.id, immeuble.id));
-    expect(rowEnBase).toBeDefined();
-    expect(rowEnBase?.statut).toBe("archive");
+  it("crée un bien de type maison en nom propre, sans SCI ni bien_immeuble_detail", async () => {
+    const bien = await bienService.create(userId, {
+      type: "maison",
+      proprietaireType: "personne_physique",
+      adresse: "10 rue de la Maison",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    expect(bien.sciId).toBeNull();
+    expect(bien.proprietaireType).toBe("personne_physique");
+    // Dérivés automatiquement pour type='maison' (2026-08-26) — jamais
+    // null, aucune saisie possible.
+    expect(bien.typeHabitat).toBe("individuel");
+    expect(bien.regimeJuridique).toBe("mono_propriete");
+
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "unique",
+      type: "T4",
+      nombrePiecesPrincipales: 5,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    expect(appartement.bienId).toBe(bien.id);
+  });
+
+  it("rejette un bien de type immeuble sans sciId ni personne_physique cohérente", async () => {
+    await expect(
+      bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "sci",
+        // sciId manquant volontairement
+        nom: "Immeuble Invalide",
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      })
+    ).rejects.toThrow();
   });
 
   it("permet le passage manuel vacant -> travaux, indépendamment de tout bail", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Appt Travaux", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Appt Travaux",
       adresse: "5 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "5",
       type: "T2",
       nombrePiecesPrincipales: 3,
@@ -206,15 +270,19 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
 
   it("un appartement archivé passe par statut='archive', jamais supprimé", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Appt Archive", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Appt Archive",
       adresse: "3 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "3",
       type: "T1",
       nombrePiecesPrincipales: 3,
@@ -234,15 +302,19 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
 
   it("un équipement archivé n'a pas de statut dédié mais garde archivedAt", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Equip Archive", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Equip Archive",
       adresse: "4 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "4",
       type: "T3",
       nombrePiecesPrincipales: 3,
@@ -262,18 +334,18 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
 
   // Non-régression de la migration "Édition d'un bail" (docs/backlog.md) :
   // les nouveaux champs nullables (adresse SCI, type_habitat/regime_
-  // juridique/annee_construction immeuble, identifiant_fiscal/nombre_
+  // juridique/annee_construction, identifiant_fiscal/nombre_
   // pieces_principales/mode_chauffage/mode_eau_chaude appartement) ne
   // doivent rien casser sur le fonctionnement existant — une fiche créée
   // avant l'introduction de ces champs (ou avant qu'ils deviennent
   // obligatoires à la création, voir docs/data-dictionary.md) doit rester
   // pleinement consultable et modifiable, avec ces colonnes à NULL plutôt
-  // que de bloquer quoi que ce soit. `CreateSciDto`/`CreateImmeubleDto`/
+  // que de bloquer quoi que ce soit. `CreateSciDto`/`CreateBienDto`/
   // `CreateAppartementDto` rendent désormais ces champs obligatoires pour
   // toute nouvelle fiche — on simule donc ici une fiche pré-existante via
   // une écriture directe en base après création, plutôt que par le DTO qui
   // ne permet plus cet état pour une fiche neuve.
-  it("SCI/immeuble/appartement créés et modifiés à l'ancienne restent pleinement fonctionnels après la migration des champs d'édition de bail", async () => {
+  it("SCI/bien/appartement créés et modifiés à l'ancienne restent pleinement fonctionnels après la migration des champs d'édition de bail", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI Migration Bail",
       regimeFiscal: "IR",
@@ -286,24 +358,28 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     expect(sciRelue?.adresse).toBeNull();
     expect(sciRelue?.nomGerant).toBeNull();
 
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Migration Bail",
       adresse: "7 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     await db
-      .update(immeubles)
+      .update(bienTable)
       .set({ typeHabitat: null, regimeJuridique: null })
-      .where(eq(immeubles.id, immeuble.id));
-    const immeubleRelu = await immeublesService.findById(immeuble.id);
-    expect(immeubleRelu?.typeHabitat).toBeNull();
-    expect(immeubleRelu?.regimeJuridique).toBeNull();
-    expect(immeubleRelu?.anneeConstruction).toBeNull();
+      .where(eq(bienTable.id, bien.id));
+    const bienRelu = await bienService.findById(bien.id);
+    expect(bienRelu?.typeHabitat).toBeNull();
+    expect(bienRelu?.regimeJuridique).toBeNull();
+    expect(bienRelu?.anneeConstruction).toBeNull();
 
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "7",
       type: "T2",
       nombrePiecesPrincipales: 3,
@@ -327,9 +403,8 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     const misAJour = await appartementsService.update(appartement.id, { surface: "42.50" });
     expect(misAJour.surface).toBe("42.50");
 
-    const immeubleMisAJour = await immeublesService.update(immeuble.id, { ville: "Marseille" });
-    expect(immeubleMisAJour.ville).toBe("Marseille");
-    expect(immeubleMisAJour.typeHabitat).toBeNull();
+    const bienMisAJour = await bienService.update(bien.id, { ville: "Marseille" });
+    expect(bienMisAJour.ville).toBe("Marseille");
   });
 
   it("findAll()/findById()/update() ne renvoient jamais identifiant_fiscal (donnée fiscale nominative, jamais exposée via l'API)", async () => {
@@ -340,17 +415,21 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
       codePostal: "75001",
       ville: "Paris"
     });
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Identifiant Fiscal",
       adresse: "9 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
     const [appartement] = await db
       .insert(appartements)
       .values({
-        immeubleId: immeuble.id,
+        bienId: bien.id,
         numero: "9",
         type: "T2",
         identifiantFiscal: "MARQUEUR-IDENTIFIANT-FISCAL-TEST",
@@ -366,7 +445,7 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     const relu = await appartementsService.findById(appartement.id);
     expect(relu).not.toHaveProperty("identifiantFiscal");
 
-    const [depuisFindAll] = await appartementsService.findAll(immeuble.id);
+    const [depuisFindAll] = await appartementsService.findAll(bien.id);
     expect(depuisFindAll).not.toHaveProperty("identifiantFiscal");
 
     const misAJour = await appartementsService.update(appartement.id, { surface: "30.00" });
@@ -379,39 +458,41 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
   // RequestContextService.executerAvecContexte, normalement posé par
   // UserContextInterceptor pour chaque requête HTTP réelle),
   // mettreAJourAvecAudit doit le reporter sur updated_by et incrémenter
-  // version — sans qu'AppartementsService/ImmeublesService y pensent.
+  // version — sans qu'AppartementsService/BienService y pensent. La
+  // couverture sur ImmeublesService a été retirée le 2026-08-27 en même
+  // temps que ses méthodes update()/archive() (table immeubles renommée
+  // immeubles_legacy, lecture seule — décision utilisateur, docs/backlog.md) ;
+  // BienService (table bien) suffit à couvrir mettreAJourAvecAudit.
   it("timbre updated_by et incrémente version quand un utilisateur est présent dans le contexte requête", async () => {
     const sci = await scisService.create(userId, { nom: "SCI Audit Stamp", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    const immeuble = await immeublesService.create({
+
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
-      nom: "Immeuble Audit Stamp",
-      adresse: "6 rue de Test",
+      nom: "Bien Audit Stamp",
+      adresse: "8 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
-    expect(immeuble.version).toBe(1);
-    expect(immeuble.updatedBy).toBeNull();
+    expect(bien.version).toBe(1);
+    expect(bien.updatedBy).toBeNull();
 
-    const misAJour = await requestContextService.executerAvecContexte(
+    const bienMisAJour = await requestContextService.executerAvecContexte(
       { utilisateurId: userId },
-      () => immeublesService.update(immeuble.id, { ville: "Lyon" })
+      () => bienService.update(bien.id, { ville: "Lyon" })
     );
-    expect(misAJour.updatedBy).toBe(userId);
-    expect(misAJour.version).toBe(2);
-
-    const archive = await requestContextService.executerAvecContexte(
-      { utilisateurId: userId },
-      () => immeublesService.archive(immeuble.id)
-    );
-    expect(archive.updatedBy).toBe(userId);
-    expect(archive.version).toBe(3);
+    expect(bienMisAJour.updatedBy).toBe(userId);
+    expect(bienMisAJour.version).toBe(2);
 
     // Hors contexte (comme tous les autres tests de ce fichier) :
     // updated_by reste null plutôt que de faire échouer l'écriture — pas de
     // contexte requête possible en dehors d'une vraie requête HTTP (scripts,
     // tests directs).
     const appartement = await appartementsService.create({
-      immeubleId: immeuble.id,
+      bienId: bien.id,
       numero: "6",
       type: "T2",
       nombrePiecesPrincipales: 3,
@@ -421,5 +502,155 @@ describe("Patrimoine — hiérarchie SCI -> Immeuble -> Appartement -> Équipeme
     const misAJourSansContexte = await appartementsService.update(appartement.id, { statut: "travaux" });
     expect(misAJourSansContexte.updatedBy).toBeNull();
     expect(misAJourSansContexte.version).toBe(2);
+  });
+
+  // ImmeublesService lecture seule (2026-08-27, table renommée
+  // immeubles_legacy) : plus de create() pour peupler le fixture, insertion
+  // directe en base — simule une ligne historique, exactement ce que
+  // findAll()/findById() doivent encore pouvoir résoudre.
+  it("ImmeublesService reste capable de lire une ligne existante (findAll/findById) malgré le retrait de create/update/archive", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Immeuble Lecture Seule",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const [immeubleExistant] = await db
+      .insert(immeublesLegacy)
+      .values({
+        sciId: sci.id,
+        nom: "Immeuble Historique",
+        adresse: "13 rue de Test",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      })
+      .returning();
+    if (!immeubleExistant) {
+      throw new Error("Échec de l'insertion de l'immeuble de test");
+    }
+
+    const trouve = await immeublesService.findById(immeubleExistant.id);
+    expect(trouve?.nom).toBe("Immeuble Historique");
+
+    const listeParSci = await immeublesService.findAll(sci.id);
+    expect(listeParSci.map((i) => i.id)).toContain(immeubleExistant.id);
+  });
+
+  // Audit champs conditionnels par type de bien (docs/backlog.md,
+  // 2026-08-27) : type/nombrePiecesPrincipales/modeChauffage/modeEauChaude/
+  // typeEnergie sont des mentions du contrat-type résidentiel (décret
+  // n° 2015-587), sans objet pour un parking/bureau/local_commercial.
+  it("crée l'appartement unique d'un bien non résidentiel (parking) sans aucun champ d'habitation", async () => {
+    const bien = await bienService.create(userId, {
+      type: "parking",
+      proprietaireType: "personne_physique",
+      adresse: "1 avenue du Parking",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "individuel",
+      regimeJuridique: "mono_propriete"
+    });
+    const appartement = await appartementsService.create({ bienId: bien.id, numero: "P1" });
+    expect(appartement.type).toBeNull();
+    expect(appartement.nombrePiecesPrincipales).toBeNull();
+    expect(appartement.modeChauffage).toBeNull();
+    expect(appartement.modeEauChaude).toBeNull();
+    expect(appartement.typeEnergie).toBeNull();
+  });
+
+  it("rejette la création d'un appartement pour un bien non résidentiel si un champ d'habitation est fourni", async () => {
+    const bien = await bienService.create(userId, {
+      type: "parking",
+      proprietaireType: "personne_physique",
+      adresse: "2 avenue du Parking",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "individuel",
+      regimeJuridique: "mono_propriete"
+    });
+    await expect(
+      appartementsService.create({ bienId: bien.id, numero: "P2", type: "T2" })
+    ).rejects.toThrow(/sans objet pour un bien non résidentiel/);
+  });
+
+  it("rejette la mise à jour d'un appartement non résidentiel si un champ d'habitation est fourni, même typeEnergie seul", async () => {
+    const bien = await bienService.create(userId, {
+      type: "bureau",
+      proprietaireType: "personne_physique",
+      adresse: "1 rue du Bureau",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "individuel",
+      regimeJuridique: "mono_propriete"
+    });
+    const appartement = await appartementsService.create({ bienId: bien.id, numero: "B1" });
+
+    await expect(appartementsService.update(appartement.id, { typeEnergie: "electrique" })).rejects.toThrow(
+      /sans objet pour un bien non résidentiel/
+    );
+    await expect(appartementsService.update(appartement.id, { modeChauffage: "individuel" })).rejects.toThrow(
+      /sans objet pour un bien non résidentiel/
+    );
+    // Un champ hors liste (surface) reste modifiable normalement.
+    const misAJour = await appartementsService.update(appartement.id, { surface: "12.00" });
+    expect(misAJour.surface).toBe("12.00");
+  });
+
+  it("rejette la création d'un appartement résidentiel auquel il manque un champ obligatoire", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Champs Manquants",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Champs Manquants",
+      adresse: "11 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    await expect(
+      appartementsService.create({ bienId: bien.id, numero: "11", type: "T2", modeChauffage: "individuel" })
+    ).rejects.toThrow(/obligatoires manquants pour un appartement résidentiel/);
+  });
+
+  it("typeEnergie reste settable pour un appartement résidentiel (correction du bug : aucun DTO ne l'exposait avant)", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Type Energie",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Type Energie",
+      adresse: "12 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "12",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    expect(appartement.typeEnergie).toBeNull();
+
+    const misAJour = await appartementsService.update(appartement.id, { typeEnergie: "gaz" });
+    expect(misAJour.typeEnergie).toBe("gaz");
   });
 });

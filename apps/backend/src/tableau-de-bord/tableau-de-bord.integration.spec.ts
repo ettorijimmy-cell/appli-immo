@@ -27,10 +27,10 @@ import { BauxService } from "../baux/baux.service";
 import { CommonModule } from "../common/common.module";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { GarantsModule } from "../garants/garants.module";
 import { GarantsService } from "../garants/garants.service";
-import { ImmeublesModule } from "../immeubles/immeubles.module";
-import { ImmeublesService } from "../immeubles/immeubles.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { PaiementsModule } from "../paiements/paiements.module";
@@ -55,7 +55,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
   let moduleRef: TestingModule;
   let scisService: ScisService;
-  let immeublesService: ImmeublesService;
+  let bienService: BienService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let paiementsService: PaiementsService;
@@ -67,7 +67,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   let tableauDeBordService: TableauDeBordService;
   let db: Database;
   let sciId: string;
-  let immeubleId: string;
+  let bienId: string;
 
   beforeEach(async () => {
     db = await begin();
@@ -82,7 +82,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         UsersModule,
         AuthModule,
         ScisModule,
-        ImmeublesModule,
+        BienModule,
         AppartementsModule,
         BauxModule,
         PaiementsModule,
@@ -99,7 +99,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       .compile();
 
     scisService = moduleRef.get(ScisService);
-    immeublesService = moduleRef.get(ImmeublesService);
+    bienService = moduleRef.get(BienService);
     locatairesService = moduleRef.get(LocatairesService);
     garantsService = moduleRef.get(GarantsService);
     bailLocatairesService = moduleRef.get(BailLocatairesService);
@@ -134,14 +134,18 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     const sci = await scisService.create(user.id, { nom: "SCI Dashboard Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     sciId = sci.id;
-    const immeuble = await immeublesService.create({
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
       sciId: sci.id,
       nom: "Immeuble Dashboard Test",
       adresse: "1 rue du Dashboard",
+      codePostal: "75001",
+      ville: "Paris",
       typeHabitat: "collectif",
       regimeJuridique: "copropriete"
     });
-    immeubleId = immeuble.id;
+    bienId = bien.id;
   });
 
   afterEach(async () => {
@@ -163,7 +167,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       const avant = await tableauDeBordService.getEnTete();
 
       await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "1",
         type: "T2",
         loyerReference: "800.00",
@@ -172,7 +176,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         modeEauChaude: "individuel"
       });
       await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "2",
         type: "T2",
         loyerReference: "700.00",
@@ -181,7 +185,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         modeEauChaude: "individuel"
       });
       const appartementVacant = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "3",
         type: "T1",
         nombrePiecesPrincipales: 3,
@@ -190,7 +194,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         loyerReference: "500.00"
       });
       const appartementTravaux = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "4",
         type: "T1",
         nombrePiecesPrincipales: 3,
@@ -203,7 +207,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // Loue les deux premiers via un vrai bail activé (transition réelle,
       // pas un statut forcé) — le troisième reste vacant par défaut.
       for (const numero of ["1", "2"]) {
-        const tousLesAppartements = await appartementsService.findAll(immeubleId);
+        const tousLesAppartements = await appartementsService.findAll(bienId);
         const appartement = tousLesAppartements.find((a) => a.numero === numero)!;
         const bail = await bauxService.create({
           appartementId: appartement.id,
@@ -229,7 +233,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     it("sépare impayés (échéance passée) et échéances à venir (échéance future), jamais les deux à la fois", async () => {
       const avant = await tableauDeBordService.getCartes();
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "10",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -310,7 +314,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       const aoutAvant = avant.parMois.find((m) => m.mois === "2026-08")!;
 
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "20",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -382,7 +386,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   describe("getSynthese", () => {
     it("calcule un revenu net et un taux d'occupation cohérents pour un appartement continuellement loué", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "30",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -417,7 +421,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
       const sci = synthese.find((s) => s.id === sciId)!;
-      const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
+      const immeuble = sci.biens.find((i) => i.id === bienId)!;
       const appartementResultat = immeuble.appartements.find((a) => a.id === appartement.id)!;
 
       expect(appartementResultat.revenuNet).toBe("800.00");
@@ -428,7 +432,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("un appartement jamais loué a un taux d'occupation de 0 et un revenu net de 0", async () => {
       await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "31",
         type: "T1",
         loyerReference: "500.00",
@@ -439,7 +443,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
       const sci = synthese.find((s) => s.id === sciId)!;
-      const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
+      const immeuble = sci.biens.find((i) => i.id === bienId)!;
       const appartementResultat = immeuble.appartements.find((a) => a.numero === "31")!;
 
       expect(appartementResultat.revenuNet).toBe("0.00");
@@ -448,7 +452,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("moyenne pondérée correcte au niveau immeuble avec plusieurs appartements à taux d'occupation différents", async () => {
       const appartementOccupe = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "40",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -469,7 +473,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       }
       // Second appartement, jamais loué sur la période (0% d'occupation).
       await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "41",
         type: "T1",
         loyerReference: "500.00",
@@ -480,7 +484,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
       const synthese = await tableauDeBordService.getSynthese("2026-01-01", "2026-01-31");
       const sci = synthese.find((s) => s.id === sciId)!;
-      const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
+      const immeuble = sci.biens.find((i) => i.id === bienId)!;
       const occupe = immeuble.appartements.find((a) => a.numero === "40")!;
       const vacant = immeuble.appartements.find((a) => a.numero === "41")!;
 
@@ -496,7 +500,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("scénario A102 : un appartement archivé APRÈS avoir perçu un loyer reste compté dans les totaux SCI/immeuble, jamais silencieusement exclu", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "A102",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -542,7 +546,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       const synthese = await tableauDeBordService.getSynthese("2026-06-01", "2026-06-30");
 
       const sci = synthese.find((s) => s.id === sciId)!;
-      const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
+      const immeuble = sci.biens.find((i) => i.id === bienId)!;
       const appartementResultat = immeuble.appartements.find((a) => a.id === appartement.id)!;
 
       // L'appartement archivé reste présent, marqué comme tel, avec son
@@ -576,7 +580,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // Appartement témoin : bail actif couvrant toute la période
       // interrogée -> occupation réelle 100 % sur cette période.
       const appartementTemoin = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "A200",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -598,7 +602,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // rapport à cet archivage) : retiré du parc AVANT que la période ne
       // commence.
       const appartementArchive = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "A201",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -611,7 +615,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       // Période interrogée entièrement postérieure à l'archivage.
       const synthese = await tableauDeBordService.getSynthese(debutPeriode, finPeriode);
       const sci = synthese.find((s) => s.id === sciId)!;
-      const immeuble = sci.immeubles.find((i) => i.id === immeubleId)!;
+      const immeuble = sci.biens.find((i) => i.id === bienId)!;
 
       const resultatArchive = immeuble.appartements.find((a) => a.id === appartementArchive.id)!;
       const resultatTemoin = immeuble.appartements.find((a) => a.id === appartementTemoin.id)!;
@@ -634,7 +638,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   describe("getRemboursementsEnAttente", () => {
     it("signale un trop-perçu tant qu'aucun remboursement ne le couvre", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "40",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -674,7 +678,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("disparaît une fois qu'un remboursement couvre intégralement le trop-perçu", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "41",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -721,7 +725,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("reste visible même si l'appartement est archivé après la résiliation (même principe que le fix Module 7)", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "42",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -759,7 +763,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("ne signale rien pour un bail résilié sans trop-perçu", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "43",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -789,7 +793,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   // getChecklistDocumentaire et getCompletudeDocumentaire — même détection
   // réutilisée côté service (evaluerCompletudeCategories, packages/core).
   async function creerDocumentTest(
-    entiteType: "appartement" | "immeuble" | "locataire" | "garant",
+    entiteType: "appartement" | "bien" | "locataire" | "garant",
     entiteId: string,
     categorie: "dpe" | "elec_gaz" | "crep_plomb" | "erp" | "piece_identite",
     options: { archive?: boolean; dateExpiration?: string } = {}
@@ -810,7 +814,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   describe("getChecklistDocumentaire", () => {
     it("appartement : signale les 4 catégories manquantes, les retire une à une (immeuble parent inclus), ignore un CREP expiré", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "50",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -827,7 +831,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await creerDocumentTest("appartement", appartement.id, "dpe");
       // Élec/gaz rattaché à l'IMMEUBLE parent — même logique de détection
       // que BailDocumentDocxService (immeuble ou appartement, indifféremment).
-      await creerDocumentTest("immeuble", immeubleId, "elec_gaz");
+      await creerDocumentTest("bien", bienId, "elec_gaz");
       // CREP présent mais expiré : compte comme MANQUANT pour la checklist
       // (contrairement à l'annexe du bail, qui ne regarde que l'archivage).
       await creerDocumentTest("appartement", appartement.id, "crep_plomb", { dateExpiration: "2020-01-01" });
@@ -846,7 +850,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("appartement archivé : jamais signalé, même sans aucun diagnostic", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "53",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -862,7 +866,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("locataires : actif sans pièce apparaît, retiré du bail ou bail non actif n'apparaissent jamais", async () => {
       const appartementActif = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "54",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -880,7 +884,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await bauxService.activer(bailActif.id);
 
       const appartementBrouillon = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "55",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -930,7 +934,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("garants : actif sans pièce apparaît, garant archivé ou bail non actif n'apparaissent jamais", async () => {
       const appartementActif = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "56",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -948,7 +952,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await bauxService.activer(bailActif.id);
 
       const appartementBrouillon = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "57",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -998,7 +1002,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   describe("getCompletudeDocumentaire", () => {
     it("appartement : renvoie les 4 catégories, present via l'appartement OU l'immeuble parent, sinon document null", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "60",
         type: "T2",
         nombrePiecesPrincipales: 3,
@@ -1012,7 +1016,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       expect(completude.every((c) => c.document === null)).toBe(true);
 
       await creerDocumentTest("appartement", appartement.id, "dpe");
-      await creerDocumentTest("immeuble", immeubleId, "elec_gaz");
+      await creerDocumentTest("bien", bienId, "elec_gaz");
 
       completude = await tableauDeBordService.getCompletudeDocumentaire("appartement", appartement.id);
       const dpe = completude.find((c) => c.categorie === "dpe");
@@ -1042,7 +1046,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
 
     it("garant : une seule catégorie (pièce d'identité), present ou manquant", async () => {
       const appartement = await appartementsService.create({
-        immeubleId,
+        bienId,
         numero: "61",
         type: "T2",
         nombrePiecesPrincipales: 3,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validerCompletudeGenerationBail, type DonneesCompletudeGenerationBail } from "./valider-completude-generation-bail";
 
 const DONNEES_COMPLETES: DonneesCompletudeGenerationBail = {
+  bienType: "immeuble",
   sci: {
     telephone: "0555555555",
     estFamiliale: true,
@@ -125,6 +126,7 @@ describe("validerCompletudeGenerationBail", () => {
 
   it("cumule tous les champs manquants dans un seul appel, pas un blocage au premier trouvé", () => {
     const manquants = validerCompletudeGenerationBail({
+      bienType: "immeuble",
       sci: { telephone: null, estFamiliale: null, adresse: null, codePostal: null, ville: null },
       immeuble: { anneeConstruction: null, typeHabitat: null, regimeJuridique: null },
       appartement: {
@@ -163,4 +165,22 @@ describe("validerCompletudeGenerationBail", () => {
     expect(manquantsPlusieurs).toContain("Garant 1 — date de naissance");
     expect(manquantsPlusieurs).toContain("Garant 2 — lieu de naissance");
   });
+
+  it.each(["parking", "bureau", "local_commercial"] as const)(
+    "bloque avec un message dédié pour un bien non résidentiel (%s), sans exiger les champs d'habitation",
+    (bienType) => {
+      const manquants = validerCompletudeGenerationBail({
+        ...DONNEES_COMPLETES,
+        bienType,
+        appartement: {
+          equipementCuisine: null,
+          dependancesAnnexes: null,
+          nombrePiecesPrincipales: null,
+          modeChauffage: null,
+          modeEauChaude: null
+        }
+      });
+      expect(manquants).toEqual(["Génération de bail non disponible pour ce type de bien"]);
+    }
+  );
 });

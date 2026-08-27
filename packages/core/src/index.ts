@@ -28,3 +28,4 @@ export * from "./baux/valider-fraicheur-irl";
 export * from "./baux/deduire-nombre-pieces-depuis-type";
 export * from "./etat-des-lieux/calculer-statut-etat-des-lieux";
 export * from "./etat-des-lieux/valider-completude-etat-des-lieux";
+export * from "./biens/type-bien";
