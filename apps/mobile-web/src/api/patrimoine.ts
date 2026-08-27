@@ -15,7 +15,7 @@ export interface Bail {
 
 export interface Appartement {
   id: string;
-  immeubleId: string;
+  bienId: string;
   numero: string;
   nombreChambres: number | null;
   nombreSallesDeBain: number | null;
@@ -24,10 +24,15 @@ export interface Appartement {
   autrePiece2: string | null;
 }
 
-export interface Immeuble {
+// Migration bien (2026-08-26, docs/backlog.md) : remplace Immeuble. nom est
+// nullable (obligatoire uniquement pour type='immeuble' côté backend) —
+// repli d'affichage bien.nom ?? bien.adresse partout où ce type est
+// consommé, jamais un champ vide.
+export interface Bien {
   id: string;
-  sciId: string;
-  nom: string;
+  sciId: string | null;
+  nom: string | null;
+  adresse: string;
 }
 
 export interface Sci {
@@ -60,8 +65,8 @@ export function getAppartement(id: string): Promise<Appartement> {
   return authenticatedFetch<Appartement>(`/appartements/${id}`);
 }
 
-export function getImmeuble(id: string): Promise<Immeuble> {
-  return authenticatedFetch<Immeuble>(`/immeubles/${id}`);
+export function getBien(id: string): Promise<Bien> {
+  return authenticatedFetch<Bien>(`/biens/${id}`);
 }
 
 export function getSci(id: string): Promise<Sci> {
@@ -77,34 +82,37 @@ export function getLocataire(id: string): Promise<Locataire> {
 }
 
 export interface ContexteBail {
-  sciNom: string;
-  immeubleNom: string;
+  sciNom: string | null;
+  bienNom: string;
   appartementNumero: string;
   locatairesNoms: string;
 }
 
 // Même principe que apps/desktop/src/renderer/src/finances/contexte-bail.ts
-// (cascade bail → appartement → immeuble → sci + locataires), sans le
-// cache multi-appels : la sélection de bail mobile enrichit une liste
-// affichée une seule fois, pas un tableau réévalué en boucle.
+// (cascade bail → appartement → bien → sci + locataires), sans le cache
+// multi-appels : la sélection de bail mobile enrichit une liste affichée
+// une seule fois, pas un tableau réévalué en boucle. Migration bien
+// (2026-08-26) : bien.sciId est nullable (bien en nom propre,
+// proprietaireType='personne_physique') — sciNom reste alors null plutôt
+// que d'appeler /scis/:id avec un id absent.
 export async function chargerContexteBail(bail: Bail): Promise<ContexteBail> {
   const [appartement, liens] = await Promise.all([
     getAppartement(bail.appartementId),
     listBailLocataires(bail.id)
   ]);
-  const [immeuble, locataires] = await Promise.all([
-    getImmeuble(appartement.immeubleId),
+  const [bien, locataires] = await Promise.all([
+    getBien(appartement.bienId),
     Promise.all(
       liens
         .filter((lien) => lien.archivedAt === null)
         .map((lien) => getLocataire(lien.locataireId).catch(() => null))
     )
   ]);
-  const sci = await getSci(immeuble.sciId);
+  const sci = bien.sciId ? await getSci(bien.sciId) : null;
 
   return {
-    sciNom: sci.nom,
-    immeubleNom: immeuble.nom,
+    sciNom: sci?.nom ?? null,
+    bienNom: bien.nom ?? bien.adresse,
     appartementNumero: appartement.numero,
     locatairesNoms: locataires
       .filter((l): l is NonNullable<typeof l> => l !== null)

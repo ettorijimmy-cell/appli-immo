@@ -36,7 +36,7 @@ export interface SyntheseAppartement {
   archive: boolean;
 }
 
-export interface SyntheseImmeuble {
+export interface SyntheseBien {
   id: string;
   nom: string;
   revenuNet: string;
@@ -51,7 +51,7 @@ export interface SyntheseSci {
   revenuNet: string;
   tauxOccupation: number;
   archive: boolean;
-  immeubles: SyntheseImmeuble[];
+  biens: SyntheseBien[];
 }
 
 export function getEnTete(): Promise<EnTete> {
@@ -92,7 +92,7 @@ export function getRemboursementsEnAttente(): Promise<RemboursementEnAttente[]> 
 
 export interface ChecklistAppartement {
   appartementId: string;
-  immeubleId: string;
+  bienId: string | null;
   categoriesManquantes: string[];
 }
 

@@ -1,21 +1,36 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { archiveSci, createSci, listScis, type CreateSciInput, type Sci } from "../scis/api";
+import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
+import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 
-export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }): React.JSX.Element {
+export function ScisListView({
+  onSelect,
+  onSelectBien
+}: {
+  onSelect: (sciId: string) => void;
+  onSelectBien: (bienId: string) => void;
+}): React.JSX.Element {
   const [scis, setScis] = useState<Sci[]>([]);
+  const [biensNomPropre, setBiensNomPropre] = useState<Bien[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showSciForm, setShowSciForm] = useState(false);
+  const [showBienWizard, setShowBienWizard] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      setScis(await listScis());
+      const [toutesScis, tousBiens] = await Promise.all([listScis(), listBiens()]);
+      setScis(toutesScis);
+      // Un bien en nom propre (proprietaireType='personne_physique') n'a
+      // aucune SCI parente : c'est le seul endroit où il apparaît dans la
+      // navigation (docs/backlog.md, migration bien, Étape 5).
+      setBiensNomPropre(tousBiens.filter((bien) => bien.proprietaireType === "personne_physique"));
       setError(null);
     } catch {
-      setError("Impossible de charger les SCI");
+      setError("Impossible de charger le patrimoine");
     } finally {
       setIsLoading(false);
     }
@@ -25,33 +40,42 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
     void refresh();
   }, [refresh]);
 
-  async function handleArchive(id: string): Promise<void> {
+  async function handleArchiveSci(id: string): Promise<void> {
     await archiveSci(id);
     await refresh();
   }
 
+  async function handleArchiveBien(id: string): Promise<void> {
+    await archiveBien(id);
+    await refresh();
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Patrimoine</h1>
         <div className="flex items-center gap-4">
           <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((value) => !value)} />
           <button
             type="button"
-            onClick={() => setShowForm((value) => !value)}
+            onClick={() => setShowBienWizard((value) => !value)}
             className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
           >
-            {showForm ? "Annuler" : "Nouvelle SCI"}
+            {showBienWizard ? "Annuler" : "Nouveau bien"}
           </button>
         </div>
       </div>
 
-      {showForm && (
-        <NewSciForm
+      {showBienWizard && (
+        // Pas de sciId présélectionné ici (contrairement au même flux lancé
+        // depuis SciDetailView) : le propriétaire (SCI ou nom propre) se
+        // choisit à l'étape 1 sans valeur par défaut.
+        <NewBienWizard
           onCreated={() => {
-            setShowForm(false);
+            setShowBienWizard(false);
             void refresh();
           }}
+          onCancel={() => setShowBienWizard(false)}
         />
       )}
 
@@ -61,59 +85,143 @@ export function ScisListView({ onSelect }: { onSelect: (sciId: string) => void }
         </p>
       )}
 
-      {(() => {
-        const visibleScis = showArchived ? scis : scis.filter((sci) => sci.statut !== "archive");
-        return isLoading ? (
-          <p className="text-sm text-slate-500">Chargement…</p>
-        ) : visibleScis.length === 0 ? (
-          <p className="text-sm text-slate-500">Aucune SCI pour le moment.</p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 font-medium">Nom</th>
-                <th className="py-2 font-medium">Régime fiscal</th>
-                <th className="py-2 font-medium">Statut</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {visibleScis.map((sci) => (
-                <tr
-                  key={sci.id}
-                  className={`border-b border-slate-100 ${sci.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
-                >
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelect(sci.id)}
-                      className="text-indigo-700 hover:underline"
-                    >
-                      {sci.nom}
-                    </button>
-                    {sci.statut === "archive" && <ArchiveBadge />}
-                  </td>
-                  <td className="py-2">{sci.regimeFiscal}</td>
-                  <td className="py-2">{sci.statut}</td>
-                  <td className="py-2 text-right">
-                    {sci.statut === "active" && (
+      <div>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">SCI</h2>
+          <button
+            type="button"
+            onClick={() => setShowSciForm((value) => !value)}
+            className="text-sm text-indigo-700 hover:text-indigo-800"
+          >
+            {showSciForm ? "Annuler" : "+ Nouvelle SCI"}
+          </button>
+        </div>
+
+        {showSciForm && (
+          <NewSciForm
+            onCreated={() => {
+              setShowSciForm(false);
+              void refresh();
+            }}
+          />
+        )}
+
+        {(() => {
+          const visibleScis = showArchived ? scis : scis.filter((sci) => sci.statut !== "archive");
+          return isLoading ? (
+            <p className="mt-2 text-sm text-slate-500">Chargement…</p>
+          ) : visibleScis.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Aucune SCI pour le moment.</p>
+          ) : (
+            <table className="mt-2 w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 font-medium">Nom</th>
+                  <th className="py-2 font-medium">Régime fiscal</th>
+                  <th className="py-2 font-medium">Statut</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleScis.map((sci) => (
+                  <tr
+                    key={sci.id}
+                    className={`border-b border-slate-100 ${sci.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  >
+                    <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          void handleArchive(sci.id);
-                        }}
-                        className="text-sm text-slate-500 hover:text-red-600"
+                        onClick={() => onSelect(sci.id)}
+                        className="text-indigo-700 hover:underline"
                       >
-                        Archiver
+                        {sci.nom}
                       </button>
-                    )}
-                  </td>
+                      {sci.statut === "archive" && <ArchiveBadge />}
+                    </td>
+                    <td className="py-2">{sci.regimeFiscal}</td>
+                    <td className="py-2">{sci.statut}</td>
+                    <td className="py-2 text-right">
+                      {sci.statut === "active" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleArchiveSci(sci.id);
+                          }}
+                          className="text-sm text-slate-500 hover:text-red-600"
+                        >
+                          Archiver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700">Biens en nom propre</h2>
+        {(() => {
+          const visibleBiens = showArchived
+            ? biensNomPropre
+            : biensNomPropre.filter((bien) => bien.statut !== "archive");
+          return isLoading ? null : visibleBiens.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Aucun bien en nom propre pour le moment.</p>
+          ) : (
+            <table className="mt-2 w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 font-medium">Nom</th>
+                  <th className="py-2 font-medium">Type</th>
+                  <th className="py-2 font-medium">Adresse</th>
+                  <th className="py-2 font-medium">Statut</th>
+                  <th className="py-2 font-medium" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        );
-      })()}
+              </thead>
+              <tbody>
+                {visibleBiens.map((bien) => (
+                  <tr
+                    key={bien.id}
+                    className={`border-b border-slate-100 ${bien.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  >
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        onClick={() => onSelectBien(bien.id)}
+                        className="text-indigo-700 hover:underline"
+                      >
+                        {libelleBien(bien)}
+                      </button>
+                      {bien.statut === "archive" && <ArchiveBadge />}
+                    </td>
+                    <td className="py-2">{BIEN_TYPE_LABELS[bien.type]}</td>
+                    <td className="py-2">
+                      {bien.adresse}
+                      {bien.ville ? `, ${bien.ville}` : ""}
+                    </td>
+                    <td className="py-2">{bien.statut}</td>
+                    <td className="py-2 text-right">
+                      {bien.statut === "actif" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleArchiveBien(bien.id);
+                          }}
+                          className="text-sm text-slate-500 hover:text-red-600"
+                        >
+                          Archiver
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
+      </div>
     </div>
   );
 }
@@ -156,7 +264,7 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
       onSubmit={(event) => {
         void handleSubmit(event);
       }}
-      className="space-y-4 rounded-lg border border-slate-200 p-4"
+      className="mt-2 space-y-4 rounded-lg border border-slate-200 p-4"
     >
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">

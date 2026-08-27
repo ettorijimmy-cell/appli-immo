@@ -26,7 +26,7 @@ export function RemboursementsEnAttenteView(): React.JSX.Element | null {
         const contexte = await chargerContexteBail(r.bailId, caches);
         map.set(
           r.bailId,
-          `${contexte.sciNom} / ${contexte.immeubleNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms || "sans locataire"}`
+          `${contexte.sciNom ? `${contexte.sciNom} / ` : ""}${contexte.bienNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms || "sans locataire"}`
         );
       })
     );

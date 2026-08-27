@@ -3,6 +3,7 @@ import { authenticatedFetch } from "../lib/authenticated-fetch";
 export type DocumentEntiteType =
   | "sci"
   | "immeuble"
+  | "bien"
   | "appartement"
   | "locataire"
   | "bail"

@@ -1,5 +1,5 @@
 import { listBaux, listLocataires, type Bail } from "../locataires/api";
-import { listAppartements, listImmeubles, type Immeuble } from "../patrimoine/api";
+import { libelleBien, listAppartements, listBiens, type Bien } from "../patrimoine/api";
 import { listScis } from "../scis/api";
 import type { EntiteRecherchable } from "./recherche";
 
@@ -8,14 +8,14 @@ import type { EntiteRecherchable } from "./recherche";
 // palette est trivial, et évite d'introduire un vrai moteur de recherche
 // côté backend pour ce module.
 export async function chargerEntitesRecherchables(): Promise<EntiteRecherchable[]> {
-  const [scis, immeubles, appartements, locataires] = await Promise.all([
+  const [scis, biens, appartements, locataires] = await Promise.all([
     listScis(),
-    listImmeubles(),
+    listBiens(),
     listAppartements(),
     listLocataires()
   ]);
 
-  const immeublesParId = new Map<string, Immeuble>(immeubles.map((immeuble) => [immeuble.id, immeuble]));
+  const biensParId = new Map<string, Bien>(biens.map((bien) => [bien.id, bien]));
 
   const entitesScis: EntiteRecherchable[] = scis
     .filter((sci) => sci.statut !== "archive")
@@ -27,27 +27,27 @@ export async function chargerEntitesRecherchables(): Promise<EntiteRecherchable[
       texteRecherchable: sci.nom.toLowerCase()
     }));
 
-  const entitesImmeubles: EntiteRecherchable[] = immeubles
-    .filter((immeuble) => immeuble.statut !== "archive")
-    .map((immeuble) => ({
-      type: "immeuble",
-      id: immeuble.id,
-      libelle: immeuble.nom,
-      detail: "Immeuble",
-      texteRecherchable: `${immeuble.nom} ${immeuble.adresse}`.toLowerCase()
+  const entitesBiens: EntiteRecherchable[] = biens
+    .filter((bien) => bien.statut !== "archive")
+    .map((bien) => ({
+      type: "bien",
+      id: bien.id,
+      libelle: libelleBien(bien),
+      detail: "Bien",
+      texteRecherchable: `${libelleBien(bien)} ${bien.adresse}`.toLowerCase()
     }));
 
   const entitesAppartements: EntiteRecherchable[] = appartements
     .filter((appartement) => appartement.statut !== "archive")
     .map((appartement) => {
-      const immeuble = immeublesParId.get(appartement.immeubleId);
-      const nomImmeuble = immeuble?.nom ?? "immeuble inconnu";
+      const bien = biensParId.get(appartement.bienId);
+      const nomBien = bien ? libelleBien(bien) : "bien inconnu";
       return {
         type: "appartement",
         id: appartement.id,
-        libelle: `Appartement ${appartement.numero} — ${nomImmeuble}`,
+        libelle: `Appartement ${appartement.numero} — ${nomBien}`,
         detail: "Appartement",
-        texteRecherchable: `${appartement.numero} ${nomImmeuble}`.toLowerCase()
+        texteRecherchable: `${appartement.numero} ${nomBien}`.toLowerCase()
       };
     });
 
@@ -61,7 +61,7 @@ export async function chargerEntitesRecherchables(): Promise<EntiteRecherchable[
       texteRecherchable: `${locataire.prenom} ${locataire.nom}`.toLowerCase()
     }));
 
-  return [...entitesScis, ...entitesImmeubles, ...entitesAppartements, ...entitesLocataires];
+  return [...entitesScis, ...entitesBiens, ...entitesAppartements, ...entitesLocataires];
 }
 
 export interface BailRecherchable {
@@ -77,8 +77,8 @@ const STATUTS_BAIL_ELIGIBLES_PAIEMENT = new Set(["actif", "preavis"]);
 // juste une réutilisation du même filtre de statut.
 export async function chargerBauxRecherchables(
   chargerContexte: (bailId: string) => Promise<{
-    sciNom: string;
-    immeubleNom: string;
+    sciNom: string | null;
+    bienNom: string;
     appartementNumero: string;
     locatairesNoms: string;
   }>
@@ -88,7 +88,7 @@ export async function chargerBauxRecherchables(
   return Promise.all(
     eligibles.map(async (bail) => {
       const contexte = await chargerContexte(bail.id);
-      const libelle = `${contexte.sciNom} / ${contexte.immeubleNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms || "sans locataire"}`;
+      const libelle = `${contexte.sciNom ? `${contexte.sciNom} / ` : ""}${contexte.bienNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms || "sans locataire"}`;
       return { bail, libelle, texteRecherchable: libelle.toLowerCase() };
     })
   );

@@ -1,7 +1,7 @@
 import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
-import { getAppartement, getImmeuble } from "../patrimoine/api";
+import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getSci } from "../scis/api";
 import type { DocumentEntiteType } from "./api";
 
@@ -17,7 +17,11 @@ export function creerCacheLibellesEntites(): CacheLibellesEntites {
 // Un document ne porte que entiteType/entiteId (lien polymorphe) : reconstitue
 // un libellé affichable pour l'écran Documents centralisé, avec mise en cache
 // le temps d'un enrichissement de liste (voir finances/contexte-bail.ts pour
-// le même principe appliqué aux paiements).
+// le même principe appliqué aux paiements). Migré le 2026-08-26 (migration
+// bien, Étape 5) : 'immeuble' reste réservé aux documents déjà rattachés à
+// une ligne immeubles existante ; 'bien' est le chemin pour tout document
+// rattaché à un bien créé via BienService (y compris un immeuble créé après
+// cette date).
 export async function resoudreLibelleEntite(
   entiteType: DocumentEntiteType,
   entiteId: string,
@@ -37,13 +41,17 @@ export async function resoudreLibelleEntite(
           return sci.nom;
         }
         case "immeuble": {
-          const immeuble = await getImmeuble(entiteId);
-          return immeuble.nom;
+          const bien = await getBien(entiteId);
+          return libelleBien(bien);
+        }
+        case "bien": {
+          const bien = await getBien(entiteId);
+          return libelleBien(bien);
         }
         case "appartement": {
           const appartement = await getAppartement(entiteId);
-          const immeuble = await getImmeuble(appartement.immeubleId);
-          return `${immeuble.nom} — n°${appartement.numero}`;
+          const bien = await getBien(appartement.bienId);
+          return `${libelleBien(bien)} — n°${appartement.numero}`;
         }
         case "locataire": {
           const locataire = await getLocataire(entiteId);
@@ -51,14 +59,14 @@ export async function resoudreLibelleEntite(
         }
         case "bail": {
           const contexte = await chargerContexteBail(entiteId, cache.contexteBail);
-          return `${contexte.immeubleNom} — n°${contexte.appartementNumero}${
+          return `${contexte.bienNom} — n°${contexte.appartementNumero}${
             contexte.locatairesNoms ? ` (${contexte.locatairesNoms})` : ""
           }`;
         }
         case "etat_des_lieux": {
           const etatDesLieux = await getEtatDesLieuxById(entiteId);
           const contexte = await chargerContexteBail(etatDesLieux.bailId, cache.contexteBail);
-          return `État des lieux — ${contexte.immeubleNom} n°${contexte.appartementNumero}`;
+          return `État des lieux — ${contexte.bienNom} n°${contexte.appartementNumero}`;
         }
         case "garant": {
           const garant = await getGarant(entiteId);

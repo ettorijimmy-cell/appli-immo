@@ -37,7 +37,7 @@ export function BauxPage(): React.JSX.Element {
   }, []);
 
   const filtres = items.filter(({ contexte }) => {
-    const texte = `${contexte.sciNom} ${contexte.immeubleNom} ${contexte.appartementNumero} ${contexte.locatairesNoms}`.toLowerCase();
+    const texte = `${contexte.sciNom ?? ""} ${contexte.bienNom} ${contexte.appartementNumero} ${contexte.locatairesNoms}`.toLowerCase();
     return texte.includes(recherche.toLowerCase());
   });
 
@@ -68,7 +68,8 @@ export function BauxPage(): React.JSX.Element {
               className="w-full rounded-md border border-slate-200 px-4 py-3 text-left"
             >
               <p className="text-base font-medium text-slate-800">
-                {contexte.sciNom} / {contexte.immeubleNom} / n°{contexte.appartementNumero}
+                {contexte.sciNom ? `${contexte.sciNom} / ` : ""}
+                {contexte.bienNom} / n°{contexte.appartementNumero}
               </p>
               <p className="text-sm text-slate-500">
                 {contexte.locatairesNoms || "—"} · {bail.statut}

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { estTypeResidentiel } from "core";
 import {
   archiveEquipement,
   createEquipement,
   getAppartement,
+  getBien,
   listEquipements,
   updateAppartement,
   updateEquipement,
@@ -10,6 +12,8 @@ import {
   type AppartementModeProduction,
   type AppartementStatutModifiable,
   type AppartementType,
+  type Bien,
+  type BienType,
   type Equipement,
   type EquipementType
 } from "./api";
@@ -41,6 +45,7 @@ export function AppartementDetailView({
   ouvrirNouveauBailInitial?: boolean;
 }): React.JSX.Element {
   const [appartement, setAppartement] = useState<Appartement | null>(null);
+  const [bien, setBien] = useState<Bien | null>(null);
   const [equipements, setEquipements] = useState<Equipement[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(ongletInitial);
@@ -51,11 +56,13 @@ export function AppartementDetailView({
 
   const refresh = useCallback(async () => {
     try {
-      const [appartementData, equipementsData] = await Promise.all([
-        getAppartement(appartementId),
+      const appartementData = await getAppartement(appartementId);
+      const [bienData, equipementsData] = await Promise.all([
+        getBien(appartementData.bienId),
         listEquipements(appartementId)
       ]);
       setAppartement(appartementData);
+      setBien(bienData);
       setEquipements(equipementsData);
       setError(null);
     } catch {
@@ -82,14 +89,14 @@ export function AppartementDetailView({
     );
   }
 
-  if (!appartement) {
+  if (!appartement || !bien) {
     return <p className="text-sm text-slate-500">Chargement…</p>;
   }
 
   return (
     <div className="space-y-6">
       <button type="button" onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">
-        ← {"Retour à l'immeuble"}
+        ← {"Retour au bien"}
       </button>
 
       <div className="flex items-center justify-between">
@@ -185,6 +192,7 @@ export function AppartementDetailView({
         isEditing ? (
           <EditAppartementForm
             appartement={appartement}
+            bienType={bien.type}
             onSaved={() => {
               setIsEditing(false);
               void refresh();
@@ -194,7 +202,7 @@ export function AppartementDetailView({
           <dl className="grid grid-cols-2 gap-x-8 text-sm">
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Type</dt>
-              <dd>{appartement.type}</dd>
+              <dd>{appartement.type ?? "—"}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Statut</dt>
@@ -458,13 +466,20 @@ function NewEquipementForm({
 
 function EditAppartementForm({
   appartement,
+  bienType,
   onSaved
 }: {
   appartement: Appartement;
+  bienType: BienType;
   onSaved: () => void;
 }): React.JSX.Element {
+  // type/nombrePiecesPrincipales/modeChauffage/modeEauChaude n'ont pas de
+  // sens pour un bien non résidentiel (parking/bureau/local_commercial) et
+  // sont rejetés par AppartementsService s'ils sont fournis (packages/core,
+  // estTypeResidentiel) — masqués et jamais soumis dans ce cas.
+  const estResidentiel = estTypeResidentiel(bienType);
   const [numero, setNumero] = useState(appartement.numero);
-  const [type, setType] = useState<AppartementType>(appartement.type);
+  const [type, setType] = useState<AppartementType | "">(appartement.type ?? "");
   const [surface, setSurface] = useState(appartement.surface ?? "");
   const [loyerReference, setLoyerReference] = useState(appartement.loyerReference ?? "");
   const [equipementCuisine, setEquipementCuisine] = useState(appartement.equipementCuisine ?? "");
@@ -498,15 +513,15 @@ function EditAppartementForm({
     try {
       await updateAppartement(appartement.id, {
         numero,
-        type,
         statut,
+        ...(estResidentiel && type && { type }),
         ...(surface && { surface }),
         ...(loyerReference && { loyerReference }),
         ...(equipementCuisine && { equipementCuisine }),
         ...(dependancesAnnexes && { dependancesAnnexes }),
-        ...(nombrePiecesPrincipales && { nombrePiecesPrincipales: Number(nombrePiecesPrincipales) }),
-        ...(modeChauffage && { modeChauffage }),
-        ...(modeEauChaude && { modeEauChaude }),
+        ...(estResidentiel && nombrePiecesPrincipales && { nombrePiecesPrincipales: Number(nombrePiecesPrincipales) }),
+        ...(estResidentiel && modeChauffage && { modeChauffage }),
+        ...(estResidentiel && modeEauChaude && { modeEauChaude }),
         // !== "" (pas simplement truthy) : 0 est une valeur légitime ici
         // (ex. studio sans chambre séparée), contrairement aux champs
         // ci-dessus où 0 n'a pas de sens.
@@ -545,23 +560,26 @@ function EditAppartementForm({
           />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-edit-type" className="text-sm font-medium text-slate-700">
-            Type
-          </label>
-          <select
-            id="appartement-edit-type"
-            value={type}
-            onChange={(event) => setType(event.target.value as AppartementType)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            {APPARTEMENT_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+        {estResidentiel && (
+          <div className="space-y-1">
+            <label htmlFor="appartement-edit-type" className="text-sm font-medium text-slate-700">
+              Type
+            </label>
+            <select
+              id="appartement-edit-type"
+              value={type}
+              onChange={(event) => setType(event.target.value as AppartementType | "")}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">Non renseigné</option>
+              {APPARTEMENT_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1">
           <label htmlFor="appartement-edit-surface" className="text-sm font-medium text-slate-700">
@@ -611,57 +629,61 @@ function EditAppartementForm({
           />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-edit-nombre-pieces" className="text-sm font-medium text-slate-700">
-            Nombre de pièces principales
-          </label>
-          <input
-            id="appartement-edit-nombre-pieces"
-            type="number"
-            min={1}
-            value={nombrePiecesPrincipales}
-            onChange={(event) => setNombrePiecesPrincipales(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
+        {estResidentiel && (
+          <>
+            <div className="space-y-1">
+              <label htmlFor="appartement-edit-nombre-pieces" className="text-sm font-medium text-slate-700">
+                Nombre de pièces principales
+              </label>
+              <input
+                id="appartement-edit-nombre-pieces"
+                type="number"
+                min={1}
+                value={nombrePiecesPrincipales}
+                onChange={(event) => setNombrePiecesPrincipales(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-edit-chauffage" className="text-sm font-medium text-slate-700">
-            Chauffage
-          </label>
-          <select
-            id="appartement-edit-chauffage"
-            value={modeChauffage}
-            onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction | "")}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Non renseigné</option>
-            {MODES_PRODUCTION.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="appartement-edit-chauffage" className="text-sm font-medium text-slate-700">
+                Chauffage
+              </label>
+              <select
+                id="appartement-edit-chauffage"
+                value={modeChauffage}
+                onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction | "")}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Non renseigné</option>
+                {MODES_PRODUCTION.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-edit-eau-chaude" className="text-sm font-medium text-slate-700">
-            Eau chaude
-          </label>
-          <select
-            id="appartement-edit-eau-chaude"
-            value={modeEauChaude}
-            onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction | "")}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Non renseigné</option>
-            {MODES_PRODUCTION.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="appartement-edit-eau-chaude" className="text-sm font-medium text-slate-700">
+                Eau chaude
+              </label>
+              <select
+                id="appartement-edit-eau-chaude"
+                value={modeEauChaude}
+                onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction | "")}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Non renseigné</option>
+                {MODES_PRODUCTION.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
 
         <div className="space-y-1">
           <label htmlFor="appartement-edit-nombre-chambres" className="text-sm font-medium text-slate-700">

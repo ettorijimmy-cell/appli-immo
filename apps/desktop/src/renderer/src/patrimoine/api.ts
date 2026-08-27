@@ -1,52 +1,112 @@
 import { authenticatedFetch } from "../lib/authenticated-fetch";
 
-export type ImmeubleTypeHabitat = "collectif" | "individuel";
-export type ImmeubleRegimeJuridique = "mono_propriete" | "copropriete";
+export type BienType = "immeuble" | "maison" | "appartement_isole" | "parking" | "bureau" | "local_commercial";
+export type BienProprietaireType = "sci" | "personne_physique";
+export type BienTypeHabitat = "collectif" | "individuel";
+export type BienRegimeJuridique = "mono_propriete" | "copropriete";
 
-export interface Immeuble {
+export const BIEN_TYPES: BienType[] = [
+  "immeuble",
+  "maison",
+  "appartement_isole",
+  "parking",
+  "bureau",
+  "local_commercial"
+];
+
+export const BIEN_TYPE_LABELS: Record<BienType, string> = {
+  immeuble: "Immeuble",
+  maison: "Maison",
+  appartement_isole: "Appartement isolé",
+  parking: "Parking",
+  bureau: "Bureau",
+  local_commercial: "Local commercial"
+};
+
+// Migration bien (2026-08-26, docs/backlog.md) : remplace Immeuble comme
+// source de vérité pour la création/gestion du patrimoine. Un immeuble a
+// N appartements ; tout autre type en a exactement 1 (règle applicative,
+// voir NewBienWizard). typeHabitat/regimeJuridique sont dérivés
+// automatiquement pour type='maison' côté backend (toujours renseignés,
+// jamais éditables pour ce type) ; requis explicitement pour tout autre
+// type. syndic/nbLots/chargesCoproAnnuelles ne sont pertinents que pour
+// type='immeuble'.
+export interface Bien {
   id: string;
-  sciId: string;
-  nom: string;
+  type: BienType;
+  proprietaireType: BienProprietaireType;
+  sciId: string | null;
+  organisationId: string;
   adresse: string;
-  codePostal: string | null;
-  ville: string | null;
+  codePostal: string;
+  ville: string;
+  // Requis uniquement pour type='immeuble' — repli d'affichage partout
+  // ailleurs : bien.nom ?? bien.adresse.
+  nom: string | null;
   anneeConstruction: number | null;
-  typeHabitat: ImmeubleTypeHabitat | null;
-  regimeJuridique: ImmeubleRegimeJuridique | null;
+  dateAcquisition: string | null;
+  valeurAcquisition: string | null;
+  typeHabitat: BienTypeHabitat | null;
+  regimeJuridique: BienRegimeJuridique | null;
   statut: "actif" | "archive";
+  syndic: string | null;
+  nbLots: number | null;
+  chargesCoproAnnuelles: string | null;
 }
 
-export interface CreateImmeubleInput {
-  sciId: string;
-  nom: string;
+// Repli d'affichage établi dès la migration bien : un libellé n'a de sens
+// obligatoire que pour un immeuble (bien.nom peut être absent sinon).
+export function libelleBien(bien: Pick<Bien, "nom" | "adresse">): string {
+  return bien.nom ?? bien.adresse;
+}
+
+export interface CreateBienInput {
+  type: BienType;
+  proprietaireType: BienProprietaireType;
+  sciId?: string;
   adresse: string;
-  codePostal?: string;
-  ville?: string;
-  // Connus dès la création de l'immeuble (docs/data-dictionary.md) —
-  // contrairement à anneeConstruction, resté facultatif.
-  typeHabitat: ImmeubleTypeHabitat;
-  regimeJuridique: ImmeubleRegimeJuridique;
+  codePostal: string;
+  ville: string;
+  nom?: string;
+  anneeConstruction?: number;
+  // Requis si type !== 'maison' (dérivés automatiquement sinon, voir Bien
+  // ci-dessus) — validé côté backend, pas dupliqué ici.
+  typeHabitat?: BienTypeHabitat;
+  regimeJuridique?: BienRegimeJuridique;
+  syndic?: string;
+  nbLots?: number;
+  chargesCoproAnnuelles?: string;
 }
 
-export interface UpdateImmeubleInput {
-  nom?: string;
+export interface UpdateBienInput {
   adresse?: string;
   codePostal?: string;
   ville?: string;
+  nom?: string;
   anneeConstruction?: number;
-  typeHabitat?: ImmeubleTypeHabitat;
-  regimeJuridique?: ImmeubleRegimeJuridique;
+  typeHabitat?: BienTypeHabitat;
+  regimeJuridique?: BienRegimeJuridique;
+  syndic?: string;
+  nbLots?: number;
+  chargesCoproAnnuelles?: string;
 }
 
 export type AppartementType = "T1" | "T2" | "T3" | "T4" | "T5" | "T6";
 export type AppartementStatut = "vacant" | "loue" | "travaux" | "archive";
 export type AppartementModeProduction = "individuel" | "collectif";
+export type AppartementTypeEnergie = "electrique" | "gaz" | "les_deux";
 
+// type/nombrePiecesPrincipales/modeChauffage/modeEauChaude/typeEnergie :
+// mentions du contrat-type résidentiel (décret n° 2015-587), null pour un
+// bien non résidentiel (parking/bureau/local_commercial — packages/core,
+// estTypeResidentiel) : sans objet pour ces types, jamais soumis pour eux
+// (NewBienWizard, BienDetailView, AppartementDetailView) et rejetés par
+// AppartementsService s'ils sont fournis (audit du 2026-08-27).
 export interface Appartement {
   id: string;
-  immeubleId: string;
+  bienId: string;
   numero: string;
-  type: AppartementType;
+  type: AppartementType | null;
   surface: string | null;
   loyerReference: string | null;
   equipementCuisine: string | null;
@@ -54,6 +114,7 @@ export interface Appartement {
   nombrePiecesPrincipales: number | null;
   modeChauffage: AppartementModeProduction | null;
   modeEauChaude: AppartementModeProduction | null;
+  typeEnergie: AppartementTypeEnergie | null;
   // Composition réelle du logement (module État des lieux) — source de
   // vérité pour le nombre d'étapes du parcours mobile et le plafond
   // d'instances ajoutables ici (voir etats-des-lieux/EtatDesLieuxSection.tsx).
@@ -66,17 +127,18 @@ export interface Appartement {
 }
 
 export interface CreateAppartementInput {
-  immeubleId: string;
+  bienId: string;
   numero: string;
-  type: AppartementType;
+  // Optionnels au niveau de la forme : obligatoires si le bien parent est
+  // résidentiel, rejetés sinon — vérifié côté backend (AppartementsService),
+  // pas dupliqué ici.
+  type?: AppartementType;
   surface?: string;
   loyerReference?: string;
-  // Connus dès la création du lot (docs/data-dictionary.md) —
-  // contrairement à identifiantFiscal/equipementCuisine/
-  // dependancesAnnexes, restés facultatifs.
-  nombrePiecesPrincipales: number;
-  modeChauffage: AppartementModeProduction;
-  modeEauChaude: AppartementModeProduction;
+  nombrePiecesPrincipales?: number;
+  modeChauffage?: AppartementModeProduction;
+  modeEauChaude?: AppartementModeProduction;
+  typeEnergie?: AppartementTypeEnergie;
 }
 
 export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
@@ -91,6 +153,7 @@ export interface UpdateAppartementInput {
   nombrePiecesPrincipales?: number;
   modeChauffage?: AppartementModeProduction;
   modeEauChaude?: AppartementModeProduction;
+  typeEnergie?: AppartementTypeEnergie;
   nombreChambres?: number;
   nombreSallesDeBain?: number;
   nombreWc?: number;
@@ -127,29 +190,29 @@ export interface UpdateEquipementInput {
   intervalleEntretienMois?: number;
 }
 
-export function listImmeubles(sciId?: string): Promise<Immeuble[]> {
-  return authenticatedFetch<Immeuble[]>(sciId ? `/immeubles?sciId=${encodeURIComponent(sciId)}` : "/immeubles");
+export function listBiens(sciId?: string): Promise<Bien[]> {
+  return authenticatedFetch<Bien[]>(sciId ? `/biens?sciId=${encodeURIComponent(sciId)}` : "/biens");
 }
 
-export function getImmeuble(id: string): Promise<Immeuble> {
-  return authenticatedFetch<Immeuble>(`/immeubles/${id}`);
+export function getBien(id: string): Promise<Bien> {
+  return authenticatedFetch<Bien>(`/biens/${id}`);
 }
 
-export function createImmeuble(input: CreateImmeubleInput): Promise<Immeuble> {
-  return authenticatedFetch<Immeuble>("/immeubles", { method: "POST", body: JSON.stringify(input) });
+export function createBien(input: CreateBienInput): Promise<Bien> {
+  return authenticatedFetch<Bien>("/biens", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function updateImmeuble(id: string, input: UpdateImmeubleInput): Promise<Immeuble> {
-  return authenticatedFetch<Immeuble>(`/immeubles/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+export function updateBien(id: string, input: UpdateBienInput): Promise<Bien> {
+  return authenticatedFetch<Bien>(`/biens/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
-export function archiveImmeuble(id: string): Promise<Immeuble> {
-  return authenticatedFetch<Immeuble>(`/immeubles/${id}/archiver`, { method: "PATCH" });
+export function archiveBien(id: string): Promise<Bien> {
+  return authenticatedFetch<Bien>(`/biens/${id}/archiver`, { method: "PATCH" });
 }
 
-export function listAppartements(immeubleId?: string): Promise<Appartement[]> {
+export function listAppartements(bienId?: string): Promise<Appartement[]> {
   return authenticatedFetch<Appartement[]>(
-    immeubleId ? `/appartements?immeubleId=${encodeURIComponent(immeubleId)}` : "/appartements"
+    bienId ? `/appartements?bienId=${encodeURIComponent(bienId)}` : "/appartements"
   );
 }
 

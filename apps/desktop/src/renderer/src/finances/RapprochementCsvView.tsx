@@ -39,7 +39,7 @@ export function RapprochementCsvView(): React.JSX.Element {
           const contexte = await chargerContexteBail(paiement.bailId, caches);
           contextes.set(
             paiement.id,
-            `${contexte.sciNom} / ${contexte.immeubleNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms}`
+            `${contexte.sciNom ? `${contexte.sciNom} / ` : ""}${contexte.bienNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms}`
           );
         })
       );

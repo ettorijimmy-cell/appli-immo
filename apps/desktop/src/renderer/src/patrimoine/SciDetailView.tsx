@@ -8,47 +8,41 @@ import {
   type RegimeFiscal,
   type Sci
 } from "../scis/api";
-import {
-  archiveImmeuble,
-  createImmeuble,
-  listImmeubles,
-  type Immeuble,
-  type ImmeubleRegimeJuridique,
-  type ImmeubleTypeHabitat
-} from "./api";
+import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
+import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
 export function SciDetailView({
   sciId,
   onBack,
-  onSelectImmeuble
+  onSelectBien
 }: {
   sciId: string;
   onBack: () => void;
-  onSelectImmeuble: (immeubleId: string) => void;
+  onSelectBien: (bienId: string) => void;
 }): React.JSX.Element {
   const [sci, setSci] = useState<Sci | null>(null);
   const [comptes, setComptes] = useState<CompteBancaire[]>([]);
-  const [immeubles, setImmeubles] = useState<Immeuble[]>([]);
+  const [biens, setBiens] = useState<Bien[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCompteForm, setShowCompteForm] = useState(false);
-  const [showImmeubleForm, setShowImmeubleForm] = useState(false);
-  const [showArchivedImmeubles, setShowArchivedImmeubles] = useState(false);
+  const [showBienWizard, setShowBienWizard] = useState(false);
+  const [showArchivedBiens, setShowArchivedBiens] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       // Le compte bancaire est lu via l'endpoint dédié qui renvoie l'IBAN
       // déjà déchiffré côté backend — jamais de déchiffrement local ici.
-      const [sciData, comptesData, immeublesData] = await Promise.all([
+      const [sciData, comptesData, biensData] = await Promise.all([
         getSci(sciId),
         listComptesBancaires(sciId),
-        listImmeubles(sciId)
+        listBiens(sciId)
       ]);
       setSci(sciData);
       setComptes(comptesData);
-      setImmeubles(immeublesData);
+      setBiens(biensData);
       setError(null);
     } catch {
       setError("Impossible de charger la fiche SCI");
@@ -61,8 +55,8 @@ export function SciDetailView({
 
   useBreadcrumbSegments(sci ? [sci.nom] : []);
 
-  async function handleArchiveImmeuble(id: string): Promise<void> {
-    await archiveImmeuble(id);
+  async function handleArchiveBien(id: string): Promise<void> {
+    await archiveBien(id);
     await refresh();
   }
 
@@ -148,75 +142,77 @@ export function SciDetailView({
 
       <div>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Immeubles</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Biens</h2>
           <div className="flex items-center gap-4">
-            <ArchiveToggle
-              show={showArchivedImmeubles}
-              onToggle={() => setShowArchivedImmeubles((value) => !value)}
-            />
+            <ArchiveToggle show={showArchivedBiens} onToggle={() => setShowArchivedBiens((value) => !value)} />
             <button
               type="button"
-              onClick={() => setShowImmeubleForm((value) => !value)}
+              onClick={() => setShowBienWizard((value) => !value)}
               className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
             >
-              {showImmeubleForm ? "Annuler" : "Nouvel immeuble"}
+              {showBienWizard ? "Annuler" : "Nouveau bien"}
             </button>
           </div>
         </div>
 
-        {showImmeubleForm && (
-          <NewImmeubleForm
-            sciId={sci.id}
+        {showBienWizard && (
+          // sciId présélectionné à l'étape 1 (Propriétaire) puisqu'on est
+          // déjà dans le contexte de cette SCI — reste modifiable, même
+          // flux qu'à partir de ScisListView (docs/backlog.md, migration
+          // bien, Étape 5).
+          <NewBienWizard
+            sciIdPreselectionne={sci.id}
             onCreated={() => {
-              setShowImmeubleForm(false);
+              setShowBienWizard(false);
               void refresh();
             }}
+            onCancel={() => setShowBienWizard(false)}
           />
         )}
 
         {(() => {
-          const visibleImmeubles = showArchivedImmeubles
-            ? immeubles
-            : immeubles.filter((immeuble) => immeuble.statut !== "archive");
-          return visibleImmeubles.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">Aucun immeuble pour le moment.</p>
+          const visibleBiens = showArchivedBiens ? biens : biens.filter((bien) => bien.statut !== "archive");
+          return visibleBiens.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">Aucun bien pour le moment.</p>
           ) : (
             <table className="mt-2 w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2 font-medium">Nom</th>
+                  <th className="py-2 font-medium">Type</th>
                   <th className="py-2 font-medium">Adresse</th>
                   <th className="py-2 font-medium">Statut</th>
                   <th className="py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
-                {visibleImmeubles.map((immeuble) => (
+                {visibleBiens.map((bien) => (
                   <tr
-                    key={immeuble.id}
-                    className={`border-b border-slate-100 ${immeuble.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                    key={bien.id}
+                    className={`border-b border-slate-100 ${bien.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
                   >
                     <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => onSelectImmeuble(immeuble.id)}
+                        onClick={() => onSelectBien(bien.id)}
                         className="text-indigo-700 hover:underline"
                       >
-                        {immeuble.nom}
+                        {libelleBien(bien)}
                       </button>
-                      {immeuble.statut === "archive" && <ArchiveBadge />}
+                      {bien.statut === "archive" && <ArchiveBadge />}
                     </td>
+                    <td className="py-2">{BIEN_TYPE_LABELS[bien.type]}</td>
                     <td className="py-2">
-                      {immeuble.adresse}
-                      {immeuble.ville ? `, ${immeuble.ville}` : ""}
+                      {bien.adresse}
+                      {bien.ville ? `, ${bien.ville}` : ""}
                     </td>
-                    <td className="py-2">{immeuble.statut}</td>
+                    <td className="py-2">{bien.statut}</td>
                     <td className="py-2 text-right">
-                      {immeuble.statut === "actif" && (
+                      {bien.statut === "actif" && (
                         <button
                           type="button"
                           onClick={() => {
-                            void handleArchiveImmeuble(immeuble.id);
+                            void handleArchiveBien(bien.id);
                           }}
                           className="text-sm text-slate-500 hover:text-red-600"
                         >
@@ -464,154 +460,6 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
         className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
       >
         {isSubmitting ? "Enregistrement…" : "Enregistrer"}
-      </button>
-    </form>
-  );
-}
-
-function NewImmeubleForm({
-  sciId,
-  onCreated
-}: {
-  sciId: string;
-  onCreated: () => void;
-}): React.JSX.Element {
-  const [nom, setNom] = useState("");
-  const [adresse, setAdresse] = useState("");
-  const [codePostal, setCodePostal] = useState("");
-  const [ville, setVille] = useState("");
-  const [typeHabitat, setTypeHabitat] = useState<ImmeubleTypeHabitat>("collectif");
-  const [regimeJuridique, setRegimeJuridique] = useState<ImmeubleRegimeJuridique>("copropriete");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      await createImmeuble({
-        sciId,
-        nom,
-        adresse,
-        typeHabitat,
-        regimeJuridique,
-        ...(codePostal && { codePostal }),
-        ...(ville && { ville })
-      });
-      setNom("");
-      setAdresse("");
-      setCodePostal("");
-      setVille("");
-      onCreated();
-    } catch {
-      setError("Impossible de créer l'immeuble");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <form
-      onSubmit={(event) => {
-        void handleSubmit(event);
-      }}
-      className="mt-2 space-y-4 rounded-lg border border-slate-200 p-4"
-    >
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-          <label htmlFor="immeuble-nom" className="text-sm font-medium text-slate-700">
-            Nom
-          </label>
-          <input
-            id="immeuble-nom"
-            required
-            value={nom}
-            onChange={(event) => setNom(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="immeuble-adresse" className="text-sm font-medium text-slate-700">
-            Adresse
-          </label>
-          <input
-            id="immeuble-adresse"
-            required
-            value={adresse}
-            onChange={(event) => setAdresse(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="immeuble-code-postal" className="text-sm font-medium text-slate-700">
-            Code postal
-          </label>
-          <input
-            id="immeuble-code-postal"
-            value={codePostal}
-            onChange={(event) => setCodePostal(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="immeuble-ville" className="text-sm font-medium text-slate-700">
-            Ville
-          </label>
-          <input
-            id="immeuble-ville"
-            value={ville}
-            onChange={(event) => setVille(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="immeuble-type-habitat" className="text-sm font-medium text-slate-700">
-            Type d'habitat
-          </label>
-          <select
-            id="immeuble-type-habitat"
-            value={typeHabitat}
-            onChange={(event) => setTypeHabitat(event.target.value as ImmeubleTypeHabitat)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="collectif">Collectif</option>
-            <option value="individuel">Individuel</option>
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="immeuble-regime-juridique" className="text-sm font-medium text-slate-700">
-            Régime juridique
-          </label>
-          <select
-            id="immeuble-regime-juridique"
-            value={regimeJuridique}
-            onChange={(event) => setRegimeJuridique(event.target.value as ImmeubleRegimeJuridique)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="copropriete">Copropriété</option>
-            <option value="mono_propriete">Mono propriété</option>
-          </select>
-        </div>
-      </div>
-
-      {error && (
-        <p role="alert" className="text-sm text-red-600">
-          {error}
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
-      >
-        {isSubmitting ? "Création…" : "Créer l'immeuble"}
       </button>
     </form>
   );

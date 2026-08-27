@@ -69,8 +69,8 @@ export function CommandPalette(): React.JSX.Element {
   function allerVersEntite(entite: EntiteRecherchable): void {
     if (entite.type === "sci") {
       navigate(`/patrimoine?sciId=${entite.id}`);
-    } else if (entite.type === "immeuble") {
-      navigate(`/patrimoine?immeubleId=${entite.id}`);
+    } else if (entite.type === "bien") {
+      navigate(`/patrimoine?bienId=${entite.id}`);
     } else if (entite.type === "appartement") {
       navigate(`/patrimoine?appartementId=${entite.id}`);
     } else {
@@ -202,7 +202,7 @@ export function CommandPalette(): React.JSX.Element {
           onKeyDown={onKeyDownInput}
           placeholder={
             etape.type === "recherche"
-              ? "Rechercher une SCI, un immeuble, un appartement, un locataire, une action…"
+              ? "Rechercher une SCI, un bien, un appartement, un locataire, une action…"
               : "Rechercher…"
           }
           aria-label="Rechercher"

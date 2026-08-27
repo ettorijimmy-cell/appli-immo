@@ -1,30 +1,33 @@
 import { getBail, getLocataire, listBailLocataires, type Bail } from "../locataires/api";
-import { getAppartement, getImmeuble } from "../patrimoine/api";
+import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getSci } from "../scis/api";
 
 export interface ContexteBail {
-  sciId: string;
-  sciNom: string;
-  immeubleNom: string;
+  sciId: string | null;
+  sciNom: string | null;
+  bienNom: string;
   appartementNumero: string;
   locatairesNoms: string;
 }
 
 export interface CachesContexteBail {
   baux: Map<string, Bail>;
-  appartements: Map<string, { immeubleId: string; numero: string }>;
-  immeubles: Map<string, { sciId: string; nom: string }>;
+  appartements: Map<string, { bienId: string; numero: string }>;
+  biens: Map<string, { sciId: string | null; nom: string }>;
   scis: Map<string, string>;
 }
 
 export function creerCachesContexteBail(): CachesContexteBail {
-  return { baux: new Map(), appartements: new Map(), immeubles: new Map(), scis: new Map() };
+  return { baux: new Map(), appartements: new Map(), biens: new Map(), scis: new Map() };
 }
 
 // Un paiement ne porte que bailId : reconstitue le contexte affichable
-// (SCI / immeuble / appartement / locataires) via des appels en cascade,
-// mis en cache le temps d'un enrichissement (liste ou import CSV) pour ne
-// pas refaire les mêmes requêtes pour chaque paiement d'un même bail.
+// (SCI / bien / appartement / locataires) via des appels en cascade, mis
+// en cache le temps d'un enrichissement (liste ou import CSV) pour ne pas
+// refaire les mêmes requêtes pour chaque paiement d'un même bail. Migré le
+// 2026-08-26 (migration bien, Étape 5) : un bien en nom propre
+// (proprietaireType='personne_physique') n'a pas de SCI — sciId/sciNom
+// restent alors null plutôt que d'appeler /scis/:id avec un id absent.
 export async function chargerContexteBail(
   bailId: string,
   caches: CachesContexteBail
@@ -38,22 +41,25 @@ export async function chargerContexteBail(
   let appartement = caches.appartements.get(bail.appartementId);
   if (!appartement) {
     const data = await getAppartement(bail.appartementId);
-    appartement = { immeubleId: data.immeubleId, numero: data.numero };
+    appartement = { bienId: data.bienId, numero: data.numero };
     caches.appartements.set(bail.appartementId, appartement);
   }
 
-  let immeuble = caches.immeubles.get(appartement.immeubleId);
-  if (!immeuble) {
-    const data = await getImmeuble(appartement.immeubleId);
-    immeuble = { sciId: data.sciId, nom: data.nom };
-    caches.immeubles.set(appartement.immeubleId, immeuble);
+  let bien = caches.biens.get(appartement.bienId);
+  if (!bien) {
+    const data = await getBien(appartement.bienId);
+    bien = { sciId: data.sciId, nom: libelleBien(data) };
+    caches.biens.set(appartement.bienId, bien);
   }
 
-  let sciNom = caches.scis.get(immeuble.sciId);
-  if (!sciNom) {
-    const sci = await getSci(immeuble.sciId);
-    sciNom = sci.nom;
-    caches.scis.set(immeuble.sciId, sciNom);
+  let sciNom: string | null = null;
+  if (bien.sciId) {
+    sciNom = caches.scis.get(bien.sciId) ?? null;
+    if (!sciNom) {
+      const sci = await getSci(bien.sciId);
+      sciNom = sci.nom;
+      caches.scis.set(bien.sciId, sciNom);
+    }
   }
 
   const liens = await listBailLocataires({ bailId });
@@ -68,9 +74,9 @@ export async function chargerContexteBail(
     .join(", ");
 
   return {
-    sciId: immeuble.sciId,
+    sciId: bien.sciId,
     sciNom,
-    immeubleNom: immeuble.nom,
+    bienNom: bien.nom,
     appartementNumero: appartement.numero,
     locatairesNoms
   };

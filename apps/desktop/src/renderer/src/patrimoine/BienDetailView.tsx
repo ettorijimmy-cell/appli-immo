@@ -1,35 +1,42 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { deduireNombrePiecesDepuisType } from "core";
+import { deduireNombrePiecesDepuisType, estTypeResidentiel } from "core";
 import {
   archiveAppartement,
   createAppartement,
-  getImmeuble,
+  getBien,
+  libelleBien,
   listAppartements,
-  updateImmeuble,
+  updateBien,
+  BIEN_TYPE_LABELS,
   type Appartement,
   type AppartementModeProduction,
   type AppartementType,
-  type Immeuble,
-  type ImmeubleRegimeJuridique,
-  type ImmeubleTypeHabitat
+  type Bien,
+  type BienRegimeJuridique,
+  type BienType,
+  type BienTypeHabitat
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
-const TYPES_HABITAT: ImmeubleTypeHabitat[] = ["collectif", "individuel"];
-const REGIMES_JURIDIQUES: ImmeubleRegimeJuridique[] = ["mono_propriete", "copropriete"];
+const TYPES_HABITAT: BienTypeHabitat[] = ["collectif", "individuel"];
+const REGIMES_JURIDIQUES: BienRegimeJuridique[] = ["mono_propriete", "copropriete"];
 
-export function ImmeubleDetailView({
-  immeubleId,
+// Généralisé depuis ImmeubleDetailView le 2026-08-26 (migration bien,
+// Étape 5) : un immeuble a N appartements ; tout autre type en a
+// exactement 1, créé dès NewBienWizard — le bouton "Nouvel appartement"
+// reste donc masqué pour ces types une fois ce lot unique en place.
+export function BienDetailView({
+  bienId,
   onBack,
   onSelectAppartement
 }: {
-  immeubleId: string;
+  bienId: string;
   onBack: () => void;
   onSelectAppartement: (appartementId: string) => void;
 }): React.JSX.Element {
-  const [immeuble, setImmeuble] = useState<Immeuble | null>(null);
+  const [bien, setBien] = useState<Bien | null>(null);
   const [appartements, setAppartements] = useState<Appartement[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -38,23 +45,20 @@ export function ImmeubleDetailView({
 
   const refresh = useCallback(async () => {
     try {
-      const [immeubleData, appartementsData] = await Promise.all([
-        getImmeuble(immeubleId),
-        listAppartements(immeubleId)
-      ]);
-      setImmeuble(immeubleData);
+      const [bienData, appartementsData] = await Promise.all([getBien(bienId), listAppartements(bienId)]);
+      setBien(bienData);
       setAppartements(appartementsData);
       setError(null);
     } catch {
-      setError("Impossible de charger la fiche immeuble");
+      setError("Impossible de charger la fiche du bien");
     }
-  }, [immeubleId]);
+  }, [bienId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  useBreadcrumbSegments(immeuble ? [immeuble.nom] : []);
+  useBreadcrumbSegments(bien ? [libelleBien(bien)] : []);
 
   async function handleArchive(id: string): Promise<void> {
     await archiveAppartement(id);
@@ -69,19 +73,23 @@ export function ImmeubleDetailView({
     );
   }
 
-  if (!immeuble) {
+  if (!bien) {
     return <p className="text-sm text-slate-500">Chargement…</p>;
   }
+
+  const estImmeuble = bien.type === "immeuble";
+  const appartementsActifs = appartements.filter((a) => a.statut !== "archive");
+  const peutAjouterAppartement = estImmeuble || appartementsActifs.length === 0;
 
   return (
     <div className="space-y-8">
       <button type="button" onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700">
-        ← {"Retour à la SCI"}
+        ← {"Retour"}
       </button>
 
       <div>
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">{immeuble.nom}</h1>
+          <h1 className="text-lg font-semibold">{libelleBien(bien)}</h1>
           <button
             type="button"
             onClick={() => setIsEditing((value) => !value)}
@@ -92,8 +100,8 @@ export function ImmeubleDetailView({
         </div>
 
         {isEditing ? (
-          <EditImmeubleForm
-            immeuble={immeuble}
+          <EditBienForm
+            bien={bien}
             onSaved={() => {
               setIsEditing(false);
               void refresh();
@@ -102,33 +110,53 @@ export function ImmeubleDetailView({
         ) : (
           <dl className="mt-2 grid grid-cols-2 gap-x-8 text-sm">
             <div className="flex justify-between border-b border-slate-100 py-1">
-              <dt className="text-slate-500">Adresse</dt>
-              <dd>{immeuble.adresse}</dd>
+              <dt className="text-slate-500">Type</dt>
+              <dd>{BIEN_TYPE_LABELS[bien.type]}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Statut</dt>
-              <dd>{immeuble.statut}</dd>
+              <dd>{bien.statut}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Adresse</dt>
+              <dd>{bien.adresse}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Code postal</dt>
-              <dd>{immeuble.codePostal ?? "—"}</dd>
+              <dd>{bien.codePostal}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Ville</dt>
-              <dd>{immeuble.ville ?? "—"}</dd>
+              <dd>{bien.ville}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Année de construction</dt>
-              <dd>{immeuble.anneeConstruction ?? "—"}</dd>
+              <dd>{bien.anneeConstruction ?? "—"}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Type d'habitat</dt>
-              <dd>{immeuble.typeHabitat ?? "—"}</dd>
+              <dd>{bien.typeHabitat ?? "—"}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Régime juridique</dt>
-              <dd>{immeuble.regimeJuridique ?? "—"}</dd>
+              <dd>{bien.regimeJuridique ?? "—"}</dd>
             </div>
+            {estImmeuble && (
+              <>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Syndic</dt>
+                  <dd>{bien.syndic ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Nombre de lots</dt>
+                  <dd>{bien.nbLots ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Charges copro annuelles</dt>
+                  <dd>{bien.chargesCoproAnnuelles ?? "—"}</dd>
+                </div>
+              </>
+            )}
           </dl>
         )}
       </div>
@@ -141,19 +169,22 @@ export function ImmeubleDetailView({
               show={showArchivedAppartements}
               onToggle={() => setShowArchivedAppartements((value) => !value)}
             />
-            <button
-              type="button"
-              onClick={() => setShowForm((value) => !value)}
-              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-            >
-              {showForm ? "Annuler" : "Nouvel appartement"}
-            </button>
+            {peutAjouterAppartement && (
+              <button
+                type="button"
+                onClick={() => setShowForm((value) => !value)}
+                className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+              >
+                {showForm ? "Annuler" : "Nouvel appartement"}
+              </button>
+            )}
           </div>
         </div>
 
         {showForm && (
           <NewAppartementForm
-            immeubleId={immeuble.id}
+            bienId={bien.id}
+            bienType={bien.type}
             onCreated={() => {
               setShowForm(false);
               void refresh();
@@ -162,9 +193,7 @@ export function ImmeubleDetailView({
         )}
 
         {(() => {
-          const visibleAppartements = showArchivedAppartements
-            ? appartements
-            : appartements.filter((appartement) => appartement.statut !== "archive");
+          const visibleAppartements = showArchivedAppartements ? appartements : appartementsActifs;
           return visibleAppartements.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">Aucun appartement pour le moment.</p>
           ) : (
@@ -193,7 +222,7 @@ export function ImmeubleDetailView({
                       </button>
                       {appartement.statut === "archive" && <ArchiveBadge />}
                     </td>
-                    <td className="py-2">{appartement.type}</td>
+                    <td className="py-2">{appartement.type ?? "—"}</td>
                     <td className="py-2">{appartement.statut}</td>
                     <td className="py-2 text-right">
                       {appartement.statut !== "archive" && (
@@ -220,12 +249,21 @@ export function ImmeubleDetailView({
 }
 
 function NewAppartementForm({
-  immeubleId,
+  bienId,
+  bienType,
   onCreated
 }: {
-  immeubleId: string;
+  bienId: string;
+  bienType: BienType;
   onCreated: () => void;
 }): React.JSX.Element {
+  // Atteignable même pour un bien non résidentiel (parking/bureau/
+  // local_commercial) dans le cas où son unique appartement a été archivé
+  // (peutAjouterAppartement ci-dessus) — type/nombrePiecesPrincipales/
+  // modeChauffage/modeEauChaude n'ont alors pas de sens et sont rejetés par
+  // AppartementsService s'ils sont fournis (packages/core,
+  // estTypeResidentiel).
+  const estResidentiel = estTypeResidentiel(bienType);
   const [numero, setNumero] = useState("");
   const [type, setType] = useState<AppartementType>("T2");
   const [surface, setSurface] = useState("");
@@ -255,12 +293,14 @@ function NewAppartementForm({
     setIsSubmitting(true);
     try {
       await createAppartement({
-        immeubleId,
+        bienId,
         numero,
-        type,
-        nombrePiecesPrincipales: Number(nombrePiecesPrincipales),
-        modeChauffage,
-        modeEauChaude,
+        ...(estResidentiel && {
+          type,
+          nombrePiecesPrincipales: Number(nombrePiecesPrincipales),
+          modeChauffage,
+          modeEauChaude
+        }),
         ...(surface && { surface }),
         ...(loyerReference && { loyerReference })
       });
@@ -298,23 +338,25 @@ function NewAppartementForm({
           />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-type" className="text-sm font-medium text-slate-700">
-            Type
-          </label>
-          <select
-            id="appartement-type"
-            value={type}
-            onChange={(event) => handleTypeChange(event.target.value as AppartementType)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            {APPARTEMENT_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+        {estResidentiel && (
+          <div className="space-y-1">
+            <label htmlFor="appartement-type" className="text-sm font-medium text-slate-700">
+              Type
+            </label>
+            <select
+              id="appartement-type"
+              value={type}
+              onChange={(event) => handleTypeChange(event.target.value as AppartementType)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              {APPARTEMENT_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1">
           <label htmlFor="appartement-surface" className="text-sm font-medium text-slate-700">
@@ -340,53 +382,57 @@ function NewAppartementForm({
           />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-nombre-pieces" className="text-sm font-medium text-slate-700">
-            Nombre de pièces principales
-          </label>
-          <input
-            id="appartement-nombre-pieces"
-            type="number"
-            min={1}
-            required
-            value={nombrePiecesPrincipales}
-            onChange={(event) => {
-              setNombrePiecesModifieManuellement(true);
-              setNombrePiecesPrincipales(event.target.value);
-            }}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
+        {estResidentiel && (
+          <>
+            <div className="space-y-1">
+              <label htmlFor="appartement-nombre-pieces" className="text-sm font-medium text-slate-700">
+                Nombre de pièces principales
+              </label>
+              <input
+                id="appartement-nombre-pieces"
+                type="number"
+                min={1}
+                required
+                value={nombrePiecesPrincipales}
+                onChange={(event) => {
+                  setNombrePiecesModifieManuellement(true);
+                  setNombrePiecesPrincipales(event.target.value);
+                }}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-chauffage" className="text-sm font-medium text-slate-700">
-            Chauffage
-          </label>
-          <select
-            id="appartement-chauffage"
-            value={modeChauffage}
-            onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="individuel">Individuel</option>
-            <option value="collectif">Collectif</option>
-          </select>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="appartement-chauffage" className="text-sm font-medium text-slate-700">
+                Chauffage
+              </label>
+              <select
+                id="appartement-chauffage"
+                value={modeChauffage}
+                onChange={(event) => setModeChauffage(event.target.value as AppartementModeProduction)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="individuel">Individuel</option>
+                <option value="collectif">Collectif</option>
+              </select>
+            </div>
 
-        <div className="space-y-1">
-          <label htmlFor="appartement-eau-chaude" className="text-sm font-medium text-slate-700">
-            Eau chaude
-          </label>
-          <select
-            id="appartement-eau-chaude"
-            value={modeEauChaude}
-            onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="individuel">Individuelle</option>
-            <option value="collectif">Collective</option>
-          </select>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="appartement-eau-chaude" className="text-sm font-medium text-slate-700">
+                Eau chaude
+              </label>
+              <select
+                id="appartement-eau-chaude"
+                value={modeEauChaude}
+                onChange={(event) => setModeEauChaude(event.target.value as AppartementModeProduction)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="individuel">Individuelle</option>
+                <option value="collectif">Collective</option>
+              </select>
+            </div>
+          </>
+        )}
       </div>
 
       {error && (
@@ -406,22 +452,20 @@ function NewAppartementForm({
   );
 }
 
-function EditImmeubleForm({
-  immeuble,
-  onSaved
-}: {
-  immeuble: Immeuble;
-  onSaved: () => void;
-}): React.JSX.Element {
-  const [nom, setNom] = useState(immeuble.nom);
-  const [adresse, setAdresse] = useState(immeuble.adresse);
-  const [codePostal, setCodePostal] = useState(immeuble.codePostal ?? "");
-  const [ville, setVille] = useState(immeuble.ville ?? "");
-  const [anneeConstruction, setAnneeConstruction] = useState(immeuble.anneeConstruction?.toString() ?? "");
-  const [typeHabitat, setTypeHabitat] = useState<ImmeubleTypeHabitat | "">(immeuble.typeHabitat ?? "");
-  const [regimeJuridique, setRegimeJuridique] = useState<ImmeubleRegimeJuridique | "">(
-    immeuble.regimeJuridique ?? ""
-  );
+function EditBienForm({ bien, onSaved }: { bien: Bien; onSaved: () => void }): React.JSX.Element {
+  const estImmeuble = bien.type === "immeuble";
+  const estMaison = bien.type === "maison";
+
+  const [nom, setNom] = useState(bien.nom ?? "");
+  const [adresse, setAdresse] = useState(bien.adresse);
+  const [codePostal, setCodePostal] = useState(bien.codePostal);
+  const [ville, setVille] = useState(bien.ville);
+  const [anneeConstruction, setAnneeConstruction] = useState(bien.anneeConstruction?.toString() ?? "");
+  const [typeHabitat, setTypeHabitat] = useState<BienTypeHabitat | "">(bien.typeHabitat ?? "");
+  const [regimeJuridique, setRegimeJuridique] = useState<BienRegimeJuridique | "">(bien.regimeJuridique ?? "");
+  const [syndic, setSyndic] = useState(bien.syndic ?? "");
+  const [nbLots, setNbLots] = useState(bien.nbLots?.toString() ?? "");
+  const [chargesCoproAnnuelles, setChargesCoproAnnuelles] = useState(bien.chargesCoproAnnuelles ?? "");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -430,14 +474,17 @@ function EditImmeubleForm({
     setError(null);
     setIsSubmitting(true);
     try {
-      await updateImmeuble(immeuble.id, {
-        nom,
+      await updateBien(bien.id, {
+        ...(nom && { nom }),
         adresse,
-        ...(codePostal && { codePostal }),
-        ...(ville && { ville }),
+        codePostal,
+        ville,
         ...(anneeConstruction && { anneeConstruction: Number(anneeConstruction) }),
-        ...(typeHabitat && { typeHabitat }),
-        ...(regimeJuridique && { regimeJuridique })
+        ...(!estMaison && typeHabitat && { typeHabitat }),
+        ...(!estMaison && regimeJuridique && { regimeJuridique }),
+        ...(estImmeuble && syndic && { syndic }),
+        ...(estImmeuble && nbLots && { nbLots: Number(nbLots) }),
+        ...(estImmeuble && chargesCoproAnnuelles && { chargesCoproAnnuelles })
       });
       onSaved();
     } catch {
@@ -456,12 +503,12 @@ function EditImmeubleForm({
     >
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label htmlFor="immeuble-nom" className="text-sm font-medium text-slate-700">
-            Nom
+          <label htmlFor="bien-edit-nom" className="text-sm font-medium text-slate-700">
+            Nom {estImmeuble ? "" : "(optionnel)"}
           </label>
           <input
-            id="immeuble-nom"
-            required
+            id="bien-edit-nom"
+            required={estImmeuble}
             value={nom}
             onChange={(event) => setNom(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -469,11 +516,11 @@ function EditImmeubleForm({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="immeuble-adresse" className="text-sm font-medium text-slate-700">
+          <label htmlFor="bien-edit-adresse" className="text-sm font-medium text-slate-700">
             Adresse
           </label>
           <input
-            id="immeuble-adresse"
+            id="bien-edit-adresse"
             required
             value={adresse}
             onChange={(event) => setAdresse(event.target.value)}
@@ -482,11 +529,12 @@ function EditImmeubleForm({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="immeuble-code-postal" className="text-sm font-medium text-slate-700">
+          <label htmlFor="bien-edit-code-postal" className="text-sm font-medium text-slate-700">
             Code postal
           </label>
           <input
-            id="immeuble-code-postal"
+            id="bien-edit-code-postal"
+            required
             value={codePostal}
             onChange={(event) => setCodePostal(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -494,11 +542,12 @@ function EditImmeubleForm({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="immeuble-ville" className="text-sm font-medium text-slate-700">
+          <label htmlFor="bien-edit-ville" className="text-sm font-medium text-slate-700">
             Ville
           </label>
           <input
-            id="immeuble-ville"
+            id="bien-edit-ville"
+            required
             value={ville}
             onChange={(event) => setVille(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -506,11 +555,11 @@ function EditImmeubleForm({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="immeuble-annee-construction" className="text-sm font-medium text-slate-700">
+          <label htmlFor="bien-edit-annee-construction" className="text-sm font-medium text-slate-700">
             Année de construction
           </label>
           <input
-            id="immeuble-annee-construction"
+            id="bien-edit-annee-construction"
             type="number"
             min={1800}
             max={2100}
@@ -520,43 +569,89 @@ function EditImmeubleForm({
           />
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="immeuble-type-habitat" className="text-sm font-medium text-slate-700">
-            Type d'habitat
-          </label>
-          <select
-            id="immeuble-type-habitat"
-            value={typeHabitat}
-            onChange={(event) => setTypeHabitat(event.target.value as ImmeubleTypeHabitat | "")}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Non renseigné</option>
-            {TYPES_HABITAT.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!estMaison && (
+          <>
+            <div className="space-y-1">
+              <label htmlFor="bien-edit-type-habitat" className="text-sm font-medium text-slate-700">
+                Type d'habitat
+              </label>
+              <select
+                id="bien-edit-type-habitat"
+                value={typeHabitat}
+                onChange={(event) => setTypeHabitat(event.target.value as BienTypeHabitat | "")}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Non renseigné</option>
+                {TYPES_HABITAT.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="space-y-1">
-          <label htmlFor="immeuble-regime-juridique" className="text-sm font-medium text-slate-700">
-            Régime juridique
-          </label>
-          <select
-            id="immeuble-regime-juridique"
-            value={regimeJuridique}
-            onChange={(event) => setRegimeJuridique(event.target.value as ImmeubleRegimeJuridique | "")}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">Non renseigné</option>
-            {REGIMES_JURIDIQUES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="bien-edit-regime-juridique" className="text-sm font-medium text-slate-700">
+                Régime juridique
+              </label>
+              <select
+                id="bien-edit-regime-juridique"
+                value={regimeJuridique}
+                onChange={(event) => setRegimeJuridique(event.target.value as BienRegimeJuridique | "")}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Non renseigné</option>
+                {REGIMES_JURIDIQUES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {estImmeuble && (
+          <>
+            <div className="space-y-1">
+              <label htmlFor="bien-edit-syndic" className="text-sm font-medium text-slate-700">
+                Syndic
+              </label>
+              <input
+                id="bien-edit-syndic"
+                value={syndic}
+                onChange={(event) => setSyndic(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="bien-edit-nb-lots" className="text-sm font-medium text-slate-700">
+                Nombre de lots
+              </label>
+              <input
+                id="bien-edit-nb-lots"
+                type="number"
+                min={1}
+                value={nbLots}
+                onChange={(event) => setNbLots(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="bien-edit-charges-copro" className="text-sm font-medium text-slate-700">
+                Charges copro annuelles
+              </label>
+              <input
+                id="bien-edit-charges-copro"
+                value={chargesCoproAnnuelles}
+                onChange={(event) => setChargesCoproAnnuelles(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {error && (

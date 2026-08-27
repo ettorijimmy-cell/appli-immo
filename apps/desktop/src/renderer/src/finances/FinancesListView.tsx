@@ -185,7 +185,7 @@ export function FinancesListView({
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 font-medium">Échéance</th>
-                    <th className="py-2 font-medium">SCI / Immeuble / Apt</th>
+                    <th className="py-2 font-medium">SCI / Bien / Apt</th>
                     <th className="py-2 font-medium">Locataire(s)</th>
                     <th className="py-2 font-medium">Type</th>
                     <th className="py-2 font-medium">Montant</th>
@@ -202,7 +202,8 @@ export function FinancesListView({
                       >
                         <td className="py-2">{paiement.dateEcheance}</td>
                         <td className="py-2">
-                          {paiement.contexte.sciNom} / {paiement.contexte.immeubleNom} / n°
+                          {paiement.contexte.sciNom ? `${paiement.contexte.sciNom} / ` : ""}
+                          {paiement.contexte.bienNom} / n°
                           {paiement.contexte.appartementNumero}
                         </td>
                         <td className="py-2">{paiement.contexte.locatairesNoms || "—"}</td>
@@ -263,7 +264,7 @@ function grouperPaiements(
   }
   const groupes = new Map<string, PaiementAffichable[]>();
   for (const paiement of paiements) {
-    const cle = groupement === "sci" ? paiement.contexte.sciNom : paiement.dateEcheance;
+    const cle = groupement === "sci" ? (paiement.contexte.sciNom ?? "En nom propre") : paiement.dateEcheance;
     const liste = groupes.get(cle) ?? [];
     liste.push(paiement);
     groupes.set(cle, liste);
@@ -292,7 +293,7 @@ function NewPaiementForm({ onCreated }: { onCreated: () => void }): React.JSX.El
           const contexte = await chargerContexteBail(bail.id, caches);
           return {
             bail,
-            label: `${contexte.sciNom} / ${contexte.immeubleNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms}`
+            label: `${contexte.sciNom ? `${contexte.sciNom} / ` : ""}${contexte.bienNom} / n°${contexte.appartementNumero} — ${contexte.locatairesNoms}`
           };
         })
       );

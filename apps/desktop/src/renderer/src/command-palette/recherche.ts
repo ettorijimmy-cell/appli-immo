@@ -1,4 +1,4 @@
-export type TypeEntiteRecherchable = "sci" | "immeuble" | "appartement" | "locataire";
+export type TypeEntiteRecherchable = "sci" | "bien" | "appartement" | "locataire";
 
 export interface EntiteRecherchable {
   type: TypeEntiteRecherchable;
@@ -42,7 +42,7 @@ export function filtrerEntites(entites: EntiteRecherchable[], requete: string): 
 
 export const LIBELLES_TYPE: Record<TypeEntiteRecherchable, string> = {
   sci: "SCI",
-  immeuble: "Immeuble",
+  bien: "Bien",
   appartement: "Appartement",
   locataire: "Locataire"
 };

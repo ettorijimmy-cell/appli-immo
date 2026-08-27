@@ -32,7 +32,7 @@ export function SyntheseParEntiteView({ debut, fin }: { debut: string; fin: stri
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">Synthèse par SCI / immeuble / appartement</h2>
+        <h2 className="text-sm font-semibold text-slate-700">Synthèse par SCI / bien / appartement</h2>
         <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
       </div>
       <p className="text-xs text-slate-500">
@@ -47,14 +47,14 @@ export function SyntheseParEntiteView({ debut, fin }: { debut: string; fin: stri
             defaultOpen={false}
           >
             <div className="space-y-2 pl-4">
-              {sci.immeubles.map((immeuble) => (
-                <div key={immeuble.id}>
+              {sci.biens.map((bien) => (
+                <div key={bien.id}>
                   <p className="text-sm font-medium text-slate-700">
-                    {immeuble.nom} — {immeuble.revenuNet} € — occupation {pourcentage(immeuble.tauxOccupation)}
+                    {bien.nom} — {bien.revenuNet} € — occupation {pourcentage(bien.tauxOccupation)}
                   </p>
                   <table className="ml-4 w-full max-w-lg text-left text-sm">
                     <tbody>
-                      {immeuble.appartements
+                      {bien.appartements
                         .filter((appartement) => showArchived || !appartement.archive)
                         .map((appartement) => (
                           <tr

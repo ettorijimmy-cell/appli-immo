@@ -3,7 +3,7 @@ import type { DocumentCategorie } from "../documents/api";
 import { CATEGORIE_LABELS } from "../documents/labels";
 import { chargerContexteBail, creerCachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
-import { getAppartement, getImmeuble } from "../patrimoine/api";
+import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getChecklistDocumentaire, type ChecklistDocumentaire } from "./api";
 
 // Calculée à la volée côté backend, jamais stockée (même philosophie que
@@ -27,11 +27,12 @@ export function ChecklistDocumentaireCard(): React.JSX.Element | null {
       await Promise.all(
         resultat.appartements.map(async (a) => {
           try {
-            const [appartement, immeuble] = await Promise.all([
-              getAppartement(a.appartementId),
-              getImmeuble(a.immeubleId)
-            ]);
-            libellesAppart.set(a.appartementId, `${immeuble.nom} — n°${appartement.numero}`);
+            if (!a.bienId) {
+              libellesAppart.set(a.appartementId, "Appartement introuvable");
+              return;
+            }
+            const [appartement, bien] = await Promise.all([getAppartement(a.appartementId), getBien(a.bienId)]);
+            libellesAppart.set(a.appartementId, `${libelleBien(bien)} — n°${appartement.numero}`);
           } catch {
             libellesAppart.set(a.appartementId, "Appartement introuvable");
           }
@@ -50,7 +51,7 @@ export function ChecklistDocumentaireCard(): React.JSX.Element | null {
             ]);
             libellesLoc.set(
               l.locataireId,
-              `${locataire.prenom} ${locataire.nom} — ${contexte.immeubleNom} n°${contexte.appartementNumero}`
+              `${locataire.prenom} ${locataire.nom} — ${contexte.bienNom} n°${contexte.appartementNumero}`
             );
           } catch {
             libellesLoc.set(l.locataireId, "Locataire introuvable");
@@ -69,7 +70,7 @@ export function ChecklistDocumentaireCard(): React.JSX.Element | null {
             ]);
             libellesGar.set(
               g.garantId,
-              `${garant.prenom} ${garant.nom} — ${contexte.immeubleNom} n°${contexte.appartementNumero}`
+              `${garant.prenom} ${garant.nom} — ${contexte.bienNom} n°${contexte.appartementNumero}`
             );
           } catch {
             libellesGar.set(g.garantId, "Garant introuvable");
