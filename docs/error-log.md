@@ -33,6 +33,59 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-08-27] DELETE de nettoyage scopé par nom plutôt que par ID — bloqué par une contrainte FK, pas par une vérification préalable
+
+**Symptôme** : en nettoyant les données de test créées pour vérifier de
+bout en bout les scripts corrigés après la migration bien (dette
+différée, seed-test-*.ts), un `DELETE FROM locataires WHERE id IN (...)
+OR nom = 'Testeur' AND prenom = 'Loca'` a matché, en plus du locataire
+jetable créé pour ce test, un second locataire réel préexistant portant
+le même nom/prénom. Postgres a rejeté la suppression de ce second
+locataire avec `ERROR: update or delete on table "locataires" violates
+foreign key constraint "bail_locataires_locataire_id_locataires_id_fk"`
+(il restait référencé par un `bail_locataires` réel), ce qui a fait
+échouer et annuler l'intégralité du bloc `DO $$ ... $$` (y compris les
+suppressions déjà effectuées plus tôt dans le même bloc — état des lieux,
+alertes, etc., toutes rollback atomiquement avec lui).
+
+**Contexte** : vérification de bout en bout des scripts `seed-test-*.ts`
+réécrits pour passer par `BienService`/`AppartementsService` (dette
+différée de la migration bien, docs/backlog.md) — nettoyage d'une fixture
+jetable (`SCI Verif Migration Bien`) après confirmation que chaque script
+fonctionnait réellement.
+
+**Cause** : la clause de nettoyage utilisait un critère par attribut
+(`nom`/`prenom`) au lieu de se limiter aux IDs exacts effectivement créés
+et déjà connus (imprimés par les scripts eux-mêmes). Rien dans ma propre
+démarche n'a détecté le problème avant exécution — ni relecture de la
+clause `WHERE`, ni dry-run. La suppression a réellement été envoyée à
+Postgres ; seule une contrainte de clé étrangère côté base (comportement
+par défaut `RESTRICT`, pas de `CASCADE` sur `bail_locataires_locataire_id_
+locataires_id_fk`) a empêché la perte de données, et uniquement parce que
+ce locataire précis était encore référencé ailleurs au moment exact de la
+tentative — une coïncidence favorable, pas un garde-fou fiable.
+
+**Solution** : nouvelle tentative de nettoyage scopée exclusivement sur
+les IDs exacts capturés dans la sortie console des scripts (aucune clause
+par nom/attribut), exécutée avec succès. Vérification après coup, sur les
+28 tables potentiellement concernées, qu'aucune ligne de la fixture
+jetable ne subsistait (le rollback atomique du bloc raté avait bien tout
+annulé, y compris les suppressions antérieures dans le même bloc — pas de
+données orphelines). Règle formalisée dans CLAUDE.md, section "Règles
+importantes" : tout DELETE de nettoyage scopé exclusivement par ID exact,
+jamais par attribut, jamais en bloc transactionnel unique sans relecture
+préalable de la clause WHERE.
+
+**Fichiers concernés** : aucun fichier de code (incident opérationnel lors
+d'une vérification manuelle, pas un bug de code) — voir CLAUDE.md pour la
+règle qui en découle.
+
+**À surveiller** : toute future session de nettoyage de données de test
+locales, en particulier quand les valeurs de test (noms, emails, marqueurs
+littéraux) sont réutilisées d'un script à l'autre ou d'une session à
+l'autre — le risque de collision par attribut existe précisément parce
+que ces valeurs sont volontairement stables et répétées.
+
 ### [2026-08-11] Le préfixe SCW_ est réservé par Scaleway — inutilisable pour des secrets applicatifs
 
 **Symptôme** : le formulaire de création de secret Serverless Containers,

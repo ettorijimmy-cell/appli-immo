@@ -102,3 +102,13 @@ packages/db/src/client.ts) pointe dessus — aucune variable d'environnement
   à valeur légale, pas des détails d'implémentation.
 - Aucune fonctionnalité ne doit permettre la suppression définitive de
   données locataires, baux ou documents.
+- Tout `DELETE` de nettoyage de données de test (scripts, vérifications
+  manuelles, fixtures jetables) doit être scopé exclusivement sur des IDs
+  exacts capturés au moment de la création — jamais sur un nom, un
+  attribut, ou toute clause susceptible de matcher une donnée réelle.
+  Jamais exécuté comme bloc transactionnel unique sans relecture préalable
+  de la clause `WHERE` de chaque instruction. Voir docs/error-log.md,
+  [2026-08-27] pour l'incident qui a motivé cette règle : une clause
+  `OR nom = '...' AND prenom = '...'` a failli supprimer un locataire réel,
+  bloquée uniquement par une contrainte de clé étrangère côté base — pas
+  par une vérification faite avant exécution.

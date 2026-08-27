@@ -543,35 +543,25 @@ les trois parcours ci-dessus).
   document à un garant depuis l'UI (inexistant aujourd'hui, contrairement
   à locataire/appartement).
 
-- **Retours d'API non projetés explicitement — 13 services, motif pas
-  occurrence isolée.** Découvert en corrigeant `DocumentsService.versDto`
+- **Retours d'API non projetés explicitement — RÉSOLU (constaté le
+  2026-08-26).** Découvert en corrigeant `DocumentsService.versDto`
   (2026-08-10, `chemin_stockage` — une clé de stockage interne — fuyait
   vers le frontend via un `...document` brut). Grep systématique sur
-  `apps/backend/src/**/*.service.ts` : 13 autres services renvoient une
-  ligne Drizzle (`.select()`/`.returning()`) directement ou via spread, à
-  l'API, sans liste blanche de champs. Aucune de leurs tables ne porte de
-  colonne sensible aujourd'hui (vérifié contre `packages/db/src/schema` au
-  moment de cette entrée) — mais rien n'empêche un futur ajout de colonne
-  sensible sur l'une d'elles de fuiter en silence, exactement comme
-  `chemin_stockage`. Les deux endroits qui manipulent une vraie donnée
-  sensible (`comptes_bancaires_sci.iban_chiffre`/`bic_chiffre`,
-  `utilisateurs.mot_de_passe_hash` via `AuthService`) utilisent déjà une
-  projection explicite — c'est le reste du CRUD "ordinaire" qui ne le fait
-  pas. Fichiers concernés (à traiter au fil de l'eau, pas en un seul
-  chantier — chacun mérite sa propre revue des champs à exposer) :
-  1. `apps/backend/src/etats-des-lieux/etats-des-lieux.service.ts`
-  2. `apps/backend/src/appartements/appartements.service.ts`
-  3. `apps/backend/src/scis/scis.service.ts`
-  4. `apps/backend/src/immeubles/immeubles.service.ts`
-  5. `apps/backend/src/baux/baux.service.ts`
-  6. `apps/backend/src/garants/garants.service.ts`
-  7. `apps/backend/src/remboursements/remboursements.service.ts`
-  8. `apps/backend/src/paiements/paiements.service.ts`
-  9. `apps/backend/src/versements/versements.service.ts`
-  10. `apps/backend/src/alertes/alertes-config.service.ts`
-  11. `apps/backend/src/equipements/equipements.service.ts`
-  12. `apps/backend/src/bail-locataires/bail-locataires.service.ts`
-  13. `apps/backend/src/locataires/locataires.service.ts`
+  `apps/backend/src/**/*.service.ts` avait alors identifié 13 autres
+  services renvoyant une ligne Drizzle (`.select()`/`.returning()`)
+  directement ou via spread, à l'API, sans liste blanche de champs.
+  **En reprenant cette entrée le 2026-08-26 (migration bien, Étape 4)
+  pour traiter `appartements.service.ts`/`immeubles.service.ts` : les
+  13 fichiers listés à l'origine ont TOUS déjà une méthode `versDto`
+  explicite** (vérifié par grep direct sur chacun) — traités au fil de
+  l'eau au cours de chantiers ultérieurs sans qu'aucun ne pense à revenir
+  corriger cette entrée. Liste d'origine, tous déjà résolus :
+  `etats-des-lieux.service.ts`, `appartements.service.ts`,
+  `scis.service.ts`, `immeubles.service.ts`, `baux.service.ts`,
+  `garants.service.ts`, `remboursements.service.ts`,
+  `paiements.service.ts`, `versements.service.ts`,
+  `alertes-config.service.ts`, `equipements.service.ts`,
+  `bail-locataires.service.ts`, `locataires.service.ts`.
 
   Cas apparenté, à surveiller séparément : `apps/backend/src/users/
   users.service.ts` (`findByEmail`/`findById`) renvoie aussi la ligne
@@ -1366,3 +1356,39 @@ volet financier) demeure hors backlog MVP, non encore priorisé.
 
 Ce module mérite sa propre phase de conception dédiée avant d'être
 développé — pas à traiter comme un ticket parmi d'autres du backlog MVP.
+
+## Modules futurs — feuille de route (2026-08-24)
+
+Ordre de priorité convenu avec l'utilisateur :
+
+1. **Tâches** — relances automatiques : impayés, entretien équipement,
+   documents expirés (assurance/diagnostics), génération/envoi de
+   quittances mensuelles, révision de loyer (lié à `indices_irl`). Doit
+   s'articuler avec `alertes` existant sans dupliquer la notion de "chose
+   à faire" — `alertes` détecte une condition, Tâches organise l'action
+   qui en découle (assignation, échéance, statut fait/à faire).
+
+2. **Charges et fiscalité** — sync ou import de relevés bancaires,
+   catégorisation automatique ou rapprochement manuel des dépenses, pièce
+   jointe par dépense, objectif : gérer la fiscalité des sociétés (SCI à
+   l'IR/IS). Vise une sortie concrète (déclaration fiscale type 2072 ou
+   équivalent), pas seulement un tableau de bord de suivi.
+
+3. **Messagerie interne** — messagerie interne à l'application (pas de
+   synchronisation boîte mail externe, jugée disproportionnée), messages
+   horodatés liés à locataire/bail, valeur probante en cas de litige.
+   Point d'intégration avec Tâches (une tâche peut déclencher l'envoi
+   d'un message).
+
+4. **Suivi sinistre et assurance** — anciennement envisagé comme
+   "Intervention" (calendrier RDV/visites, voir ci-dessus), reformulé
+   vers un cycle de vie sinistre : déclaration → expertise →
+   indemnisation.
+
+5. **Carnet de contacts** — vue transversale de tous les contacts :
+   locataires/garants (déjà en base) mais aussi artisans, diagnostiqueurs,
+   syndic de copropriété, assureurs — personnes physiques et entreprises.
+
+6. **Modèles de courriers/lettres** — pas un module autonome, une brique
+   technique transverse (système de templates réutilisables) à construire
+   en même temps que Tâches et Messagerie, pas ajoutée après coup.
