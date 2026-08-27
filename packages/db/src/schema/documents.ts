@@ -16,7 +16,14 @@ export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   // même mécanisme que locataire/bail plutôt qu'un système dédié — un
   // garant peut légitimement avoir plus qu'une pièce d'identité un jour
   // (RIB, attestation Visale...).
-  "garant"
+  "garant",
+  // Migration bien (2026-08-26, docs/backlog.md) : sans cette valeur, aucun
+  // document ne peut se rattacher à un bien non-immeuble (maison, parking,
+  // bureau, local_commercial) dès sa création — 'immeuble' reste utilisé
+  // tel quel pour les documents déjà rattachés à une ligne immeubles
+  // existante (table conservée, voir bien.ts), 'bien' est le SEUL chemin
+  // possible pour les nouveaux biens créés via BienService.
+  "bien"
 ]);
 
 export const documentCategorieEnum = pgEnum("document_categorie", [

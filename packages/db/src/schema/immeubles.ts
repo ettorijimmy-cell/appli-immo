@@ -14,7 +14,16 @@ export const immeubleRegimeJuridiqueEnum = pgEnum("immeuble_regime_juridique", [
   "copropriete"
 ]);
 
-export const immeubles = pgTable("immeubles", {
+// Renommée immeubles_legacy le 2026-08-27 (décision utilisateur,
+// docs/backlog.md, audit du sort de la table immeubles) : lecture seule
+// définitive, plus aucun chemin d'écriture applicatif (ImmeublesService
+// n'expose plus que findAll/findById). Conservée pour que les documents
+// historiques déjà rattachés à une ligne de cette table
+// (documents.entite_type = 'immeuble') restent consultables — voir
+// documents.service.ts (verifierEntiteExiste) et le stream `immeubles`
+// dans docs/powersync-sync-streams.yaml (requêtes mises à jour vers
+// immeubles_legacy).
+export const immeublesLegacy = pgTable("immeubles_legacy", {
   ...auditColumns,
   // FK directe vers scis, pas de table de liaison — contrairement à
   // organisation_sci, un immeuble appartient à exactement une SCI.

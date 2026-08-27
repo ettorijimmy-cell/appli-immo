@@ -54,9 +54,55 @@ automatiquement à la création d'une SCI — voir
 | type_habitat | enum, nullable | `collectif` \| `individuel` — mention du contrat-type (décret n° 2015-587), pilote aussi les blocs conditionnels `{#collectif}`/`{#individuel}` du modèle Word. **Obligatoire à la création** (`CreateImmeubleDto`) : fait connu immédiatement par le propriétaire, contrairement à `annee_construction` qui reste facultatif. Schéma nullable pour ne pas casser les immeubles déjà créés ; modifiable ensuite via `UpdateImmeubleDto` (optionnel). Bloque la génération du bail si `null` (`validerCompletudeGenerationBail`) |
 | regime_juridique | enum, nullable | `mono_propriete` \| `copropriete` — idem (obligatoire à la création, nullable en schéma, bloque la génération si `null`, pilote `{#copropriete}`/`{#monopropriete}`) |
 
+## bien (migration bien, 2026-08-26)
+Niveau générique introduit au-dessus d'appartement, remplaçant à terme
+`immeubles` comme source de vérité pour la création/gestion du patrimoine
+(`BienService`, route `/biens`) — voir docs/backlog.md. Un immeuble a N
+appartements ; tout autre type (`maison`, `appartement_isole`, `parking`,
+`bureau`, `local_commercial`) en a exactement 1 (règle applicative, pas une
+contrainte de schéma). `immeubles` **n'est pas retiré** : conservé tel quel
+tant que `documents.entite_type = 'immeuble'` en dépend pour les documents
+déjà rattachés à une ligne existante — voir sort différé, section
+"Modules à venir"/dette technique.
+| Champ | Type | Description |
+|---|---|---|
+| type | enum | `immeuble` \| `maison` \| `appartement_isole` \| `parking` \| `bureau` \| `local_commercial` |
+| proprietaire_type | enum | `sci` \| `personne_physique` — détermine la cohérence de `sci_id` (contrainte `bien_sci_id_coherent`) |
+| sci_id | uuid, nullable | Informationnel/légal uniquement (fiscalité, futur module Charges et fiscalité — déclaration 2072) — **jamais** le mécanisme de scoping multi-tenant. `NULL` si `proprietaire_type = 'personne_physique'`, requis sinon |
+| organisation_id | uuid | Clé de scoping multi-tenant réelle pour `bien`/`appartements` (Sync Streams PowerSync) — peuplée depuis l'organisation de l'utilisateur courant à la création (`BienService.create`, même mécanisme que `ScisService.create` pour `organisation_sci`), indépendamment du mode de détention. Un bien en nom propre (`proprietaire_type='personne_physique'`, `sci_id` NULL) n'aurait sinon aucun chemin de scoping : le chemin historique `organisation_sci -> sci_id -> immeuble` ne couvre que les biens en SCI |
+| nom | text, nullable | Requis uniquement si `type = 'immeuble'` (contrainte `bien_nom_requis_si_immeuble`, vérifiée aussi côté `BienService.create` pour un message d'erreur clair). Repli d'affichage partout ailleurs (desktop, mobile-web) : `bien.nom ?? bien.adresse` |
+| annee_construction | integer, nullable | Commun à tout type de bien vis-à-vis du contrat-type de bail — pas réservé aux immeubles (décision de l'audit du 2026-08-25, place ce champ sur `bien` plutôt que `bien_immeuble_detail`) |
+| type_habitat | enum, nullable | `collectif` \| `individuel` — mention du contrat-type de bail (décret n° 2015-587). **Déplacé depuis `bien_immeuble_detail` le 2026-08-26** : caractérisation légale du LOGEMENT, jamais une donnée de gestion de copropriété (contrairement à `syndic`/`nb_lots`/`charges_copro_annuelles`, qui restent eux sur `bien_immeuble_detail`). Pour `type = 'maison'` : **dérivé automatiquement à `individuel`** par `BienService.create` (vrai par définition d'une maison individuelle), aucune saisie possible, jamais `NULL`, immuable ensuite (`BienService.update` rejette toute tentative de modification pour ce type). Pour tout autre type (`immeuble`, `appartement_isole`, `parking`, `bureau`, `local_commercial`) : saisie explicite requise à la création — ambigu par nature (un `appartement_isole` ou un `parking` peuvent être dans un ensemble collectif en copropriété, contrairement à une maison), `validerCompletudeGenerationBail` bloque la génération du bail si absent |
+| regime_juridique | enum, nullable | `mono_propriete` \| `copropriete` — idem `type_habitat` ci-dessus en tout point (déplacement, dérivation automatique `mono_propriete` pour `maison`, obligation de saisie sinon) |
+| date_acquisition, valeur_acquisition | date/decimal, nullable | Données d'acquisition — hors périmètre de la migration bien : assurance PNO explicitement exclue, différée au futur module "Suivi sinistre et assurance" |
+| statut | enum | `actif` \| `archive` |
+
+## bien_immeuble_detail (migration bien, 2026-08-26)
+Extension 1:1 de `bien` pour le seul `type = 'immeuble'` — même pattern que
+`diagnostics` (extension 1:1 de `documents`) : `id`/`auditColumns` propres,
+pas `bien_id` en clé primaire. Justification : `syndic`/
+`charges_copro_annuelles` changent dans le temps indépendamment du reste de
+`bien` (changement de syndic, révision annuelle des charges) — sans audit
+propre sur cette table, cette traçabilité serait perdue. `bien_id` est
+`UNIQUE NOT NULL` (vraie relation 1:1, contrairement à `diagnostics.
+document_id` qui n'a pas cette contrainte).
+**`type_habitat`/`regime_juridique` déplacés vers `bien` le 2026-08-26**
+(voir section `bien` ci-dessus) : ce sont des mentions légales du LOGEMENT,
+pas des données de gestion de copropriété — cette table ne porte donc plus
+que les champs réellement administratifs, sans équivalent pour un bien
+non-immeuble.
+| Champ | Type | Description |
+|---|---|---|
+| bien_id | uuid, unique | FK vers `bien.id`, `ON DELETE CASCADE` |
+| syndic | text, nullable | Pas de mention contrat-type associée, informatif |
+| nb_lots | integer, nullable | Idem |
+| charges_copro_annuelles | decimal, nullable | Idem |
+
 ## appartements
 | Champ | Type | Description |
 |---|---|---|
+| bien_id | uuid, nullable | FK vers `bien.id` — seule FK peuplée par `AppartementsService` depuis le 2026-08-26 (migration bien, Étape 4), y compris pour un appartement sous un bien de type `immeuble`. Nullable en schéma le temps de la transition (passage en `NOT NULL` différé, soumis à validation explicite une fois le frontend adapté) |
+| immeuble_id | uuid, nullable | FK vers `immeubles.id` — **legacy**, rendue nullable le 2026-08-26 : un appartement sous un bien non-immeuble n'a et n'aura jamais de ligne `immeubles` correspondante. Plus jamais peuplée par `AppartementsService` sur une création postérieure à cette date (y compris pour un immeuble) ; conservée sur les lignes déjà existantes (backfillées depuis `immeubles`) — retrait de la colonne différé à une étape ultérieure explicitement validée |
 | type | enum | `T1` \| `T2` \| `T3` \| `T4` \| `T5` \| `T6` — catégorie commerciale du lot, valeurs précises depuis le remplacement de `T5+` (aucun appartement réel en base n'utilisait cette valeur au moment du changement). **Distinct** de `nombre_pieces_principales` : le premier est une catégorie commerciale, le second le décompte légal de pièces — non redondants par conception, voir `packages/db/src/schema/appartements.ts` |
 | statut | enum | `vacant` \| `loue` \| `travaux` \| `archive` |
 | loyer_reference | decimal | Loyer de référence hors charges, utilisé pour pré-remplir un nouveau bail |
@@ -220,7 +266,7 @@ Table de liaison pour gérer la colocation.
 ## documents
 | Champ | Type | Description |
 |---|---|---|
-| entite_type | enum | `sci` \| `immeuble` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` — lien polymorphe. Pas de contrainte de clé étrangère possible (6 tables cibles) : `DocumentsService.upload()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03) — réutilise ce mécanisme existant plutôt qu'un nouveau |
+| entite_type | enum | `sci` \| `immeuble` \| `bien` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` \| `garant` — lien polymorphe. Pas de contrainte de clé étrangère possible (8 tables cibles) : `DocumentsService.verifierEntiteExiste()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03). `garant` ajouté le 2026-08-24 (checklist documentaire, pièce d'identité du garant). `bien` ajouté le 2026-08-26 (migration bien) : seul chemin possible pour rattacher un document à un bien non-immeuble (maison, parking, bureau, local_commercial) ou à un immeuble créé après cette date via `BienService` — `immeuble` reste réservé aux documents déjà rattachés à une ligne `immeubles` existante (table conservée, voir section `bien` ci-dessous) |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
 | categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour) |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
@@ -595,8 +641,13 @@ l'utilisateur avant tout code :
 
 - **Par appartement (non archivé)** : DPE, élec/gaz, CREP, ERP —
   document `statut='valide'` (calculé via `calculerStatutDocument`,
-  expiration comprise) rattaché à l'appartement OU à son immeuble
-  parent, même logique de détection que `BailDocumentDocxService`. Un
+  expiration comprise) rattaché à l'appartement OU à son bien parent
+  (migration bien, 2026-08-26 : `appartement.immeuble_id` **et**
+  `appartement.bien_id` sont vérifiés en parallèle — un appartement
+  backfillé a les deux, un appartement créé après cette date n'a plus que
+  `bien_id` — jamais l'un à la place de l'autre, sous peine de perdre la
+  couverture des diagnostics déjà rattachés à une ligne `immeubles`
+  existante), même logique de détection que `BailDocumentDocxService`. Un
   diagnostic expiré compte comme **manquant** ici (contrairement à
   l'annexe d'un bail déjà signé, qui ne regarde que l'archivage) — deux
   besoins différents, pas une incohérence à corriger.
@@ -1102,3 +1153,11 @@ Points d'ancrage déjà identifiés pour ne pas casser le schéma existant :
 - `charges_annuelles` (liée à `baux` et `appartements`)
 - `revisions_loyer` (liée à `baux`)
 - `travaux` (liée à `appartements`)
+
+## Modules à venir
+
+Feuille de route et ordre de priorité des modules post-MVP (Tâches,
+Charges et fiscalité, Messagerie interne, Suivi sinistre et assurance,
+Carnet de contacts, Modèles de courriers/lettres) : voir `docs/backlog.md`,
+section "Modules futurs — feuille de route" — pas dupliquée ici, ce
+document reste focalisé sur le schéma existant, pas sur la planification.

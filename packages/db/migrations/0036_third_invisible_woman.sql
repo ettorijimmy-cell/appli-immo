@@ -1,0 +1,1 @@
+ALTER TABLE "appartements" ALTER COLUMN "type" DROP NOT NULL;

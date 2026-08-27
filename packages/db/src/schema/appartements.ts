@@ -1,6 +1,6 @@
 import { decimal, integer, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { bien } from "./bien";
 import { auditColumns } from "./columns.helpers";
-import { immeubles } from "./immeubles";
 
 // "T5+" remplacé par des valeurs précises T5/T6 (confirmé : aucun
 // appartement réel en base n'utilisait "T5+" au moment du changement,
@@ -35,11 +35,21 @@ export const appartementTypeEnergieEnum = pgEnum("appartement_type_energie", [
 
 export const appartements = pgTable("appartements", {
   ...auditColumns,
-  immeubleId: uuid("immeuble_id")
+  // NOT NULL depuis le 2026-08-27 (étape "contract" de la migration bien,
+  // docs/backlog.md) : immeuble_id retiré (colonne appartements.immeuble_id
+  // supprimée), bien_id est désormais l'unique chemin vers le bien parent,
+  // pour tout appartement quel que soit son type.
+  bienId: uuid("bien_id")
     .notNull()
-    .references(() => immeubles.id),
+    .references(() => bien.id),
   numero: text("numero").notNull(),
-  type: appartementTypeEnum("type").notNull(),
+  // Nullable depuis le 2026-08-27 (audit champs conditionnels par type de
+  // bien, docs/backlog.md) : catégorie T1-T6, mention du contrat-type
+  // résidentiel (décret n° 2015-587), sans objet pour un bien non
+  // résidentiel (parking/bureau/local_commercial). Requis pour un bien
+  // résidentiel, rejeté sinon — vérifié dans AppartementsService, jamais
+  // au niveau du schéma (voir packages/core, estTypeResidentiel).
+  type: appartementTypeEnum("type"),
   surface: decimal("surface", { precision: 6, scale: 2 }),
   loyerReference: decimal("loyer_reference", { precision: 10, scale: 2 }),
   // Mentions du contrat-type non couvertes par les champs ci-dessus :

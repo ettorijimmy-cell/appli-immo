@@ -1,0 +1,1 @@
+ALTER TABLE "appartements" ALTER COLUMN "immeuble_id" DROP NOT NULL;

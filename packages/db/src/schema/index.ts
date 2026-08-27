@@ -3,6 +3,8 @@ export * from "./scis";
 export * from "./comptes-bancaires-sci";
 export * from "./organisation-sci";
 export * from "./immeubles";
+export * from "./bien";
+export * from "./bien-immeuble-detail";
 export * from "./appartements";
 export * from "./equipements";
 export * from "./utilisateurs";
