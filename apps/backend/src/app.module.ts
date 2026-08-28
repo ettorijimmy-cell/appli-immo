@@ -21,6 +21,7 @@ import { GarantsModule } from "./garants/garants.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
+import { ModelesCourrierModule } from "./modeles-courrier/modeles-courrier.module";
 import { PaiementsModule } from "./paiements/paiements.module";
 import { PowerSyncModule } from "./powersync/powersync.module";
 import { ReferencesModule } from "./references/references.module";
@@ -56,6 +57,7 @@ import { VersementsModule } from "./versements/versements.module";
     ReferencesModule,
     AlertesModule,
     TachesModule,
+    ModelesCourrierModule,
     TableauDeBordModule,
     IndicesIrlModule,
     BailDocumentDocxModule,
