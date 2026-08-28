@@ -1,5 +1,6 @@
 import { ExecuterJobDiagnostic } from "../alertes/ExecuterJobDiagnostic";
 import { ParametresAlertesView } from "../alertes/ParametresAlertesView";
+import { ExecuterJobTachesDiagnostic } from "../taches/ExecuterJobTachesDiagnostic";
 
 export function ParametresPage(): React.JSX.Element {
   return (
@@ -7,6 +8,7 @@ export function ParametresPage(): React.JSX.Element {
       <h1 className="text-lg font-semibold">Paramètres</h1>
       <ParametresAlertesView />
       <ExecuterJobDiagnostic />
+      <ExecuterJobTachesDiagnostic />
     </div>
   );
 }

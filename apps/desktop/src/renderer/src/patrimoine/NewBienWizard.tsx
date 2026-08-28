@@ -202,7 +202,7 @@ function DetailsStep({
 }: {
   type: BienType;
   proprietaireType: BienProprietaireType;
-  sciId?: string;
+  sciId: string | undefined;
   onPrecedent: () => void;
   onCancel: () => void;
   onCreated: (bien: Bien) => void;

@@ -20,6 +20,7 @@ export const CATEGORIE_LABELS: Record<DocumentCategorie, string> = {
 export const ENTITE_TYPE_LABELS: Record<DocumentEntiteType, string> = {
   sci: "SCI",
   immeuble: "Immeuble",
+  bien: "Bien",
   appartement: "Appartement",
   locataire: "Locataire",
   bail: "Bail",

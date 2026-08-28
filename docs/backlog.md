@@ -1368,6 +1368,24 @@ Ordre de priorité convenu avec l'utilisateur :
    à faire" — `alertes` détecte une condition, Tâches organise l'action
    qui en découle (assignation, échéance, statut fait/à faire).
 
+   **Étape 1 terminée (2026-08-28)** : socle (table `tache`, cycle de vie
+   `a_faire`/`en_cours`/`fait`/`annulee`, distinct de celui d'`alertes`) +
+   dérivation automatique depuis les 3 types d'alerte en périmètre
+   (`impaye`, `entretien_equipement`, `document_expire`) via
+   `TachesJobService` (cron quotidien 4h, après le job Alertes à 1h).
+   `bail_fin_proche` et `document_expire_proche` sont explicitement exclus
+   de la génération à ce stade (voir docs/data-dictionary.md, section
+   tache, pour le détail des exclusions et de la résolution
+   bail/appartement/bien par type d'alerte). `locataireId` n'est jamais
+   peuplé automatiquement (bail en colocation, relation many-to-many via
+   `bail_locataires` — aucune règle de choix arbitrée). Backend
+   (`TachesModule` : findAll/findById/marquerFait/marquerAnnulee, pas de
+   `create()` manuel), Sync Stream PowerSync, écran desktop minimal
+   (liste + actions, monté sur le Tableau de bord à côté d'Alertes).
+   **Restent hors périmètre**, pour une étape ultérieure séparée :
+   quittances mensuelles (génération PDF + email), révision de loyer,
+   modèles de courrier, intégration Gmail API.
+
 2. **Charges et fiscalité** — sync ou import de relevés bancaires,
    catégorisation automatique ou rapprochement manuel des dépenses, pièce
    jointe par dépense, objectif : gérer la fiscalité des sociétés (SCI à
