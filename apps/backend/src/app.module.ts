@@ -27,6 +27,7 @@ import { ReferencesModule } from "./references/references.module";
 import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
 import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
+import { TachesModule } from "./taches/taches.module";
 import { VersementsModule } from "./versements/versements.module";
 
 @Module({
@@ -54,6 +55,7 @@ import { VersementsModule } from "./versements/versements.module";
     DocumentsModule,
     ReferencesModule,
     AlertesModule,
+    TachesModule,
     TableauDeBordModule,
     IndicesIrlModule,
     BailDocumentDocxModule,
