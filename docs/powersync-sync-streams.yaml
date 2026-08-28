@@ -1219,6 +1219,22 @@ streams:
       )
     auto_subscribe: true
 
+  # Ajouté le 2026-08-28 (Module Tâches, Étape 1). Contrairement à alertes,
+  # organisation_id est une colonne directe sur tache (résolue côté serveur
+  # à la création, voir docs/data-dictionary.md section tache) — pas besoin
+  # de la chaîne de sous-select par type comme sur alertes.entite_id, un
+  # seul niveau de scoping suffit.
+  tache:
+    query: >
+      SELECT id, type, statut, origine, alerte_source_id, bail_id,
+      appartement_id, bien_id, locataire_id, date_echeance, date_completion,
+      periode_recurrence, notes, metadata, organisation_id, updated_at
+      FROM tache
+      WHERE tache.organisation_id IN (
+        SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+      )
+    auto_subscribe: true
+
 # Décision actée le 2026-08-15 : comptes_bancaires_sci n'a VOLONTAIREMENT
 # aucun Sync Stream, et ne doit jamais en avoir un, sous quelque forme
 # que ce soit (colonnes chiffrées ibanChiffre/bicChiffre comme non

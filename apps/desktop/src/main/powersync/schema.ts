@@ -562,6 +562,29 @@ const alertes = new Table({
   updated_at: column.text
 });
 
+// Ajoutée le 2026-08-28 (Module Tâches, Étape 1) — voir le stream tache
+// correspondant dans docs/powersync-sync-streams.yaml. organisation_id
+// direct (pas de branche conditionnelle par type comme sur alertes).
+// metadata (jsonb côté Postgres) synchronisé comme texte JSON brut, jamais
+// interprété côté SQLite.
+const tache = new Table({
+  type: column.text,
+  statut: column.text,
+  origine: column.text,
+  alerte_source_id: column.text,
+  bail_id: column.text,
+  appartement_id: column.text,
+  bien_id: column.text,
+  locataire_id: column.text,
+  date_echeance: column.text,
+  date_completion: column.text,
+  periode_recurrence: column.text,
+  notes: column.text,
+  metadata: column.text,
+  organisation_id: column.text,
+  updated_at: column.text
+});
+
 export const AppSchema = new Schema({
   scis,
   immeubles,
@@ -593,5 +616,6 @@ export const AppSchema = new Schema({
   etat_des_lieux_cles,
   etat_des_lieux_equipements_divers,
   etat_des_lieux_inventaire,
-  alertes
+  alertes,
+  tache
 });
