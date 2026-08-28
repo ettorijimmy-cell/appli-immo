@@ -29,3 +29,4 @@ export * from "./etat-des-lieux-equipements-divers";
 export * from "./elements-inventaire-meuble";
 export * from "./etat-des-lieux-inventaire";
 export * from "./tache";
+export * from "./modele-courrier";

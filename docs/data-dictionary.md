@@ -786,6 +786,51 @@ plus d'une tâche `a_faire`/`en_cours` à la fois pour une même
 `alerte_source_id` — le job quotidien vérifie son existence avant toute
 création plutôt que de s'appuyer sur une violation de contrainte.
 
+## modele_courrier (Module Tâches, Étape 2, 2026-08-29)
+Brique transverse, pas un module à part entière — infrastructure de modèle
+de message texte avec substitution de variables, posée en même temps que
+Tâches plutôt que raccordée après coup (prévu dès la feuille de route,
+docs/backlog.md). **Cette étape ne pose que l'infrastructure et un modèle
+d'exemple fictif** : le vrai contenu de quittance (texte final, vraies
+variables) arrive à l'Étape 4, une fois les données réellement disponibles
+à la génération de quittance connues avec certitude.
+
+À ne pas confondre avec le mécanisme docxtemplater
+(`bail-document-docx.service.ts`, `etat-des-lieux-document-docx.service.ts`) :
+celui-ci remplit un fichier `.docx` binaire sur disque via un mapping de
+balises codé en dur dans le service — `modele_courrier` stocke un texte en
+base (typiquement un email), résolu par substitution `{{variable}}` via
+`packages/core`, `resoudreModeleCourrier`. Deux mécanismes distincts pour
+deux besoins distincts (document contractuel complexe vs message court),
+aucune duplication.
+
+| Champ | Type | Description |
+|---|---|---|
+| code | text, unique | Identifiant stable utilisé par le code consommateur (ex. `'quittance_mensuelle'`), jamais l'id technique — permet de faire évoluer le contenu d'un modèle sans casser les appelants |
+| nom | text | Libellé lisible |
+| canal | enum | `'email'` uniquement pour l'instant. `pgEnum` retenu plutôt que `text+CHECK` malgré la valeur unique actuelle : aucun précédent `text+CHECK` dans ce schéma, et `canal` est explicitement destiné à grandir (`'lettre'`, puis SMS/notification via le futur module Messagerie) — ce codebase a déjà fait grandir un `pgEnum` existant via `ALTER TYPE ... ADD VALUE` plusieurs fois (ex. `document_entite_type`) |
+| objet | text, nullable | Sujet d'email — nullable car un futur canal `'lettre'` n'en a pas |
+| corps | text | Syntaxe `{{variable}}`, résolue par `resoudreModeleCourrier` |
+| variables_requises | jsonb | Array de string, noms des variables attendues — permet à un appelant de valider ses données avant résolution, sans reparser `corps` à chaque appel |
+| organisation_id | uuid, FK `organisations`, NOT NULL | Scoping multi-tenant, transmis explicitement par l'appelant (pas dérivé d'un `userId` comme `BienService.create` — `upsertModeleCourrier` reçoit directement `organisationId`) |
+
+**`resoudreModeleCourrier`** (`packages/core`, pure, sans base de données) :
+remplace chaque `{{cle}}` de `objet`/`corps` par `variables[cle]` ; lève une
+erreur explicite listant la ou les variables manquantes plutôt que de
+laisser un `{{cle}}` littéral dans le résultat (jamais de substitution
+silencieuse).
+
+**`ModelesCourrierService`** : `findByCode(code)` (résolution par le
+consommateur) et `upsertModeleCourrier(...)`, idempotent par `code` —
+réutilisable par tout script de seed futur (quittance à l'Étape 4). Pas
+d'endpoints HTTP `create()`/`update()` exposés dans cette étape : aucun
+écran d'édition prévu pour l'instant, décision explicite.
+
+**Aucun Sync Stream PowerSync** pour cette table dans cette étape : rien
+côté desktop ne lit `modele_courrier` (pas d'écran d'édition) — un stream
+sans consommateur serait de la conception anticipée non justifiée, à
+ajouter plus tard si/quand un écran d'édition est construit.
+
 ## parametres_alertes
 Une ligne par type d'alerte configurable, créée avec une valeur par défaut
 au premier accès si absente (`AlertesConfigService`) — jamais par une
