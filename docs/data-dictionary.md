@@ -733,6 +733,59 @@ Défaut `true` pour les lignes existantes lors de la migration d'ajout de
 cette colonne — comportement sûr (aucune duplication intempestive au
 premier passage suivant la migration).
 
+## tache (Module Tâches, Étape 1, 2026-08-28)
+Alertes et Tâches sont deux concepts distincts, pas un seul dédoublé.
+**Alertes** = détection passive d'une condition (le document est expiré, le
+loyer n'est pas payé) — inchangé, voir section `alertes` ci-dessus.
+**Tâches** = gestion de l'action à mener suite à ce constat, avec un cycle de
+vie propre (`a_faire`/`en_cours`/`fait`/`annulee`), volontairement distinct
+de celui d'`alertes` (`active`/`traitee`/`ignoree`/`resolue`) — pas de
+réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
+
+| Champ | Type | Description |
+|---|---|---|
+| type | enum | `impaye` \| `entretien_equipement` \| `document_expire` \| `quittance_mensuelle` \| `revision_loyer` \| `autre` — les 3 dernières valeurs sont posées dès cette étape pour éviter une migration de plus, mais aucune logique ne les produit encore (étapes futures) |
+| statut | enum | `a_faire` \| `en_cours` \| `fait` \| `annulee` |
+| origine | enum | `alerte` \| `planifiee` \| `manuelle` — seule `alerte` est produite dans cette étape (par `TachesJobService`) |
+| alerte_source_id | uuid, FK `alertes` | Alerte à l'origine de la tâche, uniquement pour `origine='alerte'`. Sert de clé d'idempotence (voir index unique ci-dessous) |
+| bail_id | uuid, FK `baux` | Résolu depuis l'alerte source quand applicable (voir résolution par type ci-dessous) |
+| appartement_id | uuid, FK `appartements` | Idem |
+| bien_id | uuid, FK `bien` | Pour une tâche résolue au niveau du bien lui-même (ex. document expiré attaché à `documents.entiteType='bien'`), pas à un appartement ou un bail précis |
+| locataire_id | uuid, FK `locataires` | **Non peuplé par la génération automatique dans cette étape** — un bail en colocation référence plusieurs locataires via `bail_locataires` (many-to-many), aucune règle de choix n'a été arbitrée. Réservé à un usage futur |
+| date_echeance | date | |
+| date_completion | timestamptz | Posée automatiquement par `TachesService.marquerFait()`, jamais par un `update()` générique |
+| periode_recurrence | text | Ex. `'2026-09'` — inutilisé dans cette étape, réservé aux tâches récurrentes futures (quittances mensuelles, révision de loyer) |
+| notes | text | |
+| metadata | jsonb | |
+| organisation_id | uuid, FK `organisations`, NOT NULL | Scoping multi-tenant direct, même principe que `bien.organisationId` — résolu côté serveur depuis le bien concerné, jamais transmis par le client |
+
+**Résolution par type d'alerte (`TachesJobService.genererTachesDepuisAlertes`)** —
+`alertes` n'a pas de colonne `entiteType` générique (contrairement à
+`documents`) : la table cible se déduit de `alerte.type` via une branche
+dédiée par type, pas une requête uniforme.
+
+- `impaye` : `entiteId` → `paiements.id` → `paiements.bailId` →
+  `baux.appartementId`. Résout `bailId` et `appartementId`.
+- `entretien_equipement` : `entiteId` → `equipements.id` →
+  `equipements.appartementId`. Résout `appartementId` uniquement.
+- `document_expire` (uniquement cette valeur, jamais `document_expire_proche`) :
+  `entiteId` → `documents.id` → `documents.entiteType`/`documents.entiteId`.
+  Si `entiteType='appartement'` : résout `appartementId` directement. Si
+  `entiteType='bail'` : résout `bailId`, puis `appartementId` via
+  `baux.appartementId`. Si `entiteType='bien'` : résout `bienId`
+  directement, laisse `appartementId`/`bailId` à `null`. Pour tout autre
+  `entiteType` (`sci`, `locataire`, `garant`, `etat_des_lieux`) : **aucune
+  tâche générée** pour cette étape.
+- `bail_fin_proche` et `document_expire_proche` : **exclus de la génération
+  de tâches dans cette étape** — décision explicite, pas un oubli. L'alerte
+  seule suffit pour l'instant ; à réévaluer dans une étape future si le
+  besoin se confirme.
+
+**Idempotence** : un index unique partiel garantit qu'il n'existe jamais
+plus d'une tâche `a_faire`/`en_cours` à la fois pour une même
+`alerte_source_id` — le job quotidien vérifie son existence avant toute
+création plutôt que de s'appuyer sur une violation de contrainte.
+
 ## parametres_alertes
 Une ligne par type d'alerte configurable, créée avec une valeur par défaut
 au premier accès si absente (`AlertesConfigService`) — jamais par une

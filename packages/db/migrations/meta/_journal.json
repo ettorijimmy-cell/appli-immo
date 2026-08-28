@@ -267,6 +267,13 @@
       "when": 1787860380592,
       "tag": "0037_calm_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787948533773,
+      "tag": "0038_black_vulture",
+      "breakpoints": true
     }
   ]
 }
