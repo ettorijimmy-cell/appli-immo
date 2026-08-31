@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "bail_locataires_bail_id_titulaire_actif_unique" ON "bail_locataires" USING btree ("bail_id") WHERE "bail_locataires"."role" = 'titulaire' AND "bail_locataires"."archived_at" IS NULL;

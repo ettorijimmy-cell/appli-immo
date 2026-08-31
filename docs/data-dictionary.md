@@ -264,6 +264,21 @@ Table de liaison pour gérer la colocation.
 |---|---|---|
 | role | enum | `titulaire` \| `colocataire` |
 
+**Unicité du titulaire (2026-08-31, Module Tâches — extension notifications)** :
+index unique partiel `bail_locataires_bail_id_titulaire_actif_unique` sur
+`(bail_id) WHERE role = 'titulaire' AND archived_at IS NULL` — au plus un
+titulaire non archivé à la fois par bail, quel que soit son statut. Non
+scopé par statut de bail (contrairement à `baux_appartement_id_actif_unique`) :
+un index partiel ne peut référencer que les colonnes de sa propre table, et
+il n'y a de toute façon aucune raison légitime qu'un bail ait plus d'un
+titulaire actif, quel que soit son statut. Audit de données réalisé avant
+l'ajout (2026-08-31) : zéro bail actif/préavis sur Scaleway au moment de
+l'ajout, aucun risque de violation par une donnée réelle. Le cas **zéro
+titulaire** (bail avec uniquement des `colocataire`) reste possible et
+volontairement non contraint — la résolution du titulaire pour une
+notification (`TachesJobService`) doit le gérer explicitement (retourne
+`null`, jamais une erreur), voir section tâches ci-dessus.
+
 ## documents
 | Champ | Type | Description |
 |---|---|---|
