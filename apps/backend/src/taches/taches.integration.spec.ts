@@ -13,6 +13,7 @@ import {
   organisations,
   paiements,
   revisionLoyer,
+  tache,
   utilisateurs,
   type Database
 } from "db";
@@ -30,6 +31,7 @@ import { BauxService } from "../baux/baux.service";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
+import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
@@ -64,8 +66,10 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
   let alertesJobService: AlertesJobService;
   let tachesJobService: TachesJobService;
   let tachesService: TachesService;
+  let requestContextService: RequestContextService;
   let db: Database;
   let organisationId: string;
+  let userId: string;
   let bienId: string;
   let appartementId: string;
 
@@ -103,6 +107,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     alertesJobService = moduleRef.get(AlertesJobService);
     tachesJobService = moduleRef.get(TachesJobService);
     tachesService = moduleRef.get(TachesService);
+    requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -126,6 +131,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     if (!user) {
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
+    userId = user.id;
 
     const sci = await scisService.create(user.id, {
       nom: "SCI Tâches Test",
@@ -481,6 +487,345 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     expect(pourCePaiement).toHaveLength(2);
     expect(pourCePaiement.find((t) => t.id === tacheInitiale.id)?.statut).toBe("fait");
     expect(pourCePaiement.find((t) => t.id !== tacheInitiale.id)?.statut).toBe("a_faire");
+  });
+
+  // Correctif scoping multi-tenant (2026-08-31) : findAll() doit filtrer
+  // par l'organisation de l'utilisateur authentifié en contexte
+  // (RequestContextService), pour ne jamais exposer les tâches d'une autre
+  // organisation — trou de sécurité latent repéré pendant l'extension
+  // notifications ci-dessous (voir docs/error-log.md).
+  it("findAll() ne renvoie que les tâches de l'organisation de l'utilisateur authentifié en contexte", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre organisation Tâches Intégration" })
+      .returning();
+    if (!autreOrganisation) throw new Error("Échec de l'insertion de l'autre organisation de test");
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `taches-integration-autre-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: "Autre",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+
+    const [tacheOrgA] = await db
+      .insert(tache)
+      .values({ type: "autre", origine: "manuelle", organisationId })
+      .returning();
+    const [tacheOrgB] = await db
+      .insert(tache)
+      .values({ type: "autre", origine: "manuelle", organisationId: autreOrganisation.id })
+      .returning();
+    if (!tacheOrgA || !tacheOrgB) throw new Error("Échec de l'insertion des tâches de test");
+
+    const taches = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      tachesService.findAll({})
+    );
+    const tachesAutre = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
+      tachesService.findAll({})
+    );
+    const tachesSansContexte = await tachesService.findAll({});
+
+    expect(taches.some((t) => t.id === tacheOrgA.id)).toBe(true);
+    expect(taches.some((t) => t.id === tacheOrgB.id)).toBe(false);
+    expect(tachesAutre.some((t) => t.id === tacheOrgB.id)).toBe(true);
+    expect(tachesAutre.some((t) => t.id === tacheOrgA.id)).toBe(false);
+    // Hors contexte HTTP (aucun utilisateurId résolu, comme un script) :
+    // aucune organisation à filtrer, comportement inchangé — voir
+    // TachesService.findAll().
+    expect(tachesSansContexte.some((t) => t.id === tacheOrgA.id)).toBe(true);
+    expect(tachesSansContexte.some((t) => t.id === tacheOrgB.id)).toBe(true);
+  });
+
+  // Extension notifications (2026-08-31, docs/backlog.md) : résolution du
+  // titulaire + construction de la notification à la génération de la
+  // tâche, pour impaye/entretien_equipement/document_expire (appartement
+  // et bail). Modèles seedés localement dans chaque test (hermétique,
+  // indépendant du script de seed réel), textes simplifiés pour une
+  // assertion exacte.
+  describe("notifications résolues depuis les alertes", () => {
+    it("impaye : titulaire résolu — notification générée avec les bonnes variables", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "impaye",
+        nom: "Impayé (test)",
+        canal: "email",
+        objet: "Objet {{libelleBien}}",
+        corps: "{{nomLocataire}} doit {{montant}} € ({{typePaiement}}) depuis le {{dateEcheance}}, bien {{libelleBien}}.",
+        variablesRequises: ["nomLocataire", "libelleBien", "montant", "dateEcheance", "typePaiement"],
+        organisationId
+      });
+
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+      // L'échéance d'entrée générée par activer() n'est pas l'objet de ce
+      // test (elle génèrerait sa propre alerte impaye) — archivée pour
+      // isoler le scénario, même principe qu'alertes.integration.spec.ts.
+      for (const echeanceEntree of await db.select().from(paiements).where(eq(paiements.bailId, bail.id))) {
+        await db.update(paiements).set({ archivedAt: new Date() }).where(eq(paiements.id, echeanceEntree.id));
+      }
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+      await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+      const [paiementEnRetard] = await db
+        .insert(paiements)
+        .values({ bailId: bail.id, type: "loyer", montant: "800.00", dateEcheance: "2026-06-05" })
+        .returning();
+      if (!paiementEnRetard) throw new Error("Échec de l'insertion du paiement de test");
+
+      await alertesJobService.genererAlertes("2026-06-11");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "impaye", bailId: bail.id });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationObjet).toBe(`Objet Immeuble Tâches Test — n°1`);
+      expect(metadata?.notificationCorps).toBe(
+        "Ilan Devos doit 800.00 € (loyer) depuis le 2026-06-05, bien Immeuble Tâches Test — n°1."
+      );
+      expect(metadata?.notificationIndisponible).toBeUndefined();
+    });
+
+    it("impaye : bail avec uniquement un colocataire (pas de titulaire) — signal explicite, jamais un envoi silencieux", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "impaye",
+        nom: "Impayé (test)",
+        canal: "email",
+        objet: "Objet",
+        corps: "{{nomLocataire}} {{libelleBien}} {{montant}} {{dateEcheance}} {{typePaiement}}",
+        variablesRequises: ["nomLocataire", "libelleBien", "montant", "dateEcheance", "typePaiement"],
+        organisationId
+      });
+
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+      for (const echeanceEntree of await db.select().from(paiements).where(eq(paiements.bailId, bail.id))) {
+        await db.update(paiements).set({ archivedAt: new Date() }).where(eq(paiements.id, echeanceEntree.id));
+      }
+      const [locataire] = await db.insert(locataires).values({ nom: "Colocataire", prenom: "Seul" }).returning();
+      if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+      // role='colocataire' uniquement — aucun titulaire sur ce bail.
+      await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "colocataire" });
+      const [paiementEnRetard] = await db
+        .insert(paiements)
+        .values({ bailId: bail.id, type: "loyer", montant: "800.00", dateEcheance: "2026-06-05" })
+        .returning();
+      if (!paiementEnRetard) throw new Error("Échec de l'insertion du paiement de test");
+
+      await alertesJobService.genererAlertes("2026-06-11");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "impaye", bailId: bail.id });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationIndisponible).toBe(true);
+      expect(metadata?.motifNotificationIndisponible).toBe("aucun titulaire actif sur le bail");
+      expect(metadata?.notificationObjet).toBeUndefined();
+    });
+
+    it("entretien_equipement : aucun bail actif sur l'appartement — signal explicite", async () => {
+      const [equipement] = await db
+        .insert(equipements)
+        .values({
+          appartementId,
+          type: "chaudiere",
+          dateDernierEntretien: "2025-01-01",
+          intervalleEntretienMois: 12
+        })
+        .returning();
+      if (!equipement) throw new Error("Échec de l'insertion de l'équipement de test");
+
+      // Aucun bail sur cet appartement du tout — vacant.
+      await alertesJobService.genererAlertes("2026-07-01");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement", appartementId });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationIndisponible).toBe(true);
+      expect(metadata?.motifNotificationIndisponible).toBe("aucun bail actif sur cet appartement");
+    });
+
+    it("entretien_equipement : titulaire résolu via le bail actif de l'appartement — notification générée", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "entretien_equipement",
+        nom: "Entretien (test)",
+        canal: "email",
+        objet: null,
+        corps: "{{nomLocataire}} {{libelleBien}} {{typeEquipement}} {{dateEcheance}}",
+        variablesRequises: ["nomLocataire", "libelleBien", "typeEquipement", "dateEcheance"],
+        organisationId
+      });
+
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+      await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+      const [equipement] = await db
+        .insert(equipements)
+        .values({
+          appartementId,
+          type: "ballon_eau_chaude",
+          dateDernierEntretien: "2025-01-01",
+          intervalleEntretienMois: 12
+        })
+        .returning();
+      if (!equipement) throw new Error("Échec de l'insertion de l'équipement de test");
+
+      await alertesJobService.genererAlertes("2026-07-01");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement", appartementId });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationObjet).toBeNull();
+      expect(metadata?.notificationCorps).toBe(
+        "Ilan Devos Immeuble Tâches Test — n°1 ballon d'eau chaude 2026-01-01"
+      );
+    });
+
+    it("document_expire (cas appartement) : titulaire résolu via le bail actif — notification générée", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "document_expire",
+        nom: "Document expiré (test)",
+        canal: "email",
+        objet: "Objet",
+        corps: "{{nomLocataire}} {{libelleBien}} {{nomDocument}} {{dateExpiration}}",
+        variablesRequises: ["nomLocataire", "libelleBien", "nomDocument", "dateExpiration"],
+        organisationId
+      });
+
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+      await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+      const [document] = await db
+        .insert(documents)
+        .values({
+          entiteType: "appartement",
+          entiteId: appartementId,
+          categorie: "diagnostic",
+          dateExpiration: "2026-06-01",
+          nomFichier: "diagnostic-expire.pdf",
+          mimeType: "application/pdf",
+          tailleOctets: 100,
+          cheminStockage: "x"
+        })
+        .returning();
+      if (!document) throw new Error("Échec de l'insertion du document de test");
+
+      await alertesJobService.genererAlertes("2026-07-01");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "document_expire", appartementId });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationCorps).toBe(
+        "Ilan Devos Immeuble Tâches Test — n°1 diagnostic-expire.pdf 2026-06-01"
+      );
+    });
+
+    it("document_expire (cas bail) : titulaire résolu directement via bailId — notification générée", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "document_expire",
+        nom: "Document expiré (test)",
+        canal: "email",
+        objet: "Objet",
+        corps: "{{nomLocataire}} {{libelleBien}} {{nomDocument}} {{dateExpiration}}",
+        variablesRequises: ["nomLocataire", "libelleBien", "nomDocument", "dateExpiration"],
+        organisationId
+      });
+
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "800.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+      await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+      const [document] = await db
+        .insert(documents)
+        .values({
+          entiteType: "bail",
+          entiteId: bail.id,
+          categorie: "assurance",
+          dateExpiration: "2026-06-01",
+          nomFichier: "assurance-expiree.pdf",
+          mimeType: "application/pdf",
+          tailleOctets: 100,
+          cheminStockage: "x"
+        })
+        .returning();
+      if (!document) throw new Error("Échec de l'insertion du document de test");
+
+      await alertesJobService.genererAlertes("2026-07-01");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const [tacheCreee] = await tachesService.findAll({ type: "document_expire", bailId: bail.id });
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationCorps).toBe(
+        "Ilan Devos Immeuble Tâches Test — n°1 assurance-expiree.pdf 2026-06-01"
+      );
+    });
+
+    it("document_expire (cas bien) : hors périmètre, aucune tentative de notification", async () => {
+      const [document] = await db
+        .insert(documents)
+        .values({
+          entiteType: "bien",
+          entiteId: bienId,
+          categorie: "assurance",
+          dateExpiration: "2026-06-01",
+          nomFichier: "assurance-bien-expiree.pdf",
+          mimeType: "application/pdf",
+          tailleOctets: 100,
+          cheminStockage: "x"
+        })
+        .returning();
+      if (!document) throw new Error("Échec de l'insertion du document de test");
+
+      await alertesJobService.genererAlertes("2026-07-01");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      // findAll() n'a pas de filtre bienId (Étape 1) — scoping client-side.
+      const toutes = await tachesService.findAll({ type: "document_expire" });
+      const tacheCreee = toutes.find((t) => t.bienId === bienId);
+      expect(tacheCreee?.metadata).toBeNull();
+    });
   });
 });
 
