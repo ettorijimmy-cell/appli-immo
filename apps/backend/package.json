@@ -23,7 +23,8 @@
     "seed:inventaire-meuble": "tsx scripts/seed-inventaire-meuble.ts",
     "upload:notice-information": "tsx scripts/upload-notice-information.ts",
     "completer:fixture-generation-bail": "tsx scripts/completer-fixture-generation-bail.ts",
-    "seed:modele-exemple": "tsx scripts/seed-modele-exemple.ts"
+    "seed:modele-exemple": "tsx scripts/seed-modele-exemple.ts",
+    "seed:modele-revision-loyer": "tsx scripts/seed-modele-revision-loyer.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.906.0",
