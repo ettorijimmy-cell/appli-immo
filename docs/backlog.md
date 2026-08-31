@@ -677,6 +677,52 @@ les trois parcours ci-dessus).
   vérité versionnée de ce qui est réellement déployé dans le dashboard
   PowerSync, pas ce fichier.
 
+- **Aucun scoping par organisation sur les `findAll()` de la quasi-totalité
+  des services backend — trou multi-tenant latent, sans risque aujourd'hui
+  (une seule organisation réelle en usage), mais bloquant avant toute
+  ouverture à plusieurs organisations réelles (commercialisation SaaS).**
+  Découvert le 2026-08-31 pendant l'extension notifications de Tâches :
+  `TachesService.findAll()` ne filtrait par aucune organisation, et un
+  audit du même défaut sur le reste du backend (grep `async findAll(` sur
+  `apps/backend/src/*/*.service.ts`) montre qu'il ne s'agit pas d'une
+  exception isolée mais du comportement par défaut de tous les services
+  `findAll()` du projet : `BienService`, `AppartementsService`,
+  `BauxService`, `ImmeublesService` (legacy), `DocumentsService`,
+  `PaiementsService`, `VersementsService`, `RemboursementsService`,
+  `GarantsService`, `LocatairesService`, `ScisService`,
+  `EquipementsService`, `BailLocatairesService`, `AlertesService`,
+  `AlertesConfigService`. Seul `TachesService.findAll()` est corrigé à ce
+  jour (`apps/backend/src/taches/taches.service.ts`) — sert de référence
+  du correctif à répliquer : résoudre `organisationId` via
+  `RequestContextService.getUtilisateurId()` (posé par le
+  `JwtAuthGuard` global sur toute requête HTTP réelle, voir
+  `apps/backend/src/auth/auth.module.ts`) → `UsersService.findById()`,
+  filtrer dès que résolu, ne rien filtrer hors contexte HTTP (scripts,
+  tests appelant le service directement — même tolérance que le reste des
+  champs d'audit déjà dépendants de `getUtilisateurId()`, ex.
+  `mettreAJourAvecAudit`). Test de référence : la description "findAll()
+  ne renvoie que les tâches de l'organisation de l'utilisateur authentifié
+  en contexte" dans `taches.integration.spec.ts` (deux organisations,
+  `executerAvecContexte` pour simuler chaque utilisateur).
+  **Point important pour le correctif futur** : contrairement à `tache`,
+  la plupart des tables listées ci-dessus n'ont **pas** de colonne
+  `organisation_id` directe — seules `bien`, `tache`, `revision_loyer` et
+  `modele_courrier` en portent une aujourd'hui (voir
+  docs/data-dictionary.md). Pour `BienService`, le correctif serait aussi
+  direct que pour Tâches (colonne déjà présente, juste jamais filtrée).
+  Pour tous les autres, il faudrait remonter la chaîne de clés étrangères
+  jusqu'à `bien.organisation_id` (`appartements.bien_id` → 1 jointure ;
+  `baux.appartement_id` → `appartements.bien_id` → 2 jointures ;
+  `paiements`/`versements`/`remboursements`/`garants`/`equipements` via
+  leur `bail_id`/`appartement_id` → 3 jointures ou plus), ou passer par
+  `scis`/`organisation_sci` pour ce qui dépend d'une SCI plutôt que d'un
+  bien direct. `DocumentsService` est un cas à part : `entite_id` est une
+  référence polymorphe (6 cibles), donc pas une seule chaîne de jointure
+  mais un branchement par `entite_type`. Pas de décision prise sur
+  l'approche (jointures répétées vs. dénormaliser `organisation_id` sur
+  davantage de tables, à la manière de `tache`/`bien`) — à trancher au
+  moment de traiter cette dette, pas maintenant.
+
 ---
 
 ## Maintenance
