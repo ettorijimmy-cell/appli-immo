@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { AppliquerRevisionDto } from "./dto/appliquer-revision.dto";
 import { TachesJobService } from "./taches-job.service";
 import { TachesService, type FindAllTachesFiltres } from "./taches.service";
 
@@ -36,6 +37,8 @@ export class TachesController {
   @Post("executer-job")
   async executerJob() {
     await this.tachesJobService.genererTachesDepuisAlertes();
+    const dateReference = new Date().toISOString().slice(0, 10);
+    await this.tachesJobService.genererTachesRevisionLoyer(dateReference);
     return this.tachesService.findAll({});
   }
 
@@ -47,5 +50,12 @@ export class TachesController {
   @Patch(":id/marquer-annulee")
   marquerAnnulee(@Param("id") id: string) {
     return this.tachesService.marquerAnnulee(id);
+  }
+
+  // Action dédiée pour une tâche revision_loyer — pas marquerFait, le
+  // montant proposé doit pouvoir être ajusté avant application.
+  @Patch(":id/appliquer-revision")
+  appliquerRevision(@Param("id") id: string, @Body() dto: AppliquerRevisionDto) {
+    return this.tachesService.appliquerRevision(id, dto.nouveauLoyerValide);
   }
 }

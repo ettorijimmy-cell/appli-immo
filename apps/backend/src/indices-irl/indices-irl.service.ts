@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { indicesIrl, type Database } from "db";
-import { desc } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
 
 // Série BDM 001515333 = "Indice de référence des loyers (IRL)" — point
@@ -62,6 +62,21 @@ export class IndicesIrlService {
       .select()
       .from(indicesIrl)
       .orderBy(desc(indicesIrl.annee), desc(indicesIrl.trimestre))
+      .limit(1);
+    return ligne ?? null;
+  }
+
+  // Lookup ciblé (Module Tâches, Étape 5, docs/backlog.md) — nécessaire à
+  // la révision de loyer, qui a besoin de deux valeurs précises (même
+  // trimestre, deux années différentes), pas seulement la dernière connue.
+  // Retourne null si l'indice n'est pas encore publié pour ce couple,
+  // jamais une erreur : c'est un signal normal, pas anormal (le job
+  // réessaiera le lendemain).
+  async trouverValeur(annee: number, trimestre: number) {
+    const [ligne] = await this.db
+      .select()
+      .from(indicesIrl)
+      .where(and(eq(indicesIrl.annee, annee), eq(indicesIrl.trimestre, trimestre)))
       .limit(1);
     return ligne ?? null;
   }

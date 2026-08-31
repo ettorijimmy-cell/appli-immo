@@ -126,7 +126,8 @@ export class BauxService {
         jourEcheance: dto.jourEcheance,
         travauxRealises: dto.travauxRealises,
         honorairesBailleur: dto.honorairesBailleur,
-        honorairesLocataire: dto.honorairesLocataire
+        honorairesLocataire: dto.honorairesLocataire,
+        trimestreReferenceRevision: dto.trimestreReferenceRevision
       },
       this.requestContext.getUtilisateurId()
     );
@@ -517,7 +518,8 @@ export class BauxService {
       dateResiliation: bail.dateResiliation,
       travauxRealises: bail.travauxRealises,
       honorairesBailleur: bail.honorairesBailleur,
-      honorairesLocataire: bail.honorairesLocataire
+      honorairesLocataire: bail.honorairesLocataire,
+      trimestreReferenceRevision: bail.trimestreReferenceRevision
     };
   }
 }

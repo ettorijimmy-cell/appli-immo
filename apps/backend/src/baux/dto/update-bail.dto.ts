@@ -60,4 +60,10 @@ export class UpdateBailDto {
   @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
   @IsNumberString()
   honorairesLocataire?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  trimestreReferenceRevision?: number;
 }

@@ -1,7 +1,21 @@
 import { randomUUID } from "crypto";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, documents, equipements, locataires, organisations, paiements, utilisateurs, type Database } from "db";
+import {
+  bailLocataires,
+  baux,
+  createDbClient,
+  DEFAULT_DEV_DATABASE_URL,
+  documents,
+  equipements,
+  indicesIrl,
+  locataires,
+  organisations,
+  paiements,
+  revisionLoyer,
+  utilisateurs,
+  type Database
+} from "db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AlertesJobService } from "../alertes/alertes-job.service";
@@ -20,6 +34,9 @@ import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { EquipementsModule } from "../equipements/equipements.module";
+import { IndicesIrlModule } from "../indices-irl/indices-irl.module";
+import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
+import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
 import { PaiementsModule } from "../paiements/paiements.module";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
@@ -464,5 +481,279 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     expect(pourCePaiement).toHaveLength(2);
     expect(pourCePaiement.find((t) => t.id === tacheInitiale.id)?.statut).toBe("fait");
     expect(pourCePaiement.find((t) => t.id !== tacheInitiale.id)?.statut).toBe("a_faire");
+  });
+});
+
+// Vérifie le périmètre exact du Module Tâches, Étape 5 (docs/backlog.md,
+// docs/data-dictionary.md section "Révision de loyer") : détection de
+// l'anniversaire, absence de garde-fou quand un indice manque encore,
+// idempotence par année, et appliquerRevision (historique + loyerMensuel +
+// notification + statut en_cours, jamais fait directement).
+describe("Tâches — révision de loyer (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let tachesJobService: TachesJobService;
+  let tachesService: TachesService;
+  let modelesCourrierService: ModelesCourrierService;
+  let alertesJobService: AlertesJobService;
+  let db: Database;
+  let organisationId: string;
+  let appartementId: string;
+
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        EncryptionModule,
+        AuditModule,
+        UsersModule,
+        AuthModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        PaiementsModule,
+        AlertesModule,
+        IndicesIrlModule,
+        ModelesCourrierModule,
+        TachesModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
+
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    tachesJobService = moduleRef.get(TachesJobService);
+    tachesService = moduleRef.get(TachesService);
+    modelesCourrierService = moduleRef.get(ModelesCourrierService);
+    alertesJobService = moduleRef.get(AlertesJobService);
+
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Organisation Révision Loyer Intégration" })
+      .returning();
+    if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+    organisationId = organisation.id;
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `revision-loyer-integration-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: "Révision",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) throw new Error("Échec de l'insertion de l'utilisateur de test");
+
+    const sci = await scisService.create(user.id, {
+      nom: "SCI Révision Loyer Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Révision Loyer Test",
+      adresse: "1 rue de la Révision",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    appartementId = appartement.id;
+
+    // Modèle réel upserté directement ici (hermétique, indépendant de
+    // l'exécution préalable de seed-modele-revision-loyer.ts).
+    await modelesCourrierService.upsertModeleCourrier({
+      code: "revision_loyer",
+      nom: "Révision annuelle du loyer",
+      canal: "email",
+      objet: "Révision de votre loyer — {{libelleBien}}",
+      corps:
+        "Bonjour {{nomLocataire}}, nouveau loyer pour {{libelleBien}} : {{loyerApres}} € (au lieu de {{loyerAvant}} €) à compter du {{dateEffet}}.",
+      variablesRequises: ["nomLocataire", "libelleBien", "loyerAvant", "loyerApres", "dateEffet"],
+      organisationId
+    });
+  });
+
+  afterEach(async () => {
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  async function creerBailAvecClauseIndexation(dateDebut: string, trimestre: number) {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut,
+      loyerMensuel: "800.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    await bauxService.update(bail.id, { trimestreReferenceRevision: trimestre });
+    return bail;
+  }
+
+  it("crée une tâche à la date anniversaire quand les deux indices sont disponibles", async () => {
+    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    await db.insert(indicesIrl).values([
+      { annee: 1999, trimestre: 2, valeur: "145.50" },
+      { annee: 1998, trimestre: 2, valeur: "143.00" }
+    ]);
+
+    const nombreCreees = await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+
+    expect(nombreCreees).toBe(1);
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    expect(tacheCreee).toBeDefined();
+    expect(tacheCreee?.origine).toBe("planifiee");
+    expect(tacheCreee?.statut).toBe("a_faire");
+    expect(tacheCreee?.dateEcheance).toBe("1999-06-15");
+    expect(tacheCreee?.periodeRecurrence).toBe("1999");
+    expect(tacheCreee?.appartementId).toBe(appartementId);
+    const metadata = tacheCreee?.metadata as Record<string, unknown>;
+    expect(metadata.loyerActuel).toBe("800.00");
+    expect(metadata.loyerPropose).toBe("813.98"); // 800 * 145.50 / 143.00, tronqué
+    expect(metadata.trimestreReference).toBe(2);
+    expect(metadata.anneeReference).toBe(1999);
+  });
+
+  it("ne crée rien si l'indice de référence n'est pas encore publié (le job réessaiera le lendemain)", async () => {
+    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    // Seul l'indice précédent est publié — le trimestre courant ne l'est pas encore.
+    await db.insert(indicesIrl).values([{ annee: 1998, trimestre: 2, valeur: "143.00" }]);
+
+    const nombreCreees = await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+
+    expect(nombreCreees).toBe(0);
+    expect(await tachesService.findAll({ type: "revision_loyer" })).toHaveLength(0);
+  });
+
+  it("ne crée rien en dehors de la date anniversaire", async () => {
+    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    await db.insert(indicesIrl).values([
+      { annee: 1999, trimestre: 2, valeur: "145.50" },
+      { annee: 1998, trimestre: 2, valeur: "143.00" }
+    ]);
+
+    const nombreCreees = await tachesJobService.genererTachesRevisionLoyer("1999-06-16");
+
+    expect(nombreCreees).toBe(0);
+  });
+
+  it("est idempotent : exécuté deux fois pour la même année, ne crée jamais de deuxième tâche", async () => {
+    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    await db.insert(indicesIrl).values([
+      { annee: 1999, trimestre: 2, valeur: "145.50" },
+      { annee: 1998, trimestre: 2, valeur: "143.00" }
+    ]);
+
+    await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+    const secondPassage = await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+
+    expect(secondPassage).toBe(0);
+    expect(await tachesService.findAll({ type: "revision_loyer" })).toHaveLength(1);
+  });
+
+  it("appliquerRevision : historique créé, loyerMensuel mis à jour, notification résolue, statut en_cours (jamais fait)", async () => {
+    const bail = await creerBailAvecClauseIndexation("1998-06-15", 2);
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+    if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+    await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+    await db.insert(indicesIrl).values([
+      { annee: 1999, trimestre: 2, valeur: "145.50" },
+      { annee: 1998, trimestre: 2, valeur: "143.00" }
+    ]);
+    await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    if (!tacheCreee) throw new Error("Tâche revision_loyer attendue introuvable");
+
+    // Montant ajusté manuellement, différent du montant proposé par le job
+    // (813.98) — vérifie que l'ajustement avant application est réellement
+    // pris en compte, pas seulement le montant calculé automatiquement.
+    const tacheAppliquee = await tachesService.appliquerRevision(tacheCreee.id, "810.00");
+
+    expect(tacheAppliquee.statut).toBe("en_cours");
+    const metadata = tacheAppliquee.metadata as Record<string, unknown>;
+    expect(metadata.notificationObjet).toBe("Révision de votre loyer — Immeuble Révision Loyer Test — n°1");
+    expect(metadata.notificationCorps).toBe(
+      "Bonjour Ilan Devos, nouveau loyer pour Immeuble Révision Loyer Test — n°1 : 810.00 € (au lieu de 800.00 €) à compter du 1999-06-15."
+    );
+
+    const [ligneHistorique] = await db.select().from(revisionLoyer).where(eq(revisionLoyer.bailId, bail.id));
+    expect(ligneHistorique).toBeDefined();
+    expect(ligneHistorique?.loyerAvant).toBe("800.00");
+    expect(ligneHistorique?.loyerApres).toBe("810.00");
+    expect(ligneHistorique?.trimestreReference).toBe(2);
+    expect(ligneHistorique?.anneeReference).toBe(1999);
+    expect(ligneHistorique?.indiceReferenceValeur).toBe("145.50");
+    expect(ligneHistorique?.indicePrecedentValeur).toBe("143.00");
+
+    const [bailMisAJour] = await db.select().from(baux).where(eq(baux.id, bail.id));
+    expect(bailMisAJour?.loyerMensuel).toBe("810.00");
+  });
+
+  it("appliquerRevision rejette une tâche déjà appliquée (statut != a_faire)", async () => {
+    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    await db.insert(indicesIrl).values([
+      { annee: 1999, trimestre: 2, valeur: "145.50" },
+      { annee: 1998, trimestre: 2, valeur: "143.00" }
+    ]);
+    await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    if (!tacheCreee) throw new Error("Tâche revision_loyer attendue introuvable");
+    await tachesService.appliquerRevision(tacheCreee.id, "810.00");
+
+    await expect(tachesService.appliquerRevision(tacheCreee.id, "820.00")).rejects.toThrow();
+  });
+
+  it("appliquerRevision rejette une tâche qui n'est pas de type revision_loyer", async () => {
+    const bail = await creerBailAvecClauseIndexation("1998-06-15", 2);
+    const [paiementEnRetard] = await db
+      .insert(paiements)
+      .values({ bailId: bail.id, type: "loyer", montant: "800.00", dateEcheance: "2020-06-05" })
+      .returning();
+    if (!paiementEnRetard) throw new Error("Échec de l'insertion du paiement de test");
+    // Réutilise le mécanisme alertes -> tâche pour obtenir une vraie tâche
+    // d'un autre type, plutôt que de fabriquer une ligne tache hors du
+    // chemin applicatif réel.
+    await alertesJobService.genererAlertes("2020-06-20");
+    await tachesJobService.genererTachesDepuisAlertes();
+    const [tacheImpaye] = await tachesService.findAll({ type: "impaye" });
+    if (!tacheImpaye) throw new Error("Tâche impaye attendue introuvable");
+
+    await expect(tachesService.appliquerRevision(tacheImpaye.id, "999.00")).rejects.toThrow();
   });
 });

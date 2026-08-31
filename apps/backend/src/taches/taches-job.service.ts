@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
+import { calculerRevisionLoyer, decomposerDate } from "core";
 import { alertes, appartements, baux, bien, documents, equipements, paiements, tache, type Database } from "db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { IndicesIrlService } from "../indices-irl/indices-irl.service";
 
 type AlerteRow = typeof alertes.$inferSelect;
 
@@ -33,12 +35,19 @@ interface CibleResolue {
 export class TachesJobService {
   private readonly logger = new Logger(TachesJobService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly indicesIrlService: IndicesIrlService
+  ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async executerJobQuotidien(): Promise<void> {
-    const nombreCreees = await this.genererTachesDepuisAlertes();
-    this.logger.log(`Job tâches exécuté : ${nombreCreees} tâche(s) créée(s).`);
+    const dateReference = new Date().toISOString().slice(0, 10);
+    const nombreCreeesAlertes = await this.genererTachesDepuisAlertes();
+    const nombreCreeesRevision = await this.genererTachesRevisionLoyer(dateReference);
+    this.logger.log(
+      `Job tâches exécuté : ${nombreCreeesAlertes} tâche(s) depuis alertes, ${nombreCreeesRevision} révision(s) de loyer.`
+    );
   }
 
   async genererTachesDepuisAlertes(): Promise<number> {
@@ -81,6 +90,88 @@ export class TachesJobService {
         bienId: cible.bienId,
         dateEcheance: alerte.dateReference,
         organisationId: cible.organisationId
+      });
+      nombreCreees += 1;
+    }
+    return nombreCreees;
+  }
+
+  /**
+   * Dérive une tâche de révision pour chaque bail actif dont c'est
+   * aujourd'hui l'anniversaire de `dateDebut` (Module Tâches, Étape 5,
+   * docs/backlog.md). Idempotence via l'index unique partiel
+   * `tache_bail_periode_revision_active_unique` (bailId, periodeRecurrence),
+   * `periodeRecurrence` portant l'année courante en texte. Si l'indice de
+   * référence ou l'indice précédent n'est pas encore publié, ne crée rien —
+   * le job repasse chaque jour, aucun garde-fou supplémentaire nécessaire.
+   */
+  async genererTachesRevisionLoyer(dateReference: string): Promise<number> {
+    const { annee: anneeActuelle, mois: moisReference, jour: jourReference } = decomposerDate(dateReference);
+
+    const bauxAvecClauseIndexation = await this.db
+      .select()
+      .from(baux)
+      .where(and(eq(baux.statut, "actif"), isNotNull(baux.trimestreReferenceRevision)));
+
+    let nombreCreees = 0;
+    for (const bail of bauxAvecClauseIndexation) {
+      if (bail.trimestreReferenceRevision === null || !bail.loyerMensuel) {
+        continue;
+      }
+      const { mois: moisDebut, jour: jourDebut } = decomposerDate(bail.dateDebut);
+      if (moisDebut !== moisReference || jourDebut !== jourReference) {
+        continue;
+      }
+
+      const periodeRecurrence = String(anneeActuelle);
+      const [tacheExistante] = await this.db
+        .select({ id: tache.id })
+        .from(tache)
+        .where(
+          and(
+            eq(tache.bailId, bail.id),
+            eq(tache.periodeRecurrence, periodeRecurrence),
+            eq(tache.type, "revision_loyer"),
+            inArray(tache.statut, ["a_faire", "en_cours"])
+          )
+        )
+        .limit(1);
+      if (tacheExistante) {
+        continue;
+      }
+
+      const [indiceReference, indicePrecedent] = await Promise.all([
+        this.indicesIrlService.trouverValeur(anneeActuelle, bail.trimestreReferenceRevision),
+        this.indicesIrlService.trouverValeur(anneeActuelle - 1, bail.trimestreReferenceRevision)
+      ]);
+      if (!indiceReference || !indicePrecedent) {
+        continue;
+      }
+
+      const cible = await this.resoudreDepuisAppartement(bail.appartementId);
+      if (!cible) {
+        continue;
+      }
+
+      const loyerPropose = calculerRevisionLoyer(bail.loyerMensuel, indiceReference.valeur, indicePrecedent.valeur);
+
+      await this.db.insert(tache).values({
+        type: "revision_loyer",
+        statut: "a_faire",
+        origine: "planifiee",
+        bailId: bail.id,
+        appartementId: bail.appartementId,
+        dateEcheance: dateReference,
+        periodeRecurrence,
+        organisationId: cible.organisationId,
+        metadata: {
+          loyerActuel: bail.loyerMensuel,
+          loyerPropose,
+          trimestreReference: bail.trimestreReferenceRevision,
+          anneeReference: anneeActuelle,
+          indiceReferenceValeur: indiceReference.valeur,
+          indicePrecedentValeur: indicePrecedent.valeur
+        }
       });
       nombreCreees += 1;
     }
