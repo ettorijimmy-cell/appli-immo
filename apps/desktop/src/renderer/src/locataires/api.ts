@@ -60,6 +60,10 @@ export interface Bail {
   // cas legacy uniquement, se replier sur updatedAt pour départager
   // plusieurs baux résiliés sur le même appartement.
   dateResiliation: string | null;
+  // Trimestre IRL de référence de la clause d'indexation (1-4), propre à
+  // chaque contrat — jamais déduit automatiquement (Module Tâches, Étape 5,
+  // docs/data-dictionary.md, section baux).
+  trimestreReferenceRevision: number | null;
   updatedAt: string;
 }
 
@@ -84,6 +88,7 @@ export interface UpdateBailInput {
   depotGarantie?: string;
   provisionsCharges?: string;
   jourEcheance?: number;
+  trimestreReferenceRevision?: number;
 }
 
 export type GarantTypeGarantie = "personne_physique" | "garantie_visale" | "autre";

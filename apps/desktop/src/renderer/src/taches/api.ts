@@ -55,3 +55,29 @@ export function marquerTacheFait(id: string): Promise<Tache> {
 export function marquerTacheAnnulee(id: string): Promise<Tache> {
   return authenticatedFetch<Tache>(`/taches/${id}/marquer-annulee`, { method: "PATCH" });
 }
+
+// Action dédiée pour une tâche type='revision_loyer' — jamais marquerFait,
+// le montant proposé par le job doit pouvoir être ajusté avant application
+// (apps/backend/src/taches/taches.service.ts, appliquerRevision).
+export function appliquerRevisionTache(id: string, nouveauLoyerValide: string): Promise<Tache> {
+  return authenticatedFetch<Tache>(`/taches/${id}/appliquer-revision`, {
+    method: "PATCH",
+    body: JSON.stringify({ nouveauLoyerValide })
+  });
+}
+
+// Forme de tache.metadata pour type='revision_loyer', posée par
+// TachesJobService.genererTachesRevisionLoyer — non garantie par le type
+// (metadata est jsonb, unknown), vérifiée au runtime par
+// lireMetadataRevisionLoyer avant tout affichage.
+export interface MetadataRevisionLoyer {
+  loyerActuel: string;
+  loyerPropose: string;
+}
+
+export function lireMetadataRevisionLoyer(metadata: unknown): MetadataRevisionLoyer | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const m = metadata as Record<string, unknown>;
+  if (typeof m.loyerActuel !== "string" || typeof m.loyerPropose !== "string") return null;
+  return { loyerActuel: m.loyerActuel, loyerPropose: m.loyerPropose };
+}

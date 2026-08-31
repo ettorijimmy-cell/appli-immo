@@ -524,6 +524,10 @@ function BailActuelDetail({
             <dd>{bail.jourEcheance ?? "—"}</dd>
           </div>
           <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Trimestre IRL de référence</dt>
+            <dd>{bail.trimestreReferenceRevision ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
             <dt className="text-slate-500">Début</dt>
             <dd>{bail.dateDebut}</dd>
           </div>
@@ -1298,6 +1302,9 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
   const [depotGarantie, setDepotGarantie] = useState(bail.depotGarantie ?? "");
   const [provisionsCharges, setProvisionsCharges] = useState(bail.provisionsCharges ?? "");
   const [jourEcheance, setJourEcheance] = useState(bail.jourEcheance?.toString() ?? "");
+  const [trimestreReferenceRevision, setTrimestreReferenceRevision] = useState(
+    bail.trimestreReferenceRevision?.toString() ?? ""
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1314,7 +1321,8 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
         ...(loyerMensuel && { loyerMensuel }),
         ...(depotGarantie && { depotGarantie }),
         ...(provisionsCharges && { provisionsCharges }),
-        ...(jourEcheance && { jourEcheance: Number(jourEcheance) })
+        ...(jourEcheance && { jourEcheance: Number(jourEcheance) }),
+        ...(trimestreReferenceRevision && { trimestreReferenceRevision: Number(trimestreReferenceRevision) })
       });
       onSaved();
     } catch {
@@ -1437,6 +1445,21 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
             max={28}
             value={jourEcheance}
             onChange={(event) => setJourEcheance(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="bail-edit-trimestre-revision" className="text-sm font-medium text-slate-700">
+            Trimestre IRL de référence (1-4)
+          </label>
+          <input
+            id="bail-edit-trimestre-revision"
+            type="number"
+            min={1}
+            max={4}
+            value={trimestreReferenceRevision}
+            onChange={(event) => setTrimestreReferenceRevision(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
