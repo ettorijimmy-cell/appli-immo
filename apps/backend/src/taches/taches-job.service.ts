@@ -1,10 +1,29 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { calculerRevisionLoyer, decomposerDate } from "core";
-import { alertes, appartements, baux, bien, documents, equipements, paiements, tache, type Database } from "db";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { calculerRevisionLoyer, decomposerDate, resoudreModeleCourrier } from "core";
+import {
+  alertes,
+  appartements,
+  bailLocataires,
+  baux,
+  bien,
+  documents,
+  equipements,
+  locataires,
+  paiements,
+  tache,
+  type Database
+} from "db";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { IndicesIrlService } from "../indices-irl/indices-irl.service";
+import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
+
+const LIBELLES_TYPE_EQUIPEMENT: Record<string, string> = {
+  chaudiere: "chaudière",
+  ballon_eau_chaude: "ballon d'eau chaude",
+  autre: "équipement"
+};
 
 type AlerteRow = typeof alertes.$inferSelect;
 
@@ -37,7 +56,8 @@ export class TachesJobService {
 
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
-    private readonly indicesIrlService: IndicesIrlService
+    private readonly indicesIrlService: IndicesIrlService,
+    private readonly modelesCourrierService: ModelesCourrierService
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
@@ -80,6 +100,8 @@ export class TachesJobService {
         continue;
       }
 
+      const metadata = await this.construireMetadataNotification(alerte, cible);
+
       await this.db.insert(tache).values({
         type: alerte.type,
         statut: "a_faire",
@@ -89,7 +111,8 @@ export class TachesJobService {
         appartementId: cible.appartementId,
         bienId: cible.bienId,
         dateEcheance: alerte.dateReference,
-        organisationId: cible.organisationId
+        organisationId: cible.organisationId,
+        metadata
       });
       nombreCreees += 1;
     }
@@ -263,5 +286,172 @@ export class TachesJobService {
       .limit(1);
     if (!bienTrouve) return null;
     return { bailId: null, appartementId, bienId: null, organisationId: bienTrouve.organisationId };
+  }
+
+  /**
+   * Résout la notification à joindre à une tâche dérivée d'une alerte
+   * (impaye/entretien_equipement/document_expire uniquement — extension du
+   * 2026-08-31, docs/backlog.md). Jamais d'envoi silencieusement absent :
+   * chaque cas où la notification ne peut pas être construite pose un
+   * signal explicite (`notificationIndisponible` + motif) dans le
+   * `metadata` de la tâche plutôt que de la laisser vide sans explication.
+   * Ne laisse jamais une erreur de résolution (modèle mal formé, donnée
+   * source manquante) faire échouer tout le job — une tâche mal notifiée
+   * reste préférable à un job qui s'arrête au milieu de la nuit.
+   */
+  private async construireMetadataNotification(
+    alerte: AlerteRow,
+    cible: CibleResolue
+  ): Promise<Record<string, unknown> | undefined> {
+    if (alerte.type !== "impaye" && alerte.type !== "entretien_equipement" && alerte.type !== "document_expire") {
+      return undefined;
+    }
+    // bienId seul (document_expire attaché directement à un bien, sans
+    // appartement) : hors périmètre de cette extension (audit du
+    // 2026-08-31, "cas appartement/bail" uniquement) — aucun titulaire
+    // possible à notifier, ce n'est pas une absence de donnée à signaler.
+    if (!cible.appartementId) {
+      return undefined;
+    }
+
+    try {
+      const bailId = cible.bailId ?? (await this.resoudreBailActifPourAppartement(cible.appartementId));
+      if (!bailId) {
+        return this.signalNotificationIndisponible("aucun bail actif sur cet appartement");
+      }
+
+      const titulaire = await this.resoudreTitulaire(bailId);
+      if (!titulaire) {
+        return this.signalNotificationIndisponible("aucun titulaire actif sur le bail");
+      }
+
+      const libelleBien = await this.resoudreLibelleBien(cible.appartementId);
+      if (!libelleBien) {
+        return this.signalNotificationIndisponible("bien introuvable");
+      }
+
+      const modele = await this.modelesCourrierService.findByCode(alerte.type);
+      if (!modele) {
+        return this.signalNotificationIndisponible(`modèle de courrier '${alerte.type}' introuvable`);
+      }
+
+      const variables = await this.construireVariablesNotification(
+        alerte,
+        `${titulaire.prenom} ${titulaire.nom}`,
+        libelleBien
+      );
+      if (!variables) {
+        return this.signalNotificationIndisponible("données source introuvables");
+      }
+
+      const { objet, corps } = resoudreModeleCourrier({ objet: modele.objet, corps: modele.corps }, variables);
+      return { notificationObjet: objet, notificationCorps: corps };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Échec de résolution de la notification pour l'alerte ${alerte.id} (${alerte.type}) : ${message}`
+      );
+      return this.signalNotificationIndisponible(`erreur de résolution : ${message}`);
+    }
+  }
+
+  private signalNotificationIndisponible(motif: string): Record<string, unknown> {
+    return { notificationIndisponible: true, motifNotificationIndisponible: motif };
+  }
+
+  private async construireVariablesNotification(
+    alerte: AlerteRow,
+    nomLocataire: string,
+    libelleBien: string
+  ): Promise<Record<string, string> | null> {
+    switch (alerte.type) {
+      case "impaye": {
+        const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, alerte.entiteId)).limit(1);
+        if (!paiement) return null;
+        return {
+          nomLocataire,
+          libelleBien,
+          montant: paiement.montant,
+          dateEcheance: paiement.dateEcheance,
+          typePaiement: paiement.type === "charges" ? "charges" : "loyer"
+        };
+      }
+      case "entretien_equipement": {
+        const [equipement] = await this.db
+          .select()
+          .from(equipements)
+          .where(eq(equipements.id, alerte.entiteId))
+          .limit(1);
+        if (!equipement) return null;
+        return {
+          nomLocataire,
+          libelleBien,
+          typeEquipement: LIBELLES_TYPE_EQUIPEMENT[equipement.type] ?? equipement.type,
+          dateEcheance: alerte.dateReference
+        };
+      }
+      case "document_expire": {
+        const [document] = await this.db.select().from(documents).where(eq(documents.id, alerte.entiteId)).limit(1);
+        if (!document) return null;
+        return {
+          nomLocataire,
+          libelleBien,
+          nomDocument: document.nomFichier,
+          dateExpiration: document.dateExpiration ?? ""
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  // Au plus un titulaire non archivé par bail est garanti par l'index
+  // unique partiel bail_locataires_bail_id_titulaire_actif_unique
+  // (2026-08-31, docs/data-dictionary.md, section bail_locataires) —
+  // .limit(1) est donc déterministe, jamais un choix arbitraire parmi
+  // plusieurs candidats. Retourne null si le bail n'a aucun titulaire
+  // (uniquement des colocataire) — cas volontairement non contraint, à
+  // gérer explicitement par l'appelant plutôt que de deviner un notifié.
+  private async resoudreTitulaire(bailId: string): Promise<{ nom: string; prenom: string } | null> {
+    const [lien] = await this.db
+      .select({ locataireId: bailLocataires.locataireId })
+      .from(bailLocataires)
+      .where(
+        and(eq(bailLocataires.bailId, bailId), eq(bailLocataires.role, "titulaire"), isNull(bailLocataires.archivedAt))
+      )
+      .limit(1);
+    if (!lien) return null;
+    const [locataire] = await this.db
+      .select({ nom: locataires.nom, prenom: locataires.prenom })
+      .from(locataires)
+      .where(eq(locataires.id, lien.locataireId))
+      .limit(1);
+    return locataire ?? null;
+  }
+
+  // entretien_equipement et document_expire (cas appartement) n'ont qu'un
+  // appartementId, pas de bailId direct (contrairement à impaye et
+  // document_expire cas bail) — remonte au bail actif/préavis de cet
+  // appartement, au plus un par construction
+  // (baux_appartement_id_actif_unique).
+  private async resoudreBailActifPourAppartement(appartementId: string): Promise<string | null> {
+    const [bailActif] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .where(and(eq(baux.appartementId, appartementId), inArray(baux.statut, ["actif", "preavis"])))
+      .limit(1);
+    return bailActif?.id ?? null;
+  }
+
+  private async resoudreLibelleBien(appartementId: string): Promise<string | null> {
+    const [appartement] = await this.db
+      .select()
+      .from(appartements)
+      .where(eq(appartements.id, appartementId))
+      .limit(1);
+    if (!appartement) return null;
+    const [bienTrouve] = await this.db.select().from(bien).where(eq(bien.id, appartement.bienId)).limit(1);
+    if (!bienTrouve) return null;
+    return `${bienTrouve.nom ?? bienTrouve.adresse} — n°${appartement.numero}`;
   }
 }
