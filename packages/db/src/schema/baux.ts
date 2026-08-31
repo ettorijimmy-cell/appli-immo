@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { date, decimal, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, decimal, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -79,7 +79,12 @@ export const baux = pgTable(
     // en direct, sans professionnel) — prêt le jour où ce cas se présente,
     // sans changement de code à ce moment-là.
     honorairesBailleur: decimal("honoraires_bailleur", { precision: 10, scale: 2 }),
-    honorairesLocataire: decimal("honoraires_locataire", { precision: 10, scale: 2 })
+    honorairesLocataire: decimal("honoraires_locataire", { precision: 10, scale: 2 }),
+    // Trimestre IRL de référence de la clause d'indexation (1 à 4), propre à
+    // chaque contrat — non déductible automatiquement de façon fiable
+    // (Module Tâches, Étape 5, docs/backlog.md), jamais deviné en silence.
+    // Nullable : tous les baux n'ont pas de clause d'indexation.
+    trimestreReferenceRevision: integer("trimestre_reference_revision")
   },
   (table) => [
     // Concurrence (docs/backlog.md, dette technique Module 3) : garantit au
@@ -90,6 +95,10 @@ export const baux = pgTable(
     // pour la traduction de la violation en ConflictException propre.
     uniqueIndex("baux_appartement_id_actif_unique")
       .on(table.appartementId)
-      .where(sql`${table.statut} IN ('actif', 'preavis')`)
+      .where(sql`${table.statut} IN ('actif', 'preavis')`),
+    check(
+      "baux_trimestre_reference_revision_valide",
+      sql`${table.trimestreReferenceRevision} IS NULL OR ${table.trimestreReferenceRevision} BETWEEN 1 AND 4`
+    )
   ]
 );

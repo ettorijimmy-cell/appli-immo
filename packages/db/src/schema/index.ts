@@ -30,3 +30,4 @@ export * from "./elements-inventaire-meuble";
 export * from "./etat-des-lieux-inventaire";
 export * from "./tache";
 export * from "./modele-courrier";
+export * from "./revision-loyer";

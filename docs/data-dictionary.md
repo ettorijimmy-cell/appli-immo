@@ -173,6 +173,7 @@ l'existence du bail compte, jamais le chemin par lequel il y est arrivé.
 | date_resiliation | timestamp with time zone, nullable | Posée une seule fois par `BauxService.resilier()`, jamais modifiée ensuite (absente d'`UpdateBailDto`) — même principe d'immutabilité que `date_activation`. **N'entre dans aucun calcul financier** : sert uniquement au frontend (`BailActuelTab`) pour identifier, parmi **plusieurs baux résiliés sur un même appartement** (historique de locataires successifs), celui qui vient d'être résilié à l'instant, afin d'y donner accès au dépôt de garantie et aux remboursements (section "versements & remboursements" ci-dessous). Timestamp (pas une simple date) : contrairement à `date_fin` (date métier de fin d'occupation), qui peut coïncider entre deux baux différents et ne départage donc pas de façon fiable, `date_resiliation` est toujours strictement croissante d'une résiliation à l'autre. `null` pour les baux résiliés avant l'introduction de cette colonne (migration 0013, sans backfill) — **repli explicite sur `updated_at` pour ces seuls cas legacy**, jamais la méthode de tri normale (bug réel constaté : sans tri du tout, un ordre de scan SQL non garanti pouvait faire apparaître le bail résilié d'un ancien locataire à la place de celui qu'on venait de résilier) |
 | travaux_realises | text, nullable | Mention obligatoire du contrat-type ("travaux effectués depuis le dernier bail") — texte libre par nature, aucun vocabulaire fermé possible côté décret. Modifiable via `UpdateBailDto`, contrairement à `date_activation`/`date_resiliation` (docs/backlog.md, section "Édition d'un bail") |
 | honoraires_bailleur, honoraires_locataire | decimal, nullable (les deux) | Section IX du contrat-type ("Honoraires de location"). Rattachés au bail, pas à la SCI/organisation : un même bailleur peut ou non recourir à un professionnel selon la location. Les deux `null` → section affichée "néant" dans le document généré. Sans objet dans l'usage actuel (particulier/SCI gérant en direct), prêt sans changement de code le jour où un professionnel intervient |
+| trimestre_reference_revision | integer, nullable, 1-4 | Trimestre IRL de référence de la clause d'indexation (Module Tâches, Étape 5, 2026-08-30) — propre à chaque contrat, **non déductible automatiquement de façon fiable**, jamais deviné en silence : `null` tant que non renseigné explicitement, aucune révision de loyer générée pour ce bail dans ce cas. `CHECK` en base (`baux_trimestre_reference_revision_valide`) en plus de la validation applicative |
 
 **Décision produit (génération des échéances à l'activation, tranchée avec l'utilisateur — révisée après un bug réel constaté en test manuel)** :
 - Chaque échéance de loyer correspond à un **mois calendaire complet** (1er au dernier jour). Seule la **première** est proratisée, et uniquement si `date_debut` ne tombe pas le 1er du mois — jamais en fonction du jour d'activation ni de `jour_echeance`, qui n'ont d'effet sur AUCUNE des deux lignes générées à l'activation.
@@ -831,6 +832,85 @@ côté desktop ne lit `modele_courrier` (pas d'écran d'édition) — un stream
 sans consommateur serait de la conception anticipée non justifiée, à
 ajouter plus tard si/quand un écran d'édition est construit.
 
+## Révision de loyer (Module Tâches, Étape 5, 2026-08-30)
+Comble le trou documenté depuis le Module Tâches Étape 1 : `baux.loyer_mensuel`
+ne portait que la valeur courante, sans aucune trace des révisions passées
+(`revisions_loyer` n'était qu'un nom réservé dans la liste "Tables prévues
+mais non modélisées", voir plus bas).
+
+**Date anniversaire de révision** = même mois/jour que `baux.date_debut`,
+chaque année — choix par défaut faute de champ dédié, décision actée avec
+l'utilisateur (pas de meilleure source identifiée en cours
+d'implémentation).
+
+**`packages/core`, `calculerRevisionLoyer(loyerActuel, indiceReference,
+indicePrecedent)`** : formule légale `loyerActuel × indiceReference /
+indicePrecedent`. Signature en `string`, **pas en `number`** — même
+convention que `montantEnCentimes`/`centimesVersMontant`
+(`packages/core/src/paiements/montant.ts`) et
+`calculerProrataOccupationPartielle` (calcul de même forme, montant × ratio) :
+conversion en centimes entiers, `Math.trunc` sur le ratio, jamais de
+flottant sur le chemin financier. Lève une erreur explicite si
+`indicePrecedent <= 0`. Une révision peut **réduire** le loyer (indice en
+baisse), pas seulement l'augmenter.
+
+**`IndicesIrlService.trouverValeur(annee, trimestre)`** : lookup ciblé
+(absent avant cette étape, seul `obtenirDerniereValeur()` existait) —
+retourne `null` si l'indice n'est pas encore publié pour ce couple, ne
+lève jamais d'erreur (le job réessaiera le lendemain).
+
+**`TachesJobService.genererTachesRevisionLoyer(dateReference)`** : pour
+chaque bail `actif` avec `trimestre_reference_revision` renseigné, dont le
+mois/jour de `date_debut` correspond à `dateReference` (anniversaire) :
+idempotence via `tache_bail_periode_revision_active_unique`
+`(bail_id, periode_recurrence)` scopé `type='revision_loyer'` — 
+`periode_recurrence` porte l'année courante en texte (ex. `'2026'`).
+Cherche `indiceReference` (année courante, trimestre de référence) et
+`indicePrecedent` (année - 1, même trimestre) via `trouverValeur()` ; si
+l'un des deux est absent, **ne crée rien** (pas de garde-fou
+supplémentaire nécessaire, le job repasse chaque jour). Si les deux sont
+disponibles, calcule le loyer proposé et crée une `tache`
+(`type='revision_loyer'`, `origine='planifiee'`, `dateEcheance` = date
+anniversaire, `metadata` contenant loyer actuel/proposé, trimestre/année
+et valeurs des deux indices utilisés).
+
+**`TachesService.appliquerRevision(id, nouveauLoyerValide)`** — action
+dédiée, **pas `marquerFait`** : le montant proposé par le job doit pouvoir
+être ajusté avant application, jamais appliqué automatiquement.
+1. Valide `type='revision_loyer'` et `statut='a_faire'`.
+2. Crée la ligne `revision_loyer` (historique complet : `loyer_avant` lu
+   **fraîchement** sur `baux.loyer_mensuel` au moment de l'application, pas
+   depuis le `metadata` de la tâche qui a pu devenir obsolète entre temps).
+3. Met à jour `baux.loyer_mensuel = nouveauLoyerValide`.
+4. Résout le modèle de courrier `revision_loyer` (`ModelesCourrierService.
+   findByCode` + `resoudreModeleCourrier`) avec les vraies variables
+   (nom du/des locataire(s) joints via `formaterListeNoms`, libellé
+   bien/appartement, loyer avant/après, date d'effet), stocke `objet`/
+   `corps` résolus dans `tache.metadata`.
+5. Passe `tache.statut = 'en_cours'` — **jamais `fait`** directement :
+   `en_cours` signifie "appliqué financièrement, notification en attente"
+   ; `fait` ne sera posé qu'une fois l'email réellement envoyé (Étape 3/4,
+   actuellement bloquée sur la vérification Google OAuth — l'envoi Gmail
+   lui-même est hors périmètre de cette étape, `TODO` explicite laissé à
+   l'endroit exact où il sera branché).
+
+## revision_loyer
+| Champ | Type | Description |
+|---|---|---|
+| bail_id | uuid, FK `baux`, NOT NULL | |
+| tache_id | uuid, FK `tache`, nullable | Nullable délibérément : l'historique financier ne doit jamais dépendre du cycle de vie d'une tâche (une tâche pourrait en théorie être nettoyée plus tard, la révision appliquée reste tracée) |
+| date_effet | date, NOT NULL | Date anniversaire à laquelle la révision prend effet |
+| loyer_avant, loyer_apres | decimal, NOT NULL (les deux) | Même précision que `baux.loyer_mensuel` (10,2) |
+| trimestre_reference | integer, NOT NULL | Copie de `baux.trimestre_reference_revision` au moment de l'application — trace même si le bail change de trimestre de référence plus tard |
+| annee_reference | integer, NOT NULL | Année courante utilisée pour le calcul — `indice_reference_valeur` porte sur cette année, `indice_precedent_valeur` sur `annee_reference - 1`, même trimestre |
+| indice_reference_valeur, indice_precedent_valeur | decimal(6,2), NOT NULL (les deux) | Valeurs IRL effectivement utilisées pour ce calcul, tracées même si `indices_irl` est corrigé rétroactivement plus tard |
+| organisation_id | uuid, FK `organisations`, NOT NULL | |
+
+Jamais de `update()` prévu sur cette table : une révision appliquée est un
+fait historique, pas modifiable après coup (cohérent avec la règle CLAUDE.md
+"jamais de suppression physique" — ici, jamais de correction physique non
+plus).
+
 ## parametres_alertes
 Une ligne par type d'alerte configurable, créée avec une valeur par défaut
 au premier accès si absente (`AlertesConfigService`) — jamais par une
@@ -1249,8 +1329,11 @@ ci-dessus.
 
 Points d'ancrage déjà identifiés pour ne pas casser le schéma existant :
 - `charges_annuelles` (liée à `baux` et `appartements`)
-- `revisions_loyer` (liée à `baux`)
 - `travaux` (liée à `appartements`)
+
+`revisions_loyer` a été retiré de cette liste le 2026-08-30 : implémenté
+sous le nom `revision_loyer` (singulier, cohérent avec les autres tables du
+schéma) — voir section "Révision de loyer" ci-dessus.
 
 ## Modules à venir
 

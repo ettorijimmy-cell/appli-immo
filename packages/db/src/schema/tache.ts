@@ -72,6 +72,16 @@ export const tache = pgTable(
     // dupliquer une tâche déjà ouverte (voir genererTachesDepuisAlertes).
     uniqueIndex("tache_alerte_source_active_unique")
       .on(table.alerteSourceId)
-      .where(sql`${table.statut} IN ('a_faire', 'en_cours') AND ${table.alerteSourceId} IS NOT NULL`)
+      .where(sql`${table.statut} IN ('a_faire', 'en_cours') AND ${table.alerteSourceId} IS NOT NULL`),
+    // Même principe, pour les tâches de révision de loyer (origine='planifiee',
+    // pas d'alerte source) : au plus une tâche a_faire/en_cours par (bail,
+    // période). Scopé à type='revision_loyer' pour ne jamais interférer avec
+    // un bail_id posé par un autre type de tâche (impaye, document_expire) —
+    // voir TachesJobService.genererTachesRevisionLoyer.
+    uniqueIndex("tache_bail_periode_revision_active_unique")
+      .on(table.bailId, table.periodeRecurrence)
+      .where(
+        sql`${table.type} = 'revision_loyer' AND ${table.statut} IN ('a_faire', 'en_cours') AND ${table.bailId} IS NOT NULL AND ${table.periodeRecurrence} IS NOT NULL`
+      )
   ]
 );

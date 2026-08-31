@@ -281,6 +281,13 @@
       "when": 1787954501662,
       "tag": "0039_shiny_talos",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788118159293,
+      "tag": "0040_nostalgic_the_liberteens",
+      "breakpoints": true
     }
   ]
 }
