@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { calculerRevisionLoyer, decomposerDate, resoudreModeleCourrier } from "core";
+import { calculerRevisionLoyer, decomposerDate, libelleMoisDepuisDate, resoudreModeleCourrier } from "core";
 import {
   alertes,
   appartements,
@@ -26,6 +26,7 @@ const LIBELLES_TYPE_EQUIPEMENT: Record<string, string> = {
 };
 
 type AlerteRow = typeof alertes.$inferSelect;
+type PaiementRow = typeof paiements.$inferSelect;
 
 interface CibleResolue {
   bailId: string | null;
@@ -65,8 +66,9 @@ export class TachesJobService {
     const dateReference = new Date().toISOString().slice(0, 10);
     const nombreCreeesAlertes = await this.genererTachesDepuisAlertes();
     const nombreCreeesRevision = await this.genererTachesRevisionLoyer(dateReference);
+    const nombreCreeesQuittance = await this.genererTachesQuittanceMensuelle();
     this.logger.log(
-      `Job tâches exécuté : ${nombreCreeesAlertes} tâche(s) depuis alertes, ${nombreCreeesRevision} révision(s) de loyer.`
+      `Job tâches exécuté : ${nombreCreeesAlertes} tâche(s) depuis alertes, ${nombreCreeesRevision} révision(s) de loyer, ${nombreCreeesQuittance} quittance(s) mensuelle(s).`
     );
   }
 
@@ -195,6 +197,63 @@ export class TachesJobService {
           indiceReferenceValeur: indiceReference.valeur,
           indicePrecedentValeur: indicePrecedent.valeur
         }
+      });
+      nombreCreees += 1;
+    }
+    return nombreCreees;
+  }
+
+  /**
+   * Dérive une tâche de quittance mensuelle pour chaque échéance de loyer
+   * effectivement RÉGLÉE (Module Tâches, Étape 4, docs/backlog.md) —
+   * jamais anticipée avant `paiements.statut = 'paye'` (une quittance
+   * atteste un paiement reçu, pas une échéance à venir). origine=
+   * 'planifiee', comme revision_loyer : aucune alerte source. Idempotence
+   * via l'index unique partiel tache_paiement_active_unique (paiementId) —
+   * même garde préalable que les deux autres générateurs de ce job, pas une
+   * dépendance à la violation de l'index. Les échéances antérieures à
+   * cette étape (loyerHorsCharges/charges NULL, colonnes ajoutées le
+   * 2026-08-31) ne sont pas exclues ici : la tâche se crée quand même, la
+   * génération du document bloquera explicitement plus tard
+   * (validerCompletudeGenerationQuittance, packages/core) plutôt que de
+   * les ignorer silencieusement.
+   */
+  async genererTachesQuittanceMensuelle(): Promise<number> {
+    const paiementsRegles = await this.db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.type, "loyer"), eq(paiements.statut, "paye"), isNull(paiements.archivedAt)));
+
+    let nombreCreees = 0;
+    for (const paiement of paiementsRegles) {
+      const [tacheExistante] = await this.db
+        .select({ id: tache.id })
+        .from(tache)
+        .where(and(eq(tache.paiementId, paiement.id), inArray(tache.statut, ["a_faire", "en_cours"])))
+        .limit(1);
+      if (tacheExistante) {
+        continue;
+      }
+
+      const cible = await this.resoudreDepuisBail(paiement.bailId);
+      if (!cible || !cible.bailId) {
+        continue;
+      }
+
+      const titulaire = await this.resoudreTitulaire(cible.bailId);
+      const metadata = await this.construireMetadataQuittance(paiement, cible, titulaire);
+
+      await this.db.insert(tache).values({
+        type: "quittance_mensuelle",
+        statut: "a_faire",
+        origine: "planifiee",
+        bailId: cible.bailId,
+        appartementId: cible.appartementId,
+        paiementId: paiement.id,
+        locataireId: titulaire?.id ?? null,
+        dateEcheance: paiement.dateEcheance,
+        organisationId: cible.organisationId,
+        metadata
       });
       nombreCreees += 1;
     }
@@ -359,6 +418,52 @@ export class TachesJobService {
     return { notificationIndisponible: true, motifNotificationIndisponible: motif };
   }
 
+  /**
+   * Résout la notification pour une tâche quittance_mensuelle — même
+   * discipline que construireMetadataNotification (jamais silencieux, une
+   * erreur de résolution ne doit jamais arrêter le job au milieu de la
+   * nuit) mais mécanique séparée : origine='planifiee', pas d'AlerteRow ici
+   * (voir genererTachesRevisionLoyer pour le même choix). `periode` est
+   * dérivée de dateEcheance (mois/année de l'échéance réglée), jamais de
+   * la date du jour.
+   */
+  private async construireMetadataQuittance(
+    paiement: PaiementRow,
+    cible: CibleResolue,
+    titulaire: { id: string; nom: string; prenom: string } | null
+  ): Promise<Record<string, unknown>> {
+    if (!titulaire) {
+      return this.signalNotificationIndisponible("aucun titulaire actif sur le bail");
+    }
+    if (!cible.appartementId) {
+      return this.signalNotificationIndisponible("appartement introuvable");
+    }
+    try {
+      const libelleBien = await this.resoudreLibelleBien(cible.appartementId);
+      if (!libelleBien) {
+        return this.signalNotificationIndisponible("bien introuvable");
+      }
+      const modele = await this.modelesCourrierService.findByCode("quittance_mensuelle");
+      if (!modele) {
+        return this.signalNotificationIndisponible("modèle de courrier 'quittance_mensuelle' introuvable");
+      }
+      const { annee } = decomposerDate(paiement.dateEcheance);
+      const periode = `${libelleMoisDepuisDate(paiement.dateEcheance)} ${annee}`;
+      const variables = {
+        nomLocataire: `${titulaire.prenom} ${titulaire.nom}`,
+        libelleBien,
+        periode,
+        montant: paiement.montant
+      };
+      const { objet, corps } = resoudreModeleCourrier({ objet: modele.objet, corps: modele.corps }, variables);
+      return { notificationObjet: objet, notificationCorps: corps };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Échec de résolution de la notification pour le paiement ${paiement.id} (quittance_mensuelle) : ${message}`);
+      return this.signalNotificationIndisponible(`erreur de résolution : ${message}`);
+    }
+  }
+
   private async construireVariablesNotification(
     alerte: AlerteRow,
     nomLocataire: string,
@@ -412,7 +517,7 @@ export class TachesJobService {
   // plusieurs candidats. Retourne null si le bail n'a aucun titulaire
   // (uniquement des colocataire) — cas volontairement non contraint, à
   // gérer explicitement par l'appelant plutôt que de deviner un notifié.
-  private async resoudreTitulaire(bailId: string): Promise<{ nom: string; prenom: string } | null> {
+  private async resoudreTitulaire(bailId: string): Promise<{ id: string; nom: string; prenom: string } | null> {
     const [lien] = await this.db
       .select({ locataireId: bailLocataires.locataireId })
       .from(bailLocataires)
@@ -422,7 +527,7 @@ export class TachesJobService {
       .limit(1);
     if (!lien) return null;
     const [locataire] = await this.db
-      .select({ nom: locataires.nom, prenom: locataires.prenom })
+      .select({ id: locataires.id, nom: locataires.nom, prenom: locataires.prenom })
       .from(locataires)
       .where(eq(locataires.id, lien.locataireId))
       .limit(1);
