@@ -36,6 +36,10 @@ export interface Bien {
   type: BienType;
   proprietaireType: BienProprietaireType;
   sciId: string | null;
+  // Nom du bailleur en nom propre — requis (et seulement renseigné) si
+  // proprietaireType='personne_physique' (voir BienService
+  // .resoudreNomBailleur, Module Tâches, Étape 4).
+  nomProprietaire: string | null;
   organisationId: string;
   adresse: string;
   codePostal: string;
@@ -64,6 +68,7 @@ export interface CreateBienInput {
   type: BienType;
   proprietaireType: BienProprietaireType;
   sciId?: string;
+  nomProprietaire?: string;
   adresse: string;
   codePostal: string;
   ville: string;

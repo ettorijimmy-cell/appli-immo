@@ -13,19 +13,28 @@ export interface DureeBailLegale {
  * humain explicite à la génération (docs/data-dictionary.md, section
  * "Édition d'un bail") :
  *
- * - Bail vide : `immeubles.sci_id` est obligatoire dans le schéma actuel
- *   (aucun immeuble sans SCI) — le cas "bailleur particulier direct, 3 ans
- *   automatique" n'est donc jamais atteignable aujourd'hui et n'est
- *   volontairement PAS couvert ici. Le choix est toujours entre SCI
- *   familiale (réputée personne physique, article 10 de la loi n° 89-462
- *   du 6 juillet 1989 : 3 ans) et SCI non familiale/personne morale
- *   (6 ans) — rien dans le schéma (`scis`) ne distingue les deux, à
- *   trancher humainement à chaque génération.
+ * - Bail vide, bailleur SCI (`bien.proprietaireType = 'sci'`) : choix
+ *   toujours humain entre SCI familiale (réputée personne physique,
+ *   article 10 de la loi n° 89-462 du 6 juillet 1989 : 3 ans) et SCI non
+ *   familiale/personne morale (6 ans) — rien dans le schéma (`scis`) ne
+ *   distingue les deux.
+ * - Bail vide, bailleur personne physique (`bien.proprietaireType =
+ *   'personne_physique'`, atteignable depuis la migration Bien,
+ *   2026-08-25) : 3 ans, appliqué automatiquement, aucun choix humain —
+ *   même durée que le cas SCI familiale, mais la qualité de bailleur est
+ *   déjà connue avec certitude via `bien.proprietaireType`, contrairement
+ *   au cas SCI où `estFamiliale` n'est jamais déductible du schéma.
+ *   Ajouté le 2026-08-31 en corrigeant le bug bailleur de
+ *   bail-document-docx.service.ts (voir docs/backlog.md) — CE COMMENTAIRE
+ *   REMPLACE une version antérieure qui jugeait ce cas inatteignable
+ *   (c'était vrai avant la migration Bien, plus depuis). Référence légale
+ *   (article 10, loi n° 89-462) à vérifier avant tout usage réel de cette
+ *   clause, comme pour les deux régimes SCI ci-dessus.
  * - Bail meublé : 1 an par défaut, 9 mois si bail étudiant (article 25-7
  *   de la même loi, sans reconduction tacite) — un défaut existe mais
  *   reste confirmable/modifiable, jamais imposé.
  */
-export type RegimeDureeBailVide = "sci_familiale" | "sci_non_familiale";
+export type RegimeDureeBailVide = "sci_familiale" | "sci_non_familiale" | "personne_physique";
 export type RegimeDureeBailMeuble = "standard" | "etudiant";
 
 export type ChoixDureeBail =
@@ -41,6 +50,13 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
         duree: "trois ans",
         dureeMois: 36,
         texteLegal: `Le bailleur étant réputé personne physique (SCI familiale, article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`
+      };
+    }
+    if (choix.regime === "personne_physique") {
+      return {
+        duree: "trois ans",
+        dureeMois: 36,
+        texteLegal: `Le bailleur étant une personne physique (article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`
       };
     }
     return {
@@ -69,6 +85,11 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
  * donné — sert à déterminer si un choix humain est strictement requis
  * (vide : jamais de défaut, toujours à trancher) ou seulement
  * confirmable (meublé : un défaut existe).
+ *
+ * "personne_physique" est volontairement ABSENT de la liste "vide" ci-dessous
+ * : ce n'est jamais un choix humain (voir ChoixDureeBail/calculerDureeBail
+ * ci-dessus), il est sélectionné automatiquement depuis
+ * `bien.proprietaireType`, jamais proposé/confirmé par un appelant.
  */
 export function regimesDureeApplicables(typeBail: "vide" | "meuble"): {
   regimes: readonly string[];

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bien, bienImmeubleDetail, mettreAJourAvecAudit, type Database } from "db";
+import { bien, bienImmeubleDetail, mettreAJourAvecAudit, scis, type Database } from "db";
 import { eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -30,8 +30,14 @@ export class BienService {
     if (dto.proprietaireType === "sci" && !dto.sciId) {
       throw new BadRequestException("sciId est requis lorsque proprietaireType vaut 'sci'.");
     }
+    if (dto.proprietaireType === "sci" && dto.nomProprietaire) {
+      throw new BadRequestException("nomProprietaire doit être absent lorsque proprietaireType vaut 'sci'.");
+    }
     if (dto.proprietaireType === "personne_physique" && dto.sciId) {
       throw new BadRequestException("sciId doit être absent lorsque proprietaireType vaut 'personne_physique'.");
+    }
+    if (dto.proprietaireType === "personne_physique" && !dto.nomProprietaire) {
+      throw new BadRequestException("nomProprietaire est requis lorsque proprietaireType vaut 'personne_physique'.");
     }
     if (dto.type === "immeuble" && !dto.nom) {
       throw new BadRequestException("nom est requis pour un bien de type 'immeuble'.");
@@ -65,6 +71,7 @@ export class BienService {
           // que ScisService.create -> creerRattachementProprietaire).
           organisationId: user.organisationId,
           sciId: dto.proprietaireType === "sci" ? (dto.sciId ?? null) : null,
+          nomProprietaire: dto.proprietaireType === "personne_physique" ? (dto.nomProprietaire ?? null) : null,
           adresse: dto.adresse,
           codePostal: dto.codePostal,
           ville: dto.ville,
@@ -124,6 +131,35 @@ export class BienService {
       .where(eq(bien.id, id))
       .limit(1);
     return row ? this.versDto(row.bien, row.detail) : null;
+  }
+
+  /**
+   * Résout le nom du bailleur à afficher sur un document généré (bail,
+   * quittance — Module Tâches, Étape 4, docs/backlog.md) : sci.nom pour un
+   * bien en SCI, bien.nomProprietaire pour un bien en nom propre. Service
+   * partagé entre bail-document-docx et le générateur de quittance — aucun
+   * des deux ne doit résoudre cette logique lui-même (corrige le bug
+   * découvert dans bail-document-docx.service.ts, qui échouait
+   * (NotFoundException) pour tout bien proprietaireType='personne_physique'
+   * faute d'alternative à sci.nom).
+   */
+  async resoudreNomBailleur(bienId: string): Promise<string | null> {
+    const [bienRow] = await this.db
+      .select({ proprietaireType: bien.proprietaireType, sciId: bien.sciId, nomProprietaire: bien.nomProprietaire })
+      .from(bien)
+      .where(eq(bien.id, bienId))
+      .limit(1);
+    if (!bienRow) {
+      return null;
+    }
+    if (bienRow.proprietaireType === "personne_physique") {
+      return bienRow.nomProprietaire;
+    }
+    if (!bienRow.sciId) {
+      return null;
+    }
+    const [sci] = await this.db.select({ nom: scis.nom }).from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
+    return sci?.nom ?? null;
   }
 
   async update(id: string, dto: UpdateBienDto) {
@@ -215,6 +251,7 @@ export class BienService {
       type: bienRow.type,
       proprietaireType: bienRow.proprietaireType,
       sciId: bienRow.sciId,
+      nomProprietaire: bienRow.nomProprietaire,
       organisationId: bienRow.organisationId,
       adresse: bienRow.adresse,
       codePostal: bienRow.codePostal,

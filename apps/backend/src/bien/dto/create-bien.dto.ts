@@ -38,6 +38,14 @@ export class CreateBienDto {
   @IsUUID()
   sciId?: string;
 
+  // Symétrique de sciId pour proprietaireType='personne_physique' (requis
+  // dans ce cas, doit être absent si 'sci') — même contrainte
+  // bien_sci_id_coherent, vérifiée dans BienService.create.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  nomProprietaire?: string;
+
   @IsString()
   @MinLength(1)
   adresse!: string;

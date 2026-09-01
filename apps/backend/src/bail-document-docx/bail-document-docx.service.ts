@@ -34,6 +34,7 @@ import Docxtemplater from "docxtemplater";
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import PizZip from "pizzip";
 import { AuditService } from "../audit/audit.service";
+import { BienService } from "../bien/bien.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-docx.dto";
@@ -51,6 +52,7 @@ export class BailDocumentDocxService {
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly auditService: AuditService,
     private readonly requestContext: RequestContextService,
+    private readonly bienService: BienService,
     config: ConfigService
   ) {
     this.templatePath =
@@ -84,12 +86,20 @@ export class BailDocumentDocxService {
       throw new NotFoundException("Bien introuvable");
     }
 
-    if (!bienRow.sciId) {
-      throw new NotFoundException("SCI introuvable");
-    }
-    const [sci] = await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
+    // Bailleur : sci.nom (bien en SCI) ou bien.nomProprietaire (nom propre,
+    // atteignable depuis la migration Bien, 2026-08-25) — résolu via le
+    // service partagé BienService.resoudreNomBailleur (corrige le bug
+    // découvert lors de l'audit Étape 4 quittance, docs/backlog.md,
+    // 2026-08-31 : cette méthode levait NotFoundException dès que
+    // bien.sciId était NULL, cas réel et valide pour un bien en nom
+    // propre, pas seulement théorique). `sci` reste chargé séparément
+    // (uniquement quand bienRow.sciId est renseigné) pour les balises de
+    // siège social propres à une SCI (adresse/CP/ville/téléphone), qui
+    // n'ont pas d'équivalent pour un bailleur en nom propre.
+    const sci = bienRow.sciId ? ((await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1))[0] ?? null) : null;
+    const nomBailleur = await this.bienService.resoudreNomBailleur(bienRow.id);
+    if (!nomBailleur) {
+      throw new NotFoundException("Bailleur introuvable (nom de la SCI ou du propriétaire manquant)");
     }
 
     const liensLocataires = await this.db
@@ -128,13 +138,17 @@ export class BailDocumentDocxService {
     // (packages/core, validerCompletudeGenerationBail).
     const donneesCompletude: DonneesCompletudeGenerationBail = {
       bienType: bienRow.type,
-      sci: {
-        telephone: sci.telephone,
-        estFamiliale: sci.estFamiliale,
-        adresse: sci.adresse,
-        codePostal: sci.codePostal,
-        ville: sci.ville
-      },
+      // null pour un bailleur en nom propre : aucun champ sci.* à exiger
+      // (voir DonneesCompletudeGenerationBail.sci, packages/core).
+      sci: sci
+        ? {
+            telephone: sci.telephone,
+            estFamiliale: sci.estFamiliale,
+            adresse: sci.adresse,
+            codePostal: sci.codePostal,
+            ville: sci.ville
+          }
+        : null,
       immeuble: {
         anneeConstruction: bienRow.anneeConstruction,
         typeHabitat: bienRow.typeHabitat,
@@ -240,13 +254,19 @@ export class BailDocumentDocxService {
       );
     const categoriesDiagnosticsPresentes = new Set(documentsDiagnostics.map((d) => d.categorie));
 
-    // Durée légale : bail vide dérivé automatiquement de scis.est_familiale
-    // (déjà validé non-null ci-dessus, aucun choix humain requis) ; bail
-    // meublé, rien dans le schéma ne distingue standard/étudiant — choix
-    // explicite (DTO), "standard" par défaut si omis.
+    // Durée légale, bail vide : automatique pour un bailleur en nom propre
+    // (regime 'personne_physique', aucun choix — voir calculerDureeBail,
+    // packages/core), sinon dérivée de scis.est_familiale (déjà validé
+    // non-null ci-dessus, aucun choix humain requis non plus — `sci` est
+    // garanti non-null ici par la contrainte bien_sci_id_coherent dès que
+    // proprietaireType='sci'). Bail meublé : rien dans le schéma ne
+    // distingue standard/étudiant — choix explicite (DTO), "standard" par
+    // défaut si omis.
     const choixDuree: ChoixDureeBail =
       bail.typeBail === "vide"
-        ? { typeBail: "vide", regime: sci.estFamiliale ? "sci_familiale" : "sci_non_familiale" }
+        ? bienRow.proprietaireType === "personne_physique"
+          ? { typeBail: "vide", regime: "personne_physique" }
+          : { typeBail: "vide", regime: sci!.estFamiliale ? "sci_familiale" : "sci_non_familiale" }
         : {
             typeBail: "meuble",
             regime: dto.regimeDureeMeuble ?? (regimesDureeApplicables("meuble").parDefaut as "standard")
@@ -261,11 +281,18 @@ export class BailDocumentDocxService {
     const donneesBalises: Record<string, string> = {
       "Nom de l’appartement": `${appartement.type} - ${appartement.numero}`,
 
-      "Nom de la SCI": sci.nom,
-      "Adresse de la SCI": sci.adresse ?? VIDE,
-      "code postal SCI": sci.codePostal ?? VIDE,
-      "Ville SCI": sci.ville ?? VIDE,
-      "téléphone SCI": sci.telephone ?? VIDE,
+      // Balise nommée "Nom de la SCI" dans le fichier Word d'origine (figée
+      // côté propriétaire, non renommable) mais porte désormais le nom du
+      // bailleur quel que soit son mode de détention — voir nomBailleur
+      // ci-dessus. Les 4 balises suivantes (siège social) restent propres
+      // à une SCI, sans équivalent pour un bailleur en nom propre : VIDE
+      // dans ce cas, jamais bloquant (voir DonneesCompletudeGenerationBail
+      // .sci, packages/core).
+      "Nom de la SCI": nomBailleur,
+      "Adresse de la SCI": sci?.adresse ?? VIDE,
+      "code postal SCI": sci?.codePostal ?? VIDE,
+      "Ville SCI": sci?.ville ?? VIDE,
+      "téléphone SCI": sci?.telephone ?? VIDE,
 
       "Nom prénom du locataire": titulaire ? `${titulaire.prenom} ${titulaire.nom}` : VIDE,
       "Adresse locataire": titulaire?.adresse ?? VIDE,

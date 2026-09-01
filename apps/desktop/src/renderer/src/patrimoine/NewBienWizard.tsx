@@ -41,6 +41,7 @@ export function NewBienWizard({
   const [scis, setScis] = useState<Sci[]>([]);
   const [proprietaireType, setProprietaireType] = useState<BienProprietaireType>("sci");
   const [sciId, setSciId] = useState(sciIdPreselectionne ?? "");
+  const [nomProprietaire, setNomProprietaire] = useState("");
   const [type, setType] = useState<BienType>("immeuble");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +53,10 @@ export function NewBienWizard({
   function handleEtapeProprietaireSuivant(): void {
     if (proprietaireType === "sci" && !sciId) {
       setError("Choisissez une SCI.");
+      return;
+    }
+    if (proprietaireType === "personne_physique" && !nomProprietaire) {
+      setError("Indiquez le nom du propriétaire.");
       return;
     }
     setError(null);
@@ -112,6 +117,20 @@ export function NewBienWizard({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {proprietaireType === "personne_physique" && (
+            <div className="space-y-1">
+              <label htmlFor="bien-nom-proprietaire" className="text-sm font-medium text-slate-700">
+                Nom du propriétaire
+              </label>
+              <input
+                id="bien-nom-proprietaire"
+                value={nomProprietaire}
+                onChange={(event) => setNomProprietaire(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
             </div>
           )}
 
@@ -179,6 +198,7 @@ export function NewBienWizard({
           type={type}
           proprietaireType={proprietaireType}
           sciId={proprietaireType === "sci" ? sciId : undefined}
+          nomProprietaire={proprietaireType === "personne_physique" ? nomProprietaire : undefined}
           onPrecedent={() => setEtape("type")}
           onCancel={onCancel}
           onCreated={onCreated}
@@ -194,6 +214,7 @@ function DetailsStep({
   type,
   proprietaireType,
   sciId,
+  nomProprietaire,
   onPrecedent,
   onCancel,
   onCreated,
@@ -203,6 +224,7 @@ function DetailsStep({
   type: BienType;
   proprietaireType: BienProprietaireType;
   sciId: string | undefined;
+  nomProprietaire: string | undefined;
   onPrecedent: () => void;
   onCancel: () => void;
   onCreated: (bien: Bien) => void;
@@ -263,6 +285,7 @@ function DetailsStep({
         type,
         proprietaireType,
         ...(sciId && { sciId }),
+        ...(nomProprietaire && { nomProprietaire }),
         adresse,
         codePostal,
         ville,

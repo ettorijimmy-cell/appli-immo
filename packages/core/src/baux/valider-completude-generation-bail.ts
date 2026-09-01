@@ -73,7 +73,13 @@ export interface DonneesCompletudeGarant {
 
 export interface DonneesCompletudeGenerationBail {
   bienType: TypeBien;
-  sci: DonneesCompletudeSci;
+  // null pour un bien en nom propre (bien.proprietaireType =
+  // 'personne_physique', atteignable depuis la migration Bien,
+  // 2026-08-25) : aucun "siège social" n'existe pour ce cas, les 5
+  // vérifications sci.* ci-dessous ne s'appliquent alors jamais — corrige
+  // le bug bailleur de bail-document-docx.service.ts (docs/backlog.md,
+  // 2026-08-31), qui échouait avant même d'atteindre cette validation.
+  sci: DonneesCompletudeSci | null;
   immeuble: DonneesCompletudeImmeuble;
   appartement: DonneesCompletudeAppartement;
   locataires: DonneesCompletudeLocataire[];
@@ -88,20 +94,26 @@ export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenera
 
   const manquants: string[] = [];
 
-  if (donnees.sci.telephone === null) {
-    manquants.push("Téléphone de la SCI");
-  }
-  if (donnees.sci.estFamiliale === null) {
-    manquants.push("SCI familiale ou non (détermine la durée légale du bail)");
-  }
-  if (donnees.sci.adresse === null) {
-    manquants.push("Adresse du siège social de la SCI");
-  }
-  if (donnees.sci.codePostal === null) {
-    manquants.push("Code postal du siège social de la SCI");
-  }
-  if (donnees.sci.ville === null) {
-    manquants.push("Ville du siège social de la SCI");
+  // Bailleur en nom propre : aucun champ sci.* à vérifier (voir le
+  // commentaire de DonneesCompletudeGenerationBail.sci) — la durée légale
+  // ne dépend plus de estFamiliale dans ce cas (voir calculerDureeBail,
+  // regime 'personne_physique', automatique).
+  if (donnees.sci !== null) {
+    if (donnees.sci.telephone === null) {
+      manquants.push("Téléphone de la SCI");
+    }
+    if (donnees.sci.estFamiliale === null) {
+      manquants.push("SCI familiale ou non (détermine la durée légale du bail)");
+    }
+    if (donnees.sci.adresse === null) {
+      manquants.push("Adresse du siège social de la SCI");
+    }
+    if (donnees.sci.codePostal === null) {
+      manquants.push("Code postal du siège social de la SCI");
+    }
+    if (donnees.sci.ville === null) {
+      manquants.push("Ville du siège social de la SCI");
+    }
   }
   if (donnees.immeuble.anneeConstruction === null) {
     manquants.push("Année de construction de l'immeuble");
