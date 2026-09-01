@@ -32,6 +32,15 @@ export const bien = pgTable(
     // Charges et fiscalité — déclaration 2072) — jamais le mécanisme de
     // scoping multi-tenant, voir organisationId ci-dessous.
     sciId: uuid("sci_id").references(() => scis.id),
+    // Nom du bailleur en nom propre (Module Tâches, Étape 4 — quittance
+    // mensuelle, 2026-08-31) : requis exclusivement quand proprietaireType
+    // = 'personne_physique' (voir bien_proprietaire_coherent ci-dessous),
+    // NULL pour un bien en SCI (le nom du bailleur y est déjà sci.nom).
+    // Corrige un trou latent découvert en auditant bail-document-docx
+    // .service.ts, qui échouait (NotFoundException) pour tout bien en nom
+    // propre faute d'alternative à sci.nom — voir BienService
+    // .resoudreNomBailleur.
+    nomProprietaire: text("nom_proprietaire"),
     // Clé de scoping multi-tenant réelle, peuplée depuis l'organisation de
     // l'utilisateur courant à la création (même source que
     // organisation_sci.organisation_id pour une SCI) — indépendamment du
@@ -78,7 +87,7 @@ export const bien = pgTable(
   (table) => [
     check(
       "bien_sci_id_coherent",
-      sql`(${table.proprietaireType} = 'sci' AND ${table.sciId} IS NOT NULL) OR (${table.proprietaireType} = 'personne_physique' AND ${table.sciId} IS NULL)`
+      sql`(${table.proprietaireType} = 'sci' AND ${table.sciId} IS NOT NULL AND ${table.nomProprietaire} IS NULL) OR (${table.proprietaireType} = 'personne_physique' AND ${table.sciId} IS NULL AND ${table.nomProprietaire} IS NOT NULL)`
     ),
     check("bien_nom_requis_si_immeuble", sql`${table.type} != 'immeuble' OR ${table.nom} IS NOT NULL`)
   ]

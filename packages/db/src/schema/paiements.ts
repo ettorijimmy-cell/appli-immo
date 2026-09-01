@@ -20,5 +20,19 @@ export const paiements = pgTable("paiements", {
   type: paiementTypeEnum("type").notNull(),
   statut: paiementStatutEnum("statut").notNull().default("impaye"),
   montant: decimal("montant", { precision: 10, scale: 2 }).notNull(),
-  dateEcheance: date("date_echeance").notNull()
+  dateEcheance: date("date_echeance").notNull(),
+  // Décomposition FIGÉE au moment de la génération de l'échéance (Module
+  // Tâches, Étape 4 — quittance mensuelle, 2026-08-31), jamais recalculée
+  // rétroactivement même si baux.loyerMensuel/provisionsCharges sont
+  // révisés ensuite — décision produit explicite (docs/backlog.md),
+  // volontairement différente de calculerProvisionsRecuesEcheance/
+  // calculerLoyerNetRecuEcheance (packages/core), qui restent des
+  // ESTIMATIONS basées sur les valeurs actuelles du bail, utilisées
+  // uniquement par l'agrégation du tableau de bord (Module 7), sans
+  // changement sur leur usage. Nullables : compatibilité avec les échéances
+  // déjà existantes avant cette colonne, jamais rétro-remplies. Renseignées
+  // systématiquement pour toute nouvelle échéance par
+  // AlertesJobService.genererEcheancesRecurrentes.
+  loyerHorsCharges: decimal("loyer_hors_charges", { precision: 10, scale: 2 }),
+  charges: decimal("charges", { precision: 10, scale: 2 })
 });

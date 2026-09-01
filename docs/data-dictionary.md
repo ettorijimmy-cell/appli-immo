@@ -69,6 +69,7 @@ déjà rattachés à une ligne existante — voir sort différé, section
 | type | enum | `immeuble` \| `maison` \| `appartement_isole` \| `parking` \| `bureau` \| `local_commercial` |
 | proprietaire_type | enum | `sci` \| `personne_physique` — détermine la cohérence de `sci_id` (contrainte `bien_sci_id_coherent`) |
 | sci_id | uuid, nullable | Informationnel/légal uniquement (fiscalité, futur module Charges et fiscalité — déclaration 2072) — **jamais** le mécanisme de scoping multi-tenant. `NULL` si `proprietaire_type = 'personne_physique'`, requis sinon |
+| nom_proprietaire | text, nullable | Nom du bailleur en nom propre (Module Tâches, Étape 4 — quittance mensuelle, 2026-08-31). Symétrique de `sci_id` : requis si `proprietaire_type = 'personne_physique'`, `NULL` sinon (contrainte `bien_sci_id_coherent` actualisée pour couvrir les deux colonnes). Résolu vers un affichage unique par `BienService.resoudreNomBailleur(bienId)` — service partagé entre `bail-document-docx` et `quittance-document-docx`, aucun des deux ne doit résoudre cette logique lui-même. Corrige un bug latent découvert en auditant `bail-document-docx.service.ts` : avant ce correctif, la génération du document de bail levait `NotFoundException("SCI introuvable")` dès que `sci_id` était `NULL`, cas réel et valide depuis la migration Bien, pas seulement théorique. `calculerDureeBail` (packages/core) gagne à cette occasion un 3e régime `personne_physique` (bail vide, 3 ans automatique, aucun choix humain — contrairement au cas SCI où `sci_familiale`/`sci_non_familiale` reste toujours un choix humain, `estFamiliale` n'étant jamais déductible du schéma) |
 | organisation_id | uuid | Clé de scoping multi-tenant réelle pour `bien`/`appartements` (Sync Streams PowerSync) — peuplée depuis l'organisation de l'utilisateur courant à la création (`BienService.create`, même mécanisme que `ScisService.create` pour `organisation_sci`), indépendamment du mode de détention. Un bien en nom propre (`proprietaire_type='personne_physique'`, `sci_id` NULL) n'aurait sinon aucun chemin de scoping : le chemin historique `organisation_sci -> sci_id -> immeuble` ne couvre que les biens en SCI |
 | nom | text, nullable | Requis uniquement si `type = 'immeuble'` (contrainte `bien_nom_requis_si_immeuble`, vérifiée aussi côté `BienService.create` pour un message d'erreur clair). Repli d'affichage partout ailleurs (desktop, mobile-web) : `bien.nom ?? bien.adresse` |
 | annee_construction | integer, nullable | Commun à tout type de bien vis-à-vis du contrat-type de bail — pas réservé aux immeubles (décision de l'audit du 2026-08-25, place ce champ sur `bien` plutôt que `bien_immeuble_detail`) |
@@ -424,6 +425,8 @@ sinon.
 | statut | enum | `paye` \| `impaye` \| `partiel` |
 | montant | decimal | Somme attendue à l'échéance |
 | date_echeance | date | |
+| loyer_hors_charges | decimal, nullable | **Module Tâches, Étape 4 — quittance mensuelle, 2026-08-31.** Décomposition FIGÉE au moment de la génération de l'échéance (`AlertesJobService.genererEcheancesRecurrentes`, copie directe de `baux.loyer_mensuel`), **jamais recalculée** ensuite même si le bail est révisé — décision produit explicite, tranchée avec l'utilisateur, volontairement différente de l'ESTIMATION `calculerProvisionsRecuesEcheance`/`calculerLoyerNetRecuEcheance` décrite juste au-dessus (celles-ci restent inchangées, utilisées uniquement par l'agrégation du tableau de bord Module 7). Nullable : compatibilité avec les échéances déjà existantes avant l'ajout de cette colonne, jamais rétro-remplies. Sert de garde-fou bloquant pour `QuittanceDocumentDocxService` (`validerCompletudeGenerationQuittance`, packages/core) : une échéance antérieure à cette date n'est pas éligible à la génération de quittance tant qu'elle n'est pas figée. **Invalidé (repassé à `NULL`) par `PaiementsService.update()`** dès que `montant` change sur une échéance déjà figée (revue financial-logic-reviewer, 2026-08-31) : sans ce garde-fou, une correction légitime de `montant` (typo, ajustement) laisserait `loyer_hors_charges`/`charges` PÉRIMÉS, et une quittance générée ensuite afficherait un montant faux plutôt que de bloquer explicitement |
+| charges | decimal, nullable | Symétrique de `loyer_hors_charges` ci-dessus (copie de `baux.provisions_charges`, figée, jamais recalculée). Vaut `'0.00'` (jamais `NULL`) quand le bail n'a pas de provisions pour charges, pour qu'une quittance affiche explicitement zéro plutôt qu'un champ vide ambigu — `NULL` signifie uniquement "cette colonne n'existait pas encore lors de la génération de cette échéance", jamais "pas de charges" |
 
 **Décision produit (Module 5, tranchée avec l'utilisateur)** : le critère
 "référence" du rapprochement bancaire (`packages/core`,
@@ -767,7 +770,8 @@ réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
 | bail_id | uuid, FK `baux` | Résolu depuis l'alerte source quand applicable (voir résolution par type ci-dessous) |
 | appartement_id | uuid, FK `appartements` | Idem |
 | bien_id | uuid, FK `bien` | Pour une tâche résolue au niveau du bien lui-même (ex. document expiré attaché à `documents.entiteType='bien'`), pas à un appartement ou un bail précis |
-| locataire_id | uuid, FK `locataires` | **Non peuplé par la génération automatique dans cette étape** — un bail en colocation référence plusieurs locataires via `bail_locataires` (many-to-many), aucune règle de choix n'a été arbitrée. Réservé à un usage futur |
+| locataire_id | uuid, FK `locataires` | **Non peuplé par la génération automatique dans cette étape** — un bail en colocation référence plusieurs locataires via `bail_locataires` (many-to-many), aucune règle de choix n'a été arbitrée. Réservé à un usage futur. **Renseigné depuis l'Étape 4** pour `type='quittance_mensuelle'` via `resoudreTitulaire` (déterministe grâce à l'index unique titulaire actif, voir section `bail_locataires`) — `null` si le bail n'a aucun titulaire (colocataires uniquement) |
+| paiement_id | uuid, FK `paiements`, nullable | **Module Tâches, Étape 4 — quittance mensuelle, 2026-08-31.** Échéance à l'origine d'une tâche `type='quittance_mensuelle'`, jamais renseigné pour les autres types. Sert de clé d'idempotence (voir index unique ci-dessous), même principe que `alerte_source_id` |
 | date_echeance | date | |
 | date_completion | timestamptz | Posée automatiquement par `TachesService.marquerFait()`, jamais par un `update()` générique |
 | periode_recurrence | text | Ex. `'2026-09'` — inutilisé dans cette étape, réservé aux tâches récurrentes futures (quittances mensuelles, révision de loyer) |
@@ -800,7 +804,51 @@ dédiée par type, pas une requête uniforme.
 **Idempotence** : un index unique partiel garantit qu'il n'existe jamais
 plus d'une tâche `a_faire`/`en_cours` à la fois pour une même
 `alerte_source_id` — le job quotidien vérifie son existence avant toute
-création plutôt que de s'appuyer sur une violation de contrainte.
+création plutôt que de s'appuyer sur une violation de contrainte. Même
+principe pour `paiement_id` (index `tache_paiement_active_unique`, voir
+section "Quittance mensuelle" ci-dessous).
+
+## Quittance mensuelle (Module Tâches, Étape 4, 2026-08-31)
+`TachesJobService.genererTachesQuittanceMensuelle()` (job quotidien) crée
+une tâche `type='quittance_mensuelle'`/`origine='planifiee'` pour chaque
+`paiements` de `type='loyer'` **effectivement réglé** (`statut='paye'`) sans
+tâche active déjà liée (`paiement_id`) — jamais anticipée sur une échéance
+à venir ou encore impayée/partielle : une quittance atteste un paiement
+reçu, pas une échéance due. Idempotence par `paiement_id`, index unique
+partiel `tache_paiement_active_unique` — même mécanique que
+`tache_bail_periode_revision_active_unique` (section Révision de loyer).
+Résout `bailId`/`appartementId` depuis le paiement, `locataireId` via
+`resoudreTitulaire`, et la notification (`notificationObjet`/
+`notificationCorps` dans `metadata`, modèle de courrier `code='quittance_mensuelle'`,
+variables `nomLocataire`/`libelleBien`/`periode`/`montant`) — même
+discipline "jamais silencieux" que l'extension notifications alertes
+(`notificationIndisponible` + motif si titulaire/bien/modèle introuvable,
+erreur de résolution jamais fatale au job).
+
+**`QuittanceDocumentDocxService`** (`apps/backend/src/quittance-document-docx`,
+route `POST /paiements/:id/document-quittance-docx`) génère le document
+(docxtemplater/pizzip, chemin de template via `QUITTANCE_DOCUMENT_DOCX_
+TEMPLATE_PATH`, même mécanique que `bail-document-docx`/
+`etat-des-lieux-document-docx`) — jamais persisté (streamé au client
+uniquement, cohérent avec les deux précédents). Lit directement
+`paiements.loyer_hors_charges`/`paiements.charges` (jamais recalculés) et
+bloque explicitement (`validerCompletudeGenerationQuittance`, packages/core)
+si l'échéance est antérieure au 2026-08-31 (ces deux colonnes encore
+`NULL`) plutôt que d'imprimer un montant recalculé potentiellement faux.
+Date de règlement résolue via le dernier `versements` actif du paiement
+(même précédent que "date de versement loyer précédent locataire" dans
+`bail-document-docx.service.ts`). Résolution du bailleur partagée avec
+`bail-document-docx` via `BienService.resoudreNomBailleur` (voir section
+`bien`).
+
+**Dette technique documentée** : l'échéance d'ENTRÉE générée par
+`BauxService.activer()` (distincte du job récurrent
+`genererEcheancesRecurrentes`) ne renseigne pas encore `loyer_hors_charges`/
+`charges` — une quittance ne peut donc pas encore être générée pour le
+premier mois d'un nouveau bail tant que cette échéance n'est pas figée a
+posteriori. Voir docs/backlog.md, section Dette technique, pour le détail
+et la piste de correctif (prorata à préserver exactement, sans dérive
+d'arrondi entre les deux composantes).
 
 ## modele_courrier (Module Tâches, Étape 2, 2026-08-29)
 Brique transverse, pas un module à part entière — infrastructure de modèle

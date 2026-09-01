@@ -7,6 +7,7 @@ import { bien } from "./bien";
 import { auditColumns } from "./columns.helpers";
 import { locataires } from "./locataires";
 import { organisations } from "./organisations";
+import { paiements } from "./paiements";
 
 // Sous-ensemble des types d'alerte (packages/db/src/schema/alertes.ts) qui
 // génèrent une tâche à ce stade (Module Tâches, Étape 1, docs/backlog.md) :
@@ -51,7 +52,15 @@ export const tache = pgTable(
     // Non peuplé par la génération automatique dans cette étape (pas de
     // règle de choix arbitrée pour un bail en colocation via
     // bail_locataires, relation many-to-many) — réservé à un usage futur.
+    // (Renseigné depuis Étape 4 — quittance_mensuelle — via resoudreTitulaire,
+    // désormais déterministe grâce à l'index unique titulaire actif.)
     locataireId: uuid("locataire_id").references(() => locataires.id),
+    // Référence l'échéance (paiements) à l'origine d'une tâche
+    // type='quittance_mensuelle' (Module Tâches, Étape 4, 2026-08-31) — sert
+    // aussi de clé d'idempotence (voir l'index unique partiel ci-dessous),
+    // même principe que alerteSourceId pour les tâches dérivées d'alertes.
+    // Jamais renseigné pour les autres types de tâche.
+    paiementId: uuid("paiement_id").references(() => paiements.id),
     dateEcheance: date("date_echeance"),
     dateCompletion: timestamp("date_completion", { withTimezone: true }),
     // Ex. '2026-09' — inutilisé dans cette étape, réservé aux tâches
@@ -82,6 +91,12 @@ export const tache = pgTable(
       .on(table.bailId, table.periodeRecurrence)
       .where(
         sql`${table.type} = 'revision_loyer' AND ${table.statut} IN ('a_faire', 'en_cours') AND ${table.bailId} IS NOT NULL AND ${table.periodeRecurrence} IS NOT NULL`
-      )
+      ),
+    // Même principe, pour les tâches de quittance mensuelle (origine=
+    // 'planifiee', pas d'alerte source) : au plus une tâche a_faire/en_cours
+    // par paiement — voir TachesJobService.genererTachesQuittanceMensuelle.
+    uniqueIndex("tache_paiement_active_unique")
+      .on(table.paiementId)
+      .where(sql`${table.statut} IN ('a_faire', 'en_cours') AND ${table.paiementId} IS NOT NULL`)
   ]
 );
