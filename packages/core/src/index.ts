@@ -22,6 +22,7 @@ export * from "./baux/calculer-tranche-construction";
 export * from "./baux/calculer-clause-resolutoire";
 export * from "./baux/calculer-duree-bail";
 export * from "./paiements/calculer-loyer-precedent-locataire";
+export * from "./paiements/valider-completude-generation-quittance";
 export * from "./baux/valider-completude-generation-bail";
 export * from "./baux/calculer-libelle-depot-garantie";
 export * from "./baux/valider-fraicheur-irl";

@@ -24,6 +24,7 @@ import { LocatairesModule } from "./locataires/locataires.module";
 import { ModelesCourrierModule } from "./modeles-courrier/modeles-courrier.module";
 import { PaiementsModule } from "./paiements/paiements.module";
 import { PowerSyncModule } from "./powersync/powersync.module";
+import { QuittanceDocumentDocxModule } from "./quittance-document-docx/quittance-document-docx.module";
 import { ReferencesModule } from "./references/references.module";
 import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
@@ -63,6 +64,7 @@ import { VersementsModule } from "./versements/versements.module";
     BailDocumentDocxModule,
     EtatsDesLieuxModule,
     EtatDesLieuxDocumentDocxModule,
+    QuittanceDocumentDocxModule,
     PowerSyncModule
   ]
 })

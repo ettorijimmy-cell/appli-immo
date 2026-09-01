@@ -100,7 +100,15 @@ export class AlertesJobService {
         bailId: bail.id,
         type: "loyer",
         montant: calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges),
-        dateEcheance: calculerDateEcheanceRecurrente(dateReference, bail.jourEcheance)
+        dateEcheance: calculerDateEcheanceRecurrente(dateReference, bail.jourEcheance),
+        // Décomposition FIGÉE au moment de la génération (Module Tâches,
+        // Étape 4 — quittance mensuelle, 2026-08-31) : jamais recalculée si
+        // le bail est révisé ensuite — voir packages/db/src/schema/
+        // paiements.ts. `provisionsCharges` nul compte pour '0.00', jamais
+        // NULL, pour que la ligne "Montant charges" d'une quittance
+        // affiche explicitement zéro plutôt qu'un champ vide ambigu.
+        loyerHorsCharges: bail.loyerMensuel,
+        charges: bail.provisionsCharges ?? "0.00"
       });
     }
   }

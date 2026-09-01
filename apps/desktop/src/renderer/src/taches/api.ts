@@ -1,4 +1,4 @@
-import { authenticatedFetch } from "../lib/authenticated-fetch";
+import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
 export type TacheType =
   | "impaye"
@@ -25,6 +25,7 @@ export interface Tache {
   appartementId: string | null;
   bienId: string | null;
   locataireId: string | null;
+  paiementId: string | null;
   dateEcheance: string | null;
   dateCompletion: string | null;
   periodeRecurrence: string | null;
@@ -80,4 +81,24 @@ export function lireMetadataRevisionLoyer(metadata: unknown): MetadataRevisionLo
   const m = metadata as Record<string, unknown>;
   if (typeof m.loyerActuel !== "string" || typeof m.loyerPropose !== "string") return null;
   return { loyerActuel: m.loyerActuel, loyerPropose: m.loyerPropose };
+}
+
+// Même pattern que genererDocumentBail (locataires/api.ts) : blob streamé,
+// jamais persisté côté serveur (apps/backend/src/quittance-document-docx/
+// quittance-document-docx.service.ts) — un clic déclenche un téléchargement
+// direct, pas une navigation.
+export async function genererDocumentQuittance(paiementId: string): Promise<void> {
+  const { blob, nomFichier } = await authenticatedFetchBlob(`/paiements/${paiementId}/document-quittance-docx`, {
+    method: "POST"
+  });
+  const url = URL.createObjectURL(blob);
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = nomFichier ?? "quittance.docx";
+  lien.target = "_blank";
+  lien.rel = "noopener noreferrer";
+  document.body.appendChild(lien);
+  lien.click();
+  document.body.removeChild(lien);
+  URL.revokeObjectURL(url);
 }

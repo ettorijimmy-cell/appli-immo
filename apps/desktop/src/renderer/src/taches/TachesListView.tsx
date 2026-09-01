@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   appliquerRevisionTache,
+  genererDocumentQuittance,
   lireMetadataRevisionLoyer,
   listTaches,
   marquerTacheAnnulee,
@@ -131,6 +132,8 @@ function TacheItem({
   const [loyerAjuste, setLoyerAjuste] = useState(metadataRevision?.loyerPropose ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
 
   async function handleMarquerFait(): Promise<void> {
     await marquerTacheFait(tache.id);
@@ -151,6 +154,24 @@ function TacheItem({
     } catch {
       setError("Impossible d'appliquer la révision");
       setIsSubmitting(false);
+    }
+  }
+
+  // Téléchargement seul, aucun changement de statut (contrairement à
+  // appliquerRevision) : la génération du document n'est pas une action
+  // métier au sens de TachesService, "Marquer fait" reste le geste manuel
+  // qui clôt la tâche une fois la quittance effectivement transmise (envoi
+  // Gmail hors périmètre de cette étape, docs/backlog.md).
+  async function handleGenererQuittance(): Promise<void> {
+    if (!tache.paiementId) return;
+    setIsGeneratingDocument(true);
+    setDocumentError(null);
+    try {
+      await genererDocumentQuittance(tache.paiementId);
+    } catch {
+      setDocumentError("Impossible de générer la quittance");
+    } finally {
+      setIsGeneratingDocument(false);
     }
   }
 
@@ -192,7 +213,24 @@ function TacheItem({
       ) : (
         (tache.statut === "a_faire" || tache.statut === "en_cours") &&
         tache.type !== "revision_loyer" && (
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
+            {tache.type === "quittance_mensuelle" && tache.paiementId && (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleGenererQuittance();
+                }}
+                disabled={isGeneratingDocument}
+                className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+              >
+                {isGeneratingDocument ? "Génération…" : "Générer la quittance"}
+              </button>
+            )}
+            {documentError && (
+              <span role="alert" className="text-xs text-red-600">
+                {documentError}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => {

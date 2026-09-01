@@ -251,6 +251,7 @@ export class TachesService {
       appartementId: ligne.appartementId,
       bienId: ligne.bienId,
       locataireId: ligne.locataireId,
+      paiementId: ligne.paiementId,
       dateEcheance: ligne.dateEcheance,
       dateCompletion: ligne.dateCompletion,
       periodeRecurrence: ligne.periodeRecurrence,

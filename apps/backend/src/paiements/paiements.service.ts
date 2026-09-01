@@ -71,6 +71,20 @@ export class PaiementsService {
     const montantRecu = calculerMontantRecuTotal(versementsActifs);
     const statutRecalcule = calculerStatutPaiement(nouveauMontant, montantRecu);
 
+    // loyerHorsCharges/charges (Module Tâches, Étape 4 — quittance
+    // mensuelle) sont FIGÉS à la génération de l'échéance et garantis égaux
+    // à montant à ce moment-là (loyerHorsCharges + charges = montant, voir
+    // AlertesJobService.genererEcheancesRecurrentes). Si montant change
+    // ensuite, cet invariant casserait silencieusement — une quittance
+    // générée après coup afficherait le montant figé PÉRIMÉ, pas le
+    // montant corrigé (revue financial-logic-reviewer, 2026-08-31).
+    // Invalidés explicitement plutôt que laissés périmés :
+    // validerCompletudeGenerationQuittance (packages/core) bloque alors la
+    // génération jusqu'à ce que l'échéance soit reconciliée, plutôt que de
+    // deviner ou d'imprimer une valeur fausse.
+    const montantModifie = dto.montant !== undefined && dto.montant !== existant.montant;
+    const echeanceEtaitFigee = existant.loyerHorsCharges !== null || existant.charges !== null;
+
     const [paiement] = await mettreAJourAvecAudit(
       this.db,
       paiements,
@@ -79,7 +93,8 @@ export class PaiementsService {
         type: dto.type,
         montant: dto.montant,
         dateEcheance: dto.dateEcheance,
-        statut: statutRecalcule
+        statut: statutRecalcule,
+        ...(montantModifie && echeanceEtaitFigee ? { loyerHorsCharges: null, charges: null } : {})
       },
       this.requestContext.getUtilisateurId()
     );
@@ -214,7 +229,9 @@ export class PaiementsService {
       type: paiement.type,
       statut: paiement.statut,
       montant: paiement.montant,
-      dateEcheance: paiement.dateEcheance
+      dateEcheance: paiement.dateEcheance,
+      loyerHorsCharges: paiement.loyerHorsCharges,
+      charges: paiement.charges
     };
   }
 }
