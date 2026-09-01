@@ -18,6 +18,14 @@ describe("calculerDureeBail", () => {
     expect(resultat.texteLegal).toContain("article 10");
   });
 
+  it("personne physique (vide) : trois ans, automatique, sans choix humain", () => {
+    const resultat = calculerDureeBail({ typeBail: "vide", regime: "personne_physique" });
+    expect(resultat.duree).toBe("trois ans");
+    expect(resultat.dureeMois).toBe(36);
+    expect(resultat.texteLegal).toContain("personne physique");
+    expect(resultat.texteLegal).toContain("article 10");
+  });
+
   it("meublé standard : un an", () => {
     const resultat = calculerDureeBail({ typeBail: "meuble", regime: "standard" });
     expect(resultat.duree).toBe("un an");

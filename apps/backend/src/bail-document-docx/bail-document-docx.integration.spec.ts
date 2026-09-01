@@ -329,6 +329,77 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     expect(texte).not.toContain("inventaire du mobilier");
   });
 
+  // Corrige le bug bailleur découvert pendant l'audit Étape 4 quittance
+  // (docs/backlog.md, 2026-08-31) : avant le correctif, genererDocumentBailDocx
+  // levait NotFoundException("SCI introuvable") dès que bien.sciId était NULL
+  // — cas réel et valide depuis la migration Bien (proprietaireType=
+  // 'personne_physique'), pas théorique.
+  it("génère un .docx complet pour un bailleur en nom propre (proprietaireType='personne_physique'), sans SCI", async () => {
+    await db.insert(indicesIrl).values({ annee: 9998, trimestre: 2, valeur: "148.37" });
+
+    const bien = await bienService.create(userId, {
+      type: "maison",
+      proprietaireType: "personne_physique",
+      nomProprietaire: "Bernard Martin",
+      adresse: "5 chemin de la Maison",
+      codePostal: "19100",
+      ville: "Brive"
+    });
+    await db.update(bienTable).set({ anneeConstruction: 1998 }).where(eq(bienTable.id, bien.id));
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "unique",
+      type: "T3",
+      surface: "60.00",
+      loyerReference: "650.00",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    await appartementsService.update(appartement.id, {
+      equipementCuisine: "Plaques, four, réfrigérateur",
+      dependancesAnnexes: "Cave"
+    });
+
+    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    await locatairesService.update(locataire.id, {
+      adresse: "1 rue du Locataire",
+      codePostal: "19100",
+      ville: "Brive",
+      dateNaissance: "1990-05-12",
+      telephone: "0611111111",
+      email: "ilan.devos@example.com"
+    });
+
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-07-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    expect(buffer.length).toBeGreaterThan(0);
+    const texte = texteDuDocx(buffer);
+    // Balise "Nom de la SCI" (nom figé côté fichier Word) porte désormais
+    // le nom du bailleur en nom propre.
+    expect(texte).toContain("Bernard Martin");
+    // Durée légale automatique (3 ans, aucun choix humain) : date de fin =
+    // 2026-07-01 + 36 mois = 2029-07-01, comme le régime SCI familiale.
+    expect(texte).toContain("2029-07-01");
+    // Les 4 balises de siège social SCI (Adresse/CP/Ville/Tel) restent
+    // vides pour un bailleur en nom propre, jamais bloquantes ni une
+    // valeur devinée — la génération réussissant déjà le prouve (une
+    // balise non résolue empêcherait docxtemplater de produire un buffer).
+  });
+
   it("bloque si aucune valeur IRL n'existe en base", async () => {
     const { bail } = await creerDossierComplet({ avecIrl: false });
     // Vide la table dans cette transaction (annulé au rollback) : la base

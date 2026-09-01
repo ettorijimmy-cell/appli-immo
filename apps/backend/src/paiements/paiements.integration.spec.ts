@@ -324,6 +324,41 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     expect(versementsActifs[0]?.montant).toBe("400.00");
   });
 
+  it("update() invalide loyerHorsCharges/charges (Étape 4 — quittance mensuelle) quand montant change sur une échéance figée", async () => {
+    const paiement = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "800.00",
+      dateEcheance: "2026-09-05"
+    });
+    // Simule une échéance figée par AlertesJobService.genererEcheancesRecurrentes
+    // (PaiementsService.create() ne renseigne jamais ces colonnes lui-même).
+    await db.update(paiements).set({ loyerHorsCharges: "700.00", charges: "100.00" }).where(eq(paiements.id, paiement.id));
+
+    // Correction du montant dû : l'invariant loyerHorsCharges + charges =
+    // montant casserait silencieusement sans ce garde-fou — voir
+    // PaiementsService.update (revue financial-logic-reviewer, 2026-08-31).
+    const corrige = await paiementsService.update(paiement.id, { montant: "820.00" });
+
+    expect(corrige.loyerHorsCharges).toBeNull();
+    expect(corrige.charges).toBeNull();
+  });
+
+  it("update() laisse loyerHorsCharges/charges intacts quand montant n'est pas modifié", async () => {
+    const paiement = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "800.00",
+      dateEcheance: "2026-09-05"
+    });
+    await db.update(paiements).set({ loyerHorsCharges: "700.00", charges: "100.00" }).where(eq(paiements.id, paiement.id));
+
+    const inchange = await paiementsService.update(paiement.id, { dateEcheance: "2026-09-06" });
+
+    expect(inchange.loyerHorsCharges).toBe("700.00");
+    expect(inchange.charges).toBe("100.00");
+  });
+
   it("annuler() cible un versement précis, jamais tous d'un coup — le paiement redevient impaye si c'était le seul", async () => {
     const paiementA = await paiementsService.create({
       bailId,

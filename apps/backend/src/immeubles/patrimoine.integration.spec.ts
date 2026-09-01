@@ -200,12 +200,14 @@ describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (
     const bien = await bienService.create(userId, {
       type: "maison",
       proprietaireType: "personne_physique",
+      nomProprietaire: "Jean Dupont",
       adresse: "10 rue de la Maison",
       codePostal: "75001",
       ville: "Paris"
     });
     expect(bien.sciId).toBeNull();
     expect(bien.proprietaireType).toBe("personne_physique");
+    expect(bien.nomProprietaire).toBe("Jean Dupont");
     // Dérivés automatiquement pour type='maison' (2026-08-26) — jamais
     // null, aucune saisie possible.
     expect(bien.typeHabitat).toBe("individuel");
@@ -545,6 +547,7 @@ describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (
     const bien = await bienService.create(userId, {
       type: "parking",
       proprietaireType: "personne_physique",
+      nomProprietaire: "Jean Dupont",
       adresse: "1 avenue du Parking",
       codePostal: "75001",
       ville: "Paris",
@@ -563,6 +566,7 @@ describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (
     const bien = await bienService.create(userId, {
       type: "parking",
       proprietaireType: "personne_physique",
+      nomProprietaire: "Jean Dupont",
       adresse: "2 avenue du Parking",
       codePostal: "75001",
       ville: "Paris",
@@ -578,6 +582,7 @@ describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (
     const bien = await bienService.create(userId, {
       type: "bureau",
       proprietaireType: "personne_physique",
+      nomProprietaire: "Jean Dupont",
       adresse: "1 rue du Bureau",
       codePostal: "75001",
       ville: "Paris",

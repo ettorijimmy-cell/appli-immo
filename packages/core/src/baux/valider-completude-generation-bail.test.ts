@@ -31,7 +31,7 @@ describe("validerCompletudeGenerationBail", () => {
   it("signale le téléphone de la SCI manquant", () => {
     const manquants = validerCompletudeGenerationBail({
       ...DONNEES_COMPLETES,
-      sci: { ...DONNEES_COMPLETES.sci, telephone: null }
+      sci: { ...DONNEES_COMPLETES.sci!, telephone: null }
     });
     expect(manquants).toContain("Téléphone de la SCI");
   });
@@ -39,13 +39,13 @@ describe("validerCompletudeGenerationBail", () => {
   it("signale est_familiale manquant, y compris false n'étant pas confondu avec absent", () => {
     const manquantsFalse = validerCompletudeGenerationBail({
       ...DONNEES_COMPLETES,
-      sci: { ...DONNEES_COMPLETES.sci, estFamiliale: false }
+      sci: { ...DONNEES_COMPLETES.sci!, estFamiliale: false }
     });
     expect(manquantsFalse).toEqual([]);
 
     const manquantsNull = validerCompletudeGenerationBail({
       ...DONNEES_COMPLETES,
-      sci: { ...DONNEES_COMPLETES.sci, estFamiliale: null }
+      sci: { ...DONNEES_COMPLETES.sci!, estFamiliale: null }
     });
     expect(manquantsNull).toContain("SCI familiale ou non (détermine la durée légale du bail)");
   });
@@ -53,11 +53,16 @@ describe("validerCompletudeGenerationBail", () => {
   it("signale l'adresse, le code postal et la ville du siège social de la SCI manquants séparément", () => {
     const manquants = validerCompletudeGenerationBail({
       ...DONNEES_COMPLETES,
-      sci: { ...DONNEES_COMPLETES.sci, adresse: null, codePostal: null, ville: null }
+      sci: { ...DONNEES_COMPLETES.sci!, adresse: null, codePostal: null, ville: null }
     });
     expect(manquants).toContain("Adresse du siège social de la SCI");
     expect(manquants).toContain("Code postal du siège social de la SCI");
     expect(manquants).toContain("Ville du siège social de la SCI");
+  });
+
+  it("bailleur en nom propre (sci: null) : aucun champ sci.* exigé", () => {
+    const manquants = validerCompletudeGenerationBail({ ...DONNEES_COMPLETES, sci: null });
+    expect(manquants).toEqual([]);
   });
 
   it("signale l'année de construction manquante", () => {

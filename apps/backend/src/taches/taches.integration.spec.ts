@@ -44,6 +44,8 @@ import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { VersementsModule } from "../versements/versements.module";
+import { VersementsService } from "../versements/versements.service";
 import { TachesJobService } from "./taches-job.service";
 import { TachesModule } from "./taches.module";
 import { TachesService } from "./taches.service";
@@ -1100,5 +1102,249 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
     if (!tacheImpaye) throw new Error("Tâche impaye attendue introuvable");
 
     await expect(tachesService.appliquerRevision(tacheImpaye.id, "999.00")).rejects.toThrow();
+  });
+});
+
+// Vérifie le périmètre exact du Module Tâches, Étape 4 (docs/backlog.md,
+// docs/data-dictionary.md section "Quittance mensuelle") : génération
+// uniquement pour un paiement de loyer effectivement RÉGLÉ (jamais anticipée
+// sur une échéance à venir), idempotence par paiement (paiementId), résolution
+// du titulaire (locataireId) et de la notification.
+describe("Tâches — quittance mensuelle (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let versementsService: VersementsService;
+  let tachesJobService: TachesJobService;
+  let tachesService: TachesService;
+  let modelesCourrierService: ModelesCourrierService;
+  let db: Database;
+  let organisationId: string;
+  let appartementId: string;
+
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        EncryptionModule,
+        AuditModule,
+        UsersModule,
+        AuthModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        PaiementsModule,
+        VersementsModule,
+        ModelesCourrierModule,
+        TachesModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
+
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    versementsService = moduleRef.get(VersementsService);
+    tachesJobService = moduleRef.get(TachesJobService);
+    tachesService = moduleRef.get(TachesService);
+    modelesCourrierService = moduleRef.get(ModelesCourrierService);
+
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Organisation Quittance Intégration" })
+      .returning();
+    if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+    organisationId = organisation.id;
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `quittance-integration-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: "Quittance",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) throw new Error("Échec de l'insertion de l'utilisateur de test");
+
+    const sci = await scisService.create(user.id, {
+      nom: "SCI Quittance Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Quittance Test",
+      adresse: "1 rue de la Quittance",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    appartementId = appartement.id;
+
+    await modelesCourrierService.upsertModeleCourrier({
+      code: "quittance_mensuelle",
+      nom: "Quittance de loyer mensuelle",
+      canal: "email",
+      objet: "Quittance de loyer — {{periode}} — {{libelleBien}}",
+      corps: "Bonjour {{nomLocataire}}, quittance {{libelleBien}}, période {{periode}}, montant {{montant}} €.",
+      variablesRequises: ["nomLocataire", "libelleBien", "periode", "montant"],
+      organisationId
+    });
+  });
+
+  afterEach(async () => {
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  // dateDebut = 1er du mois : l'échéance d'entrée générée par activer() est
+  // un mois plein, sans prorata (voir calculerMontantEcheanceEntree,
+  // packages/core) — simplifie le calcul du versement de règlement.
+  async function creerBailAvecEcheancePayee(): Promise<{ bailId: string; echeanceId: string }> {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-01-01",
+      loyerMensuel: "700.00",
+      provisionsCharges: "100.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    const [echeance] = await db.select().from(paiements).where(eq(paiements.bailId, bail.id)).limit(1);
+    if (!echeance) throw new Error("Échéance d'entrée attendue introuvable");
+    await versementsService.ajouter({
+      paiementId: echeance.id,
+      montant: "800.00",
+      mode: "virement",
+      dateVersement: "2026-01-05"
+    });
+    return { bailId: bail.id, echeanceId: echeance.id };
+  }
+
+  it("crée une tâche pour un paiement de loyer réglé, résout le titulaire et la notification", async () => {
+    const { bailId, echeanceId } = await creerBailAvecEcheancePayee();
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+    if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+    await db.insert(bailLocataires).values({ bailId, locataireId: locataire.id, role: "titulaire" });
+
+    // Compte global non vérifié ici : ce job est volontairement non scopé
+    // (il tourne sur tous les paiements réglés, toutes organisations
+    // confondues) et la base de dev locale contient une vraie échéance
+    // réglée d'une session antérieure — seule la tâche du bail de CE test
+    // fait foi.
+    await tachesJobService.genererTachesQuittanceMensuelle();
+    const [tacheCreee] = await tachesService.findAll({ type: "quittance_mensuelle", bailId });
+    expect(tacheCreee).toBeDefined();
+    expect(tacheCreee?.origine).toBe("planifiee");
+    expect(tacheCreee?.statut).toBe("a_faire");
+    expect(tacheCreee?.bailId).toBe(bailId);
+    expect(tacheCreee?.appartementId).toBe(appartementId);
+    expect(tacheCreee?.paiementId).toBe(echeanceId);
+    expect(tacheCreee?.locataireId).toBe(locataire.id);
+    const metadata = tacheCreee?.metadata as Record<string, unknown>;
+    expect(metadata.notificationObjet).toBe("Quittance de loyer — janvier 2026 — Immeuble Quittance Test — n°1");
+    expect(metadata.notificationCorps).toBe(
+      "Bonjour Ilan Devos, quittance Immeuble Quittance Test — n°1, période janvier 2026, montant 800.00 €."
+    );
+  });
+
+  it("ne crée rien pour une échéance encore impayée ou partielle", async () => {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-01-01",
+      loyerMensuel: "700.00",
+      provisionsCharges: "100.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    // Ni versement (reste impaye), ni tâche.
+
+    await tachesJobService.genererTachesQuittanceMensuelle();
+
+    expect(await tachesService.findAll({ type: "quittance_mensuelle", bailId: bail.id })).toHaveLength(0);
+  });
+
+  it("ne crée rien pour un paiement type='charges' ou 'depot_garantie', même réglé", async () => {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-01-01",
+      loyerMensuel: "700.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    // Insertion directe (hors chemin applicatif normal, aucun service ne
+    // crée aujourd'hui de paiement type='charges'/'depot_garantie' — voir
+    // l'audit du 2026-08-31, docs/backlog.md) : statut='paye' posé
+    // directement ici, uniquement pour isoler le filtre `type` du job,
+    // pas pour tester calculerStatutPaiement.
+    await db.insert(paiements).values({
+      bailId: bail.id,
+      type: "depot_garantie",
+      statut: "paye",
+      montant: "700.00",
+      dateEcheance: "2026-01-01"
+    });
+
+    await tachesJobService.genererTachesQuittanceMensuelle();
+
+    expect(await tachesService.findAll({ type: "quittance_mensuelle", bailId: bail.id })).toHaveLength(0);
+  });
+
+  it("est idempotent : deux passages successifs ne créent jamais de deuxième tâche pour le même paiement", async () => {
+    const { bailId } = await creerBailAvecEcheancePayee();
+
+    await tachesJobService.genererTachesQuittanceMensuelle();
+    await tachesJobService.genererTachesQuittanceMensuelle();
+
+    expect(await tachesService.findAll({ type: "quittance_mensuelle", bailId })).toHaveLength(1);
+  });
+
+  it("aucun titulaire actif sur le bail : la tâche se crée quand même, locataireId null, signal notificationIndisponible", async () => {
+    const { bailId } = await creerBailAvecEcheancePayee();
+    // Aucun bail_locataires inséré : ni titulaire, ni colocataire.
+
+    await tachesJobService.genererTachesQuittanceMensuelle();
+
+    const [tacheCreee] = await tachesService.findAll({ type: "quittance_mensuelle", bailId });
+    expect(tacheCreee).toBeDefined();
+    expect(tacheCreee?.locataireId).toBeNull();
+    const metadata = tacheCreee?.metadata as Record<string, unknown>;
+    expect(metadata.notificationIndisponible).toBe(true);
+    expect(metadata.motifNotificationIndisponible).toBe("aucun titulaire actif sur le bail");
   });
 });

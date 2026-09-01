@@ -11,7 +11,7 @@ import {
   utilisateurs,
   type Database
 } from "db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -197,6 +197,58 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       const toutes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
       const juillet = toutes.filter((p) => p.dateEcheance.startsWith("2026-07"));
       expect(juillet).toHaveLength(1);
+    });
+
+    it("fige loyerHorsCharges/charges au moment de la génération, jamais recalculés après révision du bail (Module Tâches, Étape 4)", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-06-01",
+        loyerMensuel: "700.00",
+        provisionsCharges: "100.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+
+      await alertesJobService.genererEcheancesRecurrentes("2026-07-10");
+
+      const [echeanceJuillet] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bail.id), eq(paiements.dateEcheance, "2026-07-05")));
+      expect(echeanceJuillet?.loyerHorsCharges).toBe("700.00");
+      expect(echeanceJuillet?.charges).toBe("100.00");
+      expect(echeanceJuillet?.montant).toBe("800.00");
+
+      // Le bail est révisé après coup — l'échéance déjà générée ne doit
+      // jamais refléter la nouvelle valeur (décision produit explicite,
+      // docs/data-dictionary.md, section paiements).
+      await bauxService.update(bail.id, { loyerMensuel: "900.00" });
+      const [echeanceApresRevision] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bail.id), eq(paiements.dateEcheance, "2026-07-05")));
+      expect(echeanceApresRevision?.loyerHorsCharges).toBe("700.00");
+    });
+
+    it("charges vaut '0.00' (jamais NULL) quand le bail n'a pas de provisions pour charges", async () => {
+      const bail = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2026-06-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail.id);
+
+      await alertesJobService.genererEcheancesRecurrentes("2026-07-10");
+
+      const [echeanceJuillet] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bail.id), eq(paiements.dateEcheance, "2026-07-05")));
+      expect(echeanceJuillet?.loyerHorsCharges).toBe("700.00");
+      expect(echeanceJuillet?.charges).toBe("0.00");
     });
 
     it("ne génère rien pour un bail résilié", async () => {
