@@ -723,6 +723,52 @@ les trois parcours ci-dessus).
   davantage de tables, à la manière de `tache`/`bien`) — à trancher au
   moment de traiter cette dette, pas maintenant.
 
+- **L'échéance d'ENTRÉE générée par `BauxService.activer()` ne renseigne pas
+  `paiements.loyer_hors_charges`/`paiements.charges`.** Découvert le
+  2026-08-31 en implémentant la quittance mensuelle (Module Tâches, Étape 4,
+  docs/data-dictionary.md section "Quittance mensuelle") : seul
+  `AlertesJobService.genererEcheancesRecurrentes` (échéances des mois
+  suivants) fige ces deux colonnes ; l'échéance du premier mois (générée à
+  l'activation, potentiellement proratisée si `dateDebut` ne tombe pas le
+  1er) ne les renseigne toujours pas. Conséquence concrète : une quittance
+  ne peut pas être générée pour le tout premier mois d'un bail tant que
+  cette échéance n'est pas figée a posteriori — `validerCompletudeGenerationQuittance`
+  bloque explicitement (comportement voulu : jamais un montant recalculé
+  deviné sur ce document), mais c'est un vrai manque fonctionnel, pas
+  seulement une limite théorique. Non corrigé maintenant (délibérément,
+  décision explicite) car le calcul n'est pas trivial : `activer()` peut
+  proratiser le montant total (`calculerMontantEcheanceEntree`) quand
+  `dateDebut` ne tombe pas le 1er du mois, et scinder ce total proratisé en
+  deux composantes (loyer hors charges + charges) sans risquer une dérive
+  d'un centime entre les deux (à la manière de `calculerLoyerNetRecuEcheance`,
+  qui dérive la seconde composante par SOUSTRACTION plutôt que par une
+  seconde proration indépendante, précisément pour garantir cette exactitude)
+  demande une vraie fonction `packages/core` dédiée, pas une extension
+  triviale du code existant. Piste de correctif : proratiser
+  `loyerMensuel`/`provisionsCharges` séparément avec `calculerProrataOccupationPartielle`,
+  puis dériver l'une des deux composantes par soustraction du total déjà
+  calculé (jamais deux prorata indépendants sommés).
+
+- **Audit à faire avant de déployer la migration `bien.nom_proprietaire` en
+  production (Scaleway).** La nouvelle contrainte `bien_sci_id_coherent`
+  actualisée (docs/data-dictionary.md, section `bien`) exige
+  `nom_proprietaire IS NOT NULL` pour tout `proprietaire_type =
+  'personne_physique'`. La base de dev locale ne contenait aucun bien de ce
+  type au moment de l'ajout (migration appliquée sans problème), mais
+  Scaleway n'a pas été vérifié — si des biens `personne_physique` réels y
+  existent déjà, la migration échouera proprement (pas de risque de
+  corruption, juste un blocage de déploiement) faute de valeur pour la
+  nouvelle colonne. Requête à exécuter avant tout déploiement de la
+  migration `0042_broad_revanche.sql` :
+  ```sql
+  SELECT id, adresse, ville, created_at
+  FROM bien
+  WHERE proprietaire_type = 'personne_physique';
+  ```
+  Si des lignes sont retournées, backfiller `nom_proprietaire` pour chacune
+  (décision produit — quel nom, à trancher avec le propriétaire, pas à
+  deviner) avant d'appliquer la migration sur Scaleway.
+
 ---
 
 ## Maintenance
