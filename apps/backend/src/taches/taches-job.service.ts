@@ -102,7 +102,7 @@ export class TachesJobService {
         continue;
       }
 
-      const metadata = await this.construireMetadataNotification(alerte, cible);
+      const { metadata, locataireId } = await this.construireMetadataNotification(alerte, cible);
 
       await this.db.insert(tache).values({
         type: alerte.type,
@@ -112,6 +112,7 @@ export class TachesJobService {
         bailId: cible.bailId,
         appartementId: cible.appartementId,
         bienId: cible.bienId,
+        locataireId,
         dateEcheance: alerte.dateReference,
         organisationId: cible.organisationId,
         metadata
@@ -178,6 +179,14 @@ export class TachesJobService {
         continue;
       }
 
+      // Résolu ici pour la même raison que dans genererTachesDepuisAlertes
+      // (Module Tâches, Étape 3 — intégration Gmail, 2026-09-01) :
+      // TachesService.envoyerNotification a besoin de locataireId pour
+      // résoudre l'email du destinataire, une fois la révision appliquée
+      // (statut='en_cours', appliquerRevision) — jamais résolu jusqu'ici
+      // sur cette tâche.
+      const titulaire = await this.resoudreTitulaire(bail.id);
+
       const loyerPropose = calculerRevisionLoyer(bail.loyerMensuel, indiceReference.valeur, indicePrecedent.valeur);
 
       await this.db.insert(tache).values({
@@ -186,6 +195,7 @@ export class TachesJobService {
         origine: "planifiee",
         bailId: bail.id,
         appartementId: bail.appartementId,
+        locataireId: titulaire?.id ?? null,
         dateEcheance: dateReference,
         periodeRecurrence,
         organisationId: cible.organisationId,
@@ -357,41 +367,52 @@ export class TachesJobService {
    * Ne laisse jamais une erreur de résolution (modèle mal formé, donnée
    * source manquante) faire échouer tout le job — une tâche mal notifiée
    * reste préférable à un job qui s'arrête au milieu de la nuit.
+   *
+   * Retourne aussi `locataireId` (Module Tâches, Étape 3 — intégration
+   * Gmail, 2026-09-01) : le titulaire est déjà résolu ici pour construire
+   * le texte de la notification, mais n'était jusqu'ici jamais persisté
+   * sur la tâche elle-même — trou bloquant pour
+   * TachesService.envoyerNotification, qui a besoin de locataireId pour
+   * résoudre l'email du destinataire sans re-résoudre le titulaire une
+   * seconde fois au moment de l'envoi.
    */
   private async construireMetadataNotification(
     alerte: AlerteRow,
     cible: CibleResolue
-  ): Promise<Record<string, unknown> | undefined> {
+  ): Promise<{ metadata: Record<string, unknown> | undefined; locataireId: string | null }> {
     if (alerte.type !== "impaye" && alerte.type !== "entretien_equipement" && alerte.type !== "document_expire") {
-      return undefined;
+      return { metadata: undefined, locataireId: null };
     }
     // bienId seul (document_expire attaché directement à un bien, sans
     // appartement) : hors périmètre de cette extension (audit du
     // 2026-08-31, "cas appartement/bail" uniquement) — aucun titulaire
     // possible à notifier, ce n'est pas une absence de donnée à signaler.
     if (!cible.appartementId) {
-      return undefined;
+      return { metadata: undefined, locataireId: null };
     }
 
     try {
       const bailId = cible.bailId ?? (await this.resoudreBailActifPourAppartement(cible.appartementId));
       if (!bailId) {
-        return this.signalNotificationIndisponible("aucun bail actif sur cet appartement");
+        return { metadata: this.signalNotificationIndisponible("aucun bail actif sur cet appartement"), locataireId: null };
       }
 
       const titulaire = await this.resoudreTitulaire(bailId);
       if (!titulaire) {
-        return this.signalNotificationIndisponible("aucun titulaire actif sur le bail");
+        return { metadata: this.signalNotificationIndisponible("aucun titulaire actif sur le bail"), locataireId: null };
       }
 
       const libelleBien = await this.resoudreLibelleBien(cible.appartementId);
       if (!libelleBien) {
-        return this.signalNotificationIndisponible("bien introuvable");
+        return { metadata: this.signalNotificationIndisponible("bien introuvable"), locataireId: titulaire.id };
       }
 
       const modele = await this.modelesCourrierService.findByCode(alerte.type);
       if (!modele) {
-        return this.signalNotificationIndisponible(`modèle de courrier '${alerte.type}' introuvable`);
+        return {
+          metadata: this.signalNotificationIndisponible(`modèle de courrier '${alerte.type}' introuvable`),
+          locataireId: titulaire.id
+        };
       }
 
       const variables = await this.construireVariablesNotification(
@@ -400,17 +421,17 @@ export class TachesJobService {
         libelleBien
       );
       if (!variables) {
-        return this.signalNotificationIndisponible("données source introuvables");
+        return { metadata: this.signalNotificationIndisponible("données source introuvables"), locataireId: titulaire.id };
       }
 
       const { objet, corps } = resoudreModeleCourrier({ objet: modele.objet, corps: modele.corps }, variables);
-      return { notificationObjet: objet, notificationCorps: corps };
+      return { metadata: { notificationObjet: objet, notificationCorps: corps }, locataireId: titulaire.id };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Échec de résolution de la notification pour l'alerte ${alerte.id} (${alerte.type}) : ${message}`
       );
-      return this.signalNotificationIndisponible(`erreur de résolution : ${message}`);
+      return { metadata: this.signalNotificationIndisponible(`erreur de résolution : ${message}`), locataireId: null };
     }
   }
 
