@@ -31,3 +31,4 @@ export * from "./etat-des-lieux-inventaire";
 export * from "./tache";
 export * from "./modele-courrier";
 export * from "./revision-loyer";
+export * from "./connexion-gmail";

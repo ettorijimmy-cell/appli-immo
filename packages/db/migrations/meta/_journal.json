@@ -302,6 +302,13 @@
       "when": 1788201487187,
       "tag": "0042_broad_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788284221380,
+      "tag": "0043_solid_earthquake",
+      "breakpoints": true
     }
   ]
 }
