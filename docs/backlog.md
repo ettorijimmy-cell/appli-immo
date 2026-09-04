@@ -769,6 +769,25 @@ les trois parcours ci-dessus).
   (décision produit — quel nom, à trancher avec le propriétaire, pas à
   deviner) avant d'appliquer la migration sur Scaleway.
 
+- **`GoogleOAuthService.recupererEmailCompte` supposait que `users.getProfile`
+  fonctionnait avec le seul scope `gmail.send` — résolu (2026-09-04), avant
+  tout test réel.** Constaté le 2026-09-01 en implémentant le flux OAuth2
+  Gmail (Module Tâches, Étape 3, docs/data-dictionary.md section Gmail),
+  creusé et corrigé le 2026-09-04 avant le premier commit : `gmail.send`
+  est un scope volontairement étroit (accès en écriture seule à l'envoi,
+  aucun droit de lecture) qui ne couvre très probablement pas
+  `users.getProfile`, même pour de simples métadonnées de compte — risque
+  réel de blocage `403` dès le premier appel réel, pas seulement une
+  hypothèse théorique. **Corrigé** : `recupererEmailCompte`/`users.
+  getProfile` supprimés, remplacés par le décodage du claim `email` de
+  l'`id_token` OpenID Connect obtenu à l'échange de code (scopes non
+  sensibles `openid`/`email` ajoutés à la demande de consentement, aucune
+  review Google requise). **Action encore requise par Jimmy, hors code** :
+  ajouter `openid` et `.../auth/userinfo.email` à l'écran de consentement
+  OAuth (Google Cloud Console, Data access) en plus de `gmail.send` déjà
+  configuré, avant le premier test réel de connexion — voir
+  docs/data-dictionary.md, section Gmail, pour le détail.
+
 ---
 
 ## Maintenance
@@ -1468,15 +1487,37 @@ Ordre de priorité convenu avec l'utilisateur :
    `bail_fin_proche` et `document_expire_proche` sont explicitement exclus
    de la génération à ce stade (voir docs/data-dictionary.md, section
    tache, pour le détail des exclusions et de la résolution
-   bail/appartement/bien par type d'alerte). `locataireId` n'est jamais
-   peuplé automatiquement (bail en colocation, relation many-to-many via
-   `bail_locataires` — aucune règle de choix arbitrée). Backend
-   (`TachesModule` : findAll/findById/marquerFait/marquerAnnulee, pas de
-   `create()` manuel), Sync Stream PowerSync, écran desktop minimal
-   (liste + actions, monté sur le Tableau de bord à côté d'Alertes).
-   **Restent hors périmètre**, pour une étape ultérieure séparée :
-   quittances mensuelles (génération PDF + email), révision de loyer,
-   modèles de courrier, intégration Gmail API.
+   bail/appartement/bien par type d'alerte). Backend (`TachesModule` :
+   findAll/findById/marquerFait/marquerAnnulee, pas de `create()` manuel),
+   Sync Stream PowerSync, écran desktop minimal (liste + actions, monté sur
+   le Tableau de bord à côté d'Alertes).
+
+   **Étapes 2 à 5 terminées (2026-08-29 → 2026-08-31)** : `modele_courrier`
+   (infrastructure de modèle de message + substitution de variables),
+   révision de loyer (`revision_loyer`, `IndicesIrlService`,
+   `TachesService.appliquerRevision`), résolution de titulaire/notification
+   pour les 3 types d'alerte, quittance mensuelle (génération `.docx` à la
+   volée, `QuittanceDocumentDocxService`). Voir docs/data-dictionary.md,
+   sections correspondantes, pour le détail de chaque étape.
+
+   **Étape 3 (Gmail OAuth2) terminée (2026-09-01)** — dernière brique du
+   module : `TachesService.envoyerNotification` envoie réellement l'email
+   (compte Gmail de l'utilisateur, jamais un compte technique partagé) et
+   clôt la tâche, jamais l'inverse. `locataireId` — non peuplé
+   automatiquement jusqu'ici pour 4 des 5 types de tâche (seule la
+   quittance mensuelle le renseignait) — est désormais résolu et persisté
+   pour les 5 types, corrigeant un trou bloquant découvert en préparant
+   cette étape. `emailCompte` résolu par décodage de l'`id_token` OpenID
+   Connect (scopes non sensibles `openid`/`email` ajoutés, aucune review
+   Google) plutôt que par `users.getProfile` — corrigé avant le premier
+   commit après avoir identifié que `gmail.send` seul ne couvrait
+   très probablement pas cet endpoint (voir docs/data-dictionary.md,
+   section Gmail, et Dette technique ci-dessus pour le détail). **Action
+   requise par Jimmy, hors code** : ajouter `openid` et
+   `.../auth/userinfo.email` à l'écran de consentement OAuth (Google Cloud
+   Console, Data access), en plus de `gmail.send` déjà configuré, avant le
+   premier test réel de connexion. **Module Tâches désormais complet de
+   bout en bout** (détection → tâche → action → notification envoyée).
 
 2. **Charges et fiscalité** — sync ou import de relevés bancaires,
    catégorisation automatique ou rapprochement manuel des dépenses, pièce

@@ -770,7 +770,7 @@ réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
 | bail_id | uuid, FK `baux` | Résolu depuis l'alerte source quand applicable (voir résolution par type ci-dessous) |
 | appartement_id | uuid, FK `appartements` | Idem |
 | bien_id | uuid, FK `bien` | Pour une tâche résolue au niveau du bien lui-même (ex. document expiré attaché à `documents.entiteType='bien'`), pas à un appartement ou un bail précis |
-| locataire_id | uuid, FK `locataires` | **Non peuplé par la génération automatique dans cette étape** — un bail en colocation référence plusieurs locataires via `bail_locataires` (many-to-many), aucune règle de choix n'a été arbitrée. Réservé à un usage futur. **Renseigné depuis l'Étape 4** pour `type='quittance_mensuelle'` via `resoudreTitulaire` (déterministe grâce à l'index unique titulaire actif, voir section `bail_locataires`) — `null` si le bail n'a aucun titulaire (colocataires uniquement) |
+| locataire_id | uuid, FK `locataires` | Titulaire résolu via `resoudreTitulaire` (déterministe grâce à l'index unique titulaire actif, voir section `bail_locataires`) — `null` si le bail n'a aucun titulaire (colocataires uniquement). Renseigné pour `type='quittance_mensuelle'` depuis l'Étape 4 ; **renseigné pour les 4 autres types depuis le Module Tâches Étape 3 (Gmail, 2026-09-01)** — jusque-là `genererTachesDepuisAlertes`/`genererTachesRevisionLoyer` résolvaient déjà un titulaire pour construire la notification mais ne le persistaient jamais sur `tache.locataireId`, un trou bloquant pour `envoyerNotification` (voir section Gmail ci-dessous), corrigé rétroactivement |
 | paiement_id | uuid, FK `paiements`, nullable | **Module Tâches, Étape 4 — quittance mensuelle, 2026-08-31.** Échéance à l'origine d'une tâche `type='quittance_mensuelle'`, jamais renseigné pour les autres types. Sert de clé d'idempotence (voir index unique ci-dessous), même principe que `alerte_source_id` |
 | date_echeance | date | |
 | date_completion | timestamptz | Posée automatiquement par `TachesService.marquerFait()`, jamais par un `update()` générique |
@@ -849,6 +849,99 @@ premier mois d'un nouveau bail tant que cette échéance n'est pas figée a
 posteriori. Voir docs/backlog.md, section Dette technique, pour le détail
 et la piste de correctif (prorata à préserver exactement, sans dérive
 d'arrondi entre les deux composantes).
+
+## Gmail (Module Tâches, Étape 3 — intégration OAuth2, 2026-09-01)
+Clôt le cycle "notification résolue en `metadata` mais jamais réellement
+envoyée" ouvert depuis les étapes précédentes (alertes, révision de loyer,
+quittance mensuelle) : `TachesService.envoyerNotification(id)` envoie
+effectivement l'email via l'API Gmail (compte Google de l'utilisateur,
+jamais un compte technique partagé) et clôt la tâche — jamais l'inverse
+(voir plus bas, "jamais fait sur un échec d'envoi").
+
+### connexion_gmail
+| Champ | Type | Description |
+|---|---|---|
+| organisation_id | uuid, FK `organisations`, NOT NULL | Une connexion Gmail par organisation (pas par utilisateur) — le compte Gmail connecté envoie au nom de l'organisation |
+| email_compte | text | Adresse du compte Gmail connecté, résolue via `users.getProfile` au moment du callback OAuth — jamais saisie manuellement |
+| access_token_chiffre | text | AES-256-GCM via `EncryptionService`, même mécanique que `comptes_bancaires_sci.iban_chiffre`/`bic_chiffre` (voir section `comptes_bancaires_sci`) — jamais de jeton en clair en base |
+| refresh_token_chiffre | text | Idem. Jamais écrasé par un rafraîchissement de l'access token (Google ne le renvoie que lors du tout premier consentement, ou d'une reconnexion avec `prompt=consent`) |
+| expires_at | timestamptz | Expiration réelle de l'access token — `GoogleOAuthService.obtenirAccessTokenValide` rafraîchit par anticipation avec une marge de 60s |
+| scope | text | `https://www.googleapis.com/auth/gmail.send` uniquement — jamais `gmail.readonly`/`gmail.modify`, l'app n'a besoin que d'envoyer |
+
+Index unique partiel `connexion_gmail_organisation_active_unique` sur
+`(organisation_id)` où `archived_at IS NULL` : une reconnexion **archive**
+l'ancienne ligne active plutôt que de la modifier en place — historique
+conservé, même principe que `revision_loyer`.
+
+### Flux OAuth2 (`apps/backend/src/google-oauth`)
+`GoogleOAuthService.genererUrlConsentement(utilisateurId)` signe un `state`
+via le `JwtService` global de l'application (même secret `JWT_SECRET` que
+les JWT applicatifs — **pas un nouveau secret provisionné**, distingué par
+un claim `purpose: "gmail_oauth_state"`), TTL 5 minutes : protection CSRF
+stateless, aucune table de sessions OAuth. Le navigateur système (jamais
+une fenêtre Electron interne) affiche le consentement Google, puis
+redirige vers `GET /gmail/callback` — deuxième route `@Public()` du
+projet après `POST /auth/login` (voir section Authentification), protégée
+non pas par le JWT applicatif mais par la vérification de signature/
+fraîcheur du `state` dans `GoogleOAuthService.traiterCallback`. Réponse :
+une page HTML minimale ("Connexion réussie, fermez cette fenêtre") — aucune
+redirection vers l'app desktop, impossible depuis un navigateur système
+générique ; l'écran Paramètres reflète l'état à sa prochaine ouverture
+(`GET /gmail/statut`, pas de polling).
+
+**Scopes demandés : `openid email` + `gmail.send`.** `openid`/`email` sont
+non sensibles (aucune review Google requise) et servent uniquement à
+obtenir un `id_token` (JWT OpenID Connect) dans la réponse d'échange de
+code — `gmail.send` seul ne donne accès à aucun endpoint de lecture, pas
+même `users.getProfile` (voir "Dette technique corrigée" ci-dessous).
+`emailCompte` est décodé directement depuis le claim `email` de cet
+`id_token` (`GoogleOAuthService.decoderEmailDepuisIdToken`), **sans
+vérification de signature** — l'`id_token` est obtenu directement depuis
+`oauth2.googleapis.com/token` en HTTPS serveur-à-serveur, jamais transmis
+par le client ni exposé à une falsification possible ; Google documente ce
+cas comme dispensé de vérification (contrairement à un `id_token` reçu
+côté client).
+
+Côté desktop : canal IPC générique `shell:openExternal` (`apps/desktop/src/
+main/index.ts`, restreint à `http(s)`) ouvre l'URL de consentement dans le
+navigateur système — deuxième précédent après le `setWindowOpenHandler`
+passif déjà en place, mais celui-ci déclenchable depuis le renderer.
+
+### envoyerNotification (`TachesService.envoyerNotification`, `PATCH /taches/:id/envoyer-notification`)
+Action générique aux 5 types de tâche, pas spécifique à un type : lit
+`metadata.notificationObjet`/`notificationCorps` déjà résolus en amont
+(alertes, révision de loyer, quittance mensuelle — voir sections
+correspondantes), résout le destinataire via `tache.locataireId` →
+`locataires.email`. **Ne tente jamais un envoi sans destinataire certain** :
+`BadRequestException` explicite si `locataireId` est `null`, si le
+locataire n'a pas d'email, ou si `metadata.notificationIndisponible` était
+posé en amont (message reprenant `motifNotificationIndisponible`) — jamais
+une adresse devinée ou un envoi silencieusement sauté.
+
+Pour `type='quittance_mensuelle'` : génère le `.docx` à la volée via
+`QuittanceDocumentDocxService.genererDocumentQuittanceDocx` et l'attache
+(pas de PDF — décision actée : `QuittanceDocumentDocxService` ne produit
+que du `.docx`, aucune conversion PDF dans ce codebase depuis le retrait de
+`pdfmake`, voir section Quittance mensuelle).
+
+**Jamais `fait` sur un échec d'envoi** : le passage à `statut='fait'` +
+`dateCompletion` n'est atteint qu'après un `GoogleOAuthService.envoyerEmail`
+réussi — toute exception (Gmail non connecté, jeton révoqué, erreur API)
+remonte telle quelle au frontend et la tâche reste dans son statut courant,
+jamais fermée sur un envoi qui n'a pas eu lieu.
+
+**Dette technique corrigée (2026-09-04)** : la version initiale de cette
+étape appelait `users.getProfile` avec le seul scope `gmail.send` pour
+résoudre `email_compte` — risque de blocage identifié avant le premier
+test réel (`gmail.send` ne donne accès à aucun endpoint de lecture Gmail,
+`users.getProfile` inclus). Remplacé par le décodage de l'`id_token`
+obtenu via les scopes `openid`/`email` (voir ci-dessus) — élimine l'appel
+HTTP et la dépendance à un scope non couvert par la configuration Google
+Cloud existante. **Action requise côté Google Cloud Console (Data
+access)** : ajouter `openid` et `.../auth/userinfo.email` (ou `email`) à
+la liste des scopes autorisés de l'écran de consentement OAuth, en plus de
+`gmail.send` déjà configuré — scopes non sensibles, aucune review Google,
+ajout en quelques secondes.
 
 ## modele_courrier (Module Tâches, Étape 2, 2026-08-29)
 Brique transverse, pas un module à part entière — infrastructure de modèle
