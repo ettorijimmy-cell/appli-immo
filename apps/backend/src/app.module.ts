@@ -18,6 +18,7 @@ import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
 import { GarantsModule } from "./garants/garants.module";
+import { GoogleOAuthModule } from "./google-oauth/google-oauth.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
@@ -65,6 +66,7 @@ import { VersementsModule } from "./versements/versements.module";
     EtatsDesLieuxModule,
     EtatDesLieuxDocumentDocxModule,
     QuittanceDocumentDocxModule,
+    GoogleOAuthModule,
     PowerSyncModule
   ]
 })
