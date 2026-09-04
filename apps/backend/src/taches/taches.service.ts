@@ -4,10 +4,14 @@ import { appartements, bailLocataires, baux, bien, locataires, mettreAJourAvecAu
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import type { PieceJointeEmail } from "../google-oauth/construire-message-rfc2822";
+import { GoogleOAuthService } from "../google-oauth/google-oauth.service";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
+import { QuittanceDocumentDocxService } from "../quittance-document-docx/quittance-document-docx.service";
 import { UsersService } from "../users/users.service";
 
 const CODE_MODELE_REVISION_LOYER = "revision_loyer";
+const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export interface FindAllTachesFiltres {
   statut?: "a_faire" | "en_cours" | "fait" | "annulee";
@@ -24,7 +28,9 @@ export class TachesService {
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
     private readonly modelesCourrierService: ModelesCourrierService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly googleOAuthService: GoogleOAuthService,
+    private readonly quittanceDocumentDocxService: QuittanceDocumentDocxService
   ) {}
 
   async findAll(filtres: FindAllTachesFiltres) {
@@ -175,10 +181,10 @@ export class TachesService {
     );
 
     const metadataExistant = (tacheRow.metadata ?? {}) as Record<string, unknown>;
-    // TODO: étape 3/4 — l'envoi Gmail passera ce statut à 'fait' une fois
-    // l'email réellement envoyé (bloqué actuellement sur la vérification
-    // Google OAuth). 'en_cours' signifie "appliqué financièrement,
-    // notification en attente".
+    // 'en_cours' signifie "appliqué financièrement, notification en
+    // attente" — c'est envoyerNotification() qui fait passer la tâche à
+    // 'fait', une fois l'email réellement envoyé (Module Tâches, Étape 3,
+    // 2026-09-01 : ce n'est plus bloqué sur la vérification Google OAuth).
     const [tacheMiseAJour] = await mettreAJourAvecAudit(
       this.db,
       tache,
@@ -193,6 +199,88 @@ export class TachesService {
       throw new NotFoundException("Tâche introuvable");
     }
     return this.versDto(tacheMiseAJour as TacheRow);
+  }
+
+  /**
+   * Action générique (Module Tâches, Étape 3 — intégration Gmail,
+   * 2026-09-01) : envoie la notification déjà résolue en amont
+   * (`metadata.notificationObjet`/`notificationCorps` — impaye,
+   * entretien_equipement, document_expire, quittance_mensuelle à la
+   * génération ; revision_loyer une fois `appliquerRevision` passée) via
+   * Gmail, puis marque la tâche `fait`. Ne tente jamais rien si le
+   * destinataire ne peut pas être résolu (locataireId absent, ou
+   * locataire sans email) — message clair, jamais un envoi à une adresse
+   * devinée. Si l'envoi échoue (Gmail non connecté, jeton révoqué, erreur
+   * API), l'exception de GoogleOAuthService remonte telle quelle et la
+   * tâche reste dans son statut actuel — jamais `fait` sur un envoi qui a
+   * échoué (l'update de statut n'est atteint qu'après un envoi réussi).
+   */
+  async envoyerNotification(id: string) {
+    const [tacheRow] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
+    if (!tacheRow) {
+      throw new NotFoundException("Tâche introuvable");
+    }
+    if (tacheRow.statut !== "a_faire" && tacheRow.statut !== "en_cours") {
+      throw new BadRequestException(`Cette tâche ne peut plus être envoyée (statut actuel : '${tacheRow.statut}').`);
+    }
+
+    const { notificationObjet, notificationCorps } = this.extraireMetadataNotificationEnvoi(tacheRow.metadata);
+
+    if (!tacheRow.locataireId) {
+      throw new BadRequestException("Aucun destinataire résolu pour cette tâche (aucun titulaire actif sur le bail).");
+    }
+    const [locataireDestinataire] = await this.db
+      .select({ email: locataires.email })
+      .from(locataires)
+      .where(eq(locataires.id, tacheRow.locataireId))
+      .limit(1);
+    if (!locataireDestinataire || !locataireDestinataire.email) {
+      throw new BadRequestException("Le locataire destinataire n'a pas d'adresse email renseignée.");
+    }
+
+    let pieceJointe: PieceJointeEmail | undefined;
+    if (tacheRow.type === "quittance_mensuelle") {
+      if (!tacheRow.paiementId) {
+        throw new BadRequestException("Tâche de quittance incomplète (paiementId manquant).");
+      }
+      const contenu = await this.quittanceDocumentDocxService.genererDocumentQuittanceDocx(tacheRow.paiementId);
+      pieceJointe = { nomFichier: `quittance-${tacheRow.paiementId}.docx`, contenu, mimeType: MIME_DOCX };
+    }
+
+    await this.googleOAuthService.envoyerEmail(
+      tacheRow.organisationId,
+      locataireDestinataire.email,
+      notificationObjet,
+      notificationCorps,
+      pieceJointe
+    );
+
+    const [tacheMiseAJour] = await mettreAJourAvecAudit(
+      this.db,
+      tache,
+      id,
+      { statut: "fait", dateCompletion: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!tacheMiseAJour) {
+      throw new NotFoundException("Tâche introuvable");
+    }
+    return this.versDto(tacheMiseAJour as TacheRow);
+  }
+
+  private extraireMetadataNotificationEnvoi(metadata: unknown): { notificationObjet: string; notificationCorps: string } {
+    if (typeof metadata !== "object" || metadata === null) {
+      throw new BadRequestException("Aucune notification résolue pour cette tâche.");
+    }
+    const m = metadata as Record<string, unknown>;
+    if (typeof m.notificationObjet !== "string" || typeof m.notificationCorps !== "string") {
+      throw new BadRequestException(
+        m.notificationIndisponible
+          ? `Notification indisponible : ${typeof m.motifNotificationIndisponible === "string" ? m.motifNotificationIndisponible : "raison inconnue"}.`
+          : "Aucune notification résolue pour cette tâche."
+      );
+    }
+    return { notificationObjet: m.notificationObjet, notificationCorps: m.notificationCorps };
   }
 
   private extraireMetadataRevision(metadata: unknown): {

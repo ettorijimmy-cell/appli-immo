@@ -7,6 +7,7 @@ import { QuittanceDocumentDocxService } from "./quittance-document-docx.service"
 @Module({
   imports: [DatabaseModule, BienModule],
   controllers: [QuittanceDocumentDocxController],
-  providers: [QuittanceDocumentDocxService]
+  providers: [QuittanceDocumentDocxService],
+  exports: [QuittanceDocumentDocxService]
 })
 export class QuittanceDocumentDocxModule {}
