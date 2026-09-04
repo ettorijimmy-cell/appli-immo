@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto";
+import path from "path";
+import { BadRequestException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -17,8 +19,8 @@ import {
   utilisateurs,
   type Database
 } from "db";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AlertesJobService } from "../alertes/alertes-job.service";
 import { AlertesModule } from "../alertes/alertes.module";
 import { AlertesService } from "../alertes/alertes.service";
@@ -36,6 +38,7 @@ import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { EquipementsModule } from "../equipements/equipements.module";
+import { GoogleOAuthService } from "../google-oauth/google-oauth.service";
 import { IndicesIrlModule } from "../indices-irl/indices-irl.module";
 import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
@@ -49,6 +52,19 @@ import { VersementsService } from "../versements/versements.service";
 import { TachesJobService } from "./taches-job.service";
 import { TachesModule } from "./taches.module";
 import { TachesService } from "./taches.service";
+
+// Même fixture committée que quittance-document-docx.integration.spec.ts
+// (jamais le vrai modèle du propriétaire) — nécessaire ici car
+// envoyerNotification() appelle réellement genererDocumentQuittanceDocx()
+// pour le type quittance_mensuelle (voir describe "envoyerNotification"
+// plus bas).
+process.env["QUITTANCE_DOCUMENT_DOCX_TEMPLATE_PATH"] = path.join(
+  __dirname,
+  "..",
+  "quittance-document-docx",
+  "__fixtures__",
+  "modele-quittance-test.docx"
+);
 
 // Vérifie le périmètre exact du Module Tâches, Étape 1 (docs/backlog.md,
 // docs/data-dictionary.md section tache) : dérivation depuis les 3 types
@@ -1346,5 +1362,283 @@ describe("Tâches — quittance mensuelle (intégration Postgres réelle)", () =
     const metadata = tacheCreee?.metadata as Record<string, unknown>;
     expect(metadata.notificationIndisponible).toBe(true);
     expect(metadata.motifNotificationIndisponible).toBe("aucun titulaire actif sur le bail");
+  });
+});
+
+// Vérifie TachesService.envoyerNotification (Module Tâches, Étape 3 —
+// intégration Gmail, 2026-09-01). GoogleOAuthService est remplacé par un
+// double de test (jamais un vrai appel HTTP contre l'API Gmail dans les
+// tests automatisés — consigne explicite) ; QuittanceDocumentDocxService
+// reste le vrai service (génération locale, aucun appel externe) pour
+// vérifier réellement la pièce jointe. Les tâches sont insérées
+// directement avec une notification déjà résolue en metadata, pour isoler
+// la logique d'envoyerNotification de celle des générateurs de tâches
+// (déjà couverte par les describe ci-dessus).
+describe("Tâches — envoyerNotification (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let versementsService: VersementsService;
+  let alertesJobService: AlertesJobService;
+  let tachesService: TachesService;
+  let db: Database;
+  let organisationId: string;
+  let appartementId: string;
+  let googleOAuthServiceDouble: { envoyerEmail: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    db = await begin();
+    googleOAuthServiceDouble = { envoyerEmail: vi.fn(async () => undefined) };
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        EncryptionModule,
+        AuditModule,
+        UsersModule,
+        AuthModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        PaiementsModule,
+        VersementsModule,
+        AlertesModule,
+        ModelesCourrierModule,
+        TachesModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .overrideProvider(GoogleOAuthService)
+      .useValue(googleOAuthServiceDouble)
+      .compile();
+
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    versementsService = moduleRef.get(VersementsService);
+    alertesJobService = moduleRef.get(AlertesJobService);
+    tachesService = moduleRef.get(TachesService);
+
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Organisation EnvoyerNotification Intégration" })
+      .returning();
+    if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+    organisationId = organisation.id;
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `envoyer-notification-integration-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: "Notification",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) throw new Error("Échec de l'insertion de l'utilisateur de test");
+
+    const sci = await scisService.create(user.id, {
+      nom: "SCI EnvoyerNotification Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble EnvoyerNotification Test",
+      adresse: "1 rue de la Notification",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    appartementId = appartement.id;
+  });
+
+  afterEach(async () => {
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  async function creerLocataire(email: string | null): Promise<string> {
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", email }).returning();
+    if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
+    return locataire.id;
+  }
+
+  async function creerTache(
+    overrides: Partial<typeof tache.$inferInsert> & { type: (typeof tache.$inferInsert)["type"] }
+  ): Promise<string> {
+    const [tacheCreee] = await db
+      .insert(tache)
+      .values({ origine: "manuelle", organisationId, ...overrides })
+      .returning();
+    if (!tacheCreee) throw new Error("Échec de l'insertion de la tâche de test");
+    return tacheCreee.id;
+  }
+
+  it("envoie la notification via Gmail et marque la tâche fait", async () => {
+    const locataireId = await creerLocataire("ilan.devos@example.com");
+    const id = await creerTache({
+      type: "impaye",
+      locataireId,
+      metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour Ilan, votre loyer est en retard." }
+    });
+
+    const resultat = await tachesService.envoyerNotification(id);
+
+    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledWith(
+      organisationId,
+      "ilan.devos@example.com",
+      "Rappel impayé",
+      "Bonjour Ilan, votre loyer est en retard.",
+      undefined
+    );
+    expect(resultat.statut).toBe("fait");
+    expect(resultat.dateCompletion).not.toBeNull();
+  });
+
+  it("quittance_mensuelle : joint le document docx généré à la volée", async () => {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-01-01",
+      loyerMensuel: "700.00",
+      provisionsCharges: "100.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    // Échéance récurrente de février, générée avec loyerHorsCharges/charges
+    // figés — contrairement à l'échéance d'entrée de janvier créée par
+    // activer() (voir quittance-document-docx.integration.spec.ts, même
+    // contrainte : validerCompletudeGenerationQuittance rejette une
+    // échéance antérieure au 2026-08-31 sans ces deux champs figés).
+    await alertesJobService.genererEcheancesRecurrentes("2026-02-10");
+    const [echeance] = await db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.bailId, bail.id), eq(paiements.dateEcheance, "2026-02-05")));
+    if (!echeance) throw new Error("Échéance de février attendue introuvable");
+    await versementsService.ajouter({
+      paiementId: echeance.id,
+      montant: "800.00",
+      mode: "virement",
+      dateVersement: "2026-02-05"
+    });
+    const locataireId = await creerLocataire("ilan.devos@example.com");
+    await db.insert(bailLocataires).values({ bailId: bail.id, locataireId, role: "titulaire" });
+    const id = await creerTache({
+      type: "quittance_mensuelle",
+      bailId: bail.id,
+      appartementId,
+      paiementId: echeance.id,
+      locataireId,
+      metadata: { notificationObjet: "Quittance de loyer", notificationCorps: "Bonjour Ilan, voici votre quittance." }
+    });
+
+    await tachesService.envoyerNotification(id);
+
+    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledTimes(1);
+    const appelPieceJointe = googleOAuthServiceDouble.envoyerEmail.mock.calls[0]?.[4] as
+      | { nomFichier: string; contenu: Buffer; mimeType: string }
+      | undefined;
+    expect(appelPieceJointe).toBeDefined();
+    expect(appelPieceJointe?.nomFichier).toBe(`quittance-${echeance.id}.docx`);
+    expect(appelPieceJointe?.mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    expect(Buffer.isBuffer(appelPieceJointe?.contenu)).toBe(true);
+    expect(appelPieceJointe?.contenu.byteLength).toBeGreaterThan(0);
+  });
+
+  it("rejette si aucun destinataire résolu (locataireId absent)", async () => {
+    const id = await creerTache({
+      type: "impaye",
+      metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour, votre loyer est en retard." }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
+    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejette si le locataire destinataire n'a pas d'adresse email", async () => {
+    const locataireId = await creerLocataire(null);
+    const id = await creerTache({
+      type: "impaye",
+      locataireId,
+      metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour, votre loyer est en retard." }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
+    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejette avec le motif explicite quand la notification a été marquée indisponible en amont", async () => {
+    const locataireId = await creerLocataire("ilan.devos@example.com");
+    const id = await creerTache({
+      type: "impaye",
+      locataireId,
+      metadata: { notificationIndisponible: true, motifNotificationIndisponible: "aucun titulaire actif sur le bail" }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow(/aucun titulaire actif sur le bail/);
+    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+  });
+
+  it("jamais fait sur un échec d'envoi : le statut reste inchangé", async () => {
+    googleOAuthServiceDouble.envoyerEmail.mockRejectedValueOnce(new Error("Gmail non connecté"));
+    const locataireId = await creerLocataire("ilan.devos@example.com");
+    const id = await creerTache({
+      type: "impaye",
+      locataireId,
+      metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour, votre loyer est en retard." }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow("Gmail non connecté");
+
+    const tacheApresEchec = await tachesService.findById(id);
+    if (!tacheApresEchec) throw new Error("Tâche attendue introuvable après l'échec d'envoi");
+    expect(tacheApresEchec.statut).toBe("a_faire");
+    expect(tacheApresEchec.dateCompletion).toBeNull();
+  });
+
+  it("rejette une tâche déjà fait ou annulée", async () => {
+    const locataireId = await creerLocataire("ilan.devos@example.com");
+    const id = await creerTache({
+      type: "impaye",
+      statut: "annulee",
+      locataireId,
+      metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour, votre loyer est en retard." }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
+    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 });
