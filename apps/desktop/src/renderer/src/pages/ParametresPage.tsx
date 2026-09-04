@@ -1,5 +1,6 @@
 import { ExecuterJobDiagnostic } from "../alertes/ExecuterJobDiagnostic";
 import { ParametresAlertesView } from "../alertes/ParametresAlertesView";
+import { ConnexionGmailView } from "../gmail/ConnexionGmailView";
 import { ExecuterJobTachesDiagnostic } from "../taches/ExecuterJobTachesDiagnostic";
 
 export function ParametresPage(): React.JSX.Element {
@@ -7,6 +8,7 @@ export function ParametresPage(): React.JSX.Element {
     <div className="space-y-6">
       <h1 className="text-lg font-semibold">Paramètres</h1>
       <ParametresAlertesView />
+      <ConnexionGmailView />
       <ExecuterJobDiagnostic />
       <ExecuterJobTachesDiagnostic />
     </div>

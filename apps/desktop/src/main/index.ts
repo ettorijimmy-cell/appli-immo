@@ -50,6 +50,20 @@ ipcMain.handle("powersync:disconnect", async () => {
   await disconnectPowerSync();
 });
 
+// IPC générique (pas spécifique à Gmail) : ouvre une URL dans le navigateur
+// système, jamais dans une fenêtre Electron interne — même mécanisme que
+// setWindowOpenHandler ci-dessus, mais déclenchable depuis le renderer
+// (consentement OAuth Google, Module Tâches Étape 3). Restreint à http(s)
+// pour qu'un appelant renderer ne puisse pas faire ouvrir un schéma
+// arbitraire (file:, etc.) via ce canal.
+ipcMain.handle("shell:openExternal", async (_event, url: string) => {
+  const { protocol } = new URL(url);
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new Error("URL non autorisée");
+  }
+  await shell.openExternal(url);
+});
+
 void app.whenReady().then(async () => {
   // Résolu avant toute fenêtre : un échec ici (safeStorage indisponible,
   // clé indéchiffrable) doit bloquer le démarrage, jamais laisser l'app

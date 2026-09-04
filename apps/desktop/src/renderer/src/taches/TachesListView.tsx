@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { obtenirStatutGmail } from "../gmail/api";
+import { ApiError } from "../lib/authenticated-fetch";
 import {
   appliquerRevisionTache,
+  envoyerNotificationTache,
   genererDocumentQuittance,
+  lireMetadataNotification,
   lireMetadataRevisionLoyer,
+  lireMotifNotificationIndisponible,
   listTaches,
   marquerTacheAnnulee,
   marquerTacheFait,
@@ -48,6 +53,17 @@ export function TachesListView(): React.JSX.Element {
   // pas encore été envoyée (Gmail, étape 3/4) ne doit jamais se perdre
   // silencieusement hors de vue en attendant.
   const [nombreEnCours, setNombreEnCours] = useState(0);
+  // Chargé une seule fois à l'ouverture de l'écran (pas de polling, même
+  // principe que ConnexionGmailView) — sert uniquement à désactiver le
+  // bouton "Envoyer" avec une infobulle explicite si Gmail n'est pas
+  // connecté ; null tant que non résolu (traité comme non connecté).
+  const [gmailConnecte, setGmailConnecte] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    obtenirStatutGmail()
+      .then((statut) => setGmailConnecte(statut.connecte))
+      .catch(() => setGmailConnecte(false));
+  }, []);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -111,7 +127,13 @@ export function TachesListView(): React.JSX.Element {
       ) : (
         <ul className="divide-y divide-slate-100 text-sm">
           {taches.map((tache) => (
-            <TacheItem key={tache.id} tache={tache} libelle={libelles.get(tache.id) ?? "…"} onChanged={refresh} />
+            <TacheItem
+              key={tache.id}
+              tache={tache}
+              libelle={libelles.get(tache.id) ?? "…"}
+              onChanged={refresh}
+              gmailConnecte={gmailConnecte ?? false}
+            />
           ))}
         </ul>
       )}
@@ -122,22 +144,44 @@ export function TachesListView(): React.JSX.Element {
 function TacheItem({
   tache,
   libelle,
-  onChanged
+  onChanged,
+  gmailConnecte
 }: {
   tache: Tache;
   libelle: string;
   onChanged: () => Promise<void>;
+  gmailConnecte: boolean;
 }): React.JSX.Element {
   const metadataRevision = tache.type === "revision_loyer" ? lireMetadataRevisionLoyer(tache.metadata) : null;
+  const metadataNotification = lireMetadataNotification(tache.metadata);
+  const motifNotificationIndisponible = lireMotifNotificationIndisponible(tache.metadata);
   const [loyerAjuste, setLoyerAjuste] = useState(metadataRevision?.loyerPropose ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [isSendingNotification, setIsSendingNotification] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
 
   async function handleMarquerFait(): Promise<void> {
     await marquerTacheFait(tache.id);
     await onChanged();
+  }
+
+  // Envoie la notification déjà résolue en metadata via Gmail et marque la
+  // tâche fait (voir TachesService.envoyerNotification) — jamais fait sur
+  // un échec d'envoi, l'exception (Gmail non connecté, jeton révoqué…)
+  // reste affichée sans changer le statut.
+  async function handleEnvoyerNotification(): Promise<void> {
+    setIsSendingNotification(true);
+    setNotificationError(null);
+    try {
+      await envoyerNotificationTache(tache.id);
+      await onChanged();
+    } catch (err) {
+      setNotificationError(err instanceof ApiError ? err.message : "Impossible d'envoyer la notification");
+      setIsSendingNotification(false);
+    }
   }
 
   async function handleMarquerAnnulee(): Promise<void> {
@@ -211,8 +255,7 @@ function TacheItem({
           )}
         </div>
       ) : (
-        (tache.statut === "a_faire" || tache.statut === "en_cours") &&
-        tache.type !== "revision_loyer" && (
+        (tache.statut === "a_faire" || tache.statut === "en_cours") && (
           <div className="flex items-center gap-3">
             {tache.type === "quittance_mensuelle" && tache.paiementId && (
               <button
@@ -231,15 +274,42 @@ function TacheItem({
                 {documentError}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                void handleMarquerFait();
-              }}
-              className="text-sm text-indigo-700 hover:text-indigo-800"
-            >
-              Marquer fait
-            </button>
+            {metadataNotification ? (
+              // Notification déjà résolue (objet/corps) : l'envoi via Gmail
+              // remplace "Marquer fait", qui n'est plus atteignable ici —
+              // c'est envoyerNotification() qui pose le statut fait, jamais
+              // un clic manuel sans envoi réel. "Marquer annulée" reste
+              // disponible en secours.
+              <button
+                type="button"
+                onClick={() => {
+                  void handleEnvoyerNotification();
+                }}
+                disabled={isSendingNotification || !gmailConnecte}
+                title={gmailConnecte ? undefined : "Connectez Gmail dans Paramètres pour envoyer cette notification"}
+                className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+              >
+                {isSendingNotification ? "Envoi…" : "Envoyer"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleMarquerFait();
+                }}
+                className="text-sm text-indigo-700 hover:text-indigo-800"
+              >
+                Marquer fait
+              </button>
+            )}
+            {notificationError && (
+              <span role="alert" className="text-xs text-red-600">
+                {notificationError}
+              </span>
+            )}
+            {!metadataNotification && motifNotificationIndisponible && (
+              <span className="text-xs text-amber-600">Notification indisponible : {motifNotificationIndisponible}</span>
+            )}
             <button
               type="button"
               onClick={() => {

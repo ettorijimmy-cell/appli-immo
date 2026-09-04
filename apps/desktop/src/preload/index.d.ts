@@ -5,6 +5,9 @@ export interface DesktopApi {
     connect: (credentials: PowerSyncCredentials) => Promise<void>;
     disconnect: () => Promise<void>;
   };
+  shell: {
+    openExternal: (url: string) => Promise<void>;
+  };
 }
 
 declare global {

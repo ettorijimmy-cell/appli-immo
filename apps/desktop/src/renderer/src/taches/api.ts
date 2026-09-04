@@ -83,6 +83,41 @@ export function lireMetadataRevisionLoyer(metadata: unknown): MetadataRevisionLo
   return { loyerActuel: m.loyerActuel, loyerPropose: m.loyerPropose };
 }
 
+// Forme de tache.metadata une fois la notification résolue (posée par
+// TachesJobService pour impaye/entretien_equipement/document_expire/
+// quittance_mensuelle, par TachesService.appliquerRevision pour
+// revision_loyer) — même garde runtime que lireMetadataRevisionLoyer, voir
+// TachesService.extraireMetadataNotificationEnvoi côté backend (source de
+// vérité des noms de champs).
+export interface MetadataNotification {
+  notificationObjet: string;
+  notificationCorps: string;
+}
+
+export function lireMetadataNotification(metadata: unknown): MetadataNotification | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const m = metadata as Record<string, unknown>;
+  if (typeof m.notificationObjet !== "string" || typeof m.notificationCorps !== "string") return null;
+  return { notificationObjet: m.notificationObjet, notificationCorps: m.notificationCorps };
+}
+
+// Motif explicite quand la résolution de la notification a échoué en amont
+// (aucun titulaire actif, etc.) — jamais un envoi silencieux, voir
+// TachesJobService.signalNotificationIndisponible.
+export function lireMotifNotificationIndisponible(metadata: unknown): string | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const m = metadata as Record<string, unknown>;
+  if (m.notificationIndisponible !== true) return null;
+  return typeof m.motifNotificationIndisponible === "string" ? m.motifNotificationIndisponible : "raison inconnue";
+}
+
+// Action générique (Module Tâches, Étape 3 — intégration Gmail) : envoie la
+// notification déjà résolue en metadata et marque la tâche fait — jamais
+// fait sur un échec d'envoi (voir TachesService.envoyerNotification).
+export function envoyerNotificationTache(id: string): Promise<Tache> {
+  return authenticatedFetch<Tache>(`/taches/${id}/envoyer-notification`, { method: "PATCH" });
+}
+
 // Même pattern que genererDocumentBail (locataires/api.ts) : blob streamé,
 // jamais persisté côté serveur (apps/backend/src/quittance-document-docx/
 // quittance-document-docx.service.ts) — un clic déclenche un téléchargement
