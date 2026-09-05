@@ -749,25 +749,53 @@ les trois parcours ci-dessus).
   puis dériver l'une des deux composantes par soustraction du total déjà
   calculé (jamais deux prorata indépendants sommés).
 
-- **Audit à faire avant de déployer la migration `bien.nom_proprietaire` en
-  production (Scaleway).** La nouvelle contrainte `bien_sci_id_coherent`
-  actualisée (docs/data-dictionary.md, section `bien`) exige
-  `nom_proprietaire IS NOT NULL` pour tout `proprietaire_type =
-  'personne_physique'`. La base de dev locale ne contenait aucun bien de ce
-  type au moment de l'ajout (migration appliquée sans problème), mais
-  Scaleway n'a pas été vérifié — si des biens `personne_physique` réels y
-  existent déjà, la migration échouera proprement (pas de risque de
-  corruption, juste un blocage de déploiement) faute de valeur pour la
-  nouvelle colonne. Requête à exécuter avant tout déploiement de la
-  migration `0042_broad_revanche.sql` :
-  ```sql
-  SELECT id, adresse, ville, created_at
-  FROM bien
-  WHERE proprietaire_type = 'personne_physique';
-  ```
-  Si des lignes sont retournées, backfiller `nom_proprietaire` pour chacune
-  (décision produit — quel nom, à trancher avec le propriétaire, pas à
-  deviner) avant d'appliquer la migration sur Scaleway.
+- **Migration `0042_broad_revanche.sql` (contrainte `bien_sci_id_coherent`
+  actualisée) a échoué une première fois sur Scaleway — résolu (2026-09-05).**
+  L'audit préalable (2026-08-31) avait identifié le bon risque —
+  `nom_proprietaire IS NOT NULL` requis pour `proprietaire_type =
+  'personne_physique'`, deux biens fixtures de ce type déjà présents sur
+  Scaleway (`01a04418-ab17-7a65-841e-0ed05c3abfff`,
+  `01a04419-b239-723a-a4aa-b1612d3957f2`) — mais la requête de vérification
+  avait été donnée à exécuter *avant* la migration, ce qui est impossible :
+  `nom_proprietaire` n'existe pas tant que la migration qui l'ajoute n'a pas
+  tourné. Résultat : la tentative de déploiement a échoué sur la validation
+  de la contrainte (`ADD CONSTRAINT` valide toutes les lignes existantes par
+  défaut), et comme `drizzle-kit migrate` regroupe **toutes** les migrations
+  plus récentes que la dernière enregistrée dans **une seule transaction**
+  (vérifié dans `node_modules/drizzle-kit/api.js`, `PgDialect.migrate` — la
+  décision de rejouer une migration est basée uniquement sur la comparaison
+  de `created_at`/`folderMillis`, jamais sur le hash du contenu), tout a été
+  annulé — pas seulement 0042.
+  **Découverte en cours de diagnostic** : la dernière migration réellement
+  appliquée sur Scaleway n'était pas 0041 comme supposé initialement (erreur
+  de raisonnement non vérifiée, corrigée après coup), mais **0037** —
+  confirmé sans ambiguïté par comparaison du hash sha256 réel de
+  `drizzle.__drizzle_migrations` avec le hash calculé du contenu commité de
+  chaque migration candidate (`git show HEAD:<fichier> | sha256sum`), plutôt
+  que par déduction depuis un timestamp. Six migrations (0038 à 0043 :
+  `tache`, `modele_courrier`, `revision_loyer`, l'index unique titulaire sur
+  `bail_locataires`, `bien.nom_proprietaire`, `connexion_gmail`) ont donc dû
+  être validées et rejouées ensemble, pas seulement les deux liées au
+  chantier Gmail — l'index unique titulaire (0041) valide aussi les données
+  existantes à la création et aurait pu échouer de la même façon si un bail
+  réel avait eu plusieurs titulaires actifs (vérifié négatif avant retry).
+  **Corrigé** : migration `0042_broad_revanche.sql` amendée (contenu déjà
+  commité, jamais appliqué ailleurs qu'en dev local où le backfill est un
+  no-op sans effet, donc sans risque de désynchronisation — la décision de
+  rejeu de `drizzle-kit` étant basée sur le timestamp, pas le hash) pour
+  inclure le backfill `nom_proprietaire = 'TEST — <adresse>'` des deux
+  fixtures, scopé par ID exact, entre l'`ADD COLUMN` et l'`ADD CONSTRAINT` —
+  les deux statements s'exécutent dans la même transaction, donc le backfill
+  voit la colonne fraîchement ajoutée et la contrainte voit les valeurs
+  fraîchement backfillées. Rejouée avec succès sur Scaleway le 2026-09-05,
+  les 6 migrations enregistrées, toutes les tables/objets confirmés présents.
+  **Leçon pour toute future migration touchant une contrainte de données sur
+  Scaleway** : jamais supposer quelle est la dernière migration réellement
+  appliquée — toujours vérifier `drizzle.__drizzle_migrations` directement
+  (et comparer par hash de contenu si le moindre doute), et se rappeler
+  qu'un backfill de données ne peut jamais précéder la migration qui crée la
+  colonne — il doit être *dans* la même migration, entre les deux DDL
+  concernés.
 
 - **`GoogleOAuthService.recupererEmailCompte` supposait que `users.getProfile`
   fonctionnait avec le seul scope `gmail.send` — résolu (2026-09-04), avant
@@ -1518,6 +1546,33 @@ Ordre de priorité convenu avec l'utilisateur :
    Console, Data access), en plus de `gmail.send` déjà configuré, avant le
    premier test réel de connexion. **Module Tâches désormais complet de
    bout en bout** (détection → tâche → action → notification envoyée).
+
+   **Étape 4 (2026-09-05) : page dédiée dans la sidebar.** Jimmy a levé
+   explicitement la limite de 6 entrées de la sidebar (docs/app-spec.md,
+   section 3bis, historique conservé là-bas) après avoir constaté sur une
+   capture réelle que l'espace visuel disponible ne justifiait plus cette
+   contrainte. Tâches devient une 7e entrée avec sa propre page (même
+   pattern que Documents — liste plate, pas d'onglets). `TachesListView`
+   (filtre statut + toutes les actions, y compris "Envoyer") déplacée du
+   tableau de bord vers cette page ; remplacée sur le tableau de bord par
+   `TachesSyntheseView` (compteur de tâches actives + aperçu des 5
+   prochaines échéances, lecture seule, sur le modèle de taille de
+   `CartesSyntheseView`).
+
+   **Piste explorée puis écartée, conservée pour référence** : avant la
+   levée de la limite, un audit avait été mené pour absorber Tâches (et,
+   plus tard, Charges/fiscalité et Messagerie) par regroupement en
+   catégories à onglets au niveau sidebar, sur le modèle de `BailTabs.tsx`
+   (`AppartementDetailView.tsx`). Constat de l'audit, toujours valable si
+   le besoin ressurgit un jour : `BailTabs.tsx` n'est pas un composant
+   d'onglets réutilisable — seulement deux composants de contenu
+   (`BailActuelTab`, `HistoriqueBauxTab`) insérés dans une barre d'onglets
+   codée à la main dans `AppartementDetailView.tsx` ; le même motif est
+   déjà dupliqué indépendamment dans `FinancesPage.tsx` (2 onglets).
+   Aucun composant `<TabBar>` partagé n'existe. Sans objet dans l'immédiat
+   (plus besoin de fusionner Documents ou Locataires sous des onglets),
+   mais si un vrai besoin d'onglets au niveau sidebar réapparaît, extraire
+   ce `<TabBar>` avant d'écrire un 3e copier-coller du motif.
 
 2. **Charges et fiscalité** — sync ou import de relevés bancaires,
    catégorisation automatique ou rapprochement manuel des dépenses, pièce

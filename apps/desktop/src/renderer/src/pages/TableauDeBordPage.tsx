@@ -10,7 +10,7 @@ import { ProvisionsCollecteesView } from "../tableau-de-bord/ProvisionsCollectee
 import { RemboursementsEnAttenteView } from "../tableau-de-bord/RemboursementsEnAttenteView";
 import { moisParDefaut, RevenusLocatifsView } from "../tableau-de-bord/RevenusLocatifsView";
 import { SyntheseParEntiteView } from "../tableau-de-bord/SyntheseParEntiteView";
-import { TachesListView } from "../taches/TachesListView";
+import { TachesSyntheseView } from "../tableau-de-bord/TachesSyntheseView";
 
 export function TableauDeBordPage(): React.JSX.Element {
   const [{ debut, fin }, setPeriode] = useState(moisParDefaut());
@@ -59,7 +59,7 @@ export function TableauDeBordPage(): React.JSX.Element {
       <DerniereSauvegardeView />
 
       <AlertesListView />
-      <TachesListView />
+      <TachesSyntheseView />
     </div>
   );
 }

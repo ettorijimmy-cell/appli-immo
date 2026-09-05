@@ -77,12 +77,29 @@ construire ni colonne de statut à ajouter au schéma.
 
 ## 3bis. Navigation
 
-Sidebar à 6 entrées, dans cet ordre exact :
+Sidebar, dans cet ordre :
 `Tableau de bord` · `Patrimoine` (SCI/Immeubles/Appartements réunis) ·
-`Locataires` · `Finances` · `Documents` · `Paramètres`.
+`Locataires` · `Finances` · `Documents` · `Tâches` · `Paramètres`.
 
-Règle : ajouter une 7e entrée nécessite d'en fusionner deux — pas
-d'ajout libre, pour préserver la sobriété visée en Phase 6.
+**Limite de 6 entrées levée explicitement par Jimmy (2026-09-05)**, après
+consultation d'une capture réelle de l'application : la sidebar a
+largement la place visuelle jusqu'au bouton "Se déconnecter" en bas, la
+limite fixée en Phase 6 anticipait une contrainte d'espace qui ne s'est
+pas vérifiée à l'usage. Ce n'est pas un oubli si un lecteur futur trouve
+plus de 6 entrées ci-dessus — la règle a été retirée en connaissance de
+cause, pas contournée. **Aucun nouveau plafond numérique n'a été fixé à
+la place** : à juger au cas par cas si la sidebar devient visuellement
+surchargée. Le principe de sobriété reste valide en esprit (pas d'ajout
+pour la démonstration de fonctionnalités), simplement plus borné par un
+chiffre fixe — voir aussi docs/brand-brief.md.
+
+Historique : de la Phase 6 jusqu'au 2026-09-05, la règle était "ajouter
+une 7e entrée nécessite d'en fusionner deux" (6 entrées maximum, sans
+exception). Un audit de regroupement par onglets (sur le modèle de
+`BailTabs.tsx`) avait été mené pour absorber Tâches sous cette contrainte
+avant qu'elle ne soit levée — conservé pour référence dans
+docs/backlog.md si un besoin de regroupement par onglets au niveau
+sidebar réapparaît un jour (ce n'est plus nécessaire dans l'immédiat).
 
 Navigation secondaire : palette de commandes (Ctrl+K), développée en
 dernier (Module 8) — voir docs/backlog.md.

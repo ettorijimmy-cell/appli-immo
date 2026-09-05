@@ -8,6 +8,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ParametresPage } from "./pages/ParametresPage";
 import { PatrimoinePage } from "./pages/PatrimoinePage";
 import { TableauDeBordPage } from "./pages/TableauDeBordPage";
+import { TachesPage } from "./pages/TachesPage";
 
 function AuthenticatedApp(): React.JSX.Element {
   const { isAuthenticated } = useAuth();
@@ -24,6 +25,7 @@ function AuthenticatedApp(): React.JSX.Element {
         <Route path="locataires" element={<LocatairesPage />} />
         <Route path="finances" element={<FinancesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
+        <Route path="taches" element={<TachesPage />} />
         <Route path="parametres" element={<ParametresPage />} />
       </Route>
     </Routes>
