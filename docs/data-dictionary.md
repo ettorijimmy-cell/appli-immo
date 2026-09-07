@@ -505,6 +505,62 @@ versement est attribué au mois de sa **propre** date, contrairement à la
 limite qui existait avant ce chantier (voir ci-dessous) où `paiements` ne
 portait qu'un seul couple montant/date par ligne.
 
+## depense (Module Charges et fiscalité, Étape 1 — socle, 2026-09-06)
+
+Flux de dépenses ponctuelles réelles (facture, note de frais), saisies
+manuellement ou confirmées une par une depuis un import CSV — jamais un
+fourre-tout pour les cases à saisie manuelle du formulaire 2072 (voir
+`docs/backlog.md`, section "Suivi des charges et fiscalité", note Étape 4).
+Create/findAll uniquement (`DepensesService`, `apps/backend/src/depenses`)
+— pas d'update à cette étape, cohérent avec un flux de saisie/confirmation
+plutôt que d'édition a posteriori.
+
+| Champ | Type | Description |
+|---|---|---|
+| categorie | enum `depense_categorie` | `frais_gestion` \| `assurance` \| `reparation_entretien` \| `impots_taxes` \| `charges_copropriete` \| `interets_emprunt` \| `autre` — mappe directement les groupes du Plan Comptable Général alimentant le tableau VII (Annexe 1, revenus fonciers) du formulaire 2072, pas une nomenclature arbitraire |
+| montant | decimal | **Toujours positif** — `CreateDepenseDto` rejette explicitement un signe négatif (`@Matches`, revue financial-logic-reviewer, 2026-09-07). Attention : `parserReleveCsv` (packages/core) renvoie une ligne de débit en montant **négatif** (convention du rapprochement bancaire, `paiements`/`versements`) — domaine différent, jamais la même convention de signe. `ImportCsvDepensesView` applique `valeurAbsolueMontant` (packages/core) avant tout appel `POST /depenses` pour cette raison |
+| date_depense | date | |
+| libelle | text | |
+| bien_id | uuid, nullable | Rattachement à un bien précis |
+| sci_id | uuid, nullable | **Dénormalisé** depuis `bien.sci_id` quand `bien_id` est fourni (jamais la valeur transmise par le client — `DepensesService.create` la recalcule systématiquement), sûr car `bien.sci_id` est immuable après création (`UpdateBienDto` l'exclut). Renseignable seul, sans `bien_id`, pour une dépense de niveau SCI sans bien précis (frais de gestion, comptable). Même précédent que `bien.organisation_id` |
+| organisation_id | uuid | Résolu côté serveur depuis l'utilisateur authentifié, jamais transmis par le client (même mécanisme que `BienService.create`) |
+
+CHECK `depense_rattachement_requis` : `bien_id IS NOT NULL OR sci_id IS NOT NULL`
+— une dépense orpheline (ni bien ni SCI) est rejetée en base, en plus de la
+vérification applicative dans `DepensesService.create` (message d'erreur
+clair avant d'atteindre la contrainte SQL).
+
+**Pièce jointe** : `document_entite_type` étendu avec la valeur `depense`
+(demandé explicitement pour cette étape), permettant en théorie de
+réutiliser le lien polymorphe `documents` existant (Module 4). Aucun flux
+d'upload de document pour une dépense n'a été construit à cette étape
+(create/findAll de `depense` uniquement) — une tentative d'ajout de la
+valeur `facture` à `document_categorie` (`categorie` étant `NOT NULL` sur
+`documents`) a été faite puis **retirée** (2026-09-07) : rien dans le code
+de cette étape n'insère de ligne `documents` pour une dépense, cet ajout
+était une anticipation non demandée, pas un besoin réel du flux construit.
+À réévaluer le jour où un vrai flux d'upload de justificatif de dépense
+sera construit.
+
+**Import CSV — distinct du rapprochement de Module 5** : `parserReleveCsv`
+(packages/core) a été étendu pour accepter, en plus du format historique à
+colonne montant unique signée, un format à deux colonnes Débit/Crédit
+(export bancaire réel de Jimmy) — détecté par la seule présence d'une
+colonne "débit" (jamais "crédit" seule, déjà candidate du format historique).
+`POST /depenses/parser-csv` (`DepensesService.parserCsv`) expose une analyse
+**pure** de ce parseur — aucune écriture, aucun rapprochement automatique
+contre des dépenses existantes (contrairement à `PaiementsService
+.rapprocherCsv`) : chaque ligne renvoyée reste à catégoriser et rattacher
+manuellement côté frontend avant de devenir une dépense réelle via un appel
+`POST /depenses` séparé par ligne confirmée. La catégorisation par
+mots-clés reste hors périmètre de cette étape (Étape 2, `docs/backlog.md`).
+
+**Hors périmètre de l'Étape 1** — à ne jamais présenter comme fait :
+catégorisation automatique par mots-clés (Étape 2), dashboard
+recettes/dépenses et rentabilité nette (Étape 3), export formulaire 2072
+(Étape 4, nécessitera très probablement une entité séparée pour les cases à
+saisie manuelle, voir `docs/backlog.md`).
+
 ## versements & remboursements — décisions de conception (chantier terminé)
 
 Corrige la limite ci-dessus (versements multiples non représentables) et

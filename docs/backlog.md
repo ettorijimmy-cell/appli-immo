@@ -289,6 +289,27 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
+- **Aucune vérification que `bienId`/`sciId` transmis par le client appartiennent
+  bien à l'organisation de l'utilisateur authentifié — non résolu.** Constaté
+  2026-09-07 (revue financial-logic-reviewer, Module Charges et fiscalité
+  Étape 1) : `DepensesService.create()` vérifie seulement que le `bienId`
+  fourni existe (`NotFoundException` sinon), jamais que
+  `bien.organisationId === user.organisationId` — un appelant connaissant
+  l'id d'un bien d'une autre organisation pourrait créer une dépense qui
+  porte son propre `organisationId` mais un `sciId` dénormalisé appartenant
+  à une organisation tierce (fuite d'id, mauvaise attribution). **Gap
+  préexistant, pas une régression de ce chantier** : le même défaut existe
+  déjà dans `BienService.create()` (le `sciId` fourni par le client n'est
+  pas non plus vérifié contre l'organisation de l'appelant) et dans
+  `DocumentsService.verifierEntiteExiste` (vérifie l'existence de l'entité
+  cible, jamais son appartenance à l'organisation de l'appelant). Sans
+  conséquence réelle aujourd'hui (usage personnel mono-organisation, pas de
+  compte tiers), mais **à corriger avant toute ouverture multi-utilisateur/
+  SaaS** (voir CLAUDE.md, "conçu dès le départ pour une évolution SaaS
+  future") — un audit transversal de tous les services qui acceptent un id
+  d'entité liée en entrée serait plus efficace qu'un correctif isolé par
+  module.
+
 - **IPs autorisées de la base Postgres de production laissées grand ouvertes
   (0.0.0.0/0, "Allow All") — résolu, confirmé directement par le
   propriétaire.** Constaté 2026-08-12 pendant le diagnostic de connexion
@@ -1477,9 +1498,62 @@ Portée envisagée :
   objectif : vue complète recettes (loyers) vs dépenses (remboursements,
   futures charges).
 
+**Étape 4 (export 2072) — précision importante, ne pas modéliser
+maintenant (2026-09-06)** : Jimmy a identifié, en consultant la
+documentation Pennylane sur le formulaire 2072 (annexe 1, revenus
+fonciers), que plusieurs cases du formulaire correspondent à des valeurs
+saisies manuellement une fois par déclaration, pas dérivées d'une somme
+de lignes `depense` — certaines sont même des **recettes**, pas des
+dépenses (ex. ligne 3 : subventions ANAH, indemnités d'assurance
+perçues). Les mélanger dans la table `depense` (Étape 1) serait une
+erreur de modélisation — `depense` reste un flux de dépenses ponctuelles
+réelles, jamais un fourre-tout pour toute case du formulaire.
+
+Champs à saisie manuelle identifiés à ce jour (liste non exhaustive,
+à vérifier/compléter au moment de construire l'Étape 4, pas maintenant) :
+- Recettes diverses / subventions perçues (ANAH, indemnités d'assurance)
+  — une recette, pas une dépense.
+- Indemnités d'éviction versées.
+- Régularisation de provisions pour charges des années antérieures.
+- Montant de déduction spécifique (dispositifs Cosse/Loc'Avantages,
+  Périssol, etc. selon le régime applicable).
+- Dépenses spécifiques aux immeubles classés/inscrits (monuments
+  historiques) ou assimilés.
+- Amortissement — **probablement calculable** depuis `bien.date_acquisition`
+  et `bien.valeur_acquisition` (colonnes déjà en base, `packages/db/src/
+  schema/bien.ts`), à vérifier précisément le moment venu (règles
+  d'amortissement variant selon le régime IS/IR et le type de bien —
+  pas une simple division linéaire à supposer sans vérification du texte
+  applicable, même discipline que le reste des règles fiscales/légales
+  de ce projet).
+
+**Décision de modélisation anticipée, à concevoir réellement à l'Étape 4
+seulement** : ces valeurs nécessiteront très probablement une entité
+séparée de `depense` — une sorte de "déclaration fiscale" ou "exercice
+fiscal", une ligne par SCI et par année, portant les champs à saisie
+manuelle ci-dessus (recettes comme dépenses). Ne pas anticiper le schéma
+de cette entité maintenant — le formulaire 2072 réel et ses cases exactes
+n'ont pas encore été vérifiés ligne par ligne (même exigence que pour le
+contrat de bail à l'Étape "Édition d'un bail" : vérifier le texte/
+formulaire officiel exact, pas une synthèse tierce, avant d'écrire le
+schéma).
+
 Ce module mérite sa propre phase de conception dédiée (comme les Phases
 1-12 initiales) avant d'être développé — pas à traiter comme un ticket
 parmi d'autres du backlog MVP.
+
+**Étape 1 (socle dépenses) réalisée (2026-09-06)** — schéma (`depense` +
+enum `depense_categorie`, 7 catégories mappées au Plan Comptable Général
+pour le tableau VII du formulaire 2072), `DepensesModule` backend
+(create/findAll uniquement, pas d'update — cohérent avec le flux manuel
+décrit ci-dessus), extension de `parserReleveCsv` (packages/core) au
+format bancaire réel de Jimmy à deux colonnes Débit/Crédit, endpoint
+d'analyse CSV dédié (`POST /depenses/parser-csv`, aucun rapprochement
+automatique — juste les lignes brutes), écran desktop (3ᵉ onglet "Charges
+& fiscalité" de `FinancesPage.tsx`, liste + création manuelle + import CSV
+avec catégorisation et rattachement bien/SCI ligne par ligne). Catégorisation
+par mots-clés (Étape 2), dashboard recettes/dépenses (Étape 3) et export
+2072 (Étape 4, voir note ci-dessus) restent hors périmètre — non commencés.
 
 ### Intervention (futur module)
 
@@ -1495,6 +1569,37 @@ volet financier) demeure hors backlog MVP, non encore priorisé.
 
 Ce module mérite sa propre phase de conception dédiée avant d'être
 développé — pas à traiter comme un ticket parmi d'autres du backlog MVP.
+
+### Génération PDF signé + archivage des documents générés (futur module)
+
+Constat (2026-09-05) : les trois générateurs de documents existants (bail,
+état des lieux, quittance — `BailDocumentDocxService`,
+`EtatDesLieuxDocumentDocxService`, `QuittanceDocumentDocxService`)
+streament tous un `.docx` à la demande, jamais persisté — décision actée
+dès l'Étape 4 (retrait de `pdfmake`, docs/backlog.md) et restée cohérente
+entre les trois. Deux besoins identifiés pour une itération future,
+distincts l'un de l'autre :
+
+1. **Conversion docx→PDF réelle**, préalable nécessaire à toute signature
+   électronique. Nécessite une brique de conversion (LibreOffice headless
+   ou équivalent) — hors périmètre du module Tâches, et plus largement de
+   tout module actuel : aucune dépendance de ce type dans le projet
+   aujourd'hui.
+2. **Archivage des documents générés** : chaque quittance/bail/état des
+   lieux effectivement envoyé devrait pouvoir être retrouvé plus tard.
+   Piste à explorer plutôt qu'à trancher maintenant : une ligne
+   `documents` avec le fichier en Object Storage, à la manière des
+   documents uploadés manuellement — et rattacher cet archivage au module
+   Documents plutôt qu'au module qui génère le document (Tâches pour la
+   quittance, Bail pour le contrat) pour centraliser tous les documents
+   de l'application au même endroit. Cohérent avec le rôle transversal
+   que Documents joue déjà (lien polymorphe `entite_type`/`entite_id`
+   couvrant déjà bien/appartement/bail/locataire/garant).
+
+Aucune des deux pistes n'est urgente ni bloquante — les trois générateurs
+fonctionnent tels quels pour l'usage actuel (téléchargement à la demande).
+Ce module mérite sa propre phase de conception avant d'être développé,
+même principe que les autres modules futurs ci-dessus.
 
 ## Modules futurs — feuille de route (2026-08-24)
 
@@ -1574,11 +1679,25 @@ Ordre de priorité convenu avec l'utilisateur :
    mais si un vrai besoin d'onglets au niveau sidebar réapparaît, extraire
    ce `<TabBar>` avant d'écrire un 3e copier-coller du motif.
 
+   **Module Tâches clos (2026-09-05)** — chaîne complète vérifiée en
+   conditions réelles par Jimmy, pas seulement en tests automatisés :
+   génération du document de quittance, envoi réel via Gmail, réception
+   confirmée en boîte de réception. Alerte → tâche → résolution →
+   génération → envoi → clôture, de bout en bout, sur les 5 étapes
+   (socle + alertes, modèles de courrier, Gmail OAuth2, quittance
+   mensuelle, révision de loyer) et l'extension notification (impayé,
+   entretien équipement, document expiré).
+
 2. **Charges et fiscalité** — sync ou import de relevés bancaires,
    catégorisation automatique ou rapprochement manuel des dépenses, pièce
    jointe par dépense, objectif : gérer la fiscalité des sociétés (SCI à
    l'IR/IS). Vise une sortie concrète (déclaration fiscale type 2072 ou
    équivalent), pas seulement un tableau de bord de suivi.
+
+   **Étape 1 (socle dépenses) réalisée (2026-09-06)** — voir section
+   "Suivi des charges et fiscalité" ci-dessus pour le détail. Étapes 2
+   (catégorisation par mots-clés), 3 (dashboard) et 4 (export 2072) non
+   commencées.
 
 3. **Messagerie interne** — messagerie interne à l'application (pas de
    synchronisation boîte mail externe, jugée disproportionnée), messages

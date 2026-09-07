@@ -33,6 +33,52 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-09-07] ImportCsvDepensesView proposait les lignes de crédit comme candidates de dépense
+
+**Symptôme** : confirmé par test manuel Electron — dans l'écran d'import
+CSV du module Dépenses, une ligne de crédit (encaissement, montant positif
+dans le CSV parsé) était affichée avec les mêmes sélecteurs catégorie/
+rattachement et le même bouton "Créer cette dépense" actif qu'une ligne de
+débit. Un encaissement (remboursement, virement reçu) aurait donc pu être
+créé comme une dépense.
+
+**Contexte** : Module Charges et fiscalité, Étape 1 (import CSV dépenses).
+Le besoin de filtrer les lignes au signe négatif avait été identifié
+explicitement pendant l'audit préalable de cette étape ("il faut filtrer
+aux lignes négatives... dans le nouveau flux dépenses, pas dans
+`parserReleveCsv`"), mais ce filtrage n'avait en réalité jamais été codé
+dans `ImportCsvDepensesView.tsx` — chaque ligne, quel que soit son signe,
+recevait le même rendu actionnable.
+
+**Cause** : absence totale de vérification du signe du montant avant
+d'afficher les contrôles de création dans la boucle de rendu des lignes
+CSV — un oubli d'implémentation malgré l'intention documentée au moment de
+l'audit.
+
+**Solution** : ajout de `estMontantNegatif` (packages/core, manipulation
+purement textuelle du signe, même famille que `valeurAbsolueMontant`).
+`ImportCsvDepensesView` calcule `estDebit = estMontantNegatif(ligne.montant)`
+pour chaque ligne : seules les lignes de débit affichent les sélecteurs et
+le bouton de création ; les lignes de crédit affichent un message
+"Encaissement (crédit) — non applicable à une dépense", jamais masquées
+silencieusement (cohérent avec le reste de l'interface, qui montre toujours
+toutes les lignes du CSV). Garde-fou supplémentaire dans
+`handleConfirmer` : retourne immédiatement si la ligne n'est pas un débit,
+même si l'état React permettait par erreur d'atteindre cette fonction.
+
+**Fichiers concernés** :
+`packages/core/src/paiements/montant.ts` (+ test),
+`apps/desktop/src/renderer/src/depenses/ImportCsvDepensesView.tsx`.
+
+**À surveiller** : toute future vue qui affiche des lignes de CSV brutes
+côté dépenses doit répéter ce filtrage — il n'existe pas de composant
+partagé qui l'appliquerait automatiquement. Le garde-fou backend
+(`CreateDepenseDto` rejette un montant négatif, voir revue
+financial-logic-reviewer du 2026-09-07 ci-dessus) empêcherait bien la
+création effective si ce filtrage frontend venait à disparaître, mais
+laisserait un bouton actif menant systématiquement à une erreur — pas
+acceptable comme unique garde-fou, seulement en défense en profondeur.
+
 ### [2026-08-27] DELETE de nettoyage scopé par nom plutôt que par ID — bloqué par une contrainte FK, pas par une vérification préalable
 
 **Symptôme** : en nettoyant les données de test créées pour vérifier de
