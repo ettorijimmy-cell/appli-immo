@@ -23,7 +23,16 @@ export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   // tel quel pour les documents déjà rattachés à une ligne immeubles
   // existante (table conservée, voir bien.ts), 'bien' est le SEUL chemin
   // possible pour les nouveaux biens créés via BienService.
-  "bien"
+  "bien",
+  // Module Charges et fiscalité, Étape 1 (2026-09-06, docs/backlog.md) :
+  // permet de rattacher un document à une dépense, même mécanisme
+  // polymorphe que les 3 précédents. Aucun flux d'upload de document pour
+  // une dépense n'existe encore à ce jour (Étape 1 = create/findAll de
+  // depense uniquement) — cette valeur seule ne suffirait pas à insérer une
+  // ligne `documents` avec categorie appropriée (voir documentCategorieEnum
+  // ci-dessous, aucune valeur ajoutée pour ce cas tant qu'aucun flux réel
+  // n'en a besoin).
+  "depense"
 ]);
 
 export const documentCategorieEnum = pgEnum("document_categorie", [
