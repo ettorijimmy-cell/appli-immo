@@ -13,6 +13,7 @@ import { CommonModule } from "./common/common.module";
 import { ComptesBancairesSciModule } from "./comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { EncryptionModule } from "./crypto/encryption.module";
 import { DatabaseModule } from "./database/database.module";
+import { DepensesModule } from "./depenses/depenses.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
@@ -55,6 +56,7 @@ import { VersementsModule } from "./versements/versements.module";
     PaiementsModule,
     VersementsModule,
     RemboursementsModule,
+    DepensesModule,
     DocumentsModule,
     ReferencesModule,
     AlertesModule,

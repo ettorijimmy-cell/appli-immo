@@ -13,7 +13,11 @@ export const DOCUMENT_ENTITE_TYPES = [
   // pour rattacher un document à un bien créé via BienService, y compris
   // un immeuble créé après cette date — 'immeuble' reste réservé aux
   // documents déjà rattachés à une ligne immeubles existante.
-  "bien"
+  "bien",
+  // Module Charges et fiscalité, Étape 1 (2026-09-06, docs/backlog.md) :
+  // permet de rattacher un document à une dépense — aucun flux d'upload
+  // n'existe encore pour ce cas (voir packages/db/src/schema/documents.ts).
+  "depense"
 ] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 

@@ -4,6 +4,7 @@ import {
   appartements,
   baux,
   bien,
+  depense,
   documents,
   etatsDesLieux,
   garants,
@@ -313,6 +314,11 @@ export class DocumentsService {
         // aux documents déjà rattachés à une ligne immeubles existante.
         case "bien":
           return this.db.select({ id: bien.id }).from(bien).where(eq(bien.id, entiteId)).limit(1);
+        // Module Charges et fiscalité, Étape 1 (2026-09-06, docs/backlog.md) :
+        // permet de rattacher un document à une dépense — aucun flux
+        // d'upload réel n'existe encore pour ce cas.
+        case "depense":
+          return this.db.select({ id: depense.id }).from(depense).where(eq(depense.id, entiteId)).limit(1);
       }
     })();
     if (!ligne) {
