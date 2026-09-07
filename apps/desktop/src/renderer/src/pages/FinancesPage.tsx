@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ChargesFiscaliteView } from "../depenses/ChargesFiscaliteView";
 import { FinancesListView } from "../finances/FinancesListView";
 import { RapprochementCsvView } from "../finances/RapprochementCsvView";
 
-type Vue = "liste" | "import-csv";
+type Vue = "liste" | "import-csv" | "charges-fiscalite";
 
 export function FinancesPage(): React.JSX.Element {
   const [vue, setVue] = useState<Vue>("liste");
@@ -38,9 +39,26 @@ export function FinancesPage(): React.JSX.Element {
         >
           Import CSV
         </button>
+        <button
+          type="button"
+          onClick={() => setVue("charges-fiscalite")}
+          className={`border-b-2 px-1 pb-2 text-sm font-medium ${
+            vue === "charges-fiscalite"
+              ? "border-indigo-700 text-indigo-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Charges & fiscalité
+        </button>
       </div>
 
-      {vue === "liste" ? <FinancesListView bailIdFiltre={bailIdFiltre} /> : <RapprochementCsvView />}
+      {vue === "liste" ? (
+        <FinancesListView bailIdFiltre={bailIdFiltre} />
+      ) : vue === "import-csv" ? (
+        <RapprochementCsvView />
+      ) : (
+        <ChargesFiscaliteView />
+      )}
     </div>
   );
 }
