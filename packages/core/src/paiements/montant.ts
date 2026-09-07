@@ -34,6 +34,33 @@ export function montantEnCentimes(montant: string): number {
 }
 
 /**
+ * Détecte un montant négatif — manipulation purement textuelle (jamais de
+ * comparaison numérique sur un flottant). Sert à distinguer, dans une ligne
+ * de relevé CSV déjà parsée (`parserReleveCsv`), un débit (négatif — un
+ * encaissement, `montant` positif, n'est jamais une dépense) avant de
+ * proposer la ligne comme candidate de dépense (voir
+ * `ImportCsvDepensesView`, apps/desktop) — ce filtrage vit dans le flux
+ * dépenses, jamais dans `parserReleveCsv` lui-même (qui reste un parseur
+ * générique, sans notion de dépense).
+ */
+export function estMontantNegatif(montant: string): boolean {
+  return normaliserMontant(montant).startsWith("-");
+}
+
+/**
+ * Retire un signe négatif éventuel — manipulation purement textuelle,
+ * jamais Math.abs sur un flottant. Sert à convertir une ligne de débit d'un
+ * relevé bancaire (montant négatif signé, convention de
+ * `parserReleveCsv`/`proposerRapprochements`) vers un montant de dépense
+ * (toujours positif, voir `depense.montant`, docs/data-dictionary.md) —
+ * les deux domaines ont des conventions de signe différentes et ne doivent
+ * jamais être confondus silencieusement.
+ */
+export function valeurAbsolueMontant(montant: string): string {
+  return normaliserMontant(montant).replace(/^-/, "");
+}
+
+/**
  * Conversion inverse de montantEnCentimes — formate des centimes entiers en
  * chaîne décimale à point (jamais de division flottante : les centimes
  * restent des entiers jusqu'au tout dernier formatage textuel).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centimesVersMontant, montantEnCentimes, normaliserMontant } from "./montant";
+import { centimesVersMontant, estMontantNegatif, montantEnCentimes, normaliserMontant, valeurAbsolueMontant } from "./montant";
 
 describe("normaliserMontant", () => {
   it("laisse un montant à point décimal inchangé", () => {
@@ -58,6 +58,38 @@ describe("montantEnCentimes", () => {
     expect(montantEnCentimes("0.10")).toBe(10);
     expect(montantEnCentimes("0.20")).toBe(20);
     expect(montantEnCentimes("1000000.29")).toBe(100000029);
+  });
+});
+
+describe("estMontantNegatif", () => {
+  it("détecte un montant négatif", () => {
+    expect(estMontantNegatif("-450.00")).toBe(true);
+  });
+
+  it("détecte un montant positif comme non négatif", () => {
+    expect(estMontantNegatif("850.00")).toBe(false);
+  });
+
+  it("détecte un montant négatif à virgule décimale", () => {
+    expect(estMontantNegatif("-120,00")).toBe(true);
+  });
+
+  it("ne confond pas un montant positif avec espaces et un montant négatif", () => {
+    expect(estMontantNegatif(" 1 850.00 ")).toBe(false);
+  });
+});
+
+describe("valeurAbsolueMontant", () => {
+  it("retire le signe négatif d'un montant", () => {
+    expect(valeurAbsolueMontant("-450.00")).toBe("450.00");
+  });
+
+  it("laisse un montant positif inchangé", () => {
+    expect(valeurAbsolueMontant("450.00")).toBe("450.00");
+  });
+
+  it("normalise la virgule décimale avant de retirer le signe", () => {
+    expect(valeurAbsolueMontant("-120,00")).toBe("120.00");
   });
 });
 

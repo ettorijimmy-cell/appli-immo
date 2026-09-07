@@ -72,4 +72,59 @@ describe("parserReleveCsv", () => {
     const csv = "Date,Montant,Libelle,Reference\n2026-08-05,850.00,A,B\n";
     expect(() => parserReleveCsv(csv)).toThrow(/ambiguë/i);
   });
+
+  describe("format à deux colonnes Débit/Crédit", () => {
+    it("fusionne une ligne de débit en montant négatif", () => {
+      const csv = "Date,Debit,Credit,Libelle\n2026-08-05,450.00,,ASSURANCE HABITATION\n";
+      expect(parserReleveCsv(csv)).toEqual([
+        { date: "2026-08-05", montant: "-450.00", libelle: "ASSURANCE HABITATION" }
+      ]);
+    });
+
+    it("fusionne une ligne de crédit en montant positif", () => {
+      const csv = "Date,Debit,Credit,Libelle\n2026-08-05,,850.00,VIR DUPONT LOYER AOUT\n";
+      expect(parserReleveCsv(csv)).toEqual([
+        { date: "2026-08-05", montant: "850.00", libelle: "VIR DUPONT LOYER AOUT" }
+      ]);
+    });
+
+    it("reconnaît les en-têtes Débit/Crédit accentués, insensibles à la casse", () => {
+      const csv = "Date;DÉBIT;CRÉDIT;Libelle\n05/08/2026;120,00;;Facture entretien\n";
+      expect(parserReleveCsv(csv)).toEqual([
+        { date: "2026-08-05", montant: "-120,00", libelle: "Facture entretien" }
+      ]);
+    });
+
+    it("retire un signe déjà présent dans la cellule source avant d'appliquer le sien", () => {
+      // Un débit stocké avec un signe négatif dans le fichier source (rare
+      // mais possible) ne doit jamais devenir positif par double négation.
+      const csv = "Date,Debit,Credit,Libelle\n2026-08-05,-450.00,,ASSURANCE\n";
+      expect(parserReleveCsv(csv)[0]?.montant).toBe("-450.00");
+    });
+
+    it("rejette une ligne avec débit ET crédit renseignés simultanément", () => {
+      const csv = "Date,Debit,Credit,Libelle\n2026-08-05,100.00,50.00,ERREUR FORMAT\n";
+      expect(() => parserReleveCsv(csv)).toThrow(/ligne 2.*ambiguë/i);
+    });
+
+    it("rejette une ligne sans débit ni crédit renseigné", () => {
+      const csv = "Date,Debit,Credit,Libelle\n2026-08-05,,,LIGNE VIDE\n";
+      expect(() => parserReleveCsv(csv)).toThrow(/ligne 2/i);
+    });
+
+    it("rejette un en-tête avec une colonne débit mais sans colonne crédit", () => {
+      const csv = "Date,Debit,Libelle\n2026-08-05,450.00,ASSURANCE\n";
+      expect(() => parserReleveCsv(csv)).toThrow(/crédit/i);
+    });
+
+    it("ne bascule jamais en mode deux colonnes sur la seule présence d'une colonne crédit", () => {
+      // "credit" est aussi un candidat du format historique à colonne
+      // unique — seule la présence d'une colonne "débit" doit faire
+      // basculer le format, jamais "crédit" seule.
+      const csv = "Date,Credit,Libelle\n2026-08-05,850.00,VIR DUPONT LOYER AOUT\n";
+      expect(parserReleveCsv(csv)).toEqual([
+        { date: "2026-08-05", montant: "850.00", libelle: "VIR DUPONT LOYER AOUT" }
+      ]);
+    });
+  });
 });
