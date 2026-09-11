@@ -67,6 +67,27 @@ export interface LigneReleveCsvDepense {
   date: string;
   montant: string;
   libelle: string;
+  // Module Charges et fiscalité, Étape 2 : présélection uniquement, à
+  // partir des règles mot-clé -> catégorie de l'organisation (voir
+  // RegleCategorisation ci-dessous) — null si aucune règle ne correspond
+  // ou si plusieurs correspondent (jamais de choix arbitraire). Le menu
+  // catégorie de la ligne reste modifiable, confirmation manuelle
+  // toujours requise.
+  categorieSuggeree: DepenseCategorie | null;
+}
+
+export interface RegleCategorisation {
+  id: string;
+  motCle: string;
+  categorie: DepenseCategorie;
+  organisationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRegleCategorisationInput {
+  motCle: string;
+  categorie: DepenseCategorie;
 }
 
 export function listDepenses(filtres: FindAllDepensesFiltres = {}): Promise<Depense[]> {
@@ -93,4 +114,23 @@ export function parserCsvDepenses(contenuCsv: string): Promise<LigneReleveCsvDep
     method: "POST",
     body: JSON.stringify({ contenuCsv })
   });
+}
+
+// Module Charges et fiscalité, Étape 2 : règles mot-clé -> catégorie
+// gérées par l'utilisateur lui-même (écran dédié), utilisées uniquement
+// pour présélectionner une catégorie côté import CSV (parserCsvDepenses)
+// — jamais pour catégoriser automatiquement sans confirmation.
+export function listReglesCategorisation(): Promise<RegleCategorisation[]> {
+  return authenticatedFetch<RegleCategorisation[]>("/regles-categorisation");
+}
+
+export function createRegleCategorisation(input: CreateRegleCategorisationInput): Promise<RegleCategorisation> {
+  return authenticatedFetch<RegleCategorisation>("/regles-categorisation", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function archiveRegleCategorisation(id: string): Promise<RegleCategorisation> {
+  return authenticatedFetch<RegleCategorisation>(`/regles-categorisation/${id}/archiver`, { method: "PATCH" });
 }

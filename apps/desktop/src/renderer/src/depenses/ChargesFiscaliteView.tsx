@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { DepensesListView } from "./DepensesListView";
 import { ImportCsvDepensesView } from "./ImportCsvDepensesView";
+import { ReglesCategorisationView } from "./ReglesCategorisationView";
 
-type Vue = "liste" | "import-csv";
+type Vue = "liste" | "import-csv" | "regles-categorisation";
 
 // Même motif d'onglets internes que FinancesPage (hand-rolled, aucun
 // <TabBar> partagé — décision documentée, docs/backlog.md) : réplication
-// volontaire plutôt qu'une abstraction prématurée pour deux usages.
+// volontaire plutôt qu'une abstraction prématurée pour trois usages.
 export function ChargesFiscaliteView(): React.JSX.Element {
   const [vue, setVue] = useState<Vue>("liste");
 
@@ -35,9 +36,26 @@ export function ChargesFiscaliteView(): React.JSX.Element {
         >
           Import CSV
         </button>
+        <button
+          type="button"
+          onClick={() => setVue("regles-categorisation")}
+          className={`border-b-2 px-1 pb-2 text-sm font-medium ${
+            vue === "regles-categorisation"
+              ? "border-indigo-700 text-indigo-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Règles de catégorisation
+        </button>
       </div>
 
-      {vue === "liste" ? <DepensesListView /> : <ImportCsvDepensesView />}
+      {vue === "liste" ? (
+        <DepensesListView />
+      ) : vue === "import-csv" ? (
+        <ImportCsvDepensesView />
+      ) : (
+        <ReglesCategorisationView />
+      )}
     </div>
   );
 }

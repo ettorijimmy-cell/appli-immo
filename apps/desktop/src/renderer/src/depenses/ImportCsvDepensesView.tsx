@@ -49,7 +49,17 @@ export function ImportCsvDepensesView(): React.JSX.Element {
       setBiens(biensBruts);
       setScis(scisBrutes);
       setConfirmeesParLigne(new Set());
-      setCategorieParLigne(new Map());
+      // Présélection uniquement (Module Charges et fiscalité, Étape 2) —
+      // categorieSuggeree vient déjà de suggererCategorie côté backend
+      // (null si aucune règle ou plusieurs règles correspondent). Le menu
+      // déroulant reste modifiable, confirmation manuelle toujours requise.
+      setCategorieParLigne(
+        new Map(
+          lignesBrutes
+            .filter((ligne) => ligne.categorieSuggeree !== null)
+            .map((ligne) => [ligne.id, ligne.categorieSuggeree!])
+        )
+      );
       setRattachementParLigne(new Map());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'analyser ce fichier");
