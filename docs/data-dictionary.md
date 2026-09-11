@@ -552,14 +552,56 @@ colonne "débit" (jamais "crédit" seule, déjà candidate du format historique)
 contre des dépenses existantes (contrairement à `PaiementsService
 .rapprocherCsv`) : chaque ligne renvoyée reste à catégoriser et rattacher
 manuellement côté frontend avant de devenir une dépense réelle via un appel
-`POST /depenses` séparé par ligne confirmée. La catégorisation par
-mots-clés reste hors périmètre de cette étape (Étape 2, `docs/backlog.md`).
+`POST /depenses` séparé par ligne confirmée. Depuis l'Étape 2
+(`docs/backlog.md`), chaque ligne est enrichie d'une `categorieSuggeree`
+(voir section `regle_categorisation` ci-dessous) — une présélection du menu
+déroulant catégorie côté `ImportCsvDepensesView`, jamais une catégorisation
+automatique : la confirmation manuelle ligne par ligne reste obligatoire.
 
 **Hors périmètre de l'Étape 1** — à ne jamais présenter comme fait :
-catégorisation automatique par mots-clés (Étape 2), dashboard
-recettes/dépenses et rentabilité nette (Étape 3), export formulaire 2072
-(Étape 4, nécessitera très probablement une entité séparée pour les cases à
-saisie manuelle, voir `docs/backlog.md`).
+dashboard recettes/dépenses et rentabilité nette (Étape 3), export
+formulaire 2072 (Étape 4, nécessitera très probablement une entité séparée
+pour les cases à saisie manuelle, voir `docs/backlog.md`).
+
+## regle_categorisation (Module Charges et fiscalité, Étape 2, 2026-09-11)
+
+Règle mot-clé -> catégorie gérée par l'utilisateur lui-même via un écran
+dédié (`ReglesCategorisationView`, 3ᵉ onglet de "Charges & fiscalité") —
+**pas un script de seed** : Jimmy en ajoute au fil de l'usage réel de
+l'import CSV, à mesure qu'il rencontre de nouveaux libellés bancaires.
+Create/findAll/archive uniquement (`ReglesCategorisationService`,
+`apps/backend/src/regles-categorisation`) — pas d'update, modifier une
+règle revient à l'archiver et en créer une nouvelle (volume de données
+trop faible pour justifier plus).
+
+| Champ | Type | Description |
+|---|---|---|
+| mot_cle | text | Comparé au libellé d'une ligne de relevé CSV via `libelleContient` (packages/core, voir ci-dessous) — correspondance insensible à la casse/aux accents/à la ponctuation |
+| categorie | enum `depense_categorie` | Même enum que `depense.categorie` — 7 valeurs, voir section ci-dessus |
+| organisation_id | uuid | Résolu côté serveur depuis l'utilisateur authentifié, jamais transmis par le client (même mécanisme que `depense.organisation_id`) |
+
+**`suggererCategorie`** (packages/core, `depenses/suggerer-categorie.ts`) :
+fonction pure prenant un libellé + une liste de règles déjà chargées (aucun
+accès base) — retourne la catégorie **seulement si exactement une règle
+correspond**, `null` si zéro ou plusieurs correspondances. **Décision
+produit non négociable** : si plusieurs règles correspondent à un même
+libellé, aucune suggestion n'est faite — jamais un choix arbitraire entre
+deux règles candidates. Appelée par `DepensesService.parserCsv` avec les
+règles actives (`ReglesCategorisationService.findAllActives`, scopées par
+organisation, règles archivées exclues) de l'organisation de l'utilisateur
+authentifié.
+
+**`libelleContient`/`normaliserPourCorrespondance`** (packages/core,
+`texte/normaliser-texte.ts`) : extraites le 2026-09-11 de
+`proposerRapprochements` (Module 5, correspondance libellé/nom de
+locataire) pour être réutilisées ici — même besoin (correspondance
+partielle insensible casse/accents/ponctuation), domaines différents
+(rapprochement de paiements vs catégorisation de dépenses), comportement
+inchangé (tests de `proposerRapprochements` toujours verts après
+l'extraction).
+
+**Hors périmètre de l'Étape 2** — à ne jamais présenter comme fait :
+dashboard recettes/dépenses (Étape 3), export formulaire 2072 (Étape 4).
 
 ## versements & remboursements — décisions de conception (chantier terminé)
 

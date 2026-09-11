@@ -1551,9 +1551,25 @@ format bancaire réel de Jimmy à deux colonnes Débit/Crédit, endpoint
 d'analyse CSV dédié (`POST /depenses/parser-csv`, aucun rapprochement
 automatique — juste les lignes brutes), écran desktop (3ᵉ onglet "Charges
 & fiscalité" de `FinancesPage.tsx`, liste + création manuelle + import CSV
-avec catégorisation et rattachement bien/SCI ligne par ligne). Catégorisation
-par mots-clés (Étape 2), dashboard recettes/dépenses (Étape 3) et export
-2072 (Étape 4, voir note ci-dessus) restent hors périmètre — non commencés.
+avec catégorisation et rattachement bien/SCI ligne par ligne). Dashboard
+recettes/dépenses (Étape 3) et export 2072 (Étape 4, voir note ci-dessus)
+restent hors périmètre — non commencés.
+
+**Étape 2 (catégorisation par mots-clés) réalisée (2026-09-11)** — table
+`regle_categorisation` (mot-clé -> catégorie, scopée par organisation),
+`ReglesCategorisationModule` backend (create/findAll/archive, pas
+d'update), `suggererCategorie` (packages/core) : présélection de catégorie
+sur une ligne d'import CSV **seulement si exactement une règle
+correspond** — zéro ou plusieurs correspondances ne suggèrent rien, jamais
+de choix arbitraire. Extraction de `libelleContient`/
+`normaliserPourCorrespondance` depuis `proposerRapprochements` (Module 5)
+vers un fichier partagé (`packages/core/src/texte/normaliser-texte.ts`),
+réutilisées pour cette suggestion — comportement du rapprochement de
+paiements inchangé (tests toujours verts après extraction). Écran de
+gestion des règles géré par l'utilisateur lui-même (3ᵉ onglet de
+`ChargesFiscaliteView`, aux côtés de Dépenses/Import CSV — pas un script
+de seed, Jimmy en ajoute au fil de l'usage réel). Dashboard (Étape 3) et
+export 2072 (Étape 4) restent hors périmètre.
 
 ### Intervention (futur module)
 
@@ -1694,10 +1710,10 @@ Ordre de priorité convenu avec l'utilisateur :
    l'IR/IS). Vise une sortie concrète (déclaration fiscale type 2072 ou
    équivalent), pas seulement un tableau de bord de suivi.
 
-   **Étape 1 (socle dépenses) réalisée (2026-09-06)** — voir section
-   "Suivi des charges et fiscalité" ci-dessus pour le détail. Étapes 2
-   (catégorisation par mots-clés), 3 (dashboard) et 4 (export 2072) non
-   commencées.
+   **Étapes 1 (socle dépenses, 2026-09-06) et 2 (catégorisation par
+   mots-clés, 2026-09-11) réalisées** — voir section "Suivi des charges et
+   fiscalité" ci-dessus pour le détail. Étapes 3 (dashboard) et 4 (export
+   2072) non commencées.
 
 3. **Messagerie interne** — messagerie interne à l'application (pas de
    synchronisation boîte mail externe, jugée disproportionnée), messages
