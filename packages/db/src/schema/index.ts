@@ -33,3 +33,4 @@ export * from "./modele-courrier";
 export * from "./revision-loyer";
 export * from "./connexion-gmail";
 export * from "./depense";
+export * from "./regle-categorisation";
