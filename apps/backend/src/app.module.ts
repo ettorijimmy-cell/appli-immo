@@ -28,6 +28,7 @@ import { PaiementsModule } from "./paiements/paiements.module";
 import { PowerSyncModule } from "./powersync/powersync.module";
 import { QuittanceDocumentDocxModule } from "./quittance-document-docx/quittance-document-docx.module";
 import { ReferencesModule } from "./references/references.module";
+import { ReglesCategorisationModule } from "./regles-categorisation/regles-categorisation.module";
 import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
 import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
@@ -56,6 +57,7 @@ import { VersementsModule } from "./versements/versements.module";
     PaiementsModule,
     VersementsModule,
     RemboursementsModule,
+    ReglesCategorisationModule,
     DepensesModule,
     DocumentsModule,
     ReferencesModule,

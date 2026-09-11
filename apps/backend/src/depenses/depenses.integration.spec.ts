@@ -7,6 +7,8 @@ import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { ReglesCategorisationModule } from "../regles-categorisation/regles-categorisation.module";
+import { ReglesCategorisationService } from "../regles-categorisation/regles-categorisation.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
@@ -29,6 +31,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
   let depensesService: DepensesService;
   let scisService: ScisService;
   let bienService: BienService;
+  let reglesCategorisationService: ReglesCategorisationService;
   let db: Database;
   let userId: string;
   let organisationId: string;
@@ -44,6 +47,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
         UsersModule,
         ScisModule,
         BienModule,
+        ReglesCategorisationModule,
         DepensesModule
       ]
     })
@@ -54,6 +58,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
     depensesService = moduleRef.get(DepensesService);
     scisService = moduleRef.get(ScisService);
     bienService = moduleRef.get(BienService);
+    reglesCategorisationService = moduleRef.get(ReglesCategorisationService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -244,5 +249,50 @@ describe("DepensesService (intégration Postgres réelle)", () => {
 
     const parBien = await depensesService.findAll({ bienId: bien.id });
     expect(parBien).toHaveLength(2);
+  });
+
+  // Module Charges et fiscalité, Étape 2 (docs/backlog.md) : présélection
+  // de catégorie sur les lignes candidates d'un import CSV.
+  describe("parserCsv — suggestion de catégorie", () => {
+    it("suggère la catégorie quand exactement une règle de l'organisation correspond au libellé", async () => {
+      await reglesCategorisationService.create(userId, { motCle: "edf", categorie: "charges_copropriete" });
+
+      const csv = "Date,Debit,Credit,Libelle\n2026-09-01,120.00,,PRLV EDF ENERGIE\n";
+      const [ligne] = await depensesService.parserCsv(userId, csv);
+
+      expect(ligne?.categorieSuggeree).toBe("charges_copropriete");
+    });
+
+    it("ne suggère rien quand aucune règle ne correspond", async () => {
+      await reglesCategorisationService.create(userId, { motCle: "edf", categorie: "charges_copropriete" });
+
+      const csv = "Date,Debit,Credit,Libelle\n2026-09-01,120.00,,VIR DUPONT LOYER\n";
+      const [ligne] = await depensesService.parserCsv(userId, csv);
+
+      expect(ligne?.categorieSuggeree).toBeNull();
+    });
+
+    it("ne suggère rien quand plusieurs règles correspondent au même libellé — jamais de choix arbitraire", async () => {
+      await reglesCategorisationService.create(userId, { motCle: "assurance", categorie: "assurance" });
+      await reglesCategorisationService.create(userId, { motCle: "habitation", categorie: "reparation_entretien" });
+
+      const csv = "Date,Debit,Credit,Libelle\n2026-09-01,120.00,,PRLV ASSURANCE HABITATION MAIF\n";
+      const [ligne] = await depensesService.parserCsv(userId, csv);
+
+      expect(ligne?.categorieSuggeree).toBeNull();
+    });
+
+    it("ignore les règles archivées et celles d'une autre organisation", async () => {
+      const regleArchivee = await reglesCategorisationService.create(userId, {
+        motCle: "edf",
+        categorie: "charges_copropriete"
+      });
+      await reglesCategorisationService.archive(regleArchivee.id);
+
+      const csv = "Date,Debit,Credit,Libelle\n2026-09-01,120.00,,PRLV EDF ENERGIE\n";
+      const [ligne] = await depensesService.parserCsv(userId, csv);
+
+      expect(ligne?.categorieSuggeree).toBeNull();
+    });
   });
 });

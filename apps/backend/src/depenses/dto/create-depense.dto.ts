@@ -1,23 +1,11 @@
 import { Transform } from "class-transformer";
 import { IsDateString, IsIn, IsNumberString, IsOptional, IsString, IsUUID, Matches, MinLength } from "class-validator";
 import { normaliserMontant } from "core";
-
-// 7 catégories du Plan Comptable Général alimentant le tableau VII du
-// formulaire 2072 (voir packages/db/src/schema/depense.ts) — pas une
-// nomenclature arbitraire.
-const DEPENSE_CATEGORIES = [
-  "frais_gestion",
-  "assurance",
-  "reparation_entretien",
-  "impots_taxes",
-  "charges_copropriete",
-  "interets_emprunt",
-  "autre"
-] as const;
+import { DEPENSE_CATEGORIES, type DepenseCategorie } from "../depense-categories";
 
 export class CreateDepenseDto {
   @IsIn(DEPENSE_CATEGORIES)
-  categorie!: (typeof DEPENSE_CATEGORIES)[number];
+  categorie!: DepenseCategorie;
 
   // Normalise virgule/point/espaces avant validation — même définition que
   // CreatePaiementDto.montant, partagée avec le rapprochement CSV

@@ -15,10 +15,11 @@ export class DepensesController {
 
   // Distinct de POST /paiements/rapprocher-csv : ici, purement l'analyse du
   // fichier (aucun rapprochement candidat, aucune écriture) — voir
-  // DepensesService.parserCsv.
+  // DepensesService.parserCsv. userId requis pour résoudre l'organisation
+  // et charger ses règles de catégorisation (Étape 2).
   @Post("parser-csv")
-  parserCsv(@Body() dto: ParserCsvDepenseDto) {
-    return this.depensesService.parserCsv(dto.contenuCsv);
+  parserCsv(@Req() req: Request, @Body() dto: ParserCsvDepenseDto) {
+    return this.depensesService.parserCsv(req.user!.sub, dto.contenuCsv);
   }
 
   @Get()

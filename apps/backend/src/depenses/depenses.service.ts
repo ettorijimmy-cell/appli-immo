@@ -1,10 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { parserReleveCsv, type LigneReleveCsvAvecId } from "core";
+import { parserReleveCsv, suggererCategorie, type LigneReleveCsvAvecId } from "core";
 import { bien, depense, type Database } from "db";
 import { and, eq, gte, isNull, lte } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { ReglesCategorisationService } from "../regles-categorisation/regles-categorisation.service";
 import { UsersService } from "../users/users.service";
+import type { DepenseCategorie } from "./depense-categories";
 import type { CreateDepenseDto } from "./dto/create-depense.dto";
 
 export interface FindAllDepensesFiltres {
@@ -15,6 +17,13 @@ export interface FindAllDepensesFiltres {
   dateFin?: string;
 }
 
+export interface LigneCandidateDepense extends LigneReleveCsvAvecId {
+  // Module Charges et fiscalité, Étape 2 : présélection uniquement — voir
+  // suggererCategorie (packages/core). null si aucune règle ne correspond
+  // ou si plusieurs règles correspondent (jamais de choix arbitraire).
+  categorieSuggeree: DepenseCategorie | null;
+}
+
 type DepenseRow = typeof depense.$inferSelect;
 
 @Injectable()
@@ -22,7 +31,8 @@ export class DepensesService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly reglesCategorisationService: ReglesCategorisationService
   ) {}
 
   async create(userId: string, dto: CreateDepenseDto) {
@@ -66,16 +76,35 @@ export class DepensesService {
     return this.versDto(nouvelleDepense);
   }
 
-  // Analyse pure, aucune écriture : renvoie les lignes brutes du relevé pour
-  // sélection manuelle de catégorie + confirmation ligne par ligne côté
-  // frontend (chaque confirmation appelle ensuite create() séparément) —
-  // jamais de rapprochement automatique contre des dépenses existantes
-  // (contrairement à PaiementsService.rapprocherCsv, sans équivalent ici :
-  // la catégorisation par mots-clés est hors périmètre de cette étape,
-  // voir docs/backlog.md).
-  parserCsv(contenuCsv: string): LigneReleveCsvAvecId[] {
+  // Analyse pure côté écriture : aucune dépense n'est créée ici, seules les
+  // lignes brutes du relevé sont renvoyées pour sélection manuelle de
+  // catégorie + confirmation ligne par ligne côté frontend (chaque
+  // confirmation appelle ensuite create() séparément) — jamais de
+  // rapprochement automatique contre des dépenses existantes (contrairement
+  // à PaiementsService.rapprocherCsv). Chaque ligne est enrichie d'une
+  // catégorie suggérée (Étape 2, docs/backlog.md) via suggererCategorie —
+  // une PRÉSÉLECTION uniquement, le formulaire existant reste modifiable
+  // et la confirmation manuelle ligne par ligne reste obligatoire, aucun
+  // changement à ce principe.
+  async parserCsv(userId: string, contenuCsv: string): Promise<LigneCandidateDepense[]> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Utilisateur introuvable");
+    }
     const lignesBrutes = parserReleveCsv(contenuCsv);
-    return lignesBrutes.map((ligne, index) => ({ id: `ligne-${index}`, ...ligne }));
+    const regles = await this.reglesCategorisationService.findAllActives(user.organisationId);
+    return lignesBrutes.map((ligne, index) => ({
+      id: `ligne-${index}`,
+      ...ligne,
+      // suggererCategorie est générique (packages/core, sans dépendance à
+      // depense_categorie) — les valeurs proviennent exclusivement de
+      // règles déjà validées par CreateRegleCategorisationDto à leur
+      // création, ce cast est donc sûr.
+      categorieSuggeree: suggererCategorie(
+        ligne.libelle,
+        regles.map((regle) => ({ motCle: regle.motCle, categorie: regle.categorie }))
+      ) as DepenseCategorie | null
+    }));
   }
 
   async findAll(filtres: FindAllDepensesFiltres) {
