@@ -1,3 +1,4 @@
+import { libelleContient } from "../texte/normaliser-texte";
 import { montantEnCentimes } from "./montant";
 
 export interface LigneReleveCsvAvecId {
@@ -39,23 +40,6 @@ function differenceEnJours(dateA: string, dateB: string): number {
   return Math.abs(new Date(dateA).getTime() - new Date(dateB).getTime()) / msParJour;
 }
 
-function normaliser(texte: string): string {
-  return texte
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function libelleContientNom(libelle: string, nom: string): boolean {
-  const nomNormalise = normaliser(nom);
-  if (nomNormalise === "") {
-    return false;
-  }
-  return normaliser(libelle).includes(nomNormalise);
-}
-
 /**
  * Règle de gestion critique (docs/backlog.md, Module 5 — "erreur ici =
  * erreur financière") : propose des rapprochements entre lignes de relevé
@@ -95,7 +79,7 @@ export function proposerRapprochements(
       }
 
       const criteresCorrespondants: CritereCorrespondance[] = ["montant", "date"];
-      const correspondAUnNom = paiement.nomsLocataires.some((nom) => libelleContientNom(ligne.libelle, nom));
+      const correspondAUnNom = paiement.nomsLocataires.some((nom) => libelleContient(ligne.libelle, nom));
       if (correspondAUnNom) {
         criteresCorrespondants.push("reference");
       }
