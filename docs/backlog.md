@@ -1602,6 +1602,32 @@ indépendantes. `RapprochementCsvView`/`ImportCsvDepensesView` supprimés
 (`components/`) extrait du motif inline dupliqué dans `TableauDeBordPage` —
 deuxième usage, le bon moment pour factoriser.
 
+**Étape 4 (calcul de l'Annexe 1, 2072-S-A1-SD) réalisée (2026-09-12)** —
+périmètre volontairement réduit après consultation d'un expert-comptable :
+uniquement le cadre VII de l'Annexe 1 (revenus par immeuble), pour les SCI
+à l'IR, par bien et par année civile — le formulaire principal et
+l'Annexe 2 (associés) restent hors périmètre. Calcule et affiche les 23
+lignes pour recopie manuelle dans la téléprocédure impots.gouv.fr,
+**aucun PDF généré** (la déclaration réelle doit obligatoirement être
+télédéclarée). Voir `docs/data-dictionary.md`, section
+`annexe1_saisie_manuelle`, pour le détail complet : mapping des lignes
+automatiques (`getRevenusLocatifs`, `depense` par catégorie, forfait 20€/
+lot), les 11 lignes manuelles (`annexe1_saisie_manuelle`, upsert par
+bien+année), le prorata des dépenses de niveau SCI
+(`repartirCentimesEgalement`, sans perte d'arrondi), et les deux limites
+actées avec Jimmy et documentées explicitement (comptage des lots et
+prorata au moment du calcul, sans reconstitution historique ni pondération
+temporelle). Écran `FiscaliteView` (onglet Fiscalité de `FinancesPage`).
+
+Revue financial-logic-reviewer avant commit : a détecté qu'un bien
+archivé en cours d'année civile disparaissait entièrement du calcul (même
+bug déjà rencontré et corrigé une fois sur `getSynthese`, Module 7) —
+corrigé avant commit (`biensActifsPourProrata` scopé aux seuls biens
+actifs pour le prorata uniquement, tous les biens de la SCI inclus pour
+leurs propres lignes), test de non-régression dédié ajouté. Voir
+`docs/data-dictionary.md`, section `annexe1_saisie_manuelle`, pour le
+détail.
+
 ### Intervention (futur module)
 
 Objectif : calendrier de rendez-vous liés à un bien (RDV locataire,
@@ -1742,9 +1768,12 @@ Ordre de priorité convenu avec l'utilisateur :
    équivalent), pas seulement un tableau de bord de suivi.
 
    **Étapes 1 (socle dépenses, 2026-09-06), 2 (catégorisation par
-   mots-clés, 2026-09-11) et 3 (restructuration de Finances, 2026-09-15)
-   réalisées** — voir section "Suivi des charges et fiscalité" ci-dessus
-   pour le détail. Étape 4 (export 2072) non commencée.
+   mots-clés, 2026-09-11), 3 (restructuration de Finances, 2026-09-15) et
+   4 (calcul de l'Annexe 1, 2072-S-A1-SD, 2026-09-12) réalisées** — voir
+   section "Suivi des charges et fiscalité" ci-dessus pour le détail.
+   Étape 4 volontairement réduite au cadre VII de l'Annexe 1 seul (pas de
+   PDF généré, recopie manuelle dans la téléprocédure) ; le formulaire
+   principal et l'Annexe 2 (associés) restent non traités.
 
 3. **Messagerie interne** — messagerie interne à l'application (pas de
    synchronisation boîte mail externe, jugée disproportionnée), messages

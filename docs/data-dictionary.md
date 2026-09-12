@@ -670,6 +670,96 @@ routées par signe : positives (crédit) → section "Revenus à rapprocher"
 `parserReleveCsv`/`proposerRapprochements`/`suggererCategorie`
 (packages/core).
 
+## annexe1_saisie_manuelle (Module Charges et fiscalité, Étape 4, 2026-09-12)
+
+Calcul et affichage ligne par ligne de l'**Annexe 1** (2072-S-A1-SD, cadre
+VII — "Détermination des revenus... par immeuble"), pour recopie manuelle
+dans la téléprocédure sur impots.gouv.fr ou transmission au comptable —
+**aucun PDF n'est généré** (la déclaration réelle doit obligatoirement être
+télédéclarée, le formulaire papier n'est même pas remplissable). Périmètre
+volontairement réduit : uniquement le cadre VII, par bien et par année
+civile — le formulaire principal (répartition entre associés) et
+l'Annexe 2 (données associés) restent hors périmètre. Uniquement les SCI au
+régime **IR** (`scis.regime_fiscal`) — une SCI à l'IS est rejetée
+(`BadRequestException`, 2033 hors périmètre).
+
+**Rien n'est stocké de calculé** : `FiscaliteService.calculerAnnexe1PourSci`
+(`apps/backend/src/fiscalite`) recalcule tout à chaque lecture, pour chaque
+bien actif de la SCI :
+- Ligne 1 (loyers encaissés) : `TableauDeBordService.getRevenusLocatifs`
+  tel quel, borné à l'année civile (`${annee}-01-01` → `${annee}-12-31`),
+  filtré par `bienId` — aucune nouvelle définition du revenu.
+- Lignes 6/8/9/12/13/17 : somme de `depense.montant` par catégorie pour ce
+  bien sur l'année (mapping fixe `depense.categorie` → ligne, voir
+  `packages/core/src/fiscalite/mapping-categorie-annexe1.ts`).
+- Ligne 7 (forfait 20 €/lot) : `20 × nombre d'appartements non archivés du
+  bien au moment du calcul` (`calculerForfaitLigne7`, packages/core).
+- Lignes 5/16/18/21/23 : assemblage pur (`calculerAnnexe1`, packages/core)
+  — `ligne5 = 1+2+3+4` ; `ligne16 = 6+7+8+9+10+11+12+13-14+15` (ligne 9bis
+  **volontairement exclue** de cette somme : ligne mémo "dont...", comme
+  sur le formulaire réel) ; `ligne18 = 5-16-17` ; `ligne21 = 18+19-20` ;
+  `ligne23 = 21+22`. Toute l'arithmétique passe par des centimes entiers
+  (`montantEnCentimes`/`centimesVersMontant`), jamais de flottant.
+- Lignes 2, 3, 4, 9bis, 10, 11, 14, 15, 19, 20, 22 : saisie manuelle
+  (`annexe1_saisie_manuelle`, une ligne par `bien_id`+`annee`, colonnes
+  nullable traitées comme 0 dans les calculs) — trop spécifiques
+  fiscalement (subventions, indemnités d'éviction, régularisations
+  d'années antérieures, déduction spécifique, rémunérations aux associés,
+  parts dans d'autres sociétés) pour être dérivées automatiquement, jamais
+  devinées. Upsert par `(bien_id, annee)` (contrainte unique) via
+  `FiscaliteService.sauvegarderSaisieManuelle` — chaîne vide ou `null`
+  efface explicitement la valeur (colonne remise à `NULL`).
+- Total par SCI (`totalSci`, informatif) : somme des lignes 23 de tous les
+  biens — cohérent avec R5 du formulaire principal, qui reste lui-même hors
+  périmètre.
+
+**Prorata des dépenses de niveau SCI** (`depense.sci_id` renseigné,
+`depense.bien_id` NULL) : réparties à parts égales entre les seuls biens
+**actifs** de la SCI (`archived_at IS NULL`), catégorie par catégorie, via
+`repartirCentimesEgalement` (packages/core, paiements/montant.ts) —
+division entière en centimes avec distribution du reste 1 centime à la
+fois aux premiers biens, jamais de perte d'arrondi (la somme des parts
+reconstitue exactement le montant d'origine). Chaque part appliquée est
+signalée au bien concerné (`proratasAppliques`, affiché dans
+`FiscaliteView` sous la ligne concernée — "dont X € de dépenses réparties
+depuis le niveau SCI").
+
+**Sélection des biens inclus dans le calcul — correction du 2026-09-12
+(revue financial-logic-reviewer)** : `calculerAnnexe1PourSci` sélectionne
+**tous les biens de la SCI, sans filtre `archived_at`**, pour construire la
+liste `biens` du résultat et calculer leurs lignes 1/6/8/9/12/13/17 — un
+bien archivé en cours d'année (vendu, sorti du portefeuille) **reste**
+dans l'Annexe 1 de cette année-là, avec ses propres loyers/dépenses
+réellement perçus jusqu'à son archivage. Même principe et même bug
+(déjà rencontré une fois) que `TableauDeBordService.getSynthese` : *"le
+revenu perçu sur la période est un fait historique, jamais invalidé par un
+archivage survenu APRÈS coup"* — sans cette règle, un bien vendu
+disparaîtrait entièrement de sa dernière année de déclaration. Seul le
+**prorata** (ci-dessus) reste scopé aux biens actifs : un bien archivé ne
+reçoit aucune part et ne compte pas dans le diviseur (hypothèse actée
+explicitement avec Jimmy). `FiscaliteView` affiche "(archivé — historique
+conservé)" à côté du nom d'un tel bien.
+
+**Deux limites connues, actées avec Jimmy, acceptées pour cette première
+version (non résolues maintenant)** — distinctes du point précédent : ces
+deux-là supposent que le bien reste présent dans le calcul, juste
+imprécisément pondéré, contrairement au bug corrigé ci-dessus où le bien
+disparaissait entièrement :
+1. Ligne 7 compte les lots **non archivés au moment du calcul** — aucune
+   reconstitution de l'état réel du bien à une date passée. Un lot créé ou
+   archivé en cours d'année compte comme s'il avait existé toute l'année.
+2. Le prorata des dépenses de niveau SCI compte les biens **actifs au
+   moment du calcul**, indépendamment de leur statut locatif et **sans
+   pondération temporelle** — un bien acquis en cours d'année compte comme
+   un bien entier dans le prorata, au même titre qu'un bien détenu toute
+   l'année.
+
+**Écran** : `FiscaliteView` (`apps/desktop/src/renderer/src/finances`,
+onglet "Fiscalité" de `FinancesPage`) — sélection SCI (IR uniquement) +
+année, tableau des 23 lignes par bien (lecture seule pour les lignes
+automatiques, `<input>` avec sauvegarde à la perte de focus pour les lignes
+manuelles, même motif que `ParametresAlertesView`), total SCI en bas.
+
 ## versements & remboursements — décisions de conception (chantier terminé)
 
 Corrige la limite ci-dessus (versements multiples non représentables) et
