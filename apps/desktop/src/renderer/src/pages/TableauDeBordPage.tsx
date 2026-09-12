@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertesListView } from "../alertes/AlertesListView";
+import { PeriodeFilter } from "../components/PeriodeFilter";
 import { AccesRapidesView } from "../tableau-de-bord/AccesRapidesView";
 import { getRevenusLocatifs, type RevenusLocatifs } from "../tableau-de-bord/api";
 import { CartesSyntheseView } from "../tableau-de-bord/CartesSyntheseView";
@@ -32,22 +33,7 @@ export function TableauDeBordPage(): React.JSX.Element {
       <ChecklistDocumentaireCard />
       <CartesSyntheseView />
 
-      <div className="flex items-center gap-2 text-sm">
-        <span className="font-medium text-slate-700">Période</span>
-        <input
-          type="date"
-          value={debut}
-          onChange={(e) => setPeriode((p) => ({ ...p, debut: e.target.value }))}
-          className="rounded-md border border-slate-300 px-2 py-1"
-        />
-        <span className="text-slate-400">→</span>
-        <input
-          type="date"
-          value={fin}
-          onChange={(e) => setPeriode((p) => ({ ...p, fin: e.target.value }))}
-          className="rounded-md border border-slate-300 px-2 py-1"
-        />
-      </div>
+      <PeriodeFilter debut={debut} fin={fin} onChange={setPeriode} />
 
       <div className="grid grid-cols-2 gap-6">
         <RevenusLocatifsView revenus={revenus} />
