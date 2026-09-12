@@ -34,3 +34,5 @@ export * from "./modeles-courrier/resoudre-modele-courrier";
 export * from "./baux/calculer-revision-loyer";
 export * from "./texte/normaliser-texte";
 export * from "./depenses/suggerer-categorie";
+export * from "./fiscalite/calculer-annexe1";
+export * from "./fiscalite/mapping-categorie-annexe1";

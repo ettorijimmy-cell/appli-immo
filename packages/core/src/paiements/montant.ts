@@ -61,6 +61,25 @@ export function valeurAbsolueMontant(montant: string): string {
 }
 
 /**
+ * Répartit un montant (en centimes entiers) en N parts aussi égales que
+ * possible, sans perte d'arrondi : la somme des parts renvoyées vaut
+ * toujours exactement `totalCentimes` (le éventuel reste de la division
+ * entière est distribué 1 centime à la fois aux premières parts, jamais
+ * arrondi puis oublié). Première utilisation : Module Charges et
+ * fiscalité, Étape 4 (Annexe 1 2072-S-A1-SD) — répartition à parts égales
+ * d'une dépense de niveau SCI (sans bien précis) entre tous les biens
+ * actifs de cette SCI.
+ */
+export function repartirCentimesEgalement(totalCentimes: number, nombreParts: number): number[] {
+  if (nombreParts <= 0) {
+    return [];
+  }
+  const base = Math.floor(totalCentimes / nombreParts);
+  const reste = totalCentimes - base * nombreParts;
+  return Array.from({ length: nombreParts }, (_, index) => base + (index < reste ? 1 : 0));
+}
+
+/**
  * Conversion inverse de montantEnCentimes — formate des centimes entiers en
  * chaîne décimale à point (jamais de division flottante : les centimes
  * restent des entiers jusqu'au tout dernier formatage textuel).

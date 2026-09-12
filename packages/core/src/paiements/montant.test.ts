@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { centimesVersMontant, estMontantNegatif, montantEnCentimes, normaliserMontant, valeurAbsolueMontant } from "./montant";
+import {
+  centimesVersMontant,
+  estMontantNegatif,
+  montantEnCentimes,
+  normaliserMontant,
+  repartirCentimesEgalement,
+  valeurAbsolueMontant
+} from "./montant";
 
 describe("normaliserMontant", () => {
   it("laisse un montant à point décimal inchangé", () => {
@@ -108,5 +115,26 @@ describe("centimesVersMontant", () => {
 
   it("est l'inverse exact de montantEnCentimes sur des cas connus", () => {
     expect(centimesVersMontant(montantEnCentimes("1234.56"))).toBe("1234.56");
+  });
+});
+
+describe("repartirCentimesEgalement", () => {
+  it("répartit un montant divisible exactement à parts égales", () => {
+    expect(repartirCentimesEgalement(300, 3)).toEqual([100, 100, 100]);
+  });
+
+  it("distribue le reste 1 centime à la fois aux premières parts, sans en perdre", () => {
+    const parts = repartirCentimesEgalement(100, 3);
+    expect(parts).toEqual([34, 33, 33]);
+    expect(parts.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it("retourne un tableau vide si nombreParts est 0 ou négatif", () => {
+    expect(repartirCentimesEgalement(100, 0)).toEqual([]);
+    expect(repartirCentimesEgalement(100, -2)).toEqual([]);
+  });
+
+  it("gère un total de 0", () => {
+    expect(repartirCentimesEgalement(0, 4)).toEqual([0, 0, 0, 0]);
   });
 });
