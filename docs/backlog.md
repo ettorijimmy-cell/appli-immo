@@ -1571,6 +1571,37 @@ gestion des règles géré par l'utilisateur lui-même (3ᵉ onglet de
 de seed, Jimmy en ajoute au fil de l'usage réel). Dashboard (Étape 3) et
 export 2072 (Étape 4) restent hors périmètre.
 
+**Étape 3 (restructuration de Finances) réalisée (2026-09-15)** —
+`ChargesFiscaliteView` (référencée ci-dessus) n'existe plus : `FinancesPage`
+a 3 onglets de premier niveau désormais :
+- **Comptabilité** (`ComptabiliteView`, ex-"Vue d'ensemble") : cockpit
+  revenus/dépenses/résultat net + anneau de répartition des dépenses par
+  catégorie (SVG pur, pas de bibliothèque de graphiques — `recharts` était
+  disponible mais explicitement écarté pour rester cohérent avec le choix
+  déjà fait pour `RevenusLocatifsView`, barres CSS). Revenus = même
+  définition que le Tableau de bord (`getRevenusLocatifs` — loyer NET
+  réellement encaissé via les versements, jamais les loyers dus, jamais
+  une deuxième définition inventée).
+- **Transactions** (`TransactionsView`) : regroupe en sous-onglets ce qui
+  était trois onglets de premier niveau séparés — Revenus, Dépenses,
+  Import CSV, Règles de catégorisation. **Aucune fusion de données** :
+  Revenus et Dépenses restent deux listes distinctes (sources différentes
+  en base, `paiements`/`versements` vs `depense`), simplement rangées sous
+  le même onglet par navigation.
+- **Fiscalité** (`FiscaliteView`) : onglet réservé, message "à venir" —
+  contenu réel à l'Étape 4 (export 2072/2033).
+
+Les deux imports CSV séparés (loyers sous "Paiements", dépenses sous
+"Charges & fiscalité") obligeaient à importer le même relevé bancaire deux
+fois — remplacés par `ImportCsvFusionneView` : un seul upload, les deux
+endpoints existants (`rapprocherCsv`, `parserCsvDepenses`) appelés en
+parallèle côté frontend sur le même contenu (aucune fusion côté backend,
+hors périmètre), puis les lignes routées par signe vers deux sections
+indépendantes. `RapprochementCsvView`/`ImportCsvDepensesView` supprimés
+(logique intégralement récupérée, pas de perte). `PeriodeFilter`
+(`components/`) extrait du motif inline dupliqué dans `TableauDeBordPage` —
+deuxième usage, le bon moment pour factoriser.
+
 ### Intervention (futur module)
 
 Objectif : calendrier de rendez-vous liés à un bien (RDV locataire,
@@ -1710,10 +1741,10 @@ Ordre de priorité convenu avec l'utilisateur :
    l'IR/IS). Vise une sortie concrète (déclaration fiscale type 2072 ou
    équivalent), pas seulement un tableau de bord de suivi.
 
-   **Étapes 1 (socle dépenses, 2026-09-06) et 2 (catégorisation par
-   mots-clés, 2026-09-11) réalisées** — voir section "Suivi des charges et
-   fiscalité" ci-dessus pour le détail. Étapes 3 (dashboard) et 4 (export
-   2072) non commencées.
+   **Étapes 1 (socle dépenses, 2026-09-06), 2 (catégorisation par
+   mots-clés, 2026-09-11) et 3 (restructuration de Finances, 2026-09-15)
+   réalisées** — voir section "Suivi des charges et fiscalité" ci-dessus
+   pour le détail. Étape 4 (export 2072) non commencée.
 
 3. **Messagerie interne** — messagerie interne à l'application (pas de
    synchronisation boîte mail externe, jugée disproportionnée), messages

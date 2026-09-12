@@ -566,8 +566,10 @@ pour les cases à saisie manuelle, voir `docs/backlog.md`).
 ## regle_categorisation (Module Charges et fiscalité, Étape 2, 2026-09-11)
 
 Règle mot-clé -> catégorie gérée par l'utilisateur lui-même via un écran
-dédié (`ReglesCategorisationView`, 3ᵉ onglet de "Charges & fiscalité") —
-**pas un script de seed** : Jimmy en ajoute au fil de l'usage réel de
+dédié (`ReglesCategorisationView`, sous-onglet "Règles de catégorisation"
+de l'onglet Transactions depuis la restructuration de l'Étape 3, voir
+section "Finances — restructuration Étape 3" ci-dessous) — **pas un
+script de seed** : Jimmy en ajoute au fil de l'usage réel de
 l'import CSV, à mesure qu'il rencontre de nouveaux libellés bancaires.
 Create/findAll/archive uniquement (`ReglesCategorisationService`,
 `apps/backend/src/regles-categorisation`) — pas d'update, modifier une
@@ -602,6 +604,71 @@ l'extraction).
 
 **Hors périmètre de l'Étape 2** — à ne jamais présenter comme fait :
 dashboard recettes/dépenses (Étape 3), export formulaire 2072 (Étape 4).
+
+## Finances (module desktop) — restructuration Étape 3 (2026-09-15)
+
+Aucun changement de schéma ni de logique métier — restructuration
+purement de navigation/présentation dans `apps/desktop`. `FinancesPage` a
+3 onglets de premier niveau :
+
+- **Comptabilité** (`finances/ComptabiliteView.tsx`) : cockpit
+  revenus/dépenses/résultat net sur une période sélectionnée
+  (`PeriodeFilter`, `apps/desktop/src/renderer/src/components/`, extrait
+  du motif inline dupliqué de `TableauDeBordPage` — 2ᵉ usage, facturisé).
+  Revenus = `totalLoyerNet` de `getRevenusLocatifs` (même définition
+  faisant autorité que le Tableau de bord — loyer NET réellement encaissé
+  via les versements réels, jamais les loyers dus). Dépenses = somme de
+  `listDepenses` sur la période. Répartition des dépenses par catégorie
+  affichée en anneau **SVG pur** (segments via stroke-dasharray/
+  stroke-dashoffset) — `recharts` était disponible dans l'environnement
+  mais explicitement écarté pour rester cohérent avec le choix déjà fait
+  pour les barres CSS de `RevenusLocatifsView` (aucune dépendance de
+  graphique dans `apps/desktop`).
+
+  **Filtre bien/SCI (2026-09-12)** : sélecteur "Toutes les propriétés" /
+  bien / SCI, même encodage `"bien:<id>"`/`"sci:<id>"` que
+  `DepensesListView`. Filtre réel, pas cosmétique : `getRevenusLocatifs`
+  (backend, `TableauDeBordService`) accepte désormais un 3ᵉ paramètre
+  optionnel `{ bienId?, sciId? }` — résolution d'un ensemble
+  `appartementIdsAutorises` en amont de la boucle d'agrégation existante,
+  filtre purement additif (comportement inchangé sans filtre, testé).
+  Volontairement **pas** une réutilisation de `getSynthese` : cet
+  endpoint exclut par construction les biens en nom propre
+  (`proprietaireType='personne_physique'`, sans SCI) de sa hiérarchie, ce
+  qui l'aurait rendu incorrect comme filtre général "n'importe quel
+  bien" — vérifié par un test dédié. Le même `bienId`/`sciId` résolu est
+  transmis en parallèle à `listDepenses`, donc les 3 chiffres du cockpit
+  et l'anneau de répartition recalculent tous les deux depuis les données
+  filtrées. Portée limitée à ce cockpit — Revenus/Dépenses (onglet
+  Transactions) restent non filtrés par bien/SCI à ce stade.
+- **Transactions** (`finances/TransactionsView.tsx`) : 4 sous-onglets —
+  Revenus (`FinancesListView`, inchangé), Dépenses (`DepensesListView`,
+  inchangé), Import CSV (`ImportCsvFusionneView`, nouveau), Règles de
+  catégorisation (`ReglesCategorisationView`, inchangé). **Décision
+  produit explicite, tranchée avec Jimmy** : ce regroupement est purement
+  une question de navigation — Revenus et Dépenses restent deux listes
+  distinctes, sources différentes en base (`paiements`/`versements` vs
+  `depense`), **jamais fusionnées en un flux chronologique unique**.
+- **Fiscalité** (`finances/FiscaliteView.tsx`) : onglet réservé, contenu
+  réel à l'Étape 4 (export 2072/2033) — message "à venir" uniquement.
+
+**`ImportCsvFusionneView`** remplace les deux anciens écrans séparés
+(`RapprochementCsvView`, `ImportCsvDepensesView`, supprimés) : un relevé
+bancaire réel contient à la fois des lignes de loyer et de dépense,
+obliger à l'importer deux fois était la confusion corrigée ici. Un seul
+upload, une seule analyse — les deux endpoints existants
+(`POST /paiements/rapprocher-csv`, `POST /depenses/parser-csv`) sont
+appelés **en parallèle côté frontend** sur le même contenu (`Promise.all`)
+— **aucune fusion côté backend**, décision explicite pour ce volume
+d'usage (le fichier est donc analysé deux fois côté serveur, un appel
+réseau par domaine, jamais un souci fonctionnel). Les lignes sont ensuite
+routées par signe : positives (crédit) → section "Revenus à rapprocher"
+(logique de l'ancien `RapprochementCsvView`, inchangée) ; négatives
+(débit) → section "Dépenses à créer" (logique de l'ancien
+`ImportCsvDepensesView`, inchangée, y compris le garde-fou
+`estMontantNegatif` du 2026-09-07). Aucun changement dans
+`parserReleveCsv`/`proposerRapprochements`/`suggererCategorie`
+(packages/core).
 
 ## versements & remboursements — décisions de conception (chantier terminé)
 
