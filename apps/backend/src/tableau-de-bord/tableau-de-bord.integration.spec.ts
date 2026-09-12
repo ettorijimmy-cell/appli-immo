@@ -66,6 +66,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   let bailLocatairesService: BailLocatairesService;
   let tableauDeBordService: TableauDeBordService;
   let db: Database;
+  let userId: string;
   let sciId: string;
   let bienId: string;
 
@@ -132,6 +133,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
 
+    userId = user.id;
     const sci = await scisService.create(user.id, { nom: "SCI Dashboard Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     sciId = sci.id;
     const bien = await bienService.create(user.id, {
@@ -380,6 +382,118 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       const revenus = await tableauDeBordService.getRevenusLocatifs("2019-01-01", "2019-03-31");
       expect(revenus.parMois.map((m) => m.mois)).toEqual(["2019-01", "2019-02", "2019-03"]);
       expect(revenus.parMois.every((m) => m.loyerNet === "0.00")).toBe(true);
+    });
+
+    // Module Charges et fiscalité, Étape 3 (docs/backlog.md) : filtre
+    // bien/sci du cockpit "Comptabilité" — vérifie que le filtre restreint
+    // réellement le CALCUL (pas un simple filtre visuel côté frontend).
+    describe("filtre bienId/sciId", () => {
+      async function creerBienAvecRevenu(
+        proprietaire: { proprietaireType: "sci"; sciId: string } | { proprietaireType: "personne_physique" },
+        loyerMensuel: string,
+        numero: string
+      ) {
+        const bienCree = await bienService.create(userId, {
+          type: "maison",
+          ...(proprietaire.proprietaireType === "sci"
+            ? { proprietaireType: "sci" as const, sciId: proprietaire.sciId }
+            : { proprietaireType: "personne_physique" as const, nomProprietaire: "Jean Dupont" }),
+          adresse: `${numero} rue du Filtre`,
+          codePostal: "75001",
+          ville: "Paris"
+        });
+        const appartement = await appartementsService.create({
+          bienId: bienCree.id,
+          numero,
+          type: "T2",
+          nombrePiecesPrincipales: 3,
+          modeChauffage: "individuel",
+          modeEauChaude: "individuel",
+          loyerReference: loyerMensuel
+        });
+        const bail = await bauxService.create({
+          appartementId: appartement.id,
+          typeBail: "vide",
+          dateDebut: "2026-01-01",
+          loyerMensuel,
+          jourEcheance: 5
+        });
+        await bauxService.activer(bail.id);
+        for (const echeance of await paiementsService.findAll(bail.id)) {
+          await paiementsService.archive(echeance.id);
+        }
+        const paiement = await paiementsService.create({
+          bailId: bail.id,
+          type: "loyer",
+          montant: loyerMensuel,
+          dateEcheance: "2026-05-05"
+        });
+        await versementsService.ajouter({
+          paiementId: paiement.id,
+          montant: loyerMensuel,
+          mode: "virement",
+          dateVersement: "2026-05-05"
+        });
+        return bienCree;
+      }
+
+      it("filtre par bienId isole le revenu de ce seul bien", async () => {
+        const autreSci = await scisService.create(userId, {
+          nom: "SCI Filtre Autre",
+          regimeFiscal: "IR",
+          adresse: "1 rue de Test",
+          codePostal: "75001",
+          ville: "Paris"
+        });
+        const bienA = await creerBienAvecRevenu({ proprietaireType: "sci", sciId }, "500.00", "F1");
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId: autreSci.id }, "700.00", "F2");
+
+        const revenus = await tableauDeBordService.getRevenusLocatifs("2026-05-01", "2026-05-31", {
+          bienId: bienA.id
+        });
+        expect(revenus.totalLoyerNet).toBe("500.00");
+      });
+
+      it("filtre par sciId isole le revenu de tous les biens de cette SCI", async () => {
+        const sciCible = await scisService.create(userId, {
+          nom: "SCI Filtre Cible",
+          regimeFiscal: "IR",
+          adresse: "1 rue de Test",
+          codePostal: "75001",
+          ville: "Paris"
+        });
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId: sciCible.id }, "500.00", "F3");
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId: sciCible.id }, "300.00", "F4");
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId }, "999.00", "F5");
+
+        const revenus = await tableauDeBordService.getRevenusLocatifs("2026-05-01", "2026-05-31", {
+          sciId: sciCible.id
+        });
+        expect(revenus.totalLoyerNet).toBe("800.00");
+      });
+
+      // getSynthese (endpoint voisin) exclut explicitement les biens en nom
+      // propre de sa hiérarchie SCI — ce filtre-ci doit rester correct pour
+      // CE cas précis, contrairement à getSynthese, puisque le cockpit
+      // "Comptabilité" doit pouvoir filtrer sur n'importe quel bien.
+      it("filtre par bienId fonctionne pour un bien en nom propre (sans SCI)", async () => {
+        const bienNomPropre = await creerBienAvecRevenu({ proprietaireType: "personne_physique" }, "600.00", "F6");
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId }, "999.00", "F7");
+
+        const revenus = await tableauDeBordService.getRevenusLocatifs("2026-05-01", "2026-05-31", {
+          bienId: bienNomPropre.id
+        });
+        expect(revenus.totalLoyerNet).toBe("600.00");
+      });
+
+      it("sans filtre, inclut tous les biens (comportement inchangé)", async () => {
+        const avant = await tableauDeBordService.getRevenusLocatifs("2026-05-01", "2026-05-31");
+        await creerBienAvecRevenu({ proprietaireType: "sci", sciId }, "500.00", "F8");
+        await creerBienAvecRevenu({ proprietaireType: "personne_physique" }, "300.00", "F9");
+
+        const apres = await tableauDeBordService.getRevenusLocatifs("2026-05-01", "2026-05-31");
+        expect(Number(apres.totalLoyerNet) - Number(avant.totalLoyerNet)).toBeCloseTo(800, 2);
+      });
     });
   });
 
