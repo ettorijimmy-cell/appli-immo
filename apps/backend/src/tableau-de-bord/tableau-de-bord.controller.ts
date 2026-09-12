@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { DerniereSauvegardeService } from "./derniere-sauvegarde.service";
 import { PeriodeQueryDto } from "./dto/periode-query.dto";
+import { RevenusLocatifsQueryDto } from "./dto/revenus-locatifs-query.dto";
 import { TableauDeBordService } from "./tableau-de-bord.service";
 
 @Controller("tableau-de-bord")
@@ -26,8 +27,11 @@ export class TableauDeBordController {
   }
 
   @Get("revenus-locatifs")
-  getRevenusLocatifs(@Query() query: PeriodeQueryDto) {
-    return this.tableauDeBordService.getRevenusLocatifs(query.debut, query.fin);
+  getRevenusLocatifs(@Query() query: RevenusLocatifsQueryDto) {
+    return this.tableauDeBordService.getRevenusLocatifs(query.debut, query.fin, {
+      ...(query.bienId !== undefined && { bienId: query.bienId }),
+      ...(query.sciId !== undefined && { sciId: query.sciId })
+    });
   }
 
   @Get("synthese")

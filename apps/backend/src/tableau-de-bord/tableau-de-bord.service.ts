@@ -187,7 +187,35 @@ export class TableauDeBordService {
   // en plusieurs versements non représentable" (docs/backlog.md, dette
   // technique) : un versement du 5 et un second du 20 comptent désormais
   // chacun dans le bon mois, jamais tous les deux attribués au dernier.
-  async getRevenusLocatifs(periodeDebut: string, periodeFin: string) {
+  // Filtre bien/sci optionnel (Module Charges et fiscalité, Étape 3,
+  // cockpit "Comptabilité") : résout d'abord l'ensemble des appartements
+  // autorisés, puis exclut toute ligne dont le bail ne pointe pas vers un
+  // de ces appartements — jamais un second calcul de revenu, la même
+  // agrégation par versement ci-dessous, juste restreinte en amont.
+  // sciId seul (sans bienId) couvre tous les biens de la SCI ; bienId
+  // l'emporte si les deux sont fournis (cohérent avec DepensesService
+  // .create, où bienId dérive toujours sciId, jamais l'inverse).
+  async getRevenusLocatifs(
+    periodeDebut: string,
+    periodeFin: string,
+    filtres: { bienId?: string; sciId?: string } = {}
+  ) {
+    let appartementIdsAutorises: string[] | null = null;
+    if (filtres.bienId || filtres.sciId) {
+      const conditions = [];
+      if (filtres.bienId) {
+        conditions.push(eq(appartements.bienId, filtres.bienId));
+      } else if (filtres.sciId) {
+        conditions.push(eq(bien.sciId, filtres.sciId));
+      }
+      const appartementsAutorises = await this.db
+        .select({ id: appartements.id })
+        .from(appartements)
+        .innerJoin(bien, eq(appartements.bienId, bien.id))
+        .where(and(...conditions));
+      appartementIdsAutorises = appartementsAutorises.map((a) => a.id);
+    }
+
     const versementsPeriode = await this.db
       .select({
         id: versements.id,
@@ -230,6 +258,9 @@ export class TableauDeBordService {
         this.logger.warn(
           `Versement ${versement.id} exclu du calcul des revenus locatifs (bail introuvable ou loyer non renseigné) — vérifier l'intégrité des données.`
         );
+        continue;
+      }
+      if (appartementIdsAutorises && !appartementIdsAutorises.includes(bail.appartementId)) {
         continue;
       }
       const mois = versement.dateVersement.slice(0, 7);
