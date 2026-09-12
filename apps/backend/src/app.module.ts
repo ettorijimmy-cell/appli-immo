@@ -18,6 +18,7 @@ import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
+import { FiscaliteModule } from "./fiscalite/fiscalite.module";
 import { GarantsModule } from "./garants/garants.module";
 import { GoogleOAuthModule } from "./google-oauth/google-oauth.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
@@ -65,6 +66,7 @@ import { VersementsModule } from "./versements/versements.module";
     TachesModule,
     ModelesCourrierModule,
     TableauDeBordModule,
+    FiscaliteModule,
     IndicesIrlModule,
     BailDocumentDocxModule,
     EtatsDesLieuxModule,
