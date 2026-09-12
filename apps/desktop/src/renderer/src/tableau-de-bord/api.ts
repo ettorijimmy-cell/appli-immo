@@ -62,10 +62,18 @@ export function getCartes(): Promise<Cartes> {
   return authenticatedFetch<Cartes>("/tableau-de-bord/cartes");
 }
 
-export function getRevenusLocatifs(debut: string, fin: string): Promise<RevenusLocatifs> {
-  return authenticatedFetch<RevenusLocatifs>(
-    `/tableau-de-bord/revenus-locatifs?debut=${debut}&fin=${fin}`
-  );
+// Module Charges et fiscalité, Étape 3 (docs/backlog.md) : filtres bien/sci
+// optionnels pour le cockpit "Comptabilité" — TableauDeBordPage continue
+// d'appeler cette fonction sans 3ᵉ argument, comportement inchangé.
+export function getRevenusLocatifs(
+  debut: string,
+  fin: string,
+  filtres: { bienId?: string; sciId?: string } = {}
+): Promise<RevenusLocatifs> {
+  const params = new URLSearchParams({ debut, fin });
+  if (filtres.bienId) params.set("bienId", filtres.bienId);
+  if (filtres.sciId) params.set("sciId", filtres.sciId);
+  return authenticatedFetch<RevenusLocatifs>(`/tableau-de-bord/revenus-locatifs?${params.toString()}`);
 }
 
 export function getSynthese(debut: string, fin: string): Promise<SyntheseSci[]> {

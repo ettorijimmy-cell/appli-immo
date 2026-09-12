@@ -12,7 +12,8 @@ import {
 // Écran de gestion des règles mot-clé -> catégorie (Module Charges et
 // fiscalité, Étape 2) : Jimmy en ajoute au fil de l'usage réel de l'import
 // CSV, pas un script de seed. Ne fait QUE présélectionner une catégorie
-// dans ImportCsvDepensesView — jamais une catégorisation automatique.
+// dans ImportCsvFusionneView (Étape 3) — jamais une catégorisation
+// automatique.
 export function ReglesCategorisationView(): React.JSX.Element {
   const [regles, setRegles] = useState<RegleCategorisation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
