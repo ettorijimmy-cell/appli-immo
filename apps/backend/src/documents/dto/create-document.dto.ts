@@ -38,9 +38,27 @@ export const DOCUMENT_CATEGORIES = [
   "caf",
   "quittance",
   "courrier",
-  "photo"
+  "photo",
+  // Checklist documentaire du candidat locataire (extension 2026-09-15) :
+  // pièces attendues pour le candidat et pour son garant (voir
+  // DOCUMENT_CANDIDAT_ROLES ci-dessous). fiche_de_paie peut apparaître
+  // plusieurs fois pour la même entité (3 attendues) — aucune contrainte
+  // d'unicité ne l'empêche (voir packages/db/src/schema/documents.ts).
+  "fiche_de_paie",
+  "contrat_travail",
+  "avis_imposition"
 ] as const;
 export type DocumentCategorie = (typeof DOCUMENT_CATEGORIES)[number];
+
+// Distingue un document du candidat lui-même de celui de son garant —
+// obligatoire quand entiteType = 'candidat', interdit sinon (vérifié
+// applicativement dans DocumentsService.upload, même principe que
+// etatDesLieuxPieceType/Numero ci-dessous). Le garant d'un candidat n'est
+// pas une entité `garant` réelle (juste garant_nom/garant_revenu_mensuel_net
+// en texte sur `candidat`), donc entiteType/entiteId seuls ne suffisent
+// pas à distinguer les deux jeux de documents.
+export const DOCUMENT_CANDIDAT_ROLES = ["candidat", "garant"] as const;
+export type DocumentCandidatRole = (typeof DOCUMENT_CANDIDAT_ROLES)[number];
 
 // Correspond exactement aux étapes "piece-*" du parcours mobile pas-à-pas
 // (apps/mobile-web/src/etat-des-lieux/stepper-config.ts), sans le préfixe
@@ -83,4 +101,10 @@ export class CreateDocumentDto {
   @IsInt()
   @Min(1)
   etatDesLieuxPieceNumero?: number;
+
+  // Obligatoire quand entiteType = 'candidat', interdit sinon — vérifié
+  // applicativement dans DocumentsService.upload.
+  @IsOptional()
+  @IsIn(DOCUMENT_CANDIDAT_ROLES)
+  candidatRole?: DocumentCandidatRole;
 }

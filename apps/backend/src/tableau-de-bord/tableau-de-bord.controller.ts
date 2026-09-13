@@ -51,9 +51,10 @@ export class TableauDeBordController {
 
   @Get("completude-documents")
   getCompletudeDocumentaire(
-    @Query("entiteType") entiteType: "appartement" | "locataire" | "garant",
-    @Query("entiteId") entiteId: string
+    @Query("entiteType") entiteType: "appartement" | "locataire" | "garant" | "candidat",
+    @Query("entiteId") entiteId: string,
+    @Query("role") role?: "candidat" | "garant"
   ) {
-    return this.tableauDeBordService.getCompletudeDocumentaire(entiteType, entiteId);
+    return this.tableauDeBordService.getCompletudeDocumentaire(entiteType, entiteId, role);
   }
 }

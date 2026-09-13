@@ -285,7 +285,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 |---|---|---|
 | entite_type | enum | `sci` \| `immeuble` \| `bien` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` \| `garant` — lien polymorphe. Pas de contrainte de clé étrangère possible (8 tables cibles) : `DocumentsService.verifierEntiteExiste()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03). `garant` ajouté le 2026-08-24 (checklist documentaire, pièce d'identité du garant). `bien` ajouté le 2026-08-26 (migration bien) : seul chemin possible pour rattacher un document à un bien non-immeuble (maison, parking, bureau, local_commercial) ou à un immeuble créé après cette date via `BienService` — `immeuble` reste réservé aux documents déjà rattachés à une ligne `immeubles` existante (table conservée, voir section `bien` ci-dessous) |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
-| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour) |
+| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous) |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
 | date_expiration | date, nullable | Alimente le moteur d'alertes (Module 6) et le calcul de `statut` |
 | nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |
@@ -294,6 +294,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 | chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — `documents/<entite_type>/<entite_id>/<id>.enc`, interne à `DocumentsService`/`DocumentStorageService` |
 | etat_des_lieux_piece_type | enum, nullable | `entree` \| `sejour` \| `cuisine` \| `chambre` \| `salle_de_bain` \| `wc` \| `autre` — significatif uniquement quand `entite_type = 'etat_des_lieux'` (photos prises depuis le parcours mobile pas-à-pas, un bouton "+ Photo" par pièce). Ajouté le 2026-08-07 : corrige un trou identifié en test manuel (photo visible dans Documents mais pas rattachée à sa pièce en relecture desktop) |
 | etat_des_lieux_piece_numero | integer, nullable | Numéro d'instance pour chambre/salle_de_bain/wc/autre (null pour entrée/séjour/cuisine, pièces à instance unique) |
+| candidat_role | enum, nullable | `candidat` \| `garant` (`document_candidat_role`) — distingue un document du candidat lui-même de celui de son garant (le garant d'un candidat n'est pas une entité `garant` réelle, juste `garant_nom`/`garant_revenu_mensuel_net` en texte sur `candidat`). Obligatoire quand `entite_type = 'candidat'`, interdit sinon (vérifié applicativement dans `DocumentsService.verifierCandidatRoleSelonEntiteType`). Ajouté le 2026-09-15 (checklist documentaire candidat) |
 
 **Rattachement des photos à une pièce précise (2026-08-07)** : `entite_id`
 pour une photo d'état des lieux reste l'id de l'en-tête `etats_des_lieux`
@@ -886,6 +887,43 @@ revenu est nul — jamais de division par zéro, jamais de calcul trompeur
 sur une donnée incomplète. Purement informatif : **aucun seuil
 "acceptable" codé en dur**, ce n'est pas à l'application de juger un
 candidat.
+
+### Extension checklist candidat + conversion (2026-09-15)
+
+Suite au retour de Jimmy après test manuel du module ci-dessus : checklist
+documentaire du candidat (et de son garant) + conversion en locataire.
+
+**Pièces attendues** : pièce d'identité, 3 fiches de paie, contrat de
+travail, avis d'imposition — pour le candidat **et** pour son garant
+(même liste, deux personnes). **Seule la pièce d'identité est
+bloquante** — les 3 autres s'affichent comme manquantes dans la checklist
+sans rien empêcher (ni la validation du candidat, ni sa conversion).
+
+`document_categorie` étendu de 3 valeurs : `fiche_de_paie`,
+`contrat_travail`, `avis_imposition` (`piece_identite` existait déjà).
+Aucune contrainte d'unicité catégorie+entité sur `documents` (vérifié en
+amont) : plusieurs `fiche_de_paie` pour le même candidat s'insèrent sans
+problème.
+
+**Distinguer un document du candidat de celui de son garant** — le
+garant du candidat n'est pas une entité `garant` réelle à ce stade (juste
+`garant_nom`/`garant_revenu_mensuel_net` en texte sur `candidat`), donc
+`entiteType`/`entiteId` seuls ne suffisent pas. Nouvelle colonne
+`documents.candidat_role` — enum `document_candidat_role` (`candidat` |
+`garant`), **nullable**, obligatoire quand `entiteType = 'candidat'`,
+interdite sinon (vérifié applicativement dans
+`DocumentsService.verifierCandidatRoleSelonEntiteType`, même principe que
+`etatDesLieuxPieceType`/`Numero`).
+
+**Réutilisation du mécanisme de checklist existant** : `evaluerCompletudeCategories`
+(packages/core) reste inchangée — présence simple d'au moins un document
+valide par catégorie, jamais un compte. Une catégorie comme
+`fiche_de_paie` apparaît donc "présente" dès le premier document déposé,
+jamais "2 sur 3" — accepté tel quel puisque ces pièces ne sont pas
+bloquantes. `TableauDeBordService.getCompletudeDocumentaire` étend son
+switch d'un cas `'candidat'` avec un paramètre `role` obligatoire
+(`'candidat'` ou `'garant'`), appelant `evaluerCompletudeCategories` avec
+les 4 catégories filtrées par `candidat_role`.
 
 ### evenement_calendrier
 

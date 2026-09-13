@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCompletudeDocumentaire, type CompletudeCategorie } from "../tableau-de-bord/api";
-import { remplacerDocument, uploadDocument, type DocumentCategorie, type DocumentEntiteType } from "./api";
+import {
+  remplacerDocument,
+  uploadDocument,
+  type DocumentCandidatRole,
+  type DocumentCategorie,
+  type DocumentEntiteType
+} from "./api";
 import { DocumentApercuModal } from "./DocumentApercuModal";
 import { CATEGORIE_LABELS } from "./labels";
 import { useDocumentApercu } from "./use-document-apercu";
 
 // Catégories attendues par type d'entité — même liste que
 // TableauDeBordService (docs/backlog.md, checklist documentaire). Seuls ces
-// 3 types ont une checklist ; les autres (sci/immeuble/bail/etat_des_lieux)
-// n'en affichent aucune, DocumentsForEntite reste inchangé pour eux.
+// 4 types ont une checklist ; les autres (sci/immeuble/bail/etat_des_lieux/
+// depense) n'en affichent aucune, DocumentsForEntite reste inchangé pour eux.
 const CATEGORIES_PAR_TYPE: Partial<Record<DocumentEntiteType, true>> = {
   appartement: true,
   locataire: true,
-  garant: true
+  garant: true,
+  candidat: true
 };
 
 // Affichée au-dessus de la liste générique de DocumentsForEntite : montre
@@ -22,13 +29,20 @@ const CATEGORIES_PAR_TYPE: Partial<Record<DocumentEntiteType, true>> = {
 // soi-même). Réutilise la détection déjà écrite côté backend
 // (TableauDeBordService.getCompletudeDocumentaire, lui-même basé sur
 // evaluerCompletudeCategories de packages/core) plutôt que de la dupliquer.
+// `role`/`titre` sont exigés uniquement pour entiteType='candidat' — deux
+// checklists distinctes (candidat/garant) pour la même fiche candidat,
+// voir CandidatsView (extension checklist candidat, 2026-09-15).
 export function ChecklistCategoriesEntite({
   entiteType,
   entiteId,
+  role,
+  titre,
   onChanged
 }: {
   entiteType: DocumentEntiteType;
   entiteId: string;
+  role?: DocumentCandidatRole;
+  titre?: string;
   onChanged: () => void;
 }): React.JSX.Element | null {
   const [completude, setCompletude] = useState<CompletudeCategorie[] | null>(null);
@@ -40,9 +54,9 @@ export function ChecklistCategoriesEntite({
       return;
     }
     setCompletude(
-      await getCompletudeDocumentaire(entiteType as "appartement" | "locataire" | "garant", entiteId)
+      await getCompletudeDocumentaire(entiteType as "appartement" | "locataire" | "garant" | "candidat", entiteId, role)
     );
-  }, [applicable, entiteType, entiteId]);
+  }, [applicable, entiteType, entiteId, role]);
 
   useEffect(() => {
     void refresh();
@@ -55,7 +69,7 @@ export function ChecklistCategoriesEntite({
   return (
     <div className="space-y-1 rounded-md border border-slate-200 p-3">
       <h3 className="text-sm font-semibold text-slate-700">
-        {entiteType === "appartement" ? "Diagnostics" : "Pièce d'identité"}
+        {titre ?? (entiteType === "appartement" ? "Diagnostics" : "Pièce d'identité")}
       </h3>
       <ul className="space-y-1">
         {completude.map((c) => (
@@ -63,6 +77,7 @@ export function ChecklistCategoriesEntite({
             key={c.categorie}
             entiteType={entiteType}
             entiteId={entiteId}
+            {...(role && { candidatRole: role })}
             completude={c}
             onVoir={ouvrir}
             onChanged={async () => {
@@ -81,12 +96,14 @@ export function ChecklistCategoriesEntite({
 function CategorieRow({
   entiteType,
   entiteId,
+  candidatRole,
   completude,
   onVoir,
   onChanged
 }: {
   entiteType: DocumentEntiteType;
   entiteId: string;
+  candidatRole?: DocumentCandidatRole;
   completude: CompletudeCategorie;
   onVoir: (id: string) => Promise<void>;
   onChanged: () => Promise<void>;
@@ -103,7 +120,7 @@ function CategorieRow({
       if (completude.document) {
         await remplacerDocument(completude.document.id, fichier, { categorie });
       } else {
-        await uploadDocument(fichier, { entiteType, entiteId, categorie });
+        await uploadDocument(fichier, { entiteType, entiteId, categorie, ...(candidatRole && { candidatRole }) });
       }
       await onChanged();
     } catch {

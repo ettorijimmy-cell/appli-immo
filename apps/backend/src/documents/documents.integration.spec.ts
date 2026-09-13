@@ -21,6 +21,8 @@ import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
+import { CandidatsModule } from "../candidats/candidats.module";
+import { CandidatsService } from "../candidats/candidats.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
@@ -51,6 +53,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
   let bienService: BienService;
   let appartementsService: AppartementsService;
   let documentsService: DocumentsService;
+  let candidatsService: CandidatsService;
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
@@ -80,6 +83,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
         ScisModule,
         BienModule,
         AppartementsModule,
+        CandidatsModule,
         DocumentsModule
       ]
     })
@@ -91,6 +95,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     documentsService = moduleRef.get(DocumentsService);
+    candidatsService = moduleRef.get(CandidatsService);
     requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
@@ -376,5 +381,82 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     const parRecherche = await documentsService.findAll({ entiteId: appartementId, recherche: "energie" });
     expect(parRecherche).toHaveLength(1);
     expect(parRecherche[0]?.nomFichier).toBe("diagnostic-energie.pdf");
+  });
+
+  // Extension checklist candidat (2026-09-15) : candidatRole distingue un
+  // document du candidat de celui de son garant (le garant n'est pas une
+  // entité réelle à ce stade, voir packages/db/src/schema/documents.ts).
+  describe("candidatRole", () => {
+    it("upload : rejette entiteType='candidat' sans candidatRole", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Sans Role" });
+      await expect(
+        documentsService.upload(
+          { entiteType: "candidat", entiteId: candidatTest.id, categorie: "piece_identite" },
+          fichierTest("pièce d'identité")
+        )
+      ).rejects.toThrow();
+    });
+
+    it("upload : rejette candidatRole pour un entiteType différent de 'candidat'", async () => {
+      await expect(
+        documentsService.upload(
+          { entiteType: "appartement", entiteId: appartementId, categorie: "bail", candidatRole: "candidat" },
+          fichierTest("bail")
+        )
+      ).rejects.toThrow();
+    });
+
+    it("upload : accepte et distingue les documents du candidat et de son garant", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Avec Garant" });
+
+      const documentCandidat = await documentsService.upload(
+        { entiteType: "candidat", entiteId: candidatTest.id, categorie: "piece_identite", candidatRole: "candidat" },
+        fichierTest("cni-candidat.pdf")
+      );
+      const documentGarant = await documentsService.upload(
+        { entiteType: "candidat", entiteId: candidatTest.id, categorie: "piece_identite", candidatRole: "garant" },
+        fichierTest("cni-garant.pdf")
+      );
+
+      expect(documentCandidat.candidatRole).toBe("candidat");
+      expect(documentGarant.candidatRole).toBe("garant");
+
+      const documentsDuCandidat = await documentsService.findAll({
+        entiteType: "candidat",
+        entiteId: candidatTest.id,
+        candidatRole: "candidat"
+      });
+      expect(documentsDuCandidat.map((d) => d.id)).toEqual([documentCandidat.id]);
+
+      const documentsDuGarant = await documentsService.findAll({
+        entiteType: "candidat",
+        entiteId: candidatTest.id,
+        candidatRole: "garant"
+      });
+      expect(documentsDuGarant.map((d) => d.id)).toEqual([documentGarant.id]);
+    });
+
+    it("upload : accepte plusieurs fiche_de_paie pour le même candidat (aucune contrainte d'unicité)", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Trois Fiches" });
+      await documentsService.upload(
+        { entiteType: "candidat", entiteId: candidatTest.id, categorie: "fiche_de_paie", candidatRole: "candidat" },
+        fichierTest("fiche-1.pdf")
+      );
+      await documentsService.upload(
+        { entiteType: "candidat", entiteId: candidatTest.id, categorie: "fiche_de_paie", candidatRole: "candidat" },
+        fichierTest("fiche-2.pdf")
+      );
+      await documentsService.upload(
+        { entiteType: "candidat", entiteId: candidatTest.id, categorie: "fiche_de_paie", candidatRole: "candidat" },
+        fichierTest("fiche-3.pdf")
+      );
+
+      const fiches = await documentsService.findAll({
+        entiteType: "candidat",
+        entiteId: candidatTest.id,
+        categorie: "fiche_de_paie"
+      });
+      expect(fiches).toHaveLength(3);
+    });
   });
 });

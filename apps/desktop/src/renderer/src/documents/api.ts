@@ -32,8 +32,15 @@ export type DocumentCategorie =
   | "caf"
   | "quittance"
   | "courrier"
-  | "photo";
+  | "photo"
+  | "fiche_de_paie"
+  | "contrat_travail"
+  | "avis_imposition";
 export type DocumentStatut = "valide" | "expire" | "archive";
+// Distingue un document du candidat de celui de son garant — obligatoire
+// pour entiteType='candidat', absent sinon (extension checklist candidat,
+// 2026-09-15).
+export type DocumentCandidatRole = "candidat" | "garant";
 
 export interface DocumentMetier {
   id: string;
@@ -48,6 +55,7 @@ export interface DocumentMetier {
   archivedAt: string | null;
   etatDesLieuxPieceType: DocumentEtatDesLieuxPieceType | null;
   etatDesLieuxPieceNumero: number | null;
+  candidatRole: DocumentCandidatRole | null;
 }
 
 export interface UploadDocumentInput {
@@ -55,6 +63,7 @@ export interface UploadDocumentInput {
   entiteId: string;
   categorie: DocumentCategorie;
   dateExpiration?: string;
+  candidatRole?: DocumentCandidatRole;
 }
 
 export interface FindAllDocumentsFiltres {
@@ -64,6 +73,7 @@ export interface FindAllDocumentsFiltres {
   statut?: DocumentStatut;
   recherche?: string;
   avecArchives?: boolean;
+  candidatRole?: DocumentCandidatRole;
 }
 
 export async function uploadDocument(fichier: File, meta: UploadDocumentInput): Promise<DocumentMetier> {
@@ -74,6 +84,9 @@ export async function uploadDocument(fichier: File, meta: UploadDocumentInput): 
   formData.append("categorie", meta.categorie);
   if (meta.dateExpiration) {
     formData.append("dateExpiration", meta.dateExpiration);
+  }
+  if (meta.candidatRole) {
+    formData.append("candidatRole", meta.candidatRole);
   }
   return authenticatedFetch<DocumentMetier>("/documents", { method: "POST", body: formData });
 }
@@ -86,6 +99,7 @@ export async function listDocuments(filtres: FindAllDocumentsFiltres = {}): Prom
   if (filtres.statut) params.set("statut", filtres.statut);
   if (filtres.recherche) params.set("recherche", filtres.recherche);
   if (filtres.avecArchives) params.set("avecArchives", "true");
+  if (filtres.candidatRole) params.set("candidatRole", filtres.candidatRole);
   const query = params.toString();
   return authenticatedFetch<DocumentMetier[]>(`/documents${query ? `?${query}` : ""}`);
 }

@@ -24,6 +24,8 @@ import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module"
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { CandidatsModule } from "../candidats/candidats.module";
+import { CandidatsService } from "../candidats/candidats.service";
 import { CommonModule } from "../common/common.module";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
@@ -64,6 +66,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   let locatairesService: LocatairesService;
   let garantsService: GarantsService;
   let bailLocatairesService: BailLocatairesService;
+  let candidatsService: CandidatsService;
   let tableauDeBordService: TableauDeBordService;
   let db: Database;
   let userId: string;
@@ -92,6 +95,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         LocatairesModule,
         GarantsModule,
         BailLocatairesModule,
+        CandidatsModule,
         TableauDeBordModule
       ]
     })
@@ -109,6 +113,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     paiementsService = moduleRef.get(PaiementsService);
     versementsService = moduleRef.get(VersementsService);
     remboursementsService = moduleRef.get(RemboursementsService);
+    candidatsService = moduleRef.get(CandidatsService);
     tableauDeBordService = moduleRef.get(TableauDeBordService);
 
     const [organisation] = await db
@@ -907,10 +912,10 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   // getChecklistDocumentaire et getCompletudeDocumentaire — même détection
   // réutilisée côté service (evaluerCompletudeCategories, packages/core).
   async function creerDocumentTest(
-    entiteType: "appartement" | "bien" | "locataire" | "garant",
+    entiteType: "appartement" | "bien" | "locataire" | "garant" | "candidat",
     entiteId: string,
-    categorie: "dpe" | "elec_gaz" | "crep_plomb" | "erp" | "piece_identite",
-    options: { archive?: boolean; dateExpiration?: string } = {}
+    categorie: "dpe" | "elec_gaz" | "crep_plomb" | "erp" | "piece_identite" | "fiche_de_paie" | "contrat_travail" | "avis_imposition",
+    options: { archive?: boolean; dateExpiration?: string; candidatRole?: "candidat" | "garant" } = {}
   ) {
     await db.insert(documents).values({
       entiteType,
@@ -921,7 +926,8 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       tailleOctets: 1,
       cheminStockage: `test/${randomUUID()}.enc`,
       archivedAt: options.archive ? new Date() : null,
-      dateExpiration: options.dateExpiration ?? null
+      dateExpiration: options.dateExpiration ?? null,
+      candidatRole: options.candidatRole ?? null
     });
   }
 
@@ -1188,6 +1194,51 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await creerDocumentTest("garant", garant.id, "piece_identite");
       completude = await tableauDeBordService.getCompletudeDocumentaire("garant", garant.id);
       expect(completude[0]?.document).not.toBeNull();
+    });
+
+    // Extension checklist candidat (2026-09-15) : 4 catégories (piece_identite
+    // bloquante côté CandidatsService, les 3 autres purement informatives),
+    // deux jeux de documents distincts (candidat vs garant) distingués par
+    // documents.candidat_role — le garant du candidat n'est pas une entité
+    // `garant` réelle à ce stade.
+    it("candidat : 4 catégories, exige le paramètre role, distingue candidat et garant", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Complétude Candidat" });
+
+      await expect(tableauDeBordService.getCompletudeDocumentaire("candidat", candidatTest.id)).rejects.toThrow();
+
+      let completudeCandidat = await tableauDeBordService.getCompletudeDocumentaire(
+        "candidat",
+        candidatTest.id,
+        "candidat"
+      );
+      expect(completudeCandidat).toEqual([
+        { categorie: "piece_identite", document: null },
+        { categorie: "fiche_de_paie", document: null },
+        { categorie: "contrat_travail", document: null },
+        { categorie: "avis_imposition", document: null }
+      ]);
+
+      await creerDocumentTest("candidat", candidatTest.id, "piece_identite", { candidatRole: "candidat" });
+      await creerDocumentTest("candidat", candidatTest.id, "piece_identite", { candidatRole: "garant" });
+
+      completudeCandidat = await tableauDeBordService.getCompletudeDocumentaire("candidat", candidatTest.id, "candidat");
+      expect(completudeCandidat.find((c) => c.categorie === "piece_identite")?.document).not.toBeNull();
+      expect(completudeCandidat.find((c) => c.categorie === "fiche_de_paie")?.document).toBeNull();
+
+      const completudeGarant = await tableauDeBordService.getCompletudeDocumentaire(
+        "candidat",
+        candidatTest.id,
+        "garant"
+      );
+      expect(completudeGarant.find((c) => c.categorie === "piece_identite")?.document).not.toBeNull();
+    });
+
+    it("candidat : fiche_de_paie apparaît présente dès le premier document, jamais un compte sur 3", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Complétude Fiches" });
+      await creerDocumentTest("candidat", candidatTest.id, "fiche_de_paie", { candidatRole: "candidat" });
+
+      const completude = await tableauDeBordService.getCompletudeDocumentaire("candidat", candidatTest.id, "candidat");
+      expect(completude.find((c) => c.categorie === "fiche_de_paie")?.document).not.toBeNull();
     });
   });
 

@@ -13,7 +13,12 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { DocumentsService, type FindAllDocumentsFiltres } from "./documents.service";
-import { CreateDocumentDto, type DocumentCategorie, type DocumentEntiteType } from "./dto/create-document.dto";
+import {
+  CreateDocumentDto,
+  type DocumentCandidatRole,
+  type DocumentCategorie,
+  type DocumentEntiteType
+} from "./dto/create-document.dto";
 import { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import { UpdateDocumentDto } from "./dto/update-document.dto";
 
@@ -58,7 +63,8 @@ export class DocumentsController {
     @Query("categorie") categorie?: DocumentCategorie,
     @Query("statut") statut?: "valide" | "expire" | "archive",
     @Query("recherche") recherche?: string,
-    @Query("avecArchives") avecArchives?: string
+    @Query("avecArchives") avecArchives?: string,
+    @Query("candidatRole") candidatRole?: DocumentCandidatRole
   ) {
     const filtres: FindAllDocumentsFiltres = {
       ...(entiteType !== undefined && { entiteType }),
@@ -66,6 +72,7 @@ export class DocumentsController {
       ...(categorie !== undefined && { categorie }),
       ...(statut !== undefined && { statut }),
       ...(recherche !== undefined && { recherche }),
+      ...(candidatRole !== undefined && { candidatRole }),
       avecArchives: avecArchives === "true"
     };
     return this.documentsService.findAll(filtres);

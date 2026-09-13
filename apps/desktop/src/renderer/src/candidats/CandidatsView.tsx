@@ -1,6 +1,6 @@
 import { calculerTauxEffort, centimesVersMontant } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { DocumentsForEntite } from "../documents/DocumentsForEntite";
+import { ChecklistCategoriesEntite } from "../documents/ChecklistCategoriesEntite";
 import { getBien, libelleBien, listAppartements, type Appartement, type Bien } from "../patrimoine/api";
 import {
   archiveCandidat,
@@ -325,9 +325,22 @@ export function CandidatsView(): React.JSX.Element {
         </form>
 
         {vue.niveau === "edition" && (
-          <div className="max-w-md space-y-2">
+          <div className="max-w-md space-y-3">
             <h2 className="text-sm font-semibold text-slate-700">Pièces jointes</h2>
-            <DocumentsForEntite entiteType="candidat" entiteId={vue.candidatId} />
+            <ChecklistCategoriesEntite
+              entiteType="candidat"
+              entiteId={vue.candidatId}
+              role="candidat"
+              titre="Documents du candidat"
+              onChanged={() => {}}
+            />
+            <ChecklistCategoriesEntite
+              entiteType="candidat"
+              entiteId={vue.candidatId}
+              role="garant"
+              titre="Documents du garant"
+              onChanged={() => {}}
+            />
           </div>
         )}
       </div>

@@ -61,7 +61,15 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   "caf",
   "quittance",
   "courrier",
-  "photo"
+  "photo",
+  // Checklist documentaire du candidat locataire (module Calendrier/
+  // Candidats, extension 2026-09-15) : pièces attendues pour le candidat
+  // ET pour son garant (voir documentCandidatRoleEnum ci-dessous) —
+  // fiche_de_paie peut apparaître plusieurs fois pour la même entité
+  // (3 attendues), aucune contrainte d'unicité ne l'empêche.
+  "fiche_de_paie",
+  "contrat_travail",
+  "avis_imposition"
 ]);
 
 // 'valide'/'expire' sont calculés à la lecture (packages/core,
@@ -87,6 +95,14 @@ export const documentEtatDesLieuxPieceTypeEnum = pgEnum("document_etat_des_lieux
   "autre"
 ]);
 
+// Distingue un document du candidat lui-même de celui de son garant,
+// valable uniquement quand entiteType = 'candidat' — le garant d'un
+// candidat n'est pas une entité `garant` réelle (juste garant_nom/
+// garant_revenu_mensuel_net en texte sur `candidat`), donc entiteType/
+// entiteId seuls ne suffisent pas à savoir à qui appartient le document
+// (extension checklist candidat, 2026-09-15).
+export const documentCandidatRoleEnum = pgEnum("document_candidat_role", ["candidat", "garant"]);
+
 export const documents = pgTable("documents", {
   ...auditColumns,
   // Lien polymorphe : pas de contrainte de clé étrangère possible (5 tables
@@ -109,6 +125,10 @@ export const documents = pgTable("documents", {
   // 5 autres entiteType.
   etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
   etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero"),
+  // Nullable, exigé uniquement quand entiteType = 'candidat' (vérifié
+  // applicativement, voir DocumentsService.verifierPieceValideSelonEntiteType) —
+  // jamais renseigné pour les 6 autres entiteType.
+  candidatRole: documentCandidatRoleEnum("candidat_role"),
   // Versioning (docs/backlog.md, dette technique) : auto-référence vers la
   // ligne que ce document remplace. La version courante d'une chaîne est
   // celle qu'aucune autre ligne ne référence ici. DocumentsService

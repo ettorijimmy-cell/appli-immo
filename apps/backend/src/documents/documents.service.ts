@@ -20,7 +20,12 @@ import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import type { CreateDocumentDto, DocumentCategorie, DocumentEntiteType } from "./dto/create-document.dto";
+import type {
+  CreateDocumentDto,
+  DocumentCandidatRole,
+  DocumentCategorie,
+  DocumentEntiteType
+} from "./dto/create-document.dto";
 import type { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import type { UpdateDocumentDto } from "./dto/update-document.dto";
 import { construireCheminStockage } from "./storage/construire-chemin-stockage";
@@ -33,6 +38,7 @@ export interface FindAllDocumentsFiltres {
   statut?: "valide" | "expire" | "archive";
   recherche?: string;
   avecArchives?: boolean;
+  candidatRole?: DocumentCandidatRole;
 }
 
 type DocumentRow = typeof documents.$inferSelect;
@@ -49,6 +55,7 @@ export class DocumentsService {
   async upload(dto: CreateDocumentDto, fichier: Express.Multer.File) {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
     this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
+    this.verifierCandidatRoleSelonEntiteType(dto.entiteType, dto.candidatRole);
 
     // L'id est généré ici (plutôt que laissé au $defaultFn du schéma) car il
     // fait partie du chemin de stockage — il doit être connu avant l'écriture
@@ -70,7 +77,8 @@ export class DocumentsService {
         tailleOctets: fichier.size,
         cheminStockage,
         etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
-        etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null
+        etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null,
+        candidatRole: dto.candidatRole ?? null
       })
       .returning();
     if (!document) {
@@ -124,6 +132,7 @@ export class DocumentsService {
           cheminStockage,
           etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
           etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null,
+          candidatRole: ancien.candidatRole,
           documentPrecedentId
         })
         .returning();
@@ -156,6 +165,9 @@ export class DocumentsService {
     }
     if (filtres.categorie) {
       conditions.push(eq(documents.categorie, filtres.categorie));
+    }
+    if (filtres.candidatRole) {
+      conditions.push(eq(documents.candidatRole, filtres.candidatRole));
     }
     if (!filtres.avecArchives) {
       conditions.push(isNull(documents.archivedAt));
@@ -253,6 +265,7 @@ export class DocumentsService {
       tailleOctets: document.tailleOctets,
       etatDesLieuxPieceType: document.etatDesLieuxPieceType,
       etatDesLieuxPieceNumero: document.etatDesLieuxPieceNumero,
+      candidatRole: document.candidatRole,
       documentPrecedentId: document.documentPrecedentId,
       statut: calculerStatutDocument(document.dateExpiration, document.archivedAt !== null, dateReference)
     };
@@ -270,6 +283,22 @@ export class DocumentsService {
       throw new BadRequestException(
         "etatDesLieuxPieceType/etatDesLieuxPieceNumero ne sont valables que pour entiteType 'etat_des_lieux'."
       );
+    }
+  }
+
+  // Distingue un document du candidat de celui de son garant (extension
+  // checklist candidat, 2026-09-15) — obligatoire pour entiteType =
+  // 'candidat' (sinon impossible de savoir à qui il appartient), interdit
+  // pour les 6 autres entiteType (voir packages/db/src/schema/documents.ts).
+  private verifierCandidatRoleSelonEntiteType(
+    entiteType: DocumentEntiteType,
+    candidatRole: DocumentCandidatRole | undefined
+  ): void {
+    if (entiteType === "candidat" && !candidatRole) {
+      throw new BadRequestException("candidatRole est obligatoire pour entiteType 'candidat'.");
+    }
+    if (candidatRole && entiteType !== "candidat") {
+      throw new BadRequestException("candidatRole n'est valable que pour entiteType 'candidat'.");
     }
   }
 

@@ -45,6 +45,18 @@ function dateDuJour(): string {
 // checklist documentaire — deux besoins différents, pas une incohérence).
 const CATEGORIES_DIAGNOSTIC_APPARTEMENT = ["dpe", "elec_gaz", "crep_plomb", "erp"] as const;
 
+// Checklist documentaire du candidat locataire (extension 2026-09-15) —
+// mêmes 4 catégories attendues pour le candidat ET pour son garant (deux
+// jeux de documents distingués par documents.candidat_role, voir
+// packages/db/src/schema/documents.ts). Seule piece_identite est
+// bloquante côté validation/conversion (CandidatsService) ; les 3 autres
+// s'affichent comme manquantes sans rien empêcher — décision actée avec
+// Jimmy. evaluerCompletudeCategories reste inchangée (présence simple,
+// pas de comptage) : fiche_de_paie apparaît "présente" dès le premier
+// document déposé, jamais "2 sur 3" — accepté tel quel, ces pièces ne
+// sont pas bloquantes.
+const CATEGORIES_CANDIDAT = ["piece_identite", "fiche_de_paie", "contrat_travail", "avis_imposition"] as const;
+
 // Adapte une ligne `documents` brute vers la forme attendue par
 // evaluerCompletudeCategories (packages/core) — même fonction de détection
 // que getChecklistDocumentaire()/getCompletudeDocumentaire() ci-dessous,
@@ -510,10 +522,32 @@ export class TableauDeBordService {
   // diffère, jamais la règle de "qu'est-ce qui compte comme valide"
   // (docs/backlog.md, checklist documentaire).
   async getCompletudeDocumentaire(
-    entiteType: "appartement" | "locataire" | "garant",
-    entiteId: string
+    entiteType: "appartement" | "locataire" | "garant" | "candidat",
+    entiteId: string,
+    role?: "candidat" | "garant"
   ): Promise<CompletudeCategorie[]> {
     const dateReference = dateDuJour();
+
+    // Candidat : deux jeux de documents distincts (le candidat lui-même et
+    // son garant), distingués par documents.candidat_role — jamais une
+    // entité `garant` réelle à ce stade (voir CATEGORIES_CANDIDAT ci-dessus).
+    if (entiteType === "candidat") {
+      if (!role) {
+        throw new BadRequestException("role est obligatoire pour entiteType 'candidat' ('candidat' ou 'garant').");
+      }
+      const documentsDuRole = await this.db
+        .select()
+        .from(documents)
+        .where(
+          and(eq(documents.entiteType, "candidat"), eq(documents.entiteId, entiteId), eq(documents.candidatRole, role))
+        )
+        .orderBy(desc(documents.createdAt));
+      return evaluerCompletudeCategories(
+        documentsDuRole.map(mapDocumentPourCompletude),
+        [...CATEGORIES_CANDIDAT],
+        dateReference
+      );
+    }
 
     if (entiteType === "appartement") {
       const [appartement] = await this.db.select().from(appartements).where(eq(appartements.id, entiteId)).limit(1);

@@ -14,7 +14,10 @@ export const CATEGORIE_LABELS: Record<DocumentCategorie, string> = {
   caf: "CAF",
   quittance: "Quittance",
   courrier: "Courrier",
-  photo: "Photo"
+  photo: "Photo",
+  fiche_de_paie: "Fiche de paie",
+  contrat_travail: "Contrat de travail",
+  avis_imposition: "Avis d'imposition"
 };
 
 export const ENTITE_TYPE_LABELS: Record<DocumentEntiteType, string> = {

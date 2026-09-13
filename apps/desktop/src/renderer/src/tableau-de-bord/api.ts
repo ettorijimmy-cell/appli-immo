@@ -135,11 +135,16 @@ export interface CompletudeCategorie {
 // Vue détaillée pour une seule entité (statut complet, y compris les
 // catégories déjà satisfaites) — même détection que getChecklistDocumentaire
 // ci-dessus (evaluerCompletudeCategories, packages/core), jamais dupliquée.
+// entiteType='candidat' exige `role` ('candidat' ou 'garant') — deux jeux de
+// documents distincts pour la même entité (extension checklist candidat,
+// 2026-09-15).
 export function getCompletudeDocumentaire(
-  entiteType: "appartement" | "locataire" | "garant",
-  entiteId: string
+  entiteType: "appartement" | "locataire" | "garant" | "candidat",
+  entiteId: string,
+  role?: "candidat" | "garant"
 ): Promise<CompletudeCategorie[]> {
+  const roleParam = role ? `&role=${role}` : "";
   return authenticatedFetch<CompletudeCategorie[]>(
-    `/tableau-de-bord/completude-documents?entiteType=${entiteType}&entiteId=${encodeURIComponent(entiteId)}`
+    `/tableau-de-bord/completude-documents?entiteType=${entiteType}&entiteId=${encodeURIComponent(entiteId)}${roleParam}`
   );
 }
