@@ -1628,6 +1628,30 @@ leurs propres lignes), test de non-régression dédié ajouté. Voir
 `docs/data-dictionary.md`, section `annexe1_saisie_manuelle`, pour le
 détail.
 
+### Carnet de contacts (module réalisé le 2026-09-13)
+
+Écran transversal agrégeant locataires + garants (déjà gérés ailleurs,
+lecture seule ici) et une nouvelle catégorie de contacts professionnels
+(artisans, diagnostiqueurs, syndic, assureurs) qui n'existait pas encore
+— périmètre volontairement réduit, aucune pièce jointe, aucun lien vers
+un bien pour un contact pro. Voir `docs/data-dictionary.md`, section
+`contact`, pour le détail complet, y compris :
+- Le mapping de navigation par type (locataire -> deep-link existant,
+  garant -> onglet Bail de l'appartement via son bail, contact pro ->
+  fiche propre en édition).
+- La correction de scoping organisationId trouvée pendant l'audit
+  préalable : `LocatairesService.findAll()`/`GarantsService.findAll()`
+  ne filtraient aucune organisation jusqu'ici — corrigée à la racine
+  (colonne directe, résolue à la création, jamais déduite par jointure)
+  plutôt que contournée dans l'agrégation, avec un backfill dédié
+  (`scripts/backfill-organisation-locataires-garants.ts`).
+- `update()` ajouté au module Contacts au-delà du périmètre backend
+  initialement proposé (create/findAll/archive), pour rester cohérent
+  avec l'exigence frontend d'éditer la fiche d'un contact pro.
+
+Nouvelle entrée de sidebar "Carnet de contacts" — la contrainte des 6
+entrées avait déjà été levée le 2026-09-05 (voir `nav-items.ts`).
+
 ### Intervention (futur module)
 
 Objectif : calendrier de rendez-vous liés à un bien (RDV locataire,

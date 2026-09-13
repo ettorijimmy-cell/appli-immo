@@ -760,6 +760,75 @@ année, tableau des 23 lignes par bien (lecture seule pour les lignes
 automatiques, `<input>` avec sauvegarde à la perte de focus pour les lignes
 manuelles, même motif que `ParametresAlertesView`), total SCI en bas.
 
+## contact (Module Carnet de contacts, 2026-09-13)
+
+Nouvelle table pour les contacts professionnels (artisans,
+diagnostiqueurs, syndic, assureurs...) — un contact professionnel n'est
+**jamais** rattaché à un bien précis (fiche indépendante, décision actée
+avec Jimmy), contrairement aux locataires/garants qui restent dans leurs
+propres tables. Pas de pièce jointe à cette étape (non demandé). Un seul
+champ `nom` couvre personne physique ET entreprise — pas de séparation
+nom/prénom/raison sociale.
+
+| Champ | Type | Description |
+|---|---|---|
+| nom | text | Personne physique ou entreprise, un seul champ |
+| type_entite | enum `contact_type_entite` | `personne_physique` \| `entreprise` |
+| role | enum `contact_role` | `artisan` \| `diagnostiqueur` \| `syndic` \| `assureur` \| `autre` |
+| telephone | text, nullable | |
+| email | text, nullable | |
+| notes | text, nullable | |
+| organisation_id | uuid | Résolu depuis l'utilisateur authentifié à la création |
+
+`ContactsService` : create/findAll (scopé par organisation)/update/archive
+— **update() ajouté au-delà du périmètre backend initialement proposé**
+(create/findAll/archive) : le frontend exige explicitement de pouvoir
+"ouvrir/éditer sa fiche propre" pour un contact pro, ce qui nécessite un
+update() — se restreindre à create/findAll/archive aurait été
+incohérent avec cette exigence, décision prise sans revalidation
+séparée (le prompt laissait explicitement ce point à l'appréciation).
+
+**Écran "Carnet de contacts"** (`CarnetContactsView`, nouvelle entrée de
+sidebar juste après "Locataires") : liste unifiée locataires + garants +
+contacts pro (`GET /contacts/unifie`, `ContactsService.findAllUnifie`),
+badge de type/rôle par ligne, filtre par type, formulaire de création
+limité aux contacts pro (les locataires/garants ne se créent pas depuis
+cet écran). Locataires et garants restent **en lecture seule** ici —
+clic sur une ligne locataire redirige vers `/locataires?locataireId=`
+(deep-link déjà existant, Module 8) ; clic sur une ligne garant résout
+`garant.bailId -> bail.appartementId` puis redirige vers
+`/patrimoine?appartementId=...&onglet=bail` (un garant n'a pas de fiche
+autonome, il vit dans l'onglet Bail de son appartement) ; clic sur un
+contact pro ouvre sa propre fiche en édition.
+
+**Correction de scoping, découverte pendant l'audit préalable** :
+`LocatairesService.findAll()` et `GarantsService.findAll()` ne
+filtraient **aucune** organisation jusqu'ici (contrairement à
+`depense`/`tache`, scopés depuis longtemps) — un écart pré-existant, pas
+introduit par ce module, mais qui aurait rendu `findAllUnifie` incohérent
+(un des trois flux scopé, deux non). Corrigé à la racine plutôt que
+contourné dans l'agrégation :
+- `locataires.organisation_id` et `garants.organisation_id` ajoutés
+  (nullable puis backfillés via
+  `apps/backend/scripts/backfill-organisation-locataires-garants.ts`,
+  puis passés en NOT NULL — même méthode en deux phases que
+  `appartements.bien_id`, migration bien 2026-08-27).
+- **Résolus à la création, jamais déduits par jointure à la lecture** :
+  une première version envisagée scopait `LocatairesService.findAll()`
+  via la jointure `locataire -> bail_locataires -> baux -> appartements
+  -> bien -> organisation_id`, mais un locataire créé de manière autonome
+  (`LocatairesListView` permet de créer un locataire avant de le
+  rattacher à un bail) n'a alors aucune ligne `bail_locataires` et
+  disparaîtrait de sa propre liste tant qu'il n'est pas affecté — bug
+  réel, pas un cas limite théorique. `garants.organisation_id` est lui
+  résolu depuis `bail -> appartement -> bien` à la création (toujours
+  déterminable, `bail_id` est NOT NULL).
+- `LocatairesService.findAll()`/`GarantsService.findAll()` filtrent
+  désormais directement sur cette colonne, même mécanisme que
+  `TachesService.findAll()` (scoping actif uniquement en contexte HTTP
+  authentifié, no-op sinon — scripts/tests appelant le service
+  directement).
+
 ## versements & remboursements — décisions de conception (chantier terminé)
 
 Corrige la limite ci-dessus (versements multiples non représentables) et
