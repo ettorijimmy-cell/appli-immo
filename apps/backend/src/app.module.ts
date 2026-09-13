@@ -9,6 +9,8 @@ import { BailDocumentDocxModule } from "./bail-document-docx/bail-document-docx.
 import { BailLocatairesModule } from "./bail-locataires/bail-locataires.module";
 import { BauxModule } from "./baux/baux.module";
 import { BienModule } from "./bien/bien.module";
+import { CalendrierAbonnementModule } from "./calendrier-abonnement/calendrier-abonnement.module";
+import { CandidatsModule } from "./candidats/candidats.module";
 import { CommonModule } from "./common/common.module";
 import { ComptesBancairesSciModule } from "./comptes-bancaires-sci/comptes-bancaires-sci.module";
 import { ContactsModule } from "./contacts/contacts.module";
@@ -19,6 +21,7 @@ import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
+import { EvenementsCalendrierModule } from "./evenements-calendrier/evenements-calendrier.module";
 import { FiscaliteModule } from "./fiscalite/fiscalite.module";
 import { GarantsModule } from "./garants/garants.module";
 import { GoogleOAuthModule } from "./google-oauth/google-oauth.module";
@@ -57,6 +60,9 @@ import { VersementsModule } from "./versements/versements.module";
     GarantsModule,
     BailLocatairesModule,
     ContactsModule,
+    CandidatsModule,
+    EvenementsCalendrierModule,
+    CalendrierAbonnementModule,
     PaiementsModule,
     VersementsModule,
     RemboursementsModule,

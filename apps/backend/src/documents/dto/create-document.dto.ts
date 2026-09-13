@@ -17,7 +17,10 @@ export const DOCUMENT_ENTITE_TYPES = [
   // Module Charges et fiscalité, Étape 1 (2026-09-06, docs/backlog.md) :
   // permet de rattacher un document à une dépense — aucun flux d'upload
   // n'existe encore pour ce cas (voir packages/db/src/schema/documents.ts).
-  "depense"
+  "depense",
+  // Module Calendrier/Candidats (2026-09-15) : pièces jointes d'un
+  // candidat locataire.
+  "candidat"
 ] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 

@@ -4,6 +4,7 @@ import {
   appartements,
   baux,
   bien,
+  candidat,
   depense,
   documents,
   etatsDesLieux,
@@ -319,6 +320,10 @@ export class DocumentsService {
         // d'upload réel n'existe encore pour ce cas.
         case "depense":
           return this.db.select({ id: depense.id }).from(depense).where(eq(depense.id, entiteId)).limit(1);
+        // Module Calendrier/Candidats (2026-09-15) : pièces jointes d'un
+        // candidat locataire.
+        case "candidat":
+          return this.db.select({ id: candidat.id }).from(candidat).where(eq(candidat.id, entiteId)).limit(1);
       }
     })();
     if (!ligne) {
