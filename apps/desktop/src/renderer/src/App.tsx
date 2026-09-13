@@ -1,6 +1,7 @@
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppLayout } from "./layout/AppLayout";
+import { CarnetContactsPage } from "./pages/CarnetContactsPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { FinancesPage } from "./pages/FinancesPage";
 import { LocatairesPage } from "./pages/LocatairesPage";
@@ -23,6 +24,7 @@ function AuthenticatedApp(): React.JSX.Element {
         <Route index element={<TableauDeBordPage />} />
         <Route path="patrimoine" element={<PatrimoinePage />} />
         <Route path="locataires" element={<LocatairesPage />} />
+        <Route path="contacts" element={<CarnetContactsPage />} />
         <Route path="finances" element={<FinancesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="taches" element={<TachesPage />} />
