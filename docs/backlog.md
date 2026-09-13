@@ -1652,20 +1652,42 @@ un bien pour un contact pro. Voir `docs/data-dictionary.md`, section
 Nouvelle entrée de sidebar "Carnet de contacts" — la contrainte des 6
 entrées avait déjà été levée le 2026-09-05 (voir `nav-items.ts`).
 
-### Intervention (futur module)
+### Calendrier d'interventions / Candidats (module réalisé le 2026-09-15)
 
-Objectif : calendrier de rendez-vous liés à un bien (RDV locataire,
-visites, planification d'une intervention) — **sans aucun volet
-financier** (pas de devis, pas de facture, pas de suivi de rentabilité).
+Anciennement envisagé ci-dessus sous le nom "Intervention" — réalisé sous
+la forme d'un calendrier d'événements (intervention artisan, visite
+candidat, état des lieux, autre) **sans aucun volet financier** (pas de
+devis, pas de facture, pas de suivi de rentabilité, conforme à l'objectif
+initial), plus une synchronisation à sens unique (app → téléphone) via un
+flux iCalendar (ICS) par abonnement. **Distinct du Module Travaux** du
+cahier des charges initial (`docs/app-spec.md`, Module 9 —
+devis/factures/rentabilité, "Hors backlog MVP"), qui reste hors backlog,
+non priorisé. Voir `docs/data-dictionary.md`, section "candidat,
+evenement_calendrier, calendrier_abonnement", pour le détail complet, y
+compris :
+- Décisions actées avant tout code : pas de CalDAV, pas d'API Google/Apple
+  Calendar, pas de synchronisation retour — le jeton d'abonnement ICS,
+  long et aléatoire, est la seule barrière de sécurité du flux public
+  (`GET /calendrier/ics/:jeton`, `@Public()`, 404 générique sur jeton
+  invalide ou inexistant).
+- **`candidat` devient son propre module de navigation** (sidebar
+  "Candidats"), décision révisée en cours de conception (le prompt initial
+  le rattachait au Calendrier) — anticipation du futur portail externe de
+  dépôt de dossier (voir "Portail externe" ci-dessous), qui a besoin d'une
+  base candidat déjà solide. Le Calendrier référence un candidat sans
+  posséder son cycle de vie.
+- `calculerTauxEffort` (packages/core) : purement informatif, aucun seuil
+  "acceptable" codé en dur.
+- Générateur ICS (`genererIcs`, packages/core) fait main, RFC 5545, avec
+  un piège découvert en cours de route : `Buffer.byteLength` (mesure
+  UTF-8) compile mais viole la convention `packages/core` (aucune
+  dépendance Node/navigateur) et casse le build `apps/desktop` — remplacé
+  par un calcul arithmétique pur sur le code point.
+- État des lieux : pas de date de rendez-vous stockée aujourd'hui,
+  décision actée (question posée à l'utilisateur) de garder une saisie
+  manuelle indépendante dans le Calendrier pour la v1.
 
-**Distinct du Module Travaux du cahier des charges initial**
-(`docs/app-spec.md`, Module 9 — devis/factures/rentabilité des travaux,
-`docs/backlog.md`, "Hors backlog MVP") : les deux sujets sont volontairement
-tenus séparés. Intervention reste un simple calendrier ; Travaux (avec son
-volet financier) demeure hors backlog MVP, non encore priorisé.
-
-Ce module mérite sa propre phase de conception dédiée avant d'être
-développé — pas à traiter comme un ticket parmi d'autres du backlog MVP.
+Nouvelles entrées de sidebar "Candidats" et "Calendrier".
 
 ### Génération PDF signé + archivage des documents générés (futur module)
 
@@ -1817,3 +1839,16 @@ Ordre de priorité convenu avec l'utilisateur :
 6. **Modèles de courriers/lettres** — pas un module autonome, une brique
    technique transverse (système de templates réutilisables) à construire
    en même temps que Tâches et Messagerie, pas ajoutée après coup.
+
+7. **Portail externe (locataires/candidats)** — chantier différé
+   volontairement (2026-09-15). Regroupe deux besoins identifiés
+   séparément mais de même nature technique : accès locataire à la
+   Messagerie interne (point 3 ci-dessus) et dépôt de dossier en ligne par
+   un candidat locataire (module Candidat/Calendrier). Les deux
+   nécessitent la même infrastructure fondamentale — authentification
+   distincte pour des utilisateurs externes (non-gestionnaires), une
+   interface web dédiée (pas Electron), et un modèle de sécurité à
+   concevoir spécifiquement (scoping strict par locataire/candidat, jamais
+   d'accès croisé). À traiter comme son propre chantier de conception
+   complet le moment venu, pas comme une extension mineure d'un autre
+   module.

@@ -829,6 +829,155 @@ contourné dans l'agrégation :
   authentifié, no-op sinon — scripts/tests appelant le service
   directement).
 
+## candidat, evenement_calendrier, calendrier_abonnement (Module Calendrier d'interventions, 2026-09-15)
+
+Calendrier de planification (intervention artisan, visite candidat, état
+des lieux, autre) avec synchronisation à sens unique (app → téléphone)
+via un flux iCalendar (ICS) par abonnement — décisions actées avec
+Jimmy : pas de CalDAV, pas d'API Google/Apple Calendar, pas de
+synchronisation retour (voir docs/backlog.md, "Portail externe" pour le
+chantier différé qui traiterait un jour l'accès externe).
+
+### candidat
+
+Prospect visitant un logement, pas encore locataire — entité **séparée**
+de `contact` (Carnet de contacts) : un candidat a besoin d'être rattaché
+à un appartement précis, ce que `contact` exclut explicitement par
+conception (un contact professionnel n'est jamais lié à un bien). Jamais
+fusionné avec `locataires` non plus : la conversion en locataire reste un
+acte manuel (aucune migration automatique candidat → locataire à ce
+stade).
+
+**Décision révisée en cours de conception** : `candidat` est son propre
+module de navigation (sidebar "Candidats"), pas une sous-entité du
+Calendrier — anticipation du futur portail externe de dépôt de dossier
+(docs/backlog.md, "Portail externe (locataires/candidats)"), qui aura
+besoin d'une base candidat déjà solide le jour venu. Le Calendrier
+référence un candidat (`evenement_calendrier.candidat_id`, optionnel)
+sans posséder son cycle de vie.
+
+| Champ | Type | Description |
+|---|---|---|
+| nom | text | |
+| telephone | text, nullable | |
+| email | text, nullable | |
+| appartement_id | uuid, nullable, FK `appartements` | Appartement visité |
+| notes | text, nullable | |
+| statut | enum `candidat_statut` | `en_attente` \| `valide` \| `refuse` \| `converti` — défaut `en_attente` |
+| revenu_mensuel_net | numeric(10,2), nullable | |
+| loyer_vise | numeric(10,2), nullable | Pré-rempli côté frontend depuis `appartement.loyer_reference` si disponible, modifiable ensuite, jamais recalculé automatiquement après coup |
+| situation_professionnelle | text, nullable | Texte libre, pas d'enum |
+| garant_nom | text, nullable | |
+| garant_revenu_mensuel_net | numeric(10,2), nullable | |
+| organisation_id | uuid | |
+
+`CandidatsService` : create/findAll (scopé par organisation)/update/archive
+— même pattern que `contact`. Pièces jointes (pièce d'identité,
+justificatifs de revenu) via le système `documents` polymorphe existant,
+nouvelle valeur `candidat` sur `document_entite_type` (voir section
+`documents` ci-dessus).
+
+`calculerTauxEffort(loyerVise, revenuMensuelNet)` (packages/core,
+`src/candidats/calculer-taux-effort.ts`) : `loyerVise / revenuMensuelNet
+× 100`, renvoyé en **centimes entiers** (même convention que
+`montantEnCentimes` — un taux de 33,33 % est renvoyé en `3333`, jamais un
+flottant). Renvoie `null` si l'une des deux données est absente ou si le
+revenu est nul — jamais de division par zéro, jamais de calcul trompeur
+sur une donnée incomplète. Purement informatif : **aucun seuil
+"acceptable" codé en dur**, ce n'est pas à l'application de juger un
+candidat.
+
+### evenement_calendrier
+
+| Champ | Type | Description |
+|---|---|---|
+| type | enum `evenement_type` | `intervention_artisan` \| `visite_candidat` \| `etat_des_lieux` \| `autre` |
+| titre | text | |
+| date_debut | timestamptz | |
+| date_fin | timestamptz, nullable | Absente = événement ponctuel sans durée, jamais de durée par défaut inventée |
+| bien_id | uuid, nullable, FK `bien` | |
+| appartement_id | uuid, nullable, FK `appartements` | |
+| contact_id | uuid, nullable, FK `contact` | |
+| candidat_id | uuid, nullable, FK `candidat` | |
+| notes | text, nullable | |
+| organisation_id | uuid | |
+
+Les quatre rattachements (`bien_id`/`appartement_id`/`contact_id`/
+`candidat_id`) sont **tous indépendamment optionnels** — aucune
+contrainte au niveau schéma ni DTO liant un `type` donné à un
+rattachement obligatoire (ex. `visite_candidat` n'impose pas
+`candidat_id`), laissé à l'appréciation de l'utilisateur plutôt qu'une
+rigidité prématurée.
+
+**État des lieux — audit préalable** : pas de date de rendez-vous stockée
+sur `etats_des_lieux` aujourd'hui ; décision actée (AskUserQuestion) de
+garder une **saisie manuelle indépendante** dans le Calendrier pour la v1,
+plutôt que d'ajouter une colonne de synchronisation — aucun lien
+structurel entre un `evenement_calendrier` de type `etat_des_lieux` et une
+ligne `etats_des_lieux` réelle à ce stade.
+
+`EvenementsCalendrierService` : create/findAll (filtrable par
+`periodeDebut`/`periodeFin` sur `date_debut`, et par `type`)/update/archive,
+scopé par organisation. `findAllPourOrganisation(organisationId)` :
+variante sans filtre de période utilisée uniquement par le flux ICS
+(événements non archivés d'une organisation, sans pagination — le volume
+attendu, calendrier personnel, reste faible).
+
+### calendrier_abonnement
+
+| Champ | Type | Description |
+|---|---|---|
+| jeton | text, unique | `crypto.randomBytes(32).toString("hex")`, stocké en clair |
+| organisation_id | uuid, unique | Une seule ligne par organisation |
+
+**Une seule ligne par organisation** (index unique sur `organisation_id`,
+ajout au-delà du schéma cible littéralement fourni, documenté ici) :
+régénérer le jeton met à jour la ligne existante plutôt que d'en créer
+une deuxième — révoque implicitement l'ancienne URL
+(`mettreAJourAvecAudit`, jamais de suppression physique).
+
+`jeton` n'est **pas un mot de passe** (aucun hash à vérifier) : c'est une
+URL non listée, longue et aléatoire (256 bits), à traiter comme un
+secret côté transport — c'est la **seule** barrière de sécurité du flux
+ICS (une application calendrier ne peut pas fournir de Bearer JWT).
+
+**`GET /calendrier/ics/:jeton`** (`CalendrierIcsController`, `@Public()`)
+: génère un flux iCalendar (RFC 5545) via `genererIcs`
+(packages/core, `src/calendrier/generer-ics.ts`) à partir des événements
+actifs de l'organisation résolue depuis le jeton. Un jeton invalide ou
+inexistant renvoie **toujours le même 404 générique** — jamais un message
+qui permettrait de distinguer "ce jeton n'existe pas" de "cette route
+existe mais le jeton est mauvais" (`CalendrierAbonnementService.
+trouverOrganisationParJeton`, renvoie `null` dans les deux cas).
+
+`genererIcs` : générateur ICS fait main (VCALENDAR/VEVENT avec
+UID/DTSTAMP/DTSTART/DTEND/SUMMARY/DESCRIPTION) — aucune bibliothèque ICS
+dans les dépendances du projet, sous-ensemble jugé suffisant. Repli de
+ligne à 75 octets (RFC 5545 §3.1) mesuré en **octets UTF-8** via un calcul
+arithmétique pur sur le code point (`codePointAt`), **jamais** via
+`Buffer` (Node) ni `TextEncoder` (DOM) : `packages/core` doit rester
+utilisable aussi bien côté `apps/backend` que côté `apps/desktop`
+(CLAUDE.md, "TypeScript pur, sans dépendance Node ni navigateur") —
+`Buffer.byteLength` compile mais casse le build `apps/desktop` en
+pratique, piège découvert pendant ce chantier. CRLF uniquement (jamais
+LF seul), échappement TEXT (`\`, `;`, `,`, `\n`) par la RFC. Volontairement
+sans RRULE/VTODO/mise à jour bidirectionnelle — cohérent avec la
+synchronisation à sens unique.
+
+`CalendrierAbonnementController` (protégé par le `JwtAuthGuard` global,
+pas de `@Public()`) : `GET /calendrier-abonnement` (abonnement actuel de
+l'utilisateur, `null` si jamais généré) et `POST
+/calendrier-abonnement/regenerer` (génère ou régénère).
+
+**Écrans desktop** : "Candidats" et "Calendrier" sont deux entrées de
+sidebar séparées (voir décision `candidat` ci-dessus). Calendrier en vue
+**liste** (pas de grille mensuelle) — cohérent avec le reste de
+l'application (aucun autre écran n'utilise de grille calendaire) et avec
+la consigne de rester simple tant qu'un besoin réel de vue mensuelle ne
+se fait pas sentir ; à réévaluer si l'usage réel le justifie. Paramètres
+affiche l'URL d'abonnement ICS complète (avec avertissement de
+confidentialité) et un bouton de régénération.
+
 ## versements & remboursements — décisions de conception (chantier terminé)
 
 Corrige la limite ci-dessus (versements multiples non représentables) et
