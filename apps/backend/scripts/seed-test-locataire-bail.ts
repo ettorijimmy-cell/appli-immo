@@ -82,7 +82,8 @@ async function main(): Promise<void> {
         nom: "Testeur",
         prenom: "Loca",
         email: "loca.testeur@example.test",
-        telephone: "0600000000"
+        telephone: "0600000000",
+        organisationId: bienTrouve.organisationId
       })
       .returning();
     if (!locataire) {
@@ -103,7 +104,8 @@ async function main(): Promise<void> {
         prenom: "Garant",
         typeGarantie: "personne_physique",
         profession: PROFESSION_MARQUEUR,
-        revenus: REVENUS_MARQUEUR
+        revenus: REVENUS_MARQUEUR,
+        organisationId: bienTrouve.organisationId
       })
       .returning();
     if (!garant) {

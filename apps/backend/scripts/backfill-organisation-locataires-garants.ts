@@ -19,14 +19,16 @@ import { isNull, sql } from "drizzle-orm";
 async function main(): Promise<void> {
   const db = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
 
-  const [{ count: locatairesSansOrgaAvant }] = await db
+  const [ligneLocatairesAvant] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(locataires)
     .where(isNull(locataires.organisationId));
-  const [{ count: garantsSansOrgaAvant }] = await db
+  const [ligneGarantsAvant] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(garants)
     .where(isNull(garants.organisationId));
+  const locatairesSansOrgaAvant = ligneLocatairesAvant?.count ?? 0;
+  const garantsSansOrgaAvant = ligneGarantsAvant?.count ?? 0;
   console.log(`Avant backfill — locataires sans organisation_id : ${locatairesSansOrgaAvant}`);
   console.log(`Avant backfill — garants sans organisation_id : ${garantsSansOrgaAvant}`);
 
