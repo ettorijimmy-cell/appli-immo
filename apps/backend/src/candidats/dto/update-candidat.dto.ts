@@ -10,6 +10,11 @@ export class UpdateCandidatDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  prenom?: string;
+
+  @IsOptional()
+  @IsString()
   telephone?: string;
 
   @IsOptional()

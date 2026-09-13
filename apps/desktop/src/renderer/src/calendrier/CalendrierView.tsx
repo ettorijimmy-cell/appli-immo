@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { listCandidats, type Candidat } from "../candidats/api";
+import { libelleCandidat } from "../candidats/CandidatsView";
 import { listContacts, type Contact } from "../contacts/api";
 import { getBien, libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import {
@@ -281,7 +282,7 @@ export function CalendrierView(): React.JSX.Element {
               <option value="">— Aucun —</option>
               {candidats.map((candidat) => (
                 <option key={candidat.id} value={candidat.id}>
-                  {candidat.nom}
+                  {libelleCandidat(candidat)}
                 </option>
               ))}
             </select>

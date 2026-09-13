@@ -9,6 +9,10 @@ export class CreateCandidatDto {
   @MinLength(1)
   nom!: string;
 
+  @IsString()
+  @MinLength(1)
+  prenom!: string;
+
   @IsOptional()
   @IsString()
   telephone?: string;

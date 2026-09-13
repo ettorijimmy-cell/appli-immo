@@ -388,7 +388,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
   // entité réelle à ce stade, voir packages/db/src/schema/documents.ts).
   describe("candidatRole", () => {
     it("upload : rejette entiteType='candidat' sans candidatRole", async () => {
-      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Sans Role" });
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat", prenom: "Sans Role" });
       await expect(
         documentsService.upload(
           { entiteType: "candidat", entiteId: candidatTest.id, categorie: "piece_identite" },
@@ -407,7 +407,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     });
 
     it("upload : accepte et distingue les documents du candidat et de son garant", async () => {
-      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Avec Garant" });
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat", prenom: "Avec Garant" });
 
       const documentCandidat = await documentsService.upload(
         { entiteType: "candidat", entiteId: candidatTest.id, categorie: "piece_identite", candidatRole: "candidat" },
@@ -437,7 +437,7 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     });
 
     it("upload : accepte plusieurs fiche_de_paie pour le même candidat (aucune contrainte d'unicité)", async () => {
-      const candidatTest = await candidatsService.create(userId, { nom: "Candidat Trois Fiches" });
+      const candidatTest = await candidatsService.create(userId, { nom: "Candidat", prenom: "Trois Fiches" });
       await documentsService.upload(
         { entiteType: "candidat", entiteId: candidatTest.id, categorie: "fiche_de_paie", candidatRole: "candidat" },
         fichierTest("fiche-1.pdf")

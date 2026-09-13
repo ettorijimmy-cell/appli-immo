@@ -125,7 +125,8 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
 
   it("crée un candidat rattaché à un appartement, statut en_attente par défaut", async () => {
     const candidat = await candidatsService.create(userId, {
-      nom: "Martin Sophie",
+      nom: "Martin",
+      prenom: "Sophie",
       appartementId,
       telephone: "0600000000",
       email: "sophie.martin@example.com",
@@ -133,7 +134,8 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
       loyerVise: "800"
     });
 
-    expect(candidat.nom).toBe("Martin Sophie");
+    expect(candidat.nom).toBe("Martin");
+    expect(candidat.prenom).toBe("Sophie");
     expect(candidat.statut).toBe("en_attente");
     expect(candidat.appartementId).toBe(appartementId);
     expect(candidat.revenuMensuelNet).toBe("1800.00");
@@ -141,19 +143,19 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
   });
 
   it("crée un candidat sans appartement ni informations financières (données incomplètes)", async () => {
-    const candidat = await candidatsService.create(userId, { nom: "Dossier incomplet" });
+    const candidat = await candidatsService.create(userId, { nom: "Dossier", prenom: "Incomplet" });
     expect(candidat.appartementId).toBeNull();
     expect(candidat.revenuMensuelNet).toBeNull();
   });
 
   it("met à jour le statut d'un candidat (en_attente -> valide)", async () => {
-    const candidat = await candidatsService.create(userId, { nom: "Martin Sophie", appartementId });
+    const candidat = await candidatsService.create(userId, { nom: "Martin", prenom: "Sophie", appartementId });
     const misAJour = await candidatsService.update(candidat.id, { statut: "valide" });
     expect(misAJour.statut).toBe("valide");
   });
 
   it("archive un candidat sans le supprimer physiquement", async () => {
-    const candidat = await candidatsService.create(userId, { nom: "À archiver" });
+    const candidat = await candidatsService.create(userId, { nom: "À", prenom: "Archiver" });
     const archive = await candidatsService.archive(candidat.id);
     expect(archive.archivedAt).not.toBeNull();
 
@@ -185,8 +187,8 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
       throw new Error("Échec de l'insertion de l'autre utilisateur de test");
     }
 
-    const candidatOrgA = await candidatsService.create(userId, { nom: "Candidat A" });
-    const candidatOrgB = await candidatsService.create(autreUser.id, { nom: "Candidat B" });
+    const candidatOrgA = await candidatsService.create(userId, { nom: "Candidat", prenom: "A" });
+    const candidatOrgB = await candidatsService.create(autreUser.id, { nom: "Candidat", prenom: "B" });
 
     const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       candidatsService.findAll()

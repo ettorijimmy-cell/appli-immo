@@ -1,0 +1,1 @@
+ALTER TABLE "candidat" ADD COLUMN "prenom" text;

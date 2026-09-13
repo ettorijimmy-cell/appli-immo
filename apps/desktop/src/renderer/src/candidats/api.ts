@@ -14,6 +14,7 @@ export const CANDIDAT_STATUT_LABELS: Record<CandidatStatut, string> = {
 export interface Candidat {
   id: string;
   nom: string;
+  prenom: string | null;
   telephone: string | null;
   email: string | null;
   appartementId: string | null;
@@ -29,6 +30,7 @@ export interface Candidat {
 
 export interface CreateCandidatInput {
   nom: string;
+  prenom: string;
   telephone?: string;
   email?: string;
   appartementId?: string;

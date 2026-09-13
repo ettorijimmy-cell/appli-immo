@@ -20,6 +20,7 @@ type Vue = { niveau: "liste" } | { niveau: "creation" } | { niveau: "edition"; c
 
 interface FormulaireCandidat {
   nom: string;
+  prenom: string;
   telephone: string;
   email: string;
   appartementId: string;
@@ -34,6 +35,7 @@ interface FormulaireCandidat {
 
 const FORMULAIRE_VIDE: FormulaireCandidat = {
   nom: "",
+  prenom: "",
   telephone: "",
   email: "",
   appartementId: "",
@@ -45,6 +47,10 @@ const FORMULAIRE_VIDE: FormulaireCandidat = {
   garantNom: "",
   garantRevenuMensuelNet: ""
 };
+
+export function libelleCandidat(candidat: Pick<Candidat, "nom" | "prenom">): string {
+  return candidat.prenom ? `${candidat.prenom} ${candidat.nom}` : candidat.nom;
+}
 
 // Module Calendrier/Candidats (2026-09-15) : Candidats est son propre
 // module de navigation, séparé du Calendrier — anticipation du futur
@@ -96,6 +102,7 @@ export function CandidatsView(): React.JSX.Element {
     const candidat = await getCandidat(candidatId);
     setFormulaire({
       nom: candidat.nom,
+      prenom: candidat.prenom ?? "",
       telephone: candidat.telephone ?? "",
       email: candidat.email ?? "",
       appartementId: candidat.appartementId ?? "",
@@ -125,6 +132,7 @@ export function CandidatsView(): React.JSX.Element {
     e.preventDefault();
     const input = {
       nom: formulaire.nom,
+      prenom: formulaire.prenom,
       statut: formulaire.statut,
       ...(formulaire.telephone !== "" && { telephone: formulaire.telephone }),
       ...(formulaire.email !== "" && { email: formulaire.email }),
@@ -173,16 +181,28 @@ export function CandidatsView(): React.JSX.Element {
           {vue.niveau === "creation" ? "Nouveau candidat" : "Modifier le candidat"}
         </h1>
         <form onSubmit={soumettreFormulaire} className="max-w-md space-y-3">
-          <label className="block text-sm">
-            Nom
-            <input
-              type="text"
-              required
-              value={formulaire.nom}
-              onChange={(e) => setFormulaire({ ...formulaire, nom: e.target.value })}
-              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              Nom
+              <input
+                type="text"
+                required
+                value={formulaire.nom}
+                onChange={(e) => setFormulaire({ ...formulaire, nom: e.target.value })}
+                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+              />
+            </label>
+            <label className="block text-sm">
+              Prénom
+              <input
+                type="text"
+                required
+                value={formulaire.prenom}
+                onChange={(e) => setFormulaire({ ...formulaire, prenom: e.target.value })}
+                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+              />
+            </label>
+          </div>
           <label className="block text-sm">
             Statut
             <select
@@ -407,7 +427,7 @@ export function CandidatsView(): React.JSX.Element {
                     {CANDIDAT_STATUT_LABELS[c.statut]}
                   </span>
                 </td>
-                <td className="py-2">{c.nom}</td>
+                <td className="py-2">{libelleCandidat(c)}</td>
                 <td className="py-2">{c.appartementId ? (libellesAppartement.get(c.appartementId) ?? "—") : "—"}</td>
                 <td className="py-2">{c.telephone ?? "—"}</td>
                 <td className="py-2">{c.email ?? "—"}</td>

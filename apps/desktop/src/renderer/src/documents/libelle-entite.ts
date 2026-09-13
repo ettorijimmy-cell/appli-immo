@@ -1,4 +1,5 @@
 import { getCandidat } from "../candidats/api";
+import { libelleCandidat } from "../candidats/CandidatsView";
 import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
@@ -75,7 +76,7 @@ export async function resoudreLibelleEntite(
         }
         case "candidat": {
           const candidat = await getCandidat(entiteId);
-          return `${candidat.nom} (candidat)`;
+          return `${libelleCandidat(candidat)} (candidat)`;
         }
       }
     } catch {

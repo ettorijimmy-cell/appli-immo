@@ -92,7 +92,7 @@ describe("EvenementsCalendrierService (intégration Postgres réelle)", () => {
   });
 
   it("crée un événement visite_candidat rattaché à un candidat", async () => {
-    const candidat = await candidatsService.create(userId, { nom: "Visiteur Test" });
+    const candidat = await candidatsService.create(userId, { nom: "Visiteur", prenom: "Test" });
     const evenement = await evenementsService.create(userId, {
       type: "visite_candidat",
       titre: "Visite appartement 3B",

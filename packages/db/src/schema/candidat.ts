@@ -23,7 +23,16 @@ export const candidatStatutEnum = pgEnum("candidat_statut", ["en_attente", "vali
 
 export const candidat = pgTable("candidat", {
   ...auditColumns,
+  // nom = nom de famille depuis l'extension checklist/conversion
+  // (2026-09-15) : prenom a été séparé pour permettre à
+  // CandidatsService.convertirEnLocataire de copier directement nom/prenom
+  // vers locataire.nom/prenom (qui exige les deux séparément), sans
+  // découpage heuristique d'un champ unique ni ressaisie manuelle à la
+  // conversion. Nullable (pas de backfill possible sur les candidats déjà
+  // créés avant cette colonne — nom contenait alors le nom complet) ;
+  // exigé au niveau DTO pour toute nouvelle création.
   nom: text("nom").notNull(),
+  prenom: text("prenom"),
   telephone: text("telephone"),
   email: text("email"),
   appartementId: uuid("appartement_id").references(() => appartements.id),

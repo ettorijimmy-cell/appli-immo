@@ -1202,7 +1202,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     // documents.candidat_role — le garant du candidat n'est pas une entité
     // `garant` réelle à ce stade.
     it("candidat : 4 catégories, exige le paramètre role, distingue candidat et garant", async () => {
-      const candidatTest = await candidatsService.create(userId, { nom: "Complétude Candidat" });
+      const candidatTest = await candidatsService.create(userId, { nom: "Complétude", prenom: "Candidat" });
 
       await expect(tableauDeBordService.getCompletudeDocumentaire("candidat", candidatTest.id)).rejects.toThrow();
 
@@ -1234,7 +1234,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     });
 
     it("candidat : fiche_de_paie apparaît présente dès le premier document, jamais un compte sur 3", async () => {
-      const candidatTest = await candidatsService.create(userId, { nom: "Complétude Fiches" });
+      const candidatTest = await candidatsService.create(userId, { nom: "Complétude", prenom: "Fiches" });
       await creerDocumentTest("candidat", candidatTest.id, "fiche_de_paie", { candidatRole: "candidat" });
 
       const completude = await tableauDeBordService.getCompletudeDocumentaire("candidat", candidatTest.id, "candidat");

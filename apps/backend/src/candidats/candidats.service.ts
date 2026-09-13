@@ -27,6 +27,7 @@ export class CandidatsService {
       .insert(candidat)
       .values({
         nom: dto.nom,
+        prenom: dto.prenom,
         telephone: dto.telephone,
         email: dto.email,
         appartementId: dto.appartementId,
@@ -103,6 +104,7 @@ export class CandidatsService {
       version: ligne.version,
       archivedAt: ligne.archivedAt,
       nom: ligne.nom,
+      prenom: ligne.prenom,
       telephone: ligne.telephone,
       email: ligne.email,
       appartementId: ligne.appartementId,
