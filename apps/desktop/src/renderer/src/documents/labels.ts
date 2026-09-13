@@ -25,7 +25,8 @@ export const ENTITE_TYPE_LABELS: Record<DocumentEntiteType, string> = {
   locataire: "Locataire",
   bail: "Bail",
   etat_des_lieux: "État des lieux",
-  garant: "Garant"
+  garant: "Garant",
+  candidat: "Candidat"
 };
 
 export const STATUT_LABELS: Record<DocumentStatut, string> = {

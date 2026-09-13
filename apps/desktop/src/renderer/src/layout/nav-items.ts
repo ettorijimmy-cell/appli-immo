@@ -1,10 +1,12 @@
 import {
   BookUser,
   Building2,
+  CalendarDays,
   FileText,
   LayoutDashboard,
   ListTodo,
   Settings,
+  UserSearch,
   Users,
   Wallet,
   type LucideIcon
@@ -25,6 +27,8 @@ export const navItems: NavItem[] = [
   { path: "/patrimoine", label: "Patrimoine", icon: Building2 },
   { path: "/locataires", label: "Locataires", icon: Users },
   { path: "/contacts", label: "Carnet de contacts", icon: BookUser },
+  { path: "/candidats", label: "Candidats", icon: UserSearch },
+  { path: "/calendrier", label: "Calendrier", icon: CalendarDays },
   { path: "/finances", label: "Finances", icon: Wallet },
   { path: "/documents", label: "Documents", icon: FileText },
   { path: "/taches", label: "Tâches", icon: ListTodo },

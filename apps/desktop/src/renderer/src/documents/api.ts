@@ -8,7 +8,8 @@ export type DocumentEntiteType =
   | "locataire"
   | "bail"
   | "etat_des_lieux"
-  | "garant";
+  | "garant"
+  | "candidat";
 export type DocumentEtatDesLieuxPieceType =
   | "entree"
   | "sejour"

@@ -1,3 +1,4 @@
+import { getCandidat } from "../candidats/api";
 import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
@@ -71,6 +72,10 @@ export async function resoudreLibelleEntite(
         case "garant": {
           const garant = await getGarant(entiteId);
           return `${garant.prenom} ${garant.nom} (garant)`;
+        }
+        case "candidat": {
+          const candidat = await getCandidat(entiteId);
+          return `${candidat.nom} (candidat)`;
         }
       }
     } catch {
