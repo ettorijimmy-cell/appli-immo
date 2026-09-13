@@ -228,7 +228,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     });
     await db.update(appartements).set({ typeEnergie: "electrique" }).where(eq(appartements.id, appartement.id));
 
-    const locataireTitulaire = await locatairesService.create({ nom: "Dupont", prenom: "Jean" });
+    const locataireTitulaire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Jean" });
     const bail = await bauxService.create({
       appartementId: appartement.id,
       typeBail,
@@ -241,7 +241,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     await bailLocatairesService.create({ bailId: bail.id, locataireId: locataireTitulaire.id, role: "titulaire" });
 
     if (avecColocataire) {
-      const colocataire = await locatairesService.create({ nom: "Martin", prenom: "Marie" });
+      const colocataire = await locatairesService.create(userId, { nom: "Martin", prenom: "Marie" });
       await bailLocatairesService.create({ bailId: bail.id, locataireId: colocataire.id, role: "colocataire" });
     }
 
@@ -432,8 +432,8 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     const { locataireTitulaire, bail, etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
     await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
-    const c1 = await locatairesService.create({ nom: "Martin", prenom: "Marie" });
-    const c2 = await locatairesService.create({ nom: "Durand", prenom: "Paul" });
+    const c1 = await locatairesService.create(userId, { nom: "Martin", prenom: "Marie" });
+    const c2 = await locatairesService.create(userId, { nom: "Durand", prenom: "Paul" });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: c1.id, role: "colocataire" });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: c2.id, role: "colocataire" });
 
@@ -737,7 +737,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
       modeEauChaude: "individuel"
     });
     await appartementsService.update(appartement.id, { nombreChambres: 1, nombreSallesDeBain: 1, nombreWc: 1 });
-    const locataire = await locatairesService.create({ nom: "Test", prenom: "Locataire" });
+    const locataire = await locatairesService.create(userId, { nom: "Test", prenom: "Locataire" });
     const bail = await bauxService.create({
       appartementId: appartement.id,
       typeBail: "meuble",

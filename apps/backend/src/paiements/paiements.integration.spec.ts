@@ -427,7 +427,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
   });
 
   it("rapprocherCsv propose un candidat (montant+date+référence) sans rien écrire en base", async () => {
-    const locataire = await locatairesService.create({ nom: "Dupont", prenom: "Alice" });
+    const locataire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
     await bailLocatairesService.create({ bailId, locataireId: locataire.id, role: "titulaire" });
 
     const paiement = await paiementsService.create({
@@ -453,7 +453,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
   });
 
   it("rapprocherCsv matche sur le SOLDE RESTANT d'un paiement déjà partiellement réglé", async () => {
-    const locataire = await locatairesService.create({ nom: "Dupont", prenom: "Alice" });
+    const locataire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
     await bailLocatairesService.create({ bailId, locataireId: locataire.id, role: "titulaire" });
 
     const paiement = await paiementsService.create({
@@ -485,7 +485,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
   });
 
   it("rapprocherCsv présente TOUS les candidats en cas d'ambiguïté entre deux baux", async () => {
-    const locataireA = await locatairesService.create({ nom: "Dupont", prenom: "Alice" });
+    const locataireA = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
     await bailLocatairesService.create({ bailId, locataireId: locataireA.id, role: "titulaire" });
     const paiementA = await paiementsService.create({
       bailId,
@@ -529,7 +529,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     for (const echeanceGeneree of await paiementsService.findAll(bail2.id)) {
       await paiementsService.archive(echeanceGeneree.id);
     }
-    const locataireB = await locatairesService.create({ nom: "Martin", prenom: "Bob" });
+    const locataireB = await locatairesService.create(userId, { nom: "Martin", prenom: "Bob" });
     await bailLocatairesService.create({ bailId: bail2.id, locataireId: locataireB.id, role: "titulaire" });
     const paiementB = await paiementsService.create({
       bailId: bail2.id,

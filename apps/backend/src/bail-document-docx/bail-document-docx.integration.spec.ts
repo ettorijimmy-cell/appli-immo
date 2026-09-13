@@ -231,7 +231,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const { sci, bien, appartement } = await creerAppartementDeBase();
 
-    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
       adresse: "1 rue du Locataire",
       codePostal: "19100",
@@ -361,7 +361,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       dependancesAnnexes: "Cave"
     });
 
-    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
       adresse: "1 rue du Locataire",
       codePostal: "19100",
@@ -600,7 +600,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   it("ne référence jamais bailLocataires archivés (colocataire retiré) dans le document", async () => {
     const { bail, locataire } = await creerDossierComplet();
-    const colocataire = await locatairesService.create({ nom: "Retiré", prenom: "Ancien" });
+    const colocataire = await locatairesService.create(userId, { nom: "Retiré", prenom: "Ancien" });
     await locatairesService.update(colocataire.id, { adresse: "X", codePostal: "X", ville: "X" });
     const lien = await bailLocatairesService.create({
       bailId: bail.id,
@@ -623,7 +623,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   it("mentionne la clause d'extinction de solidarité (art. 8-1) en cas de colocation réelle", async () => {
     const { bail, locataire } = await creerDossierComplet();
-    const colocataire = await locatairesService.create({ nom: "Colocataire", prenom: "Second" });
+    const colocataire = await locatairesService.create(userId, { nom: "Colocataire", prenom: "Second" });
     await locatairesService.update(colocataire.id, { adresse: "X", codePostal: "X", ville: "X" });
     await bailLocatairesService.create({
       bailId: bail.id,
@@ -673,7 +673,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
     await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
 
-    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
       adresse: "1 rue du Locataire",
       codePostal: "19100",
@@ -729,7 +729,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     await bauxService.activer(bailPrecedent.id);
     await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
 
-    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
       adresse: "1 rue du Locataire",
       codePostal: "19100",
@@ -784,7 +784,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // Largement plus de 18 mois avant le nouveau bail (2026-06-01).
     await bauxService.resilier(bailPrecedent.id, { dateFin: "2022-01-15" });
 
-    const locataire = await locatairesService.create({ nom: "Devos", prenom: "Ilan" });
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
       adresse: "1 rue du Locataire",
       codePostal: "19100",

@@ -1014,14 +1014,14 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
         jourEcheance: 5
       });
 
-      const locataireActifSansPiece = await locatairesService.create({ nom: "Un", prenom: "Test" });
+      const locataireActifSansPiece = await locatairesService.create(userId, { nom: "Un", prenom: "Test" });
       await bailLocatairesService.create({
         bailId: bailActif.id,
         locataireId: locataireActifSansPiece.id,
         role: "titulaire"
       });
 
-      const locataireRetireDuBail = await locatairesService.create({ nom: "Deux", prenom: "Test" });
+      const locataireRetireDuBail = await locatairesService.create(userId, { nom: "Deux", prenom: "Test" });
       const liaisonRetiree = await bailLocatairesService.create({
         bailId: bailActif.id,
         locataireId: locataireRetireDuBail.id,
@@ -1029,7 +1029,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       });
       await bailLocatairesService.archive(liaisonRetiree.id);
 
-      const locataireBailNonActif = await locatairesService.create({ nom: "Trois", prenom: "Test" });
+      const locataireBailNonActif = await locatairesService.create(userId, { nom: "Trois", prenom: "Test" });
       await bailLocatairesService.create({
         bailId: bailBrouillon.id,
         locataireId: locataireBailNonActif.id,
@@ -1148,7 +1148,7 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
     });
 
     it("locataire : une seule catégorie (pièce d'identité), present ou manquant", async () => {
-      const locataire = await locatairesService.create({ nom: "Complétude", prenom: "Test" });
+      const locataire = await locatairesService.create(userId, { nom: "Complétude", prenom: "Test" });
 
       let completude = await tableauDeBordService.getCompletudeDocumentaire("locataire", locataire.id);
       expect(completude).toEqual([{ categorie: "piece_identite", document: null }]);

@@ -73,6 +73,7 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
   let appartementId: string;
 
   beforeEach(async () => {
@@ -128,6 +129,7 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
       .returning();
     if (!user) throw new Error("Échec de l'insertion de l'utilisateur de test");
     userId = user.id;
+    organisationId = organisation.id;
 
     const sci = await scisService.create(user.id, {
       nom: "SCI Quittance Docx Test",
@@ -178,7 +180,7 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
       jourEcheance: 5
     });
     await bauxService.activer(bail.id);
-    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
     if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
     await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
     return { bailId: bail.id };

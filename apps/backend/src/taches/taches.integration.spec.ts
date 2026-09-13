@@ -326,7 +326,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
   });
 
   it("document_expire attaché à un locataire : aucune tâche générée (hors périmètre de cette étape)", async () => {
-    const [locataire] = await db.insert(locataires).values({ nom: "Dupont", prenom: "Jean" }).returning();
+    const [locataire] = await db.insert(locataires).values({ nom: "Dupont", prenom: "Jean", organisationId }).returning();
     if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
     const [document] = await db
       .insert(documents)
@@ -593,7 +593,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
       for (const echeanceEntree of await db.select().from(paiements).where(eq(paiements.bailId, bail.id))) {
         await db.update(paiements).set({ archivedAt: new Date() }).where(eq(paiements.id, echeanceEntree.id));
       }
-      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
       if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
       await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
       const [paiementEnRetard] = await db
@@ -637,7 +637,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
       for (const echeanceEntree of await db.select().from(paiements).where(eq(paiements.bailId, bail.id))) {
         await db.update(paiements).set({ archivedAt: new Date() }).where(eq(paiements.id, echeanceEntree.id));
       }
-      const [locataire] = await db.insert(locataires).values({ nom: "Colocataire", prenom: "Seul" }).returning();
+      const [locataire] = await db.insert(locataires).values({ nom: "Colocataire", prenom: "Seul", organisationId }).returning();
       if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
       // role='colocataire' uniquement — aucun titulaire sur ce bail.
       await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "colocataire" });
@@ -699,7 +699,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
         jourEcheance: 5
       });
       await bauxService.activer(bail.id);
-      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
       if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
       await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
       const [equipement] = await db
@@ -744,7 +744,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
         jourEcheance: 5
       });
       await bauxService.activer(bail.id);
-      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
       if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
       await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
       const [document] = await db
@@ -792,7 +792,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
         jourEcheance: 5
       });
       await bauxService.activer(bail.id);
-      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+      const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
       if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
       await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
       const [document] = await db
@@ -1052,7 +1052,7 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
 
   it("appliquerRevision : historique créé, loyerMensuel mis à jour, notification résolue, statut en_cours (jamais fait)", async () => {
     const bail = await creerBailAvecClauseIndexation("1998-06-15", 2);
-    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
     if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
     await db.insert(bailLocataires).values({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
     await db.insert(indicesIrl).values([
@@ -1272,7 +1272,7 @@ describe("Tâches — quittance mensuelle (intégration Postgres réelle)", () =
 
   it("crée une tâche pour un paiement de loyer réglé, résout le titulaire et la notification", async () => {
     const { bailId, echeanceId } = await creerBailAvecEcheancePayee();
-    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan" }).returning();
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", organisationId }).returning();
     if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
     await db.insert(bailLocataires).values({ bailId, locataireId: locataire.id, role: "titulaire" });
 
@@ -1488,7 +1488,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
   });
 
   async function creerLocataire(email: string | null): Promise<string> {
-    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", email }).returning();
+    const [locataire] = await db.insert(locataires).values({ nom: "Devos", prenom: "Ilan", email, organisationId }).returning();
     if (!locataire) throw new Error("Échec de l'insertion du locataire de test");
     return locataire.id;
   }

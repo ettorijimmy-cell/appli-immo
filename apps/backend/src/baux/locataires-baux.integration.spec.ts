@@ -61,6 +61,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
   let appartementId: string;
 
   beforeEach(async () => {
@@ -118,6 +119,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
     userId = user.id;
+    organisationId = organisation.id;
 
     const sci = await scisService.create(userId, { nom: "SCI Baux Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const bien = await bienService.create(userId, {
@@ -153,8 +155,8 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
   });
 
   it("pré-remplit le loyer depuis loyer_reference, active le bail avec deux colocataires et fait passer l'appartement à loué", async () => {
-    const locataire1 = await locatairesService.create({ nom: "Dupont", prenom: "Alice" });
-    const locataire2 = await locatairesService.create({ nom: "Martin", prenom: "Bob" });
+    const locataire1 = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
+    const locataire2 = await locatairesService.create(userId, { nom: "Martin", prenom: "Bob" });
 
     const bail = await bauxService.create({
       appartementId,
@@ -445,7 +447,8 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
         prenom: "Sophie",
         typeGarantie: "personne_physique",
         profession: "MARQUEUR-PROFESSION-TEST",
-        revenus: "3500.00"
+        revenus: "3500.00",
+        organisationId
       })
       .returning();
     if (!garant) {
@@ -471,7 +474,8 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       .values({
         nom: "Petit",
         prenom: "Julien",
-        anonymiseLe: new Date()
+        anonymiseLe: new Date(),
+        organisationId
       })
       .returning();
     if (!locataire) {
@@ -486,6 +490,143 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
 
     const misAJour = await locatairesService.update(locataire.id, { telephone: "0600000000" });
     expect(misAJour).not.toHaveProperty("anonymiseLe");
+  });
+
+  // Module Carnet de contacts (2026-09-13) : organisationId ajouté sur
+  // locataires/garants (auparavant absent, LocatairesService.findAll()/
+  // GarantsService.findAll() ne filtraient rien). Résolu à la création,
+  // jamais déduit par jointure — voir packages/db/src/schema/locataires.ts.
+  it("LocatairesService.findAll inclut un locataire non encore rattaché à un bail (création autonome)", async () => {
+    const locataireSansBail = await locatairesService.create(userId, { nom: "Nouveau", prenom: "SansBail" });
+
+    const liste = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      locatairesService.findAll()
+    );
+
+    expect(liste.map((l) => l.id)).toContain(locataireSansBail.id);
+  });
+
+  it("LocatairesService.findAll scope par organisation — un locataire d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Locataires" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-locataires-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgLocataires",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const locataireOrgA = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
+    const locataireOrgB = await locatairesService.create(autreUser.id, { nom: "Etranger", prenom: "Bob" });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      locatairesService.findAll()
+    );
+    expect(listeOrgA.map((l) => l.id)).toContain(locataireOrgA.id);
+    expect(listeOrgA.map((l) => l.id)).not.toContain(locataireOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
+      locatairesService.findAll()
+    );
+    expect(listeOrgB.map((l) => l.id)).toContain(locataireOrgB.id);
+    expect(listeOrgB.map((l) => l.id)).not.toContain(locataireOrgA.id);
+  });
+
+  it("GarantsService.findAll scope par organisation — un garant d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Garants" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-garants-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgGarants",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Garants",
+      regimeFiscal: "IR",
+      adresse: "2 rue de Test",
+      codePostal: "75002",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Garants",
+      adresse: "2 rue du Bail",
+      codePostal: "75002",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const autreBail = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const bailOrgA = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+
+    const garantOrgA = await garantsService.create({
+      bailId: bailOrgA.id,
+      nom: "Durand",
+      prenom: "Claire",
+      typeGarantie: "personne_physique"
+    });
+    const garantOrgB = await garantsService.create({
+      bailId: autreBail.id,
+      nom: "Etranger",
+      prenom: "Bob",
+      typeGarantie: "personne_physique"
+    });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      garantsService.findAll()
+    );
+    expect(listeOrgA.map((g) => g.id)).toContain(garantOrgA.id);
+    expect(listeOrgA.map((g) => g.id)).not.toContain(garantOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
+      garantsService.findAll()
+    );
+    expect(listeOrgB.map((g) => g.id)).toContain(garantOrgB.id);
+    expect(listeOrgB.map((g) => g.id)).not.toContain(garantOrgA.id);
   });
 
   // Vérifie que mettreAJourAvecAudit (packages/db) fonctionne aussi bien
