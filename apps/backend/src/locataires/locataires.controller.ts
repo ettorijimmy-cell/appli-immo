@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { CreateLocataireDto } from "./dto/create-locataire.dto";
 import { UpdateLocataireDto } from "./dto/update-locataire.dto";
 import { LocatairesService } from "./locataires.service";
@@ -8,8 +9,8 @@ export class LocatairesController {
   constructor(private readonly locatairesService: LocatairesService) {}
 
   @Post()
-  create(@Body() dto: CreateLocataireDto) {
-    return this.locatairesService.create(dto);
+  create(@Req() req: Request, @Body() dto: CreateLocataireDto) {
+    return this.locatairesService.create(req.user!.sub, dto);
   }
 
   @Get()

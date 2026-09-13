@@ -26,7 +26,8 @@
     "seed:modele-exemple": "tsx scripts/seed-modele-exemple.ts",
     "seed:modele-revision-loyer": "tsx scripts/seed-modele-revision-loyer.ts",
     "seed:modeles-courrier-alertes": "tsx scripts/seed-modeles-courrier-alertes.ts",
-    "seed:modele-quittance-mensuelle": "tsx scripts/seed-modele-quittance-mensuelle.ts"
+    "seed:modele-quittance-mensuelle": "tsx scripts/seed-modele-quittance-mensuelle.ts",
+    "backfill:organisation-locataires-garants": "tsx scripts/backfill-organisation-locataires-garants.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.906.0",

@@ -3,6 +3,7 @@ import { locataires, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { UsersService } from "../users/users.service";
 import type { CreateLocataireDto } from "./dto/create-locataire.dto";
 import type { UpdateLocataireDto } from "./dto/update-locataire.dto";
 
@@ -12,17 +13,24 @@ type LocataireRow = typeof locataires.$inferSelect;
 export class LocatairesService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
-    private readonly requestContext: RequestContextService
+    private readonly requestContext: RequestContextService,
+    private readonly usersService: UsersService
   ) {}
 
-  async create(dto: CreateLocataireDto) {
+  async create(userId: string, dto: CreateLocataireDto) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Utilisateur introuvable");
+    }
+
     const [locataire] = await this.db
       .insert(locataires)
       .values({
         nom: dto.nom,
         prenom: dto.prenom,
         email: dto.email,
-        telephone: dto.telephone
+        telephone: dto.telephone,
+        organisationId: user.organisationId
       })
       .returning();
     if (!locataire) {
@@ -31,7 +39,25 @@ export class LocatairesService {
     return this.versDto(locataire);
   }
 
+  // Module Carnet de contacts (2026-09-13) : scoping multi-tenant ajouté
+  // ici — même mécanisme que TachesService.findAll()/DepensesService
+  // .findAll() (organisationId résolu depuis l'utilisateur authentifié,
+  // no-op hors contexte HTTP réel). locataires.organisation_id est résolu
+  // à la création (voir create() ci-dessus), jamais déduit par jointure à
+  // la lecture — un locataire créé avant d'être rattaché à un bail reste
+  // ainsi visible (voir packages/db/src/schema/locataires.ts).
   async findAll() {
+    const utilisateurId = this.requestContext.getUtilisateurId();
+    if (utilisateurId) {
+      const utilisateur = await this.usersService.findById(utilisateurId);
+      if (utilisateur) {
+        const lignes = await this.db
+          .select()
+          .from(locataires)
+          .where(eq(locataires.organisationId, utilisateur.organisationId));
+        return lignes.map((locataire) => this.versDto(locataire));
+      }
+    }
     const lignes = await this.db.select().from(locataires);
     return lignes.map((locataire) => this.versDto(locataire));
   }
