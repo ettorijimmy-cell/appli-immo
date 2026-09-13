@@ -14,8 +14,10 @@ import {
   type EvenementCalendrier,
   type EvenementType
 } from "./api";
+import { CalendrierGrilleMensuelle } from "./CalendrierGrilleMensuelle";
 
 type FiltreType = "" | EvenementType;
+type ModeAffichage = "liste" | "mois";
 
 type Vue = { niveau: "liste" } | { niveau: "creation" } | { niveau: "edition"; evenementId: string };
 
@@ -76,6 +78,7 @@ export function CalendrierView(): React.JSX.Element {
   const [candidats, setCandidats] = useState<Candidat[]>([]);
   const [libellesAppartement, setLibellesAppartement] = useState<Map<string, string>>(new Map());
   const [filtreType, setFiltreType] = useState<FiltreType>("");
+  const [modeAffichage, setModeAffichage] = useState<ModeAffichage>("liste");
   const [vue, setVue] = useState<Vue>({ niveau: "liste" });
   const [formulaire, setFormulaire] = useState<FormulaireEvenement>(FORMULAIRE_VIDE);
   const [isLoading, setIsLoading] = useState(true);
@@ -330,6 +333,26 @@ export function CalendrierView(): React.JSX.Element {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Calendrier</h1>
         <div className="flex items-center gap-4 text-sm">
+          <div className="flex overflow-hidden rounded-md border border-slate-300">
+            <button
+              type="button"
+              onClick={() => setModeAffichage("liste")}
+              className={`px-3 py-1.5 text-sm font-medium ${
+                modeAffichage === "liste" ? "bg-indigo-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Liste
+            </button>
+            <button
+              type="button"
+              onClick={() => setModeAffichage("mois")}
+              className={`px-3 py-1.5 text-sm font-medium ${
+                modeAffichage === "mois" ? "bg-indigo-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Mois
+            </button>
+          </div>
           <select
             value={filtreType}
             onChange={(e) => setFiltreType(e.target.value as FiltreType)}
@@ -360,6 +383,8 @@ export function CalendrierView(): React.JSX.Element {
 
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
+      ) : modeAffichage === "mois" ? (
+        <CalendrierGrilleMensuelle evenements={visibles} onSelectEvenement={(id) => void ouvrirEvenement(id)} />
       ) : visibles.length === 0 ? (
         <p className="text-sm text-slate-500">Aucun événement pour ce filtre.</p>
       ) : (

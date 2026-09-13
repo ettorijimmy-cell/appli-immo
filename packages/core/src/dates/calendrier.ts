@@ -85,6 +85,25 @@ export function ajouterMois(date: string, mois: number): string {
   return formaterDateIso(anneeCible, moisCible, jourCible);
 }
 
+// Ancre arbitraire dont le jour de semaine réel est connu (2024-01-01 était
+// un lundi) — sert uniquement de point zéro pour le calcul modulo 7 ci-
+// dessous, jamais affichée. Arithmétique pure comme le reste du fichier :
+// aucun `Date` natif, pour rester indépendant du fuseau horaire de la
+// machine (nécessaire pour la vue calendrier grille, module Calendrier
+// d'interventions, extension 2026-09-15).
+const ANCRE_LUNDI = "2024-01-01";
+const ANCRE_LUNDI_ORDINAL = dateVersJourOrdinal(ANCRE_LUNDI);
+
+/**
+ * Jour de la semaine d'une date ISO — 0 = lundi ... 6 = dimanche (convention
+ * française). Sert à aligner le 1er jour du mois dans une grille calendaire
+ * (colonnes lundi à dimanche).
+ */
+export function jourDeLaSemaine(date: string): number {
+  const decalage = (dateVersJourOrdinal(date) - ANCRE_LUNDI_ORDINAL) % 7;
+  return (decalage + 7) % 7;
+}
+
 const LIBELLES_MOIS = [
   "janvier",
   "février",

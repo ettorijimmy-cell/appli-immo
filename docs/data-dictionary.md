@@ -1036,13 +1036,24 @@ l'utilisateur, `null` si jamais généré) et `POST
 /calendrier-abonnement/regenerer` (génère ou régénère).
 
 **Écrans desktop** : "Candidats" et "Calendrier" sont deux entrées de
-sidebar séparées (voir décision `candidat` ci-dessus). Calendrier en vue
-**liste** (pas de grille mensuelle) — cohérent avec le reste de
-l'application (aucun autre écran n'utilise de grille calendaire) et avec
-la consigne de rester simple tant qu'un besoin réel de vue mensuelle ne
-se fait pas sentir ; à réévaluer si l'usage réel le justifie. Paramètres
-affiche l'URL d'abonnement ICS complète (avec avertissement de
-confidentialité) et un bouton de régénération.
+sidebar séparées (voir décision `candidat` ci-dessus). Paramètres affiche
+l'URL d'abonnement ICS complète (avec avertissement de confidentialité)
+et un bouton de régénération.
+
+**Vue grille mensuelle** (extension 2026-09-15, `CalendrierGrilleMensuelle`)
+: ajoutée en complément de la vue liste initiale (bascule Liste/Mois dans
+`CalendrierView`, jamais un remplacement — retour de Jimmy après test
+manuel). Grille faite main (7 colonnes lundi→dimanche, semaines en
+lignes) — aucune bibliothèque de calendrier dans les dépendances du
+projet, cohérent avec le refus déjà acté de `recharts` pour un besoin
+similaire. Alignement du 1er jour du mois via `jourDeLaSemaine`
+(packages/core, `src/dates/calendrier.ts`) — calcul arithmétique pur
+(ancre `2024-01-01`, lundi connu, `dateVersJourOrdinal` modulo 7), aucun
+`Date` natif pour rester indépendant du fuseau horaire de la machine.
+Portée volontairement limitée à la vue **mensuelle** pour cette
+itération (pas de vue annuelle — composant substantiellement différent,
+12 mini-grilles, densité d'information réduite, laissé pour une
+itération future si le besoin se confirme).
 
 ## versements & remboursements — décisions de conception (chantier terminé)
 

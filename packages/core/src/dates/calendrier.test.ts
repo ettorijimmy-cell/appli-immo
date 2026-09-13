@@ -4,6 +4,7 @@ import {
   ajouterMois,
   dateVersJourOrdinal,
   estBissextile,
+  jourDeLaSemaine,
   joursDansLeMois,
   libelleMoisDepuisDate
 } from "./calendrier";
@@ -89,6 +90,29 @@ describe("dateVersJourOrdinal", () => {
     const debut = "2023-01-01";
     const fin = ajouterJours(debut, 800);
     expect(dateVersJourOrdinal(fin) - dateVersJourOrdinal(debut)).toBe(800);
+  });
+});
+
+describe("jourDeLaSemaine", () => {
+  it("2024-01-01 est un lundi (0)", () => {
+    expect(jourDeLaSemaine("2024-01-01")).toBe(0);
+  });
+
+  it("le lendemain d'un lundi est un mardi (1)", () => {
+    expect(jourDeLaSemaine("2024-01-02")).toBe(1);
+  });
+
+  it("sept jours plus tard retombe sur le même jour de semaine", () => {
+    expect(jourDeLaSemaine("2024-01-08")).toBe(jourDeLaSemaine("2024-01-01"));
+  });
+
+  it("la veille d'un lundi est un dimanche (6)", () => {
+    expect(jourDeLaSemaine("2023-12-31")).toBe(6);
+  });
+
+  it("franchit une année bissextile (2024, 366 jours) sans erreur de décalage", () => {
+    // 2025-01-01 est un mercredi dans le calendrier réel.
+    expect(jourDeLaSemaine("2025-01-01")).toBe(2);
   });
 });
 
