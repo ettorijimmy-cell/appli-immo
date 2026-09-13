@@ -36,3 +36,5 @@ export * from "./texte/normaliser-texte";
 export * from "./depenses/suggerer-categorie";
 export * from "./fiscalite/calculer-annexe1";
 export * from "./fiscalite/mapping-categorie-annexe1";
+export * from "./calendrier/generer-ics";
+export * from "./candidats/calculer-taux-effort";
