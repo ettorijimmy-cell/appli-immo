@@ -1,4 +1,5 @@
 import { authenticatedFetch } from "../lib/authenticated-fetch";
+import type { Locataire } from "../locataires/api";
 
 export type CandidatStatut = "en_attente" | "valide" | "refuse" | "converti";
 
@@ -44,6 +45,21 @@ export interface CreateCandidatInput {
 }
 
 export type UpdateCandidatInput = Partial<CreateCandidatInput>;
+
+export interface ConversionResultat {
+  locataire: Locataire;
+  candidat: Candidat;
+}
+
+// Copie directement candidat.nom/prenom/telephone/email vers le nouveau
+// locataire — aucune ressaisie (prenom a été séparé de nom exactement pour
+// permettre cette copie directe, extension checklist candidat, 2026-09-15).
+// Ne génère JAMAIS de bail — les données de bail (dates, loyer réel)
+// n'existent pas dans le dossier candidat, ce serait les deviner. La
+// création du bail reste un geste séparé via l'écran Patrimoine existant.
+export function convertirCandidatEnLocataire(id: string): Promise<ConversionResultat> {
+  return authenticatedFetch<ConversionResultat>(`/candidats/${id}/convertir`, { method: "POST" });
+}
 
 export function listCandidats(): Promise<Candidat[]> {
   return authenticatedFetch<Candidat[]>("/candidats");

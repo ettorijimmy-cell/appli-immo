@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { candidat, createDbClient, DEFAULT_DEV_DATABASE_URL, documents, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -33,6 +34,7 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
   let appartementId: string;
 
   beforeEach(async () => {
@@ -67,6 +69,7 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
     if (!organisation) {
       throw new Error("Échec de l'insertion de l'organisation de test");
     }
+    organisationId = organisation.id;
 
     const [user] = await db
       .insert(utilisateurs)
@@ -195,5 +198,101 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
     );
     expect(listeOrgA.map((c) => c.id)).toContain(candidatOrgA.id);
     expect(listeOrgA.map((c) => c.id)).not.toContain(candidatOrgB.id);
+  });
+
+  // Extension checklist candidat (2026-09-15) : "Convertir en locataire" ne
+  // génère JAMAIS de bail (dates/loyer réel absents du dossier candidat, ce
+  // serait les deviner) — la création du bail reste un geste séparé via
+  // l'écran Patrimoine existant. nom/prenom sont copiés directement depuis
+  // le candidat (prenom séparé de nom exactement pour permettre cette copie
+  // directe, jamais de ressaisie ni de découpage heuristique).
+  describe("convertirEnLocataire", () => {
+    it("crée un locataire depuis nom/prenom/telephone/email du candidat, et passe le candidat à 'converti', sans générer de bail", async () => {
+      const candidatTest = await candidatsService.create(userId, {
+        nom: "Martin",
+        prenom: "Sophie",
+        telephone: "0600000000",
+        email: "sophie.martin@example.com"
+      });
+
+      const resultat = await candidatsService.convertirEnLocataire(userId, candidatTest.id);
+
+      expect(resultat.locataire.nom).toBe("Martin");
+      expect(resultat.locataire.prenom).toBe("Sophie");
+      expect(resultat.locataire.telephone).toBe("0600000000");
+      expect(resultat.locataire.email).toBe("sophie.martin@example.com");
+      expect(resultat.candidat.statut).toBe("converti");
+
+      const relu = await candidatsService.findById(candidatTest.id);
+      expect(relu?.statut).toBe("converti");
+    });
+
+    it("rejette la conversion si le prénom du candidat n'est pas renseigné", async () => {
+      // Insertion directe (pas via candidatsService.create(), qui exige
+      // prenom) — simule un candidat créé avant l'ajout de cette colonne.
+      const [candidatSansPrenom] = await db.insert(candidat).values({ nom: "Sans Prenom", organisationId }).returning();
+      if (!candidatSansPrenom) {
+        throw new Error("Échec de l'insertion du candidat de test");
+      }
+
+      await expect(candidatsService.convertirEnLocataire(userId, candidatSansPrenom.id)).rejects.toThrow();
+    });
+
+    it("rejette la conversion d'un candidat déjà converti", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Déjà", prenom: "Converti" });
+      await candidatsService.convertirEnLocataire(userId, candidatTest.id);
+
+      await expect(candidatsService.convertirEnLocataire(userId, candidatTest.id)).rejects.toThrow();
+    });
+
+    it("rejette la conversion d'un candidat inexistant", async () => {
+      await expect(candidatsService.convertirEnLocataire(userId, randomUUID())).rejects.toThrow();
+    });
+
+    it("rattache les documents du candidat (candidatRole='candidat') au nouveau locataire, laisse ceux du garant sur le candidat", async () => {
+      const candidatTest = await candidatsService.create(userId, { nom: "Avec", prenom: "Documents" });
+
+      const [documentCandidat] = await db
+        .insert(documents)
+        .values({
+          entiteType: "candidat",
+          entiteId: candidatTest.id,
+          candidatRole: "candidat",
+          categorie: "piece_identite",
+          nomFichier: "cni-candidat.pdf",
+          mimeType: "application/pdf",
+          tailleOctets: 1,
+          cheminStockage: `test/${randomUUID()}.enc`
+        })
+        .returning();
+      const [documentGarant] = await db
+        .insert(documents)
+        .values({
+          entiteType: "candidat",
+          entiteId: candidatTest.id,
+          candidatRole: "garant",
+          categorie: "piece_identite",
+          nomFichier: "cni-garant.pdf",
+          mimeType: "application/pdf",
+          tailleOctets: 1,
+          cheminStockage: `test/${randomUUID()}.enc`
+        })
+        .returning();
+      if (!documentCandidat || !documentGarant) {
+        throw new Error("Échec de l'insertion des documents de test");
+      }
+
+      const resultat = await candidatsService.convertirEnLocataire(userId, candidatTest.id);
+
+      const [documentCandidatApres] = await db.select().from(documents).where(eq(documents.id, documentCandidat.id));
+      expect(documentCandidatApres?.entiteType).toBe("locataire");
+      expect(documentCandidatApres?.entiteId).toBe(resultat.locataire.id);
+      expect(documentCandidatApres?.candidatRole).toBeNull();
+
+      const [documentGarantApres] = await db.select().from(documents).where(eq(documents.id, documentGarant.id));
+      expect(documentGarantApres?.entiteType).toBe("candidat");
+      expect(documentGarantApres?.entiteId).toBe(candidatTest.id);
+      expect(documentGarantApres?.candidatRole).toBe("garant");
+    });
   });
 });

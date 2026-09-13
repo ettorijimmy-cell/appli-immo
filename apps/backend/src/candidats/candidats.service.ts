@@ -1,8 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { candidat, mettreAJourAvecAudit, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { candidat, documents, mettreAJourAvecAudit, type Database } from "db";
+import { and, eq, sql } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { LocatairesService } from "../locataires/locataires.service";
 import { UsersService } from "../users/users.service";
 import type { CreateCandidatDto } from "./dto/create-candidat.dto";
 import type { UpdateCandidatDto } from "./dto/update-candidat.dto";
@@ -14,7 +15,8 @@ export class CandidatsService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly locatairesService: LocatairesService
   ) {}
 
   async create(userId: string, dto: CreateCandidatDto) {
@@ -93,6 +95,79 @@ export class CandidatsService {
       throw new NotFoundException("Candidat introuvable");
     }
     return this.versDto(ligne as CandidatRow);
+  }
+
+  // Extension checklist candidat (2026-09-15) : crée un locataire directement
+  // depuis candidat.nom/prenom/telephone/email (aucune ressaisie — prenom a
+  // été séparé de nom exactement pour permettre cette copie directe, voir
+  // packages/db/src/schema/candidat.ts) et passe candidat.statut à
+  // 'converti'. Ne génère JAMAIS de bail : les données de bail (dates,
+  // loyer réel) n'existent pas dans le dossier candidat, ce serait les
+  // deviner — la création du bail reste un geste séparé via l'écran
+  // Patrimoine existant, décision actée avec Jimmy.
+  //
+  // Documents : ceux du candidat lui-même (candidat_role='candidat') sont
+  // rattachés au nouveau locataire (entiteType/entiteId mis à jour,
+  // candidat_role vidé — n'a plus de sens hors contexte candidat). Ceux du
+  // garant (candidat_role='garant') restent sur le dossier candidat
+  // archivé : aucune destination logique à cette étape, la conversion ne
+  // crée aucune entité `garant` réelle.
+  //
+  // Pas de transaction DB unique ici (LocatairesService.create() a sa
+  // propre connexion) : un échec d'une étape après la création du
+  // locataire laisserait les trois écritures désynchronisées. Risque
+  // accepté pour une action manuelle et peu fréquente plutôt que de
+  // dupliquer l'insertion de locataire dans ce service pour partager une
+  // transaction — à revoir si ce cas se présente réellement en pratique.
+  async convertirEnLocataire(userId: string, candidatId: string) {
+    const [candidatActuel] = await this.db.select().from(candidat).where(eq(candidat.id, candidatId)).limit(1);
+    if (!candidatActuel) {
+      throw new NotFoundException("Candidat introuvable");
+    }
+    if (candidatActuel.statut === "converti") {
+      throw new ConflictException("Ce candidat a déjà été converti en locataire.");
+    }
+    if (!candidatActuel.prenom) {
+      throw new BadRequestException(
+        "Le prénom du candidat doit être renseigné avant la conversion en locataire — complétez sa fiche d'abord."
+      );
+    }
+
+    const locataireCree = await this.locatairesService.create(userId, {
+      nom: candidatActuel.nom,
+      prenom: candidatActuel.prenom,
+      ...(candidatActuel.telephone && { telephone: candidatActuel.telephone }),
+      ...(candidatActuel.email && { email: candidatActuel.email })
+    });
+
+    await this.db
+      .update(documents)
+      .set({
+        entiteType: "locataire",
+        entiteId: locataireCree.id,
+        candidatRole: null,
+        updatedAt: new Date(),
+        updatedBy: this.requestContext.getUtilisateurId(),
+        version: sql`${documents.version} + 1`
+      })
+      .where(
+        and(eq(documents.entiteType, "candidat"), eq(documents.entiteId, candidatId), eq(documents.candidatRole, "candidat"))
+      );
+
+    const [candidatMisAJour] = await mettreAJourAvecAudit(
+      this.db,
+      candidat,
+      candidatId,
+      { statut: "converti" },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!candidatMisAJour) {
+      throw new Error(
+        `Le locataire ${locataireCree.id} a été créé, mais la mise à jour du statut du candidat ${candidatId} a échoué — vérifier manuellement.`
+      );
+    }
+
+    return { locataire: locataireCree, candidat: this.versDto(candidatMisAJour as CandidatRow) };
   }
 
   private versDto(ligne: CandidatRow) {

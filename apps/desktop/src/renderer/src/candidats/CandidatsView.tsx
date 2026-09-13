@@ -1,9 +1,12 @@
 import { calculerTauxEffort, centimesVersMontant } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { ChecklistCategoriesEntite } from "../documents/ChecklistCategoriesEntite";
+import { ApiError } from "../lib/authenticated-fetch";
 import { getBien, libelleBien, listAppartements, type Appartement, type Bien } from "../patrimoine/api";
 import {
   archiveCandidat,
+  convertirCandidatEnLocataire,
   createCandidat,
   getCandidat,
   listCandidats,
@@ -59,6 +62,7 @@ export function libelleCandidat(candidat: Pick<Candidat, "nom" | "prenom">): str
 // Calendrier référence un candidat (evenement_calendrier.candidatId) sans
 // posséder son cycle de vie.
 export function CandidatsView(): React.JSX.Element {
+  const navigate = useNavigate();
   const [candidats, setCandidats] = useState<Candidat[]>([]);
   const [appartements, setAppartements] = useState<Appartement[]>([]);
   const [libellesAppartement, setLibellesAppartement] = useState<Map<string, string>>(new Map());
@@ -67,6 +71,8 @@ export function CandidatsView(): React.JSX.Element {
   const [formulaire, setFormulaire] = useState<FormulaireCandidat>(FORMULAIRE_VIDE);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [erreurConversion, setErreurConversion] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -165,6 +171,27 @@ export function CandidatsView(): React.JSX.Element {
     setVue({ niveau: "liste" });
     setFormulaire(FORMULAIRE_VIDE);
     await refresh();
+  }
+
+  // Ne génère jamais de bail (dates/loyer réel absents du dossier
+  // candidat) — la création du bail reste un geste séparé via l'écran
+  // Patrimoine. nom/prenom/telephone/email sont copiés directement depuis
+  // le candidat côté backend (CandidatsService.convertirEnLocataire) —
+  // plus aucune ressaisie ici.
+  async function handleConvertir(candidatId: string): Promise<void> {
+    setIsConverting(true);
+    setErreurConversion(null);
+    try {
+      const resultat = await convertirCandidatEnLocataire(candidatId);
+      setVue({ niveau: "liste" });
+      setFormulaire(FORMULAIRE_VIDE);
+      await refresh();
+      navigate(`/locataires?locataireId=${resultat.locataire.id}`);
+    } catch (err) {
+      setErreurConversion(err instanceof ApiError ? err.message : "Impossible de convertir ce candidat");
+    } finally {
+      setIsConverting(false);
+    }
   }
 
   const visibles = candidats.filter((c) => (filtreStatut === "" ? true : c.statut === filtreStatut));
@@ -343,6 +370,29 @@ export function CandidatsView(): React.JSX.Element {
             )}
           </div>
         </form>
+
+        {vue.niveau === "edition" && formulaire.statut !== "converti" && (
+          <div className="max-w-md space-y-2 rounded-md border border-slate-200 p-3">
+            <h2 className="text-sm font-semibold text-slate-700">Convertir en locataire</h2>
+            <p className="text-xs text-slate-500">
+              Crée un locataire depuis nom/prénom/téléphone/email de ce candidat et le marque comme converti. Ne
+              génère aucun bail — à créer séparément depuis l'écran Patrimoine.
+            </p>
+            {erreurConversion && (
+              <p role="alert" className="text-sm text-red-600">
+                {erreurConversion}
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={isConverting}
+              onClick={() => void handleConvertir(vue.candidatId)}
+              className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {isConverting ? "Conversion…" : "Convertir en locataire"}
+            </button>
+          </div>
+        )}
 
         {vue.niveau === "edition" && (
           <div className="max-w-md space-y-3">

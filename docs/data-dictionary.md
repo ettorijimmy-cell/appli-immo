@@ -925,6 +925,34 @@ switch d'un cas `'candidat'` avec un paramètre `role` obligatoire
 (`'candidat'` ou `'garant'`), appelant `evaluerCompletudeCategories` avec
 les 4 catégories filtrées par `candidat_role`.
 
+**"Convertir en locataire"** (`CandidatsService.convertirEnLocataire`) :
+crée un `locataire` et passe `candidat.statut` à `converti`. **Ne génère
+jamais de bail** — les données de bail (dates, loyer réel) n'existent pas
+dans le dossier candidat, ce serait les deviner ; la création du bail
+reste un geste séparé via l'écran Patrimoine existant. `nom`/`prenom`/
+`telephone`/`email` sont copiés **directement** depuis le candidat, sans
+ressaisie (`candidat.prenom` a été séparé de `nom` exactement pour
+permettre cette copie directe, voir section `candidat` ci-dessus) — rejeté
+avec un `BadRequestException` si le candidat n'a pas de prénom renseigné
+(candidats créés avant l'ajout de cette colonne). Rejette la conversion
+d'un candidat déjà `converti` (`ConflictException`).
+
+Documents du candidat (`candidat_role='candidat'`) rattachés au nouveau
+locataire (`entiteType`/`entiteId` mis à jour vers `locataire`/le nouvel
+id, `candidat_role` vidé — n'a plus de sens hors contexte candidat).
+Documents du garant (`candidat_role='garant'`) laissés inchangés sur le
+dossier candidat archivé : aucune destination logique à cette étape, la
+conversion ne crée aucune entité `garant` réelle. Seule la ligne
+`documents` est déplacée, jamais le blob physique (`chemin_stockage` est
+un chemin stocké littéralement, jamais recalculé depuis entiteType/
+entiteId après l'upload — les lectures continuent de fonctionner).
+
+Pas de transaction DB unique entre la création du locataire, le
+rattachement des documents et la mise à jour du statut
+(`LocatairesService.create()` a sa propre connexion) : un échec d'une
+étape après la première laisserait les écritures désynchronisées —
+risque accepté pour une action manuelle et peu fréquente.
+
 ### evenement_calendrier
 
 | Champ | Type | Description |

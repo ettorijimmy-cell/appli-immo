@@ -32,4 +32,9 @@ export class CandidatsController {
   archive(@Param("id") id: string) {
     return this.candidatsService.archive(id);
   }
+
+  @Post(":id/convertir")
+  convertir(@Req() req: Request, @Param("id") id: string) {
+    return this.candidatsService.convertirEnLocataire(req.user!.sub, id);
+  }
 }
