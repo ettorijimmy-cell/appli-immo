@@ -35,3 +35,4 @@ export * from "./connexion-gmail";
 export * from "./depense";
 export * from "./regle-categorisation";
 export * from "./annexe1-saisie-manuelle";
+export * from "./contact";

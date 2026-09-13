@@ -1,5 +1,6 @@
-import { date, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { date, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
+import { organisations } from "./organisations";
 
 export const locataireStatutEnum = pgEnum("locataire_statut", ["actif", "ancien", "archive"]);
 
@@ -9,6 +10,21 @@ export const locataires = pgTable("locataires", {
   prenom: text("prenom").notNull(),
   email: text("email"),
   telephone: text("telephone"),
+  // Ajouté nullable puis backfillé (scripts/backfill-organisation-
+  // locataires-garants.ts, jointure locataire -> bail_locataires -> baux
+  // -> appartements -> bien -> organisation_id) avant ce passage en NOT
+  // NULL — même méthode en deux phases que appartements.bien_id (migration
+  // bien, 2026-08-27). Corrige un écart découvert au Module Carnet de
+  // contacts (2026-09-13) : LocatairesService.findAll() ne filtrait par
+  // aucune organisation jusqu'ici (contrairement à depense/tache).
+  // Résolu à la création (LocatairesService.create()), jamais déduit par
+  // jointure à la lecture : un locataire peut exister avant d'être
+  // rattaché à un bail (LocatairesListView permet une création autonome),
+  // une jointure via bail_locataires seule l'aurait fait disparaître de
+  // sa propre liste tant qu'il n'est pas affecté.
+  organisationId: uuid("organisation_id")
+    .notNull()
+    .references(() => organisations.id),
   // Mentions du modèle de bail (identité du LOCATAIRE), renseignables
   // progressivement — même principe que les champs équivalents sur scis
   // (docs/backlog.md, section "Édition d'un bail").

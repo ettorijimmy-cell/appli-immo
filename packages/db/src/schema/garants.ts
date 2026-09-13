@@ -1,6 +1,7 @@
 import { date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
+import { organisations } from "./organisations";
 
 export const garantTypeGarantieEnum = pgEnum("garant_type_garantie", [
   "personne_physique",
@@ -17,6 +18,16 @@ export const garants = pgTable("garants", {
   prenom: text("prenom").notNull(),
   email: text("email"),
   telephone: text("telephone"),
+  // Ajouté nullable puis backfillé, même méthode et même raison que
+  // locataires.organisation_id — corrige GarantsService.findAll(), non
+  // scopé jusqu'ici. Résolu depuis bail.appartementId -> bien.
+  // organisationId à la création (GarantsService.create()) : toujours
+  // déterminable puisque bail_id est NOT NULL (jamais de garant
+  // orphelin), migration suivant tout de même le même schéma en deux
+  // phases pour rester uniforme avec locataires.
+  organisationId: uuid("organisation_id")
+    .notNull()
+    .references(() => organisations.id),
   typeGarantie: garantTypeGarantieEnum("type_garantie").notNull(),
   // Mentions obligatoires de l'acte de cautionnement sous peine de nullité
   // absolue (loi ALUR) — sans risque à ajouter ici : contrairement à
