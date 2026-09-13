@@ -32,10 +32,12 @@ interface Cellule {
 // CalendrierView), pas un remplacement.
 export function CalendrierGrilleMensuelle({
   evenements,
-  onSelectEvenement
+  onSelectEvenement,
+  onSelectJour
 }: {
   evenements: EvenementCalendrier[];
   onSelectEvenement: (id: string) => void;
+  onSelectJour: (date: string) => void;
 }): React.JSX.Element {
   const [moisAffiche, setMoisAffiche] = useState(() => {
     const { annee, mois } = decomposerDate(dateDuJourLocale());
@@ -110,7 +112,10 @@ export function CalendrierGrilleMensuelle({
         {cellules.map((cellule, index) => (
           <div
             key={cellule.date ?? `vide-${index}`}
-            className={`min-h-24 space-y-1 bg-white p-1 ${cellule.date === aujourdHui ? "bg-indigo-50" : ""}`}
+            onClick={() => cellule.date && onSelectJour(cellule.date)}
+            className={`min-h-24 space-y-1 bg-white p-1 ${cellule.date === aujourdHui ? "bg-indigo-50" : ""} ${
+              cellule.date ? "cursor-pointer hover:bg-slate-50" : ""
+            }`}
           >
             {cellule.jour !== null && (
               <>
@@ -124,7 +129,10 @@ export function CalendrierGrilleMensuelle({
                     <li key={evenement.id}>
                       <button
                         type="button"
-                        onClick={() => onSelectEvenement(evenement.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectEvenement(evenement.id);
+                        }}
                         title={`${EVENEMENT_TYPE_LABELS[evenement.type]} — ${evenement.titre}`}
                         className="w-full truncate rounded bg-indigo-100 px-1 py-0.5 text-left text-xs text-indigo-800 hover:bg-indigo-200"
                       >

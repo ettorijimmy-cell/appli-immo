@@ -166,6 +166,11 @@ export function CalendrierView(): React.JSX.Element {
     }
   }
 
+  function ouvrirCreationPourJour(date: string): void {
+    setFormulaire({ ...FORMULAIRE_VIDE, dateDebut: `${date}T09:00` });
+    setVue({ niveau: "creation" });
+  }
+
   async function archiver(evenementId: string): Promise<void> {
     await archiveEvenement(evenementId);
     setVue({ niveau: "liste" });
@@ -384,7 +389,11 @@ export function CalendrierView(): React.JSX.Element {
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
       ) : modeAffichage === "mois" ? (
-        <CalendrierGrilleMensuelle evenements={visibles} onSelectEvenement={(id) => void ouvrirEvenement(id)} />
+        <CalendrierGrilleMensuelle
+          evenements={visibles}
+          onSelectEvenement={(id) => void ouvrirEvenement(id)}
+          onSelectJour={ouvrirCreationPourJour}
+        />
       ) : visibles.length === 0 ? (
         <p className="text-sm text-slate-500">Aucun événement pour ce filtre.</p>
       ) : (

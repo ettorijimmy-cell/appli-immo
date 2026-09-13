@@ -1689,6 +1689,19 @@ compris :
 
 Nouvelles entrées de sidebar "Candidats" et "Calendrier".
 
+**Extension 2026-09-15, suite au retour de Jimmy après test manuel** :
+checklist documentaire du candidat (et de son garant) + conversion en
+locataire, vue grille mensuelle du Calendrier en complément de la vue
+liste, clic sur un jour de la grille mensuelle pour créer un événement
+avec la date pré-remplie. Voir `docs/data-dictionary.md`, sections
+"Extension checklist candidat + conversion" et "Vue grille mensuelle",
+pour le détail complet — notamment `documents.candidat_role` (distingue
+les documents du candidat de ceux de son garant, le garant n'étant pas
+une entité réelle à ce stade), le choix de ne pas compter les fiches de
+paie (présence simple, catégories non bloquantes), la conversion qui ne
+génère jamais de bail et copie nom/prénom directement sans ressaisie, et
+le rattachement des documents du candidat au nouveau locataire.
+
 ### Génération PDF signé + archivage des documents générés (futur module)
 
 Constat (2026-09-05) : les trois générateurs de documents existants (bail,
