@@ -11,6 +11,7 @@ import { BauxModule } from "./baux/baux.module";
 import { BienModule } from "./bien/bien.module";
 import { CommonModule } from "./common/common.module";
 import { ComptesBancairesSciModule } from "./comptes-bancaires-sci/comptes-bancaires-sci.module";
+import { ContactsModule } from "./contacts/contacts.module";
 import { EncryptionModule } from "./crypto/encryption.module";
 import { DatabaseModule } from "./database/database.module";
 import { DepensesModule } from "./depenses/depenses.module";
@@ -55,6 +56,7 @@ import { VersementsModule } from "./versements/versements.module";
     BauxModule,
     GarantsModule,
     BailLocatairesModule,
+    ContactsModule,
     PaiementsModule,
     VersementsModule,
     RemboursementsModule,
