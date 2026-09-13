@@ -351,6 +351,20 @@
       "when": 1789292390808,
       "tag": "0049_marvelous_randall_flagg",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789307332994,
+      "tag": "0050_premium_otto_octavius",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789308201009,
+      "tag": "0051_fair_sabra",
+      "breakpoints": true
     }
   ]
 }

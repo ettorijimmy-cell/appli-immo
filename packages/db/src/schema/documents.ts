@@ -32,7 +32,11 @@ export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   // ligne `documents` avec categorie appropriée (voir documentCategorieEnum
   // ci-dessous, aucune valeur ajoutée pour ce cas tant qu'aucun flux réel
   // n'en a besoin).
-  "depense"
+  "depense",
+  // Module Calendrier/Candidats (2026-09-15) : pièces jointes d'un
+  // candidat locataire (pièce d'identité, justificatifs de revenu...),
+  // même mécanisme polymorphe que les précédents.
+  "candidat"
 ]);
 
 export const documentCategorieEnum = pgEnum("document_categorie", [
