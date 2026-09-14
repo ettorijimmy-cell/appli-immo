@@ -372,6 +372,13 @@
       "when": 1789319535331,
       "tag": "0052_tan_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789326909331,
+      "tag": "0053_sudden_night_thrasher",
+      "breakpoints": true
     }
   ]
 }
