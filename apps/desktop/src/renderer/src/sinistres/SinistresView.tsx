@@ -191,6 +191,11 @@ export function SinistresView(): React.JSX.Element {
     return (
       <div className="space-y-4">
         <h1 className="text-lg font-semibold">{vue.niveau === "creation" ? "Nouveau sinistre" : "Modifier le sinistre"}</h1>
+        {error && (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        )}
         <form onSubmit={soumettreFormulaire} className="max-w-md space-y-3">
           <label className="block text-sm">
             Type
