@@ -1,6 +1,14 @@
 import { IsDateString, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 
-export const EVENEMENT_TYPES = ["intervention_artisan", "visite_candidat", "etat_des_lieux", "autre"] as const;
+export const EVENEMENT_TYPES = [
+  "intervention_artisan",
+  "visite_candidat",
+  "etat_des_lieux",
+  // Module Suivi sinistre et assurance (2026-09-16) : rendez-vous
+  // d'expertise, voir sinistreId ci-dessous.
+  "expertise_sinistre",
+  "autre"
+] as const;
 export type EvenementType = (typeof EVENEMENT_TYPES)[number];
 
 // bienId/appartementId/contactId/candidatId sont tous indépendamment
@@ -39,6 +47,10 @@ export class CreateEvenementCalendrierDto {
   @IsOptional()
   @IsUUID()
   candidatId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  sinistreId?: string;
 
   @IsOptional()
   @IsString()

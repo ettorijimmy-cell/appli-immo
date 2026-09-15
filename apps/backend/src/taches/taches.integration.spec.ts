@@ -6,6 +6,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   bailLocataires,
   baux,
+  contact,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   documents,
@@ -15,6 +16,7 @@ import {
   organisations,
   paiements,
   revisionLoyer,
+  sinistre,
   tache,
   utilisateurs,
   type Database
@@ -558,6 +560,154 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     // TachesService.findAll().
     expect(tachesSansContexte.some((t) => t.id === tacheOrgA.id)).toBe(true);
     expect(tachesSansContexte.some((t) => t.id === tacheOrgB.id)).toBe(true);
+  });
+
+  // Module Suivi sinistre et assurance (2026-09-16) : sinistre porte déjà
+  // bienId/appartementId/organisationId directement (aucune traversée
+  // bail/appartement, contrairement aux 3 types ci-dessus), et locataireId
+  // reste toujours null (destinataire = contact assureur, jamais un
+  // locataire) — voir TachesJobService.resoudreCible et
+  // construireMetadataSinistreStagnation.
+  describe("sinistre_stagnation", () => {
+    it("attaché à un appartement (sans bail) : résout appartementId, sinistreId posé sur la tâche", async () => {
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "degat_eaux",
+          appartementId,
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20"); // au-delà du seuil (15 jours)
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const taches = await tachesService.findAll({ type: "sinistre_stagnation" });
+      const tache = taches.find((t) => t.sinistreId === sinistreLigne.id);
+      expect(tache).toBeDefined();
+      expect(tache?.appartementId).toBe(appartementId);
+      expect(tache?.bienId).toBeNull();
+      expect(tache?.bailId).toBeNull();
+      expect(tache?.locataireId).toBeNull();
+      expect(tache?.organisationId).toBe(organisationId);
+    });
+
+    it("attaché à un bien seul (sans appartement précis) : résout bienId", async () => {
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "incendie",
+          bienId,
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const taches = await tachesService.findAll({ type: "sinistre_stagnation" });
+      const tache = taches.find((t) => t.sinistreId === sinistreLigne.id);
+      expect(tache).toBeDefined();
+      expect(tache?.bienId).toBe(bienId);
+      expect(tache?.appartementId).toBeNull();
+    });
+
+    it("est idempotent : exécuté deux fois de suite, jamais de deuxième tâche active pour la même alerte", async () => {
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "vol",
+          appartementId,
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      await tachesJobService.genererTachesDepuisAlertes();
+      const secondPassage = await tachesJobService.genererTachesDepuisAlertes();
+
+      expect(secondPassage).toBe(0);
+      const taches = (await tachesService.findAll({ type: "sinistre_stagnation" })).filter(
+        (t) => t.sinistreId === sinistreLigne.id
+      );
+      expect(taches).toHaveLength(1);
+    });
+
+    it("contact assureur résolu — notification générée avec les bonnes variables", async () => {
+      const modelesCourrierService = moduleRef.get(ModelesCourrierService);
+      await modelesCourrierService.upsertModeleCourrier({
+        code: "sinistre_stagnation",
+        nom: "Relance sinistre (test)",
+        canal: "email",
+        objet: "Relance — {{libelleBien}}",
+        corps:
+          "Bonjour {{nomAssureur}}, sinistre {{typeSinistre}} déclaré le {{dateDeclaration}} pour {{libelleBien}} reste sans nouvelle.",
+        variablesRequises: ["nomAssureur", "libelleBien", "typeSinistre", "dateDeclaration"],
+        organisationId
+      });
+      const [contactAssureur] = await db
+        .insert(contact)
+        .values({ nom: "Assurup", typeEntite: "entreprise", role: "assureur", organisationId })
+        .returning();
+      if (!contactAssureur) throw new Error("Échec de l'insertion du contact de test");
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "degat_eaux",
+          appartementId,
+          contactAssureurId: contactAssureur.id,
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const taches = await tachesService.findAll({ type: "sinistre_stagnation" });
+      const tacheCreee = taches.find((t) => t.sinistreId === sinistreLigne.id);
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationObjet).toBe("Relance — Immeuble Tâches Test — n°1");
+      expect(metadata?.notificationCorps).toBe(
+        "Bonjour Assurup, sinistre degat_eaux déclaré le 2026-06-01 pour Immeuble Tâches Test — n°1 reste sans nouvelle."
+      );
+      expect(metadata?.notificationIndisponible).toBeUndefined();
+    });
+
+    it("aucun contact assureur renseigné — signal explicite, jamais un envoi silencieux", async () => {
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "vol",
+          appartementId,
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      await tachesJobService.genererTachesDepuisAlertes();
+
+      const taches = await tachesService.findAll({ type: "sinistre_stagnation" });
+      const tacheCreee = taches.find((t) => t.sinistreId === sinistreLigne.id);
+      const metadata = tacheCreee?.metadata as Record<string, unknown> | null;
+      expect(metadata?.notificationIndisponible).toBe(true);
+      expect(metadata?.motifNotificationIndisponible).toBe("aucun contact assureur renseigné sur ce sinistre");
+      expect(metadata?.notificationObjet).toBeUndefined();
+    });
   });
 
   // Extension notifications (2026-08-31, docs/backlog.md) : résolution du
@@ -1523,6 +1673,68 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     );
     expect(resultat.statut).toBe("fait");
     expect(resultat.dateCompletion).not.toBeNull();
+  });
+
+  // Module Suivi sinistre et assurance (2026-09-16) : destinataire = contact
+  // assureur du sinistre, jamais le mécanisme tenant-centric ci-dessus
+  // (voir TachesService.resoudreEmailAssureur).
+  it("sinistre_stagnation : envoie la notification au contact assureur résolu", async () => {
+    const [contactAssureur] = await db
+      .insert(contact)
+      .values({
+        nom: "Assurup",
+        typeEntite: "entreprise",
+        role: "assureur",
+        email: "contact@assurup.example.com",
+        organisationId
+      })
+      .returning();
+    if (!contactAssureur) throw new Error("Échec de l'insertion du contact de test");
+    const [sinistreLigne] = await db
+      .insert(sinistre)
+      .values({
+        type: "degat_eaux",
+        appartementId,
+        contactAssureurId: contactAssureur.id,
+        dateDeclaration: "2026-06-01",
+        organisationId
+      })
+      .returning();
+    if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+    const id = await creerTache({
+      type: "sinistre_stagnation",
+      sinistreId: sinistreLigne.id,
+      appartementId,
+      metadata: { notificationObjet: "Relance sinistre", notificationCorps: "Bonjour Assurup, relance." }
+    });
+
+    const resultat = await tachesService.envoyerNotification(id);
+
+    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledWith(
+      organisationId,
+      "contact@assurup.example.com",
+      "Relance sinistre",
+      "Bonjour Assurup, relance.",
+      undefined
+    );
+    expect(resultat.statut).toBe("fait");
+  });
+
+  it("sinistre_stagnation : rejette si le sinistre n'a pas de contact assureur renseigné", async () => {
+    const [sinistreLigne] = await db
+      .insert(sinistre)
+      .values({ type: "vol", appartementId, dateDeclaration: "2026-06-01", organisationId })
+      .returning();
+    if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+    const id = await creerTache({
+      type: "sinistre_stagnation",
+      sinistreId: sinistreLigne.id,
+      appartementId,
+      metadata: { notificationObjet: "Relance sinistre", notificationCorps: "Bonjour, relance." }
+    });
+
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow(/aucun contact assureur renseigné/i);
+    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 
   it("quittance_mensuelle : joint le document docx généré à la volée", async () => {

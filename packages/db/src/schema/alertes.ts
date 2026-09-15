@@ -7,7 +7,12 @@ export const alerteTypeEnum = pgEnum("alerte_type", [
   "document_expire",
   "document_expire_proche",
   "entretien_equipement",
-  "impaye"
+  "impaye",
+  // Module Suivi sinistre et assurance (2026-09-16) : condition basée sur
+  // une durée écoulée depuis le dernier changement de statut, pas un état
+  // binaire — même mécanique que entretien_equipement (date cible calculée
+  // depuis une ancre + un intervalle, voir regles-alertes.ts).
+  "sinistre_stagnation"
 ]);
 
 // 'resolue' : fermée automatiquement par le job quand la condition

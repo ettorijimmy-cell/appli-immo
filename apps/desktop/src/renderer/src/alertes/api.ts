@@ -5,7 +5,8 @@ export type AlerteType =
   | "document_expire"
   | "document_expire_proche"
   | "entretien_equipement"
-  | "impaye";
+  | "impaye"
+  | "sinistre_stagnation";
 export type AlerteStatut = "active" | "traitee" | "ignoree" | "resolue";
 
 export interface Alerte {

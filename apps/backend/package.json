@@ -27,6 +27,7 @@
     "seed:modele-revision-loyer": "tsx scripts/seed-modele-revision-loyer.ts",
     "seed:modeles-courrier-alertes": "tsx scripts/seed-modeles-courrier-alertes.ts",
     "seed:modele-quittance-mensuelle": "tsx scripts/seed-modele-quittance-mensuelle.ts",
+    "seed:modele-sinistre-stagnation": "tsx scripts/seed-modele-sinistre-stagnation.ts",
     "backfill:organisation-locataires-garants": "tsx scripts/backfill-organisation-locataires-garants.ts"
   },
   "dependencies": {

@@ -8,6 +8,7 @@ import {
   equipements,
   organisations,
   paiements,
+  sinistre,
   utilisateurs,
   type Database
 } from "db";
@@ -269,7 +270,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
     });
   });
 
-  describe("génération des 5 types d'alertes", () => {
+  describe("génération des 6 types d'alertes", () => {
     it("bail_fin_proche : se déclenche dans la fenêtre de seuil, jamais dupliquée", async () => {
       const bail = await bauxService.create({
         appartementId,
@@ -565,14 +566,152 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
     });
   });
 
+  // Module Suivi sinistre et assurance (2026-09-16) : délai FIXE et
+  // IDENTIQUE quel que soit le statut du sinistre (décision actée avec
+  // Jimmy) — voir calculerAlerteSinistreStagnation (packages/core),
+  // directement générique de calculerAlerteEntretienEquipement. Tous les
+  // sinistres (y compris archivés) : un sinistre archivé referme
+  // naturellement une alerte encore active, même principe que les 4 autres
+  // générateurs ci-dessus.
+  describe("sinistre_stagnation", () => {
+    it("se déclenche seuil jours après dateChangementStatut, jamais avant, jamais dupliquée", async () => {
+      const seuil = await alertesConfigService.getSeuil("sinistre_stagnation");
+      expect(seuil).toBe(15);
+
+      const [organisation] = await db
+        .insert(organisations)
+        .values({ type: "particulier", nom: "Organisation Sinistre Stagnation Test" })
+        .returning();
+      if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "degat_eaux",
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId: organisation.id
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      // Encore dans le délai (14 jours) : pas d'alerte.
+      await alertesJobService.genererAlertes("2026-06-15");
+      let alertesSinistre = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(alertesSinistre.some((a) => a.entiteId === sinistreLigne.id)).toBe(false);
+
+      // Seuil atteint (15 jours) : l'alerte s'ouvre, jamais dupliquée sur
+      // un second passage le même jour.
+      await alertesJobService.genererAlertes("2026-06-16");
+      await alertesJobService.genererAlertes("2026-06-16");
+      alertesSinistre = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const pourCeSinistre = alertesSinistre.filter((a) => a.entiteId === sinistreLigne.id);
+      expect(pourCeSinistre).toHaveLength(1);
+      expect(pourCeSinistre[0]?.statut).toBe("active");
+    });
+
+    it("statut 'clos' : jamais de condition vraie, quel que soit le temps écoulé", async () => {
+      const [organisation] = await db
+        .insert(organisations)
+        .values({ type: "particulier", nom: "Organisation Sinistre Clos Test" })
+        .returning();
+      if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "incendie",
+          statut: "clos",
+          dateDeclaration: "2026-01-01",
+          dateChangementStatut: new Date("2026-01-01T00:00:00Z"),
+          organisationId: organisation.id
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-09-01"); // largement au-delà du seuil
+
+      const alertesSinistre = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(alertesSinistre.some((a) => a.entiteId === sinistreLigne.id)).toBe(false);
+    });
+
+    it("un sinistre archivé referme une alerte déjà active", async () => {
+      const [organisation] = await db
+        .insert(organisations)
+        .values({ type: "particulier", nom: "Organisation Sinistre Archive Test" })
+        .returning();
+      if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "vol",
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId: organisation.id
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      const [alerteOuverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(alerteOuverte?.statut).toBe("active");
+
+      await db.update(sinistre).set({ archivedAt: new Date() }).where(eq(sinistre.id, sinistreLigne.id));
+      await alertesJobService.genererAlertes("2026-06-21");
+
+      const [fermee] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(fermee?.id).toBe(alerteOuverte?.id);
+      expect(fermee?.statut).toBe("resolue");
+    });
+
+    it("un changement réel de statut (dateChangementStatut avancée) referme puis peut rouvrir l'alerte", async () => {
+      const [organisation] = await db
+        .insert(organisations)
+        .values({ type: "particulier", nom: "Organisation Sinistre Changement Statut Test" })
+        .returning();
+      if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+      const [sinistreLigne] = await db
+        .insert(sinistre)
+        .values({
+          type: "bris_de_glace",
+          dateDeclaration: "2026-06-01",
+          dateChangementStatut: new Date("2026-06-01T00:00:00Z"),
+          organisationId: organisation.id
+        })
+        .returning();
+      if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
+
+      await alertesJobService.genererAlertes("2026-06-20");
+      const [alerteOuverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(alerteOuverte?.statut).toBe("active");
+
+      // Le dossier avance réellement (expertise planifiée) : le compteur
+      // de stagnation repart de zéro.
+      await db
+        .update(sinistre)
+        .set({ statut: "expertise_planifiee", dateChangementStatut: new Date("2026-06-20T00:00:00Z") })
+        .where(eq(sinistre.id, sinistreLigne.id));
+      await alertesJobService.genererAlertes("2026-06-21");
+      const [fermee] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(fermee?.id).toBe(alerteOuverte?.id);
+      expect(fermee?.statut).toBe("resolue");
+
+      // La stagnation reprend depuis la nouvelle date : réouverture EN
+      // PLACE de la même ligne (même principe que bail_fin_proche).
+      await alertesJobService.genererAlertes("2026-07-06");
+      const [rouverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      expect(rouverte?.id).toBe(alerteOuverte?.id);
+      expect(rouverte?.statut).toBe("active");
+    });
+  });
+
   describe("parametres_alertes", () => {
-    it("crée les 4 types configurables avec leurs valeurs par défaut au premier accès", async () => {
+    it("crée les 5 types configurables avec leurs valeurs par défaut au premier accès", async () => {
       const tous = await alertesConfigService.findAll();
       const parType = new Map(tous.map((p) => [p.type, p.seuilJoursAvant]));
       expect(parType.get("bail_fin_proche")).toBe(30);
       expect(parType.get("document_expire_proche")).toBe(30);
       expect(parType.get("entretien_equipement")).toBe(30);
       expect(parType.get("impaye")).toBe(5);
+      expect(parType.get("sinistre_stagnation")).toBe(15);
       expect(parType.has("document_expire")).toBe(false);
     });
   });

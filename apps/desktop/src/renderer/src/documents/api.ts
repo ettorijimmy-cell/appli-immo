@@ -9,7 +9,8 @@ export type DocumentEntiteType =
   | "bail"
   | "etat_des_lieux"
   | "garant"
-  | "candidat";
+  | "candidat"
+  | "sinistre";
 export type DocumentEtatDesLieuxPieceType =
   | "entree"
   | "sejour"

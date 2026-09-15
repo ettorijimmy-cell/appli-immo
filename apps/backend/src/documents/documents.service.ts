@@ -13,6 +13,7 @@ import {
   locataires,
   mettreAJourAvecAudit,
   scis,
+  sinistre,
   type Database
 } from "db";
 import { and, eq, ilike, isNull, type SQL } from "drizzle-orm";
@@ -353,6 +354,10 @@ export class DocumentsService {
         // candidat locataire.
         case "candidat":
           return this.db.select({ id: candidat.id }).from(candidat).where(eq(candidat.id, entiteId)).limit(1);
+        // Module Suivi sinistre et assurance (2026-09-16) : photos, rapport
+        // d'expertise, courriers assureur.
+        case "sinistre":
+          return this.db.select({ id: sinistre.id }).from(sinistre).where(eq(sinistre.id, entiteId)).limit(1);
       }
     })();
     if (!ligne) {

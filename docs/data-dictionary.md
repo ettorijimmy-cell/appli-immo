@@ -957,7 +957,7 @@ risque accepté pour une action manuelle et peu fréquente.
 
 | Champ | Type | Description |
 |---|---|---|
-| type | enum `evenement_type` | `intervention_artisan` \| `visite_candidat` \| `etat_des_lieux` \| `autre` |
+| type | enum `evenement_type` | `intervention_artisan` \| `visite_candidat` \| `etat_des_lieux` \| `expertise_sinistre` \| `autre` — `expertise_sinistre` ajouté le 2026-09-16 (Module Suivi sinistre et assurance, voir section `sinistre` ci-dessous) |
 | titre | text | |
 | date_debut | timestamptz | |
 | date_fin | timestamptz, nullable | Absente = événement ponctuel sans durée, jamais de durée par défaut inventée |
@@ -965,12 +965,13 @@ risque accepté pour une action manuelle et peu fréquente.
 | appartement_id | uuid, nullable, FK `appartements` | |
 | contact_id | uuid, nullable, FK `contact` | |
 | candidat_id | uuid, nullable, FK `candidat` | |
+| sinistre_id | uuid, nullable, FK `sinistre` | Ajouté le 2026-09-16, même principe que les quatre rattachements précédents — couvre `type='expertise_sinistre'` sans être imposé au niveau du schéma |
 | notes | text, nullable | |
 | organisation_id | uuid | |
 
-Les quatre rattachements (`bien_id`/`appartement_id`/`contact_id`/
-`candidat_id`) sont **tous indépendamment optionnels** — aucune
-contrainte au niveau schéma ni DTO liant un `type` donné à un
+Les cinq rattachements (`bien_id`/`appartement_id`/`contact_id`/
+`candidat_id`/`sinistre_id`) sont **tous indépendamment optionnels** —
+aucune contrainte au niveau schéma ni DTO liant un `type` donné à un
 rattachement obligatoire (ex. `visite_candidat` n'impose pas
 `candidat_id`), laissé à l'appréciation de l'utilisateur plutôt qu'une
 rigidité prématurée.
@@ -1258,11 +1259,11 @@ naissance du locataire requis.
 ## alertes
 | Champ | Type | Description |
 |---|---|---|
-| type | enum | `bail_fin_proche` \| `document_expire` \| `document_expire_proche` \| `entretien_equipement` \| `impaye` |
-| entite_id | uuid | Id de la ligne concernée — la table cible se déduit de `type` (bail pour bail_fin_proche, paiement pour impaye, document pour document_expire(_proche), equipement pour entretien_equipement). Pas de FK possible (cibles différentes selon le type), même principe que `documents.entite_id` |
+| type | enum | `bail_fin_proche` \| `document_expire` \| `document_expire_proche` \| `entretien_equipement` \| `impaye` \| `sinistre_stagnation` (voir section `sinistre` ci-dessous) |
+| entite_id | uuid | Id de la ligne concernée — la table cible se déduit de `type` (bail pour bail_fin_proche, paiement pour impaye, document pour document_expire(_proche), equipement pour entretien_equipement, sinistre pour sinistre_stagnation). Pas de FK possible (cibles différentes selon le type), même principe que `documents.entite_id` |
 | statut | enum | `active` \| `traitee` \| `ignoree` \| `resolue` — voir cycle de vie ci-dessous |
 | message | text | Résumé lisible, généré à la création de l'alerte |
-| date_reference | date | Date métier à laquelle l'alerte se rapporte (`date_fin` du bail, `date_expiration` du document, prochaine date d'entretien calculée, ou `date_echeance` du paiement en retard) |
+| date_reference | date | Date métier à laquelle l'alerte se rapporte (`date_fin` du bail, `date_expiration` du document, prochaine date d'entretien calculée, `date_echeance` du paiement en retard, ou `date_changement_statut` du sinistre) |
 | derniere_condition_vraie | boolean | **Champ interne, jamais exposé à l'utilisateur** — voir ci-dessous |
 
 **Cycle de vie complet (tranché avec l'utilisateur, prérequis du Module 6,
@@ -1313,15 +1314,16 @@ réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
 
 | Champ | Type | Description |
 |---|---|---|
-| type | enum | `impaye` \| `entretien_equipement` \| `document_expire` \| `quittance_mensuelle` \| `revision_loyer` \| `autre` — les 3 dernières valeurs sont posées dès cette étape pour éviter une migration de plus, mais aucune logique ne les produit encore (étapes futures) |
+| type | enum | `impaye` \| `entretien_equipement` \| `document_expire` \| `quittance_mensuelle` \| `revision_loyer` \| `sinistre_stagnation` \| `autre` — `quittance_mensuelle`/`revision_loyer`/`autre` sont posées dès cette étape pour éviter une migration de plus, mais aucune logique ne les produit encore (étapes futures). `sinistre_stagnation` ajouté le 2026-09-16 (Module Suivi sinistre et assurance, voir section `sinistre` ci-dessous) |
 | statut | enum | `a_faire` \| `en_cours` \| `fait` \| `annulee` |
 | origine | enum | `alerte` \| `planifiee` \| `manuelle` — seule `alerte` est produite dans cette étape (par `TachesJobService`) |
 | alerte_source_id | uuid, FK `alertes` | Alerte à l'origine de la tâche, uniquement pour `origine='alerte'`. Sert de clé d'idempotence (voir index unique ci-dessous) |
 | bail_id | uuid, FK `baux` | Résolu depuis l'alerte source quand applicable (voir résolution par type ci-dessous) |
 | appartement_id | uuid, FK `appartements` | Idem |
-| bien_id | uuid, FK `bien` | Pour une tâche résolue au niveau du bien lui-même (ex. document expiré attaché à `documents.entiteType='bien'`), pas à un appartement ou un bail précis |
-| locataire_id | uuid, FK `locataires` | Titulaire résolu via `resoudreTitulaire` (déterministe grâce à l'index unique titulaire actif, voir section `bail_locataires`) — `null` si le bail n'a aucun titulaire (colocataires uniquement). Renseigné pour `type='quittance_mensuelle'` depuis l'Étape 4 ; **renseigné pour les 4 autres types depuis le Module Tâches Étape 3 (Gmail, 2026-09-01)** — jusque-là `genererTachesDepuisAlertes`/`genererTachesRevisionLoyer` résolvaient déjà un titulaire pour construire la notification mais ne le persistaient jamais sur `tache.locataireId`, un trou bloquant pour `envoyerNotification` (voir section Gmail ci-dessous), corrigé rétroactivement |
+| bien_id | uuid, FK `bien` | Pour une tâche résolue au niveau du bien lui-même (ex. document expiré attaché à `documents.entiteType='bien'`, ou sinistre rattaché à un bien seul), pas à un appartement ou un bail précis |
+| locataire_id | uuid, FK `locataires` | Titulaire résolu via `resoudreTitulaire` (déterministe grâce à l'index unique titulaire actif, voir section `bail_locataires`) — `null` si le bail n'a aucun titulaire (colocataires uniquement), **et toujours `null` pour `type='sinistre_stagnation'`** (destinataire = contact assureur, jamais un locataire — voir `sinistre_id` ci-dessous). Renseigné pour `type='quittance_mensuelle'` depuis l'Étape 4 ; **renseigné pour les 3 autres types tenant-centric depuis le Module Tâches Étape 3 (Gmail, 2026-09-01)** — jusque-là `genererTachesDepuisAlertes`/`genererTachesRevisionLoyer` résolvaient déjà un titulaire pour construire la notification mais ne le persistaient jamais sur `tache.locataireId`, un trou bloquant pour `envoyerNotification` (voir section Gmail ci-dessous), corrigé rétroactivement |
 | paiement_id | uuid, FK `paiements`, nullable | **Module Tâches, Étape 4 — quittance mensuelle, 2026-08-31.** Échéance à l'origine d'une tâche `type='quittance_mensuelle'`, jamais renseigné pour les autres types. Sert de clé d'idempotence (voir index unique ci-dessous), même principe que `alerte_source_id` |
+| sinistre_id | uuid, FK `sinistre`, nullable | **Module Suivi sinistre et assurance, 2026-09-16.** Sinistre à l'origine d'une tâche `type='sinistre_stagnation'`, jamais renseigné pour les autres types. Simple référence, pas une clé d'idempotence dédiée : cette tâche reste `origine='alerte'`, déjà couverte par `tache_alerte_source_active_unique` (`alerte_source_id`) — contrairement à `quittance_mensuelle` (`origine='planifiee'`, sans alerte source, d'où son index dédié sur `paiement_id`) |
 | date_echeance | date | |
 | date_completion | timestamptz | Posée automatiquement par `TachesService.marquerFait()`, jamais par un `update()` générique |
 | periode_recurrence | text | Ex. `'2026-09'` — inutilisé dans cette étape, réservé aux tâches récurrentes futures (quittances mensuelles, révision de loyer) |
@@ -1346,6 +1348,11 @@ dédiée par type, pas une requête uniforme.
   directement, laisse `appartementId`/`bailId` à `null`. Pour tout autre
   `entiteType` (`sci`, `locataire`, `garant`, `etat_des_lieux`) : **aucune
   tâche générée** pour cette étape.
+- `sinistre_stagnation` (Module Suivi sinistre et assurance, 2026-09-16) :
+  `entiteId` → `sinistre.id`, qui porte déjà directement `bienId`/
+  `appartementId`/`organisationId` — **aucune traversée bail/appartement**,
+  contrairement aux 3 cas ci-dessus. `bailId` et `locataireId` restent
+  toujours `null`.
 - `bail_fin_proche` et `document_expire_proche` : **exclus de la génération
   de tâches dans cette étape** — décision explicite, pas un oubli. L'alerte
   seule suffit pour l'instant ; à réévaluer dans une étape future si le
@@ -1623,7 +1630,7 @@ au premier accès si absente (`AlertesConfigService`) — jamais par une
 migration de données écrite à la main (CLAUDE.md).
 | Champ | Type | Description |
 |---|---|---|
-| type | enum | Les 4 types configurables : `bail_fin_proche`, `document_expire_proche`, `entretien_equipement`, `impaye`. **`document_expire` n'a volontairement pas de ligne** : c'est un statut déjà calculé (`calculerStatutDocument`), pas une fenêtre d'anticipation — rien à configurer |
+| type | enum | Les 5 types configurables : `bail_fin_proche`, `document_expire_proche`, `entretien_equipement`, `impaye`, `sinistre_stagnation`. **`document_expire` n'a volontairement pas de ligne** : c'est un statut déjà calculé (`calculerStatutDocument`), pas une fenêtre d'anticipation — rien à configurer |
 | seuil_jours_avant | integer | **Le sens dépend du type, tranché avec l'utilisateur** — voir ci-dessous |
 
 **Décision produit (sens contextuel de `seuil_jours_avant`, tranchée avec
@@ -1636,10 +1643,15 @@ traitée). Pour `impaye`, la colonne change de sens : c'est un délai de
 signalé qu'à partir du 6e jour de retard, jamais le jour même de
 l'échéance ni pendant le délai de grâce — même convention que
 `calculerStatutDocument`, le dernier jour du délai est encore toléré).
-Valeurs par défaut : 30 jours (bail_fin_proche, document_expire_proche,
-entretien_equipement), 5 jours (impaye). **Un futur type d'alerte devra
-préciser explicitement dans quel sens il utilise ce champ** — ne jamais
-supposer "avant" par défaut.
+Pour `sinistre_stagnation` (2026-09-16), encore un autre sens : délai
+**écoulé depuis** `sinistre.dateChangementStatut`, **fixe et identique quel
+que soit le statut du sinistre** (décision actée avec Jimmy — pas de seuil
+différent pour `declare`/`expertise_planifiee`/etc.), voir section
+`sinistre` ci-dessous. Valeurs par défaut : 30 jours (bail_fin_proche,
+document_expire_proche, entretien_equipement), 5 jours (impaye), 15 jours
+(sinistre_stagnation). **Un futur type d'alerte devra préciser
+explicitement dans quel sens il utilise ce champ** — ne jamais supposer
+"avant" par défaut.
 
 ## indices_irl
 Table de référence (série INSEE BDM 001515333, "Indice de référence des
@@ -1653,6 +1665,101 @@ peut être ajoutée. Alimentée exclusivement par `IndicesIrlJobService`
 | annee, trimestre | integer | Contrainte d'unicité `(annee, trimestre)` — une seule ligne par trimestre publié, insertion idempotente (`onConflictDoNothing`) |
 | valeur | decimal | Valeur de l'indice telle que publiée par l'INSEE |
 | date_recuperation | timestamp with time zone | Date à laquelle la tâche planifiée a récupéré cette valeur — sert de signal de fraîcheur (`packages/core`, `irlEstPerime`) : la génération du bail bloque si la ligne la plus récente date de plus de 4 mois, ou si la table est vide. Jamais un texte "à compléter" inséré à la place (docs/backlog.md, section "Édition d'un bail") |
+
+## sinistre (Module Suivi sinistre et assurance, 2026-09-16)
+
+Objectif principal : **pas un simple journal de sinistres**, mais la
+détection automatique de la stagnation d'un dossier (voir alerte
+`sinistre_stagnation` ci-dessus) pour générer une **tâche de relance vers
+l'assureur** — même mécanique qu'`entretien_equipement`, généralisée à un
+domaine différent (assurance, pas maintenance).
+
+| Champ | Type | Description |
+|---|---|---|
+| type | enum `sinistre_type` | `degat_eaux` \| `incendie` \| `vol` \| `bris_de_glace` \| `catastrophe_naturelle` \| `autre` |
+| statut | enum `sinistre_statut`, défaut `declare` | `declare` \| `expertise_planifiee` \| `expertise_realisee` \| `indemnise` \| `clos`. Un sinistre naît toujours `declare` — `SinistresService.create()` n'accepte pas ce champ en entrée |
+| date_changement_statut | timestamptz, NOT NULL, défaut `now()` | Mise à jour **uniquement si le statut soumis diffère réellement de l'actuel** (`SinistresService.update()`), jamais sur un `update()` qui laisse le statut inchangé (ex. correction d'un montant) — seule donnée que lit `calculerAlerteSinistreStagnation` (packages/core). Une écriture non conditionnelle la ferait dériver de son sens ("depuis quand ce statut n'a pas bougé") |
+| bien_id | uuid, nullable, FK `bien` | |
+| appartement_id | uuid, nullable, FK `appartements` | |
+| contact_assureur_id | uuid, nullable, FK `contact` | Voir décision de conception ci-dessous |
+| date_declaration | date, NOT NULL | |
+| description | text, nullable | |
+| montant_reclame | numeric(10,2), nullable | |
+| montant_indemnise | numeric(10,2), nullable | **Purement informatif — voir non-objectif explicite ci-dessous** |
+| franchise | numeric(10,2), nullable | |
+| notes | text, nullable | |
+| organisation_id | uuid, NOT NULL, FK `organisations` | |
+
+**Décision de conception — `contact_assureur_id` (trou identifié pendant
+l'audit préalable, résolu avec Jimmy avant d'écrire le schéma)** : la
+spécification initiale du module ne prévoyait aucune référence vers un
+interlocuteur, alors que l'objectif central est une relance **vers
+l'assureur**. Plutôt que de deviner un destinataire, ajout explicite d'une
+FK nullable vers `contact` (rôle `assureur` déjà présent sur
+`contact.role` depuis le Carnet de contacts — aucun nouveau concept
+introduit). **Nullable** : renseignable après la déclaration initiale ;
+sans lui, la tâche de relance se crée quand même mais sans destinataire
+résolu — signal explicite `notificationIndisponible` plutôt qu'un
+blocage, même principe qu'un `document_expire` attaché à un bien sans
+bail (`TachesJobService.construireMetadataNotification`).
+
+**Non-objectifs explicites (2026-09-16, tranchés avec Jimmy avant tout
+code)** :
+- **Jamais de lien automatique vers Charges et fiscalité** (`depense`/
+  revenu) : `montant_indemnise` reste purement informatif. Le traitement
+  fiscal d'une indemnisation est incertain et ne doit jamais être deviné
+  par l'application — une éventuelle écriture dans ce module reste un
+  geste manuel séparé, comme la création d'un bail depuis un candidat
+  converti.
+- **Aucune messagerie réelle à ce stade** : la relance produite est une
+  `tache` avec notification résolue en `metadata` (objet/corps), envoyable
+  via le mécanisme Gmail déjà en place (`TachesService.envoyerNotification`)
+  — aucun nouveau canal, aucun envoi automatique sans action de
+  l'utilisateur.
+- **Délai de stagnation fixe et identique quel que soit le statut** du
+  sinistre — pas de seuil différencié par statut (`declare` vs
+  `expertise_planifiee` vs...), configurable uniquement via
+  `parametres_alertes` (voir ci-dessus), même principe que les 5 autres
+  types d'alerte.
+
+**Mécanisme de stagnation** (`AlertesJobService.genererAlertesSinistreStagnation`,
+`calculerAlerteSinistreStagnation` — packages/core) : généralisation
+directe de `calculerAlerteEntretienEquipement` (ancre + intervalle → date
+cible, condition vraie dès que `dateReference >= cible`, reste vraie
+indéfiniment), sans la notion de "avant" — ici l'ancre est
+`date_changement_statut` et l'intervalle le seuil configuré
+(`sinistre_stagnation`, défaut 15 jours). `statut='clos'` : **jamais de
+condition vraie**, quel que soit le temps écoulé — un dossier clos ne
+stagne pas par définition. Tous les sinistres (y compris archivés) sont
+parcourus par le job, même principe que les 5 autres générateurs : un
+sinistre archivé referme naturellement une alerte encore active.
+
+**Résolution de la notification de relance**
+(`TachesJobService.construireMetadataSinistreStagnation`) : mécanique
+**séparée** de `construireMetadataNotification` (celle des 4 autres types
+générés depuis une alerte) — le destinataire est un **contact** (l'assureur),
+jamais un locataire titulaire d'un bail, donc le mécanisme tenant-centric
+existant (bail → titulaire → `locataires.email`) ne s'applique pas ici.
+Même discipline "jamais silencieux" : sinistre introuvable, aucun contact
+assureur renseigné, contact introuvable, ou modèle de courrier
+`sinistre_stagnation` introuvable produisent chacun un signal
+`notificationIndisponible` explicite avec motif, jamais un envoi devinné.
+Sur la tâche générée, `locataireId` reste toujours `null` et `sinistreId`
+référence le sinistre (voir section `tache` ci-dessus) ; l'envoi
+(`TachesService.envoyerNotification`) résout l'email destinataire via
+`resoudreEmailAssureur(sinistreId)` — chemin parallèle à
+`resoudreEmailLocataire`, jamais une extension du mécanisme existant.
+
+**Rattachements polymorphes existants étendus** (aucun nouveau mécanisme,
+extension d'un pattern déjà répété ~9 fois dans le projet) :
+- `documents.entiteType` : nouvelle valeur `sinistre` (pièces jointes —
+  devis, expertise, courrier assureur).
+- `evenement_calendrier.type` : nouvelle valeur `expertise_sinistre` +
+  colonne `sinistreId` (voir section `evenement_calendrier` ci-dessus).
+
+**Desktop** : écran "Sinistres", entrée de sidebar dédiée (icône
+`ShieldAlert`) — CRUD complet (liste, fiche, changement de statut,
+montants, pièces jointes, création d'un événement d'expertise).
 
 ## Tableau de bord (Module 7)
 

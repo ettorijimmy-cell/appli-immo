@@ -36,7 +36,10 @@ export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   // Module Calendrier/Candidats (2026-09-15) : pièces jointes d'un
   // candidat locataire (pièce d'identité, justificatifs de revenu...),
   // même mécanisme polymorphe que les précédents.
-  "candidat"
+  "candidat",
+  // Module Suivi sinistre et assurance (2026-09-16) : photos, rapport
+  // d'expertise, courriers assureur — même mécanisme polymorphe.
+  "sinistre"
 ]);
 
 export const documentCategorieEnum = pgEnum("document_categorie", [

@@ -7,13 +7,14 @@ import {
   calculerAlerteDocumentExpireProche,
   calculerAlerteEntretienEquipement,
   calculerAlerteImpaye,
+  calculerAlerteSinistreStagnation,
   calculerBornesMoisCalendaire,
   calculerDateEcheanceRecurrente,
   calculerMontantEcheanceLoyer,
   calculerProchaineDateEntretien,
   calculerStatutDocument
 } from "core";
-import { alertes, baux, documents, equipements, mettreAJourAvecAudit, paiements, type Database } from "db";
+import { alertes, baux, documents, equipements, mettreAJourAvecAudit, paiements, sinistre, type Database } from "db";
 import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -118,6 +119,7 @@ export class AlertesJobService {
     await this.genererAlertesDocuments(dateReference);
     await this.genererAlertesEntretienEquipement(dateReference);
     await this.genererAlertesImpaye(dateReference);
+    await this.genererAlertesSinistreStagnation(dateReference);
   }
 
   /**
@@ -303,6 +305,35 @@ export class AlertesJobService {
         conditionActuelle: condition,
         dateReference: paiement.dateEcheance,
         message: `Paiement ${paiement.type} en retard, échéance du ${paiement.dateEcheance}.`
+      });
+    }
+  }
+
+  // Délai FIXE et IDENTIQUE quel que soit le statut du sinistre (décision
+  // actée avec Jimmy, Module Suivi sinistre et assurance, 2026-09-16) —
+  // voir calculerAlerteSinistreStagnation (packages/core). Tous les
+  // sinistres (y compris archivés) : un sinistre archivé doit pouvoir
+  // refermer une alerte encore active, même principe que les 4 générateurs
+  // ci-dessus.
+  private async genererAlertesSinistreStagnation(dateReference: string): Promise<void> {
+    const seuil = await this.config.getSeuil("sinistre_stagnation");
+    const tousLesSinistres = await this.db.select().from(sinistre);
+
+    for (const ligne of tousLesSinistres) {
+      const nonArchive = ligne.archivedAt === null;
+      // dateChangementStatut est un timestamptz — converti en date ISO
+      // (YYYY-MM-DD) avant d'entrer dans packages/core, qui ne manipule
+      // jamais de Date native ni de fuseau horaire (CLAUDE.md).
+      const dateChangementStatutIso = ligne.dateChangementStatut.toISOString().slice(0, 10);
+      const condition =
+        nonArchive && calculerAlerteSinistreStagnation(ligne.statut, dateChangementStatutIso, seuil, dateReference);
+
+      await this.synchroniserAlerte({
+        type: "sinistre_stagnation",
+        entiteId: ligne.id,
+        conditionActuelle: condition,
+        dateReference: dateChangementStatutIso,
+        message: `Le sinistre (${ligne.type}) n'a pas changé de statut (${ligne.statut}) depuis le ${dateChangementStatutIso} (seuil ${seuil} j).`
       });
     }
   }

@@ -5,6 +5,7 @@ import {
   calculerAlerteDocumentExpireProche,
   calculerAlerteEntretienEquipement,
   calculerAlerteImpaye,
+  calculerAlerteSinistreStagnation,
   calculerProchaineDateEntretien
 } from "./regles-alertes";
 
@@ -90,5 +91,24 @@ describe("calculerAlerteImpaye", () => {
   });
   it("avec un délai de grâce nul, se déclenche dès le lendemain de l'échéance", () => {
     expect(calculerAlerteImpaye("2026-07-05", 0, "2026-07-06")).toBe(true);
+  });
+});
+
+describe("calculerAlerteSinistreStagnation", () => {
+  it("ne se déclenche pas avant l'écoulement du seuil", () => {
+    expect(calculerAlerteSinistreStagnation("declare", "2026-07-01", 15, "2026-07-10")).toBe(false);
+  });
+  it("se déclenche exactement au jour du seuil", () => {
+    expect(calculerAlerteSinistreStagnation("declare", "2026-07-01", 15, "2026-07-16")).toBe(true);
+  });
+  it("reste déclenchée bien après le seuil (non traitée)", () => {
+    expect(calculerAlerteSinistreStagnation("expertise_planifiee", "2026-01-01", 15, "2026-07-01")).toBe(true);
+  });
+  it("même délai quel que soit le statut (pas de seuil différencié)", () => {
+    expect(calculerAlerteSinistreStagnation("expertise_realisee", "2026-07-01", 15, "2026-07-16")).toBe(true);
+    expect(calculerAlerteSinistreStagnation("indemnise", "2026-07-01", 15, "2026-07-16")).toBe(true);
+  });
+  it("ne se déclenche jamais pour un sinistre clos, quelle que soit l'ancienneté", () => {
+    expect(calculerAlerteSinistreStagnation("clos", "2020-01-01", 15, "2026-07-16")).toBe(false);
   });
 });

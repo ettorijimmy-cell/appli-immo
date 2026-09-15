@@ -1,6 +1,18 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { formaterListeNoms, resoudreModeleCourrier } from "core";
-import { appartements, bailLocataires, baux, bien, locataires, mettreAJourAvecAudit, revisionLoyer, tache, type Database } from "db";
+import {
+  appartements,
+  bailLocataires,
+  baux,
+  bien,
+  contact,
+  locataires,
+  mettreAJourAvecAudit,
+  revisionLoyer,
+  sinistre,
+  tache,
+  type Database
+} from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -15,7 +27,14 @@ const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingm
 
 export interface FindAllTachesFiltres {
   statut?: "a_faire" | "en_cours" | "fait" | "annulee";
-  type?: "impaye" | "entretien_equipement" | "document_expire" | "quittance_mensuelle" | "revision_loyer" | "autre";
+  type?:
+    | "impaye"
+    | "entretien_equipement"
+    | "document_expire"
+    | "quittance_mensuelle"
+    | "revision_loyer"
+    | "sinistre_stagnation"
+    | "autre";
   bailId?: string;
   appartementId?: string;
 }
@@ -226,17 +245,14 @@ export class TachesService {
 
     const { notificationObjet, notificationCorps } = this.extraireMetadataNotificationEnvoi(tacheRow.metadata);
 
-    if (!tacheRow.locataireId) {
-      throw new BadRequestException("Aucun destinataire résolu pour cette tâche (aucun titulaire actif sur le bail).");
-    }
-    const [locataireDestinataire] = await this.db
-      .select({ email: locataires.email })
-      .from(locataires)
-      .where(eq(locataires.id, tacheRow.locataireId))
-      .limit(1);
-    if (!locataireDestinataire || !locataireDestinataire.email) {
-      throw new BadRequestException("Le locataire destinataire n'a pas d'adresse email renseignée.");
-    }
+    // sinistre_stagnation : le destinataire est le contact assureur du
+    // sinistre, jamais un locataire — résolution séparée (Module Suivi
+    // sinistre et assurance, 2026-09-16). Tous les autres types restent
+    // tenant-centric (locataireId -> locataires.email), inchangé.
+    const destinataireEmail =
+      tacheRow.type === "sinistre_stagnation"
+        ? await this.resoudreEmailAssureur(tacheRow.sinistreId)
+        : await this.resoudreEmailLocataire(tacheRow.locataireId);
 
     let pieceJointe: PieceJointeEmail | undefined;
     if (tacheRow.type === "quittance_mensuelle") {
@@ -249,7 +265,7 @@ export class TachesService {
 
     await this.googleOAuthService.envoyerEmail(
       tacheRow.organisationId,
-      locataireDestinataire.email,
+      destinataireEmail,
       notificationObjet,
       notificationCorps,
       pieceJointe
@@ -266,6 +282,44 @@ export class TachesService {
       throw new NotFoundException("Tâche introuvable");
     }
     return this.versDto(tacheMiseAJour as TacheRow);
+  }
+
+  private async resoudreEmailLocataire(locataireId: string | null): Promise<string> {
+    if (!locataireId) {
+      throw new BadRequestException("Aucun destinataire résolu pour cette tâche (aucun titulaire actif sur le bail).");
+    }
+    const [locataireDestinataire] = await this.db
+      .select({ email: locataires.email })
+      .from(locataires)
+      .where(eq(locataires.id, locataireId))
+      .limit(1);
+    if (!locataireDestinataire || !locataireDestinataire.email) {
+      throw new BadRequestException("Le locataire destinataire n'a pas d'adresse email renseignée.");
+    }
+    return locataireDestinataire.email;
+  }
+
+  private async resoudreEmailAssureur(sinistreId: string | null): Promise<string> {
+    if (!sinistreId) {
+      throw new BadRequestException("Aucun destinataire résolu pour cette tâche (sinistreId manquant).");
+    }
+    const [sinistreRow] = await this.db
+      .select({ contactAssureurId: sinistre.contactAssureurId })
+      .from(sinistre)
+      .where(eq(sinistre.id, sinistreId))
+      .limit(1);
+    if (!sinistreRow?.contactAssureurId) {
+      throw new BadRequestException("Aucun contact assureur renseigné sur ce sinistre.");
+    }
+    const [contactDestinataire] = await this.db
+      .select({ email: contact.email })
+      .from(contact)
+      .where(eq(contact.id, sinistreRow.contactAssureurId))
+      .limit(1);
+    if (!contactDestinataire || !contactDestinataire.email) {
+      throw new BadRequestException("Le contact assureur n'a pas d'adresse email renseignée.");
+    }
+    return contactDestinataire.email;
   }
 
   private extraireMetadataNotificationEnvoi(metadata: unknown): { notificationObjet: string; notificationCorps: string } {
@@ -340,6 +394,7 @@ export class TachesService {
       bienId: ligne.bienId,
       locataireId: ligne.locataireId,
       paiementId: ligne.paiementId,
+      sinistreId: ligne.sinistreId,
       dateEcheance: ligne.dateEcheance,
       dateCompletion: ligne.dateCompletion,
       periodeRecurrence: ligne.periodeRecurrence,

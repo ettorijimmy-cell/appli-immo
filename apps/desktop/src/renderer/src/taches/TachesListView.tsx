@@ -23,6 +23,7 @@ const TYPE_LABELS: Record<TacheType, string> = {
   document_expire: "Document expiré",
   quittance_mensuelle: "Quittance mensuelle",
   revision_loyer: "Révision de loyer",
+  sinistre_stagnation: "Relance sinistre",
   autre: "Autre"
 };
 

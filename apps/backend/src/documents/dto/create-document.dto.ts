@@ -20,7 +20,10 @@ export const DOCUMENT_ENTITE_TYPES = [
   "depense",
   // Module Calendrier/Candidats (2026-09-15) : pièces jointes d'un
   // candidat locataire.
-  "candidat"
+  "candidat",
+  // Module Suivi sinistre et assurance (2026-09-16) : photos, rapport
+  // d'expertise, courriers assureur.
+  "sinistre"
 ] as const;
 export type DocumentEntiteType = (typeof DOCUMENT_ENTITE_TYPES)[number];
 

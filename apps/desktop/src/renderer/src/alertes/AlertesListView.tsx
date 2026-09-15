@@ -6,7 +6,8 @@ const LABELS: Record<AlerteType, string> = {
   document_expire: "Document expiré",
   document_expire_proche: "Document bientôt expiré",
   entretien_equipement: "Entretien d'équipement",
-  impaye: "Impayé"
+  impaye: "Impayé",
+  sinistre_stagnation: "Dossier sinistre sans mouvement"
 };
 
 // Vue minimale pour ce module (docs/backlog.md, Module 6 : "action traiter

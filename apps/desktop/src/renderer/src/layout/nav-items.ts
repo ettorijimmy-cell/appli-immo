@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListTodo,
   Settings,
+  ShieldAlert,
   UserSearch,
   Users,
   Wallet,
@@ -32,5 +33,6 @@ export const navItems: NavItem[] = [
   { path: "/finances", label: "Finances", icon: Wallet },
   { path: "/documents", label: "Documents", icon: FileText },
   { path: "/taches", label: "Tâches", icon: ListTodo },
+  { path: "/sinistres", label: "Sinistres", icon: ShieldAlert },
   { path: "/parametres", label: "Paramètres", icon: Settings }
 ];

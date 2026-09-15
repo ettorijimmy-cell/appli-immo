@@ -1702,6 +1702,43 @@ paie (présence simple, catégories non bloquantes), la conversion qui ne
 génère jamais de bail et copie nom/prénom directement sans ressaisie, et
 le rattachement des documents du candidat au nouveau locataire.
 
+### Suivi sinistre et assurance (module réalisé le 2026-09-16)
+
+Objectif central : **pas un simple journal de sinistres**, mais la
+détection automatique de la stagnation d'un dossier pour générer une tâche
+de relance vers l'assureur — même mécanique qu'`entretien_equipement`
+(Module 6), généralisée à un domaine différent. Voir
+`docs/data-dictionary.md`, section "sinistre", pour le détail complet, y
+compris :
+
+- **Audit préalable en 4 points, avant tout code** (extensibilité de
+  `ParametresAlertesView`, capacité d'`AlertesJobService` à porter une
+  condition basée sur une durée écoulée, 5e lien polymorphe sur
+  `evenement_calendrier`, nouvelle valeur sur `documentEntiteType`) : les
+  quatre mécanismes existants ont pu être étendus par simple répétition
+  d'un pattern déjà établi, aucune nouvelle infrastructure nécessaire.
+- **Trou de conception identifié et résolu avant d'écrire le schéma** : la
+  spécification initiale ne prévoyait aucune référence vers un
+  interlocuteur, alors que l'objectif est une relance *vers l'assureur* —
+  ajout explicite de `sinistre.contactAssureurId` (FK nullable vers
+  `contact`, rôle `assureur` déjà existant), avec dégradation explicite
+  (`notificationIndisponible`) plutôt qu'un blocage si absent.
+- Délai de stagnation **fixe et identique quel que soit le statut** du
+  sinistre, configurable via Paramètres (défaut 15 jours) — décision actée
+  avec Jimmy, pas de seuil différencié par statut.
+- **Deux non-objectifs explicites, tranchés avant tout code** : jamais de
+  lien automatique vers Charges et fiscalité (le traitement fiscal d'une
+  indemnisation est incertain, ne doit jamais être deviné) ; aucune
+  messagerie réelle nouvelle, la relance passe par le mécanisme Gmail déjà
+  en place (Module Tâches, Étape 3).
+- Résolution de la notification de relance **séparée** du mécanisme
+  tenant-centric existant (bail → titulaire → locataire) : le destinataire
+  est un contact, jamais un locataire — chemin parallèle dédié dans
+  `TachesJobService`/`TachesService`, pas une extension forcée de
+  l'existant.
+
+Nouvelle entrée de sidebar "Sinistres" (icône `ShieldAlert`).
+
 ### Génération PDF signé + archivage des documents générés (futur module)
 
 Constat (2026-09-05) : les trois générateurs de documents existants (bail,

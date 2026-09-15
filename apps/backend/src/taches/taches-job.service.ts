@@ -7,10 +7,12 @@ import {
   bailLocataires,
   baux,
   bien,
+  contact,
   documents,
   equipements,
   locataires,
   paiements,
+  sinistre,
   tache,
   type Database
 } from "db";
@@ -102,7 +104,13 @@ export class TachesJobService {
         continue;
       }
 
-      const { metadata, locataireId } = await this.construireMetadataNotification(alerte, cible);
+      // sinistre_stagnation : destinataire = contact assureur, pas un
+      // locataire — mécanique de résolution de notification séparée (voir
+      // construireMetadataSinistreStagnation).
+      const { metadata, locataireId, sinistreId } =
+        alerte.type === "sinistre_stagnation"
+          ? { ...(await this.construireMetadataSinistreStagnation(alerte)), locataireId: null }
+          : { ...(await this.construireMetadataNotification(alerte, cible)), sinistreId: null };
 
       await this.db.insert(tache).values({
         type: alerte.type,
@@ -113,6 +121,7 @@ export class TachesJobService {
         appartementId: cible.appartementId,
         bienId: cible.bienId,
         locataireId,
+        sinistreId,
         dateEcheance: alerte.dateReference,
         organisationId: cible.organisationId,
         metadata
@@ -298,6 +307,23 @@ export class TachesJobService {
           .limit(1);
         if (!equipement) return null;
         return this.resoudreDepuisAppartement(equipement.appartementId);
+      }
+      // Module Suivi sinistre et assurance (2026-09-16) : sinistre porte déjà
+      // bienId/appartementId/organisationId directement, aucune traversée
+      // bail/appartement nécessaire (contrairement aux 3 cas ci-dessus).
+      case "sinistre_stagnation": {
+        const [sinistreLigne] = await this.db
+          .select({ bienId: sinistre.bienId, appartementId: sinistre.appartementId, organisationId: sinistre.organisationId })
+          .from(sinistre)
+          .where(eq(sinistre.id, alerte.entiteId))
+          .limit(1);
+        if (!sinistreLigne) return null;
+        return {
+          bailId: null,
+          appartementId: sinistreLigne.appartementId,
+          bienId: sinistreLigne.bienId,
+          organisationId: sinistreLigne.organisationId
+        };
       }
       case "document_expire": {
         const [document] = await this.db
@@ -579,5 +605,83 @@ export class TachesJobService {
     const [bienTrouve] = await this.db.select().from(bien).where(eq(bien.id, appartement.bienId)).limit(1);
     if (!bienTrouve) return null;
     return `${bienTrouve.nom ?? bienTrouve.adresse} — n°${appartement.numero}`;
+  }
+
+  // Un sinistre peut être rattaché à un bien seul, sans appartement précis
+  // (ex. toiture d'un immeuble entier) — pas de "n°" dans ce cas,
+  // contrairement à resoudreLibelleBien ci-dessus.
+  private async resoudreLibelleBienDepuisBienId(bienId: string): Promise<string | null> {
+    const [bienTrouve] = await this.db.select().from(bien).where(eq(bien.id, bienId)).limit(1);
+    return bienTrouve ? bienTrouve.nom ?? bienTrouve.adresse : null;
+  }
+
+  /**
+   * Résout la notification de relance pour une tâche sinistre_stagnation —
+   * mécanique séparée de construireMetadataNotification (Module Suivi
+   * sinistre et assurance, 2026-09-16) : le destinataire est un CONTACT
+   * (l'assureur), jamais un locataire titulaire d'un bail — le mécanisme
+   * tenant-centric ci-dessus ne s'applique pas ici. Même discipline
+   * "jamais silencieux" : chaque cas non résolu pose un signal explicite
+   * dans le metadata plutôt que de le laisser vide.
+   */
+  private async construireMetadataSinistreStagnation(
+    alerte: AlerteRow
+  ): Promise<{ metadata: Record<string, unknown>; sinistreId: string | null }> {
+    try {
+      const [sinistreLigne] = await this.db.select().from(sinistre).where(eq(sinistre.id, alerte.entiteId)).limit(1);
+      if (!sinistreLigne) {
+        return { metadata: this.signalNotificationIndisponible("sinistre introuvable"), sinistreId: null };
+      }
+      if (!sinistreLigne.contactAssureurId) {
+        return {
+          metadata: this.signalNotificationIndisponible("aucun contact assureur renseigné sur ce sinistre"),
+          sinistreId: sinistreLigne.id
+        };
+      }
+
+      const [contactLigne] = await this.db
+        .select()
+        .from(contact)
+        .where(eq(contact.id, sinistreLigne.contactAssureurId))
+        .limit(1);
+      if (!contactLigne) {
+        return {
+          metadata: this.signalNotificationIndisponible("contact assureur introuvable"),
+          sinistreId: sinistreLigne.id
+        };
+      }
+
+      const libelleBien = sinistreLigne.appartementId
+        ? await this.resoudreLibelleBien(sinistreLigne.appartementId)
+        : sinistreLigne.bienId
+          ? await this.resoudreLibelleBienDepuisBienId(sinistreLigne.bienId)
+          : null;
+      if (!libelleBien) {
+        return { metadata: this.signalNotificationIndisponible("bien introuvable"), sinistreId: sinistreLigne.id };
+      }
+
+      const modele = await this.modelesCourrierService.findByCode("sinistre_stagnation");
+      if (!modele) {
+        return {
+          metadata: this.signalNotificationIndisponible("modèle de courrier 'sinistre_stagnation' introuvable"),
+          sinistreId: sinistreLigne.id
+        };
+      }
+
+      const variables = {
+        nomAssureur: contactLigne.nom,
+        libelleBien,
+        typeSinistre: sinistreLigne.type,
+        dateDeclaration: sinistreLigne.dateDeclaration
+      };
+      const { objet, corps } = resoudreModeleCourrier({ objet: modele.objet, corps: modele.corps }, variables);
+      return { metadata: { notificationObjet: objet, notificationCorps: corps }, sinistreId: sinistreLigne.id };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Échec de résolution de la notification pour l'alerte ${alerte.id} (sinistre_stagnation) : ${message}`
+      );
+      return { metadata: this.signalNotificationIndisponible(`erreur de résolution : ${message}`), sinistreId: null };
+    }
   }
 }

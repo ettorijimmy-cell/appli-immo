@@ -40,6 +40,7 @@ export class EvenementsCalendrierService {
         appartementId: dto.appartementId,
         contactId: dto.contactId,
         candidatId: dto.candidatId,
+        sinistreId: dto.sinistreId,
         notes: dto.notes,
         organisationId: user.organisationId
       })
@@ -143,6 +144,7 @@ export class EvenementsCalendrierService {
       appartementId: ligne.appartementId,
       contactId: ligne.contactId,
       candidatId: ligne.candidatId,
+      sinistreId: ligne.sinistreId,
       notes: ligne.notes,
       organisationId: ligne.organisationId
     };

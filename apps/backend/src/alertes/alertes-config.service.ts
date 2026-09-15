@@ -13,7 +13,11 @@ const SEUILS_PAR_DEFAUT: Partial<Record<AlerteType, number>> = {
   bail_fin_proche: 30,
   document_expire_proche: 30,
   entretien_equipement: 30,
-  impaye: 5
+  impaye: 5,
+  // Module Suivi sinistre et assurance (2026-09-16) : délai fixe et
+  // identique quel que soit le statut du sinistre — décision actée avec
+  // Jimmy.
+  sinistre_stagnation: 15
 };
 
 export const TYPES_AVEC_SEUIL_CONFIGURABLE = Object.keys(SEUILS_PAR_DEFAUT) as AlerteType[];

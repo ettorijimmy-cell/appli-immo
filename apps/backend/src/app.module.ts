@@ -36,6 +36,7 @@ import { ReferencesModule } from "./references/references.module";
 import { ReglesCategorisationModule } from "./regles-categorisation/regles-categorisation.module";
 import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
+import { SinistresModule } from "./sinistres/sinistres.module";
 import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
 import { TachesModule } from "./taches/taches.module";
 import { VersementsModule } from "./versements/versements.module";
@@ -63,6 +64,7 @@ import { VersementsModule } from "./versements/versements.module";
     CandidatsModule,
     EvenementsCalendrierModule,
     CalendrierAbonnementModule,
+    SinistresModule,
     PaiementsModule,
     VersementsModule,
     RemboursementsModule,

@@ -8,6 +8,7 @@ import { auditColumns } from "./columns.helpers";
 import { locataires } from "./locataires";
 import { organisations } from "./organisations";
 import { paiements } from "./paiements";
+import { sinistre } from "./sinistre";
 
 // Sous-ensemble des types d'alerte (packages/db/src/schema/alertes.ts) qui
 // génèrent une tâche à ce stade (Module Tâches, Étape 1, docs/backlog.md) :
@@ -21,6 +22,9 @@ export const tacheTypeEnum = pgEnum("tache_type", [
   "document_expire",
   "quittance_mensuelle",
   "revision_loyer",
+  // Module Suivi sinistre et assurance (2026-09-16) : relance de l'assureur
+  // sur un dossier qui stagne — voir alertes.ts, type 'sinistre_stagnation'.
+  "sinistre_stagnation",
   "autre"
 ]);
 
@@ -61,6 +65,13 @@ export const tache = pgTable(
     // même principe que alerteSourceId pour les tâches dérivées d'alertes.
     // Jamais renseigné pour les autres types de tâche.
     paiementId: uuid("paiement_id").references(() => paiements.id),
+    // Référence le sinistre à l'origine d'une tâche type='sinistre_stagnation'
+    // (Module Suivi sinistre et assurance, 2026-09-16). Simple référence,
+    // pas une clé d'idempotence dédiée : cette tâche est origine='alerte',
+    // déjà couverte par tache_alerte_source_active_unique (alerteSourceId)
+    // ci-dessous — contrairement à quittance_mensuelle (origine='planifiee',
+    // sans alerte source, d'où l'index dédié sur paiementId).
+    sinistreId: uuid("sinistre_id").references(() => sinistre.id),
     dateEcheance: date("date_echeance"),
     dateCompletion: timestamp("date_completion", { withTimezone: true }),
     // Ex. '2026-09' — inutilisé dans cette étape, réservé aux tâches

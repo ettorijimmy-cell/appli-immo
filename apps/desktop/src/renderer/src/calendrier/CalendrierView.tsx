@@ -3,6 +3,7 @@ import { listCandidats, type Candidat } from "../candidats/api";
 import { libelleCandidat } from "../candidats/CandidatsView";
 import { listContacts, type Contact } from "../contacts/api";
 import { getBien, libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
+import { listSinistres, SINISTRE_TYPE_LABELS, type Sinistre } from "../sinistres/api";
 import {
   archiveEvenement,
   createEvenement,
@@ -30,6 +31,7 @@ interface FormulaireEvenement {
   appartementId: string;
   contactId: string;
   candidatId: string;
+  sinistreId: string;
   notes: string;
 }
 
@@ -42,8 +44,13 @@ const FORMULAIRE_VIDE: FormulaireEvenement = {
   appartementId: "",
   contactId: "",
   candidatId: "",
+  sinistreId: "",
   notes: ""
 };
+
+function libelleSinistre(sinistre: Sinistre): string {
+  return `${SINISTRE_TYPE_LABELS[sinistre.type]} — déclaré le ${sinistre.dateDeclaration}`;
+}
 
 // Convertit un ISO (stocké/renvoyé par le backend) vers le format attendu
 // par <input type="datetime-local">, et inversement — pas de fuseau
@@ -63,6 +70,17 @@ function formaterDateAffichage(iso: string): string {
   return new Date(iso).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
 }
 
+export interface CalendrierViewProps {
+  // Déclenche l'ouverture directe du formulaire de création, pré-rempli
+  // (Module Suivi sinistre et assurance, 2026-09-16 — bouton "Créer un
+  // rendez-vous d'expertise" sur la fiche sinistre) — jamais une création
+  // silencieuse : seuls type/sinistreId sont pré-remplis, la date reste à
+  // choisir (FORMULAIRE_VIDE.dateDebut reste vide, champ `required`), même
+  // principe que ouvrirCreationPourJour ci-dessous (pré-remplissage
+  // modifiable, jamais figé).
+  prefiltrageInitial?: { type: EvenementType; sinistreId: string; bienId?: string; appartementId?: string };
+}
+
 // Module Calendrier d'interventions (2026-09-15) : vue liste (pas de grille
 // mensuelle) — cohérente avec le reste de l'application (aucune autre vue
 // n'utilise de grille calendaire) et avec la consigne de rester simple tant
@@ -70,12 +88,13 @@ function formaterDateAffichage(iso: string): string {
 // appartementId/contactId/candidatId sont tous des rattachements
 // indépendamment optionnels, quel que soit le type choisi (aucune
 // contrainte imposée ici, voir packages/db/src/schema/evenement-calendrier.ts).
-export function CalendrierView(): React.JSX.Element {
+export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {}): React.JSX.Element {
   const [evenements, setEvenements] = useState<EvenementCalendrier[]>([]);
   const [biens, setBiens] = useState<Bien[]>([]);
   const [appartements, setAppartements] = useState<Appartement[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [candidats, setCandidats] = useState<Candidat[]>([]);
+  const [sinistres, setSinistres] = useState<Sinistre[]>([]);
   const [libellesAppartement, setLibellesAppartement] = useState<Map<string, string>>(new Map());
   const [filtreType, setFiltreType] = useState<FiltreType>("");
   const [modeAffichage, setModeAffichage] = useState<ModeAffichage>("liste");
@@ -87,18 +106,21 @@ export function CalendrierView(): React.JSX.Element {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [listeEvenements, listeBiens, listeAppartements, listeContacts, listeCandidats] = await Promise.all([
-        listEvenements(),
-        listBiens(),
-        listAppartements(),
-        listContacts(),
-        listCandidats()
-      ]);
+      const [listeEvenements, listeBiens, listeAppartements, listeContacts, listeCandidats, listeSinistres] =
+        await Promise.all([
+          listEvenements(),
+          listBiens(),
+          listAppartements(),
+          listContacts(),
+          listCandidats(),
+          listSinistres()
+        ]);
       setEvenements(listeEvenements);
       setBiens(listeBiens);
       setAppartements(listeAppartements);
       setContacts(listeContacts);
       setCandidats(listeCandidats);
+      setSinistres(listeSinistres);
 
       const biensCache = new Map<string, Bien>(listeBiens.map((bien) => [bien.id, bien]));
       const libelles = new Map<string, string>();
@@ -123,6 +145,38 @@ export function CalendrierView(): React.JSX.Element {
     void refresh();
   }, [refresh]);
 
+  // Ouvre le formulaire de création pré-rempli, jamais une création directe
+  // (voir ouvrirCreationPourJour et le prefiltrage déclenché par
+  // prefiltrageInitial ci-dessous) — la date reste toujours à choisir tant
+  // qu'elle n'est pas explicitement fournie dans `prefiltrage`.
+  function ouvrirCreation(prefiltrage: Partial<FormulaireEvenement> = {}): void {
+    setFormulaire({ ...FORMULAIRE_VIDE, ...prefiltrage });
+    setVue({ niveau: "creation" });
+  }
+
+  // Deep-link depuis la fiche sinistre (bouton "Créer un rendez-vous
+  // d'expertise", Module Suivi sinistre et assurance, 2026-09-16) : ouvre
+  // ce même formulaire avec type/sinistreId pré-remplis, jamais un appel
+  // createEvenement direct côté SinistresView (ne duplique pas le
+  // formulaire) — voir CalendrierPage. Clé stable (pas l'objet
+  // `prefiltrageInitial`, recréé à chaque rendu de CalendrierPage) pour ne
+  // déclencher l'ouverture qu'une fois par vrai changement, même précaution
+  // que le correctif du fil d'Ariane (docs/error-log.md, [2026-07-29]).
+  const prefiltrageInitialKey = prefiltrageInitial
+    ? `${prefiltrageInitial.type}:${prefiltrageInitial.sinistreId}:${prefiltrageInitial.bienId ?? ""}:${prefiltrageInitial.appartementId ?? ""}`
+    : null;
+  useEffect(() => {
+    if (!prefiltrageInitial) {
+      return;
+    }
+    ouvrirCreation({
+      type: prefiltrageInitial.type,
+      sinistreId: prefiltrageInitial.sinistreId,
+      ...(prefiltrageInitial.bienId !== undefined && { bienId: prefiltrageInitial.bienId }),
+      ...(prefiltrageInitial.appartementId !== undefined && { appartementId: prefiltrageInitial.appartementId })
+    });
+  }, [prefiltrageInitialKey]);
+
   async function ouvrirEvenement(evenementId: string): Promise<void> {
     const evenement = await getEvenement(evenementId);
     setFormulaire({
@@ -134,6 +188,7 @@ export function CalendrierView(): React.JSX.Element {
       appartementId: evenement.appartementId ?? "",
       contactId: evenement.contactId ?? "",
       candidatId: evenement.candidatId ?? "",
+      sinistreId: evenement.sinistreId ?? "",
       notes: evenement.notes ?? ""
     });
     setVue({ niveau: "edition", evenementId });
@@ -150,6 +205,7 @@ export function CalendrierView(): React.JSX.Element {
       ...(formulaire.appartementId !== "" && { appartementId: formulaire.appartementId }),
       ...(formulaire.contactId !== "" && { contactId: formulaire.contactId }),
       ...(formulaire.candidatId !== "" && { candidatId: formulaire.candidatId }),
+      ...(formulaire.sinistreId !== "" && { sinistreId: formulaire.sinistreId }),
       ...(formulaire.notes !== "" && { notes: formulaire.notes })
     };
     try {
@@ -167,8 +223,7 @@ export function CalendrierView(): React.JSX.Element {
   }
 
   function ouvrirCreationPourJour(date: string): void {
-    setFormulaire({ ...FORMULAIRE_VIDE, dateDebut: `${date}T09:00` });
-    setVue({ niveau: "creation" });
+    ouvrirCreation({ dateDebut: `${date}T09:00` });
   }
 
   async function archiver(evenementId: string): Promise<void> {
@@ -291,6 +346,21 @@ export function CalendrierView(): React.JSX.Element {
               {candidats.map((candidat) => (
                 <option key={candidat.id} value={candidat.id}>
                   {libelleCandidat(candidat)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            Sinistre
+            <select
+              value={formulaire.sinistreId}
+              onChange={(e) => setFormulaire({ ...formulaire, sinistreId: e.target.value })}
+              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+            >
+              <option value="">— Aucun —</option>
+              {sinistres.map((sinistre) => (
+                <option key={sinistre.id} value={sinistre.id}>
+                  {libelleSinistre(sinistre)}
                 </option>
               ))}
             </select>

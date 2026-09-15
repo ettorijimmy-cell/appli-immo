@@ -36,6 +36,10 @@ export class UpdateEvenementCalendrierDto {
   candidatId?: string;
 
   @IsOptional()
+  @IsUUID()
+  sinistreId?: string;
+
+  @IsOptional()
   @IsString()
   notes?: string;
 }

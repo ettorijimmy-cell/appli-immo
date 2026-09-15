@@ -6,6 +6,7 @@ export type TacheType =
   | "document_expire"
   | "quittance_mensuelle"
   | "revision_loyer"
+  | "sinistre_stagnation"
   | "autre";
 export type TacheStatut = "a_faire" | "en_cours" | "fait" | "annulee";
 export type TacheOrigine = "alerte" | "planifiee" | "manuelle";
@@ -26,6 +27,7 @@ export interface Tache {
   bienId: string | null;
   locataireId: string | null;
   paiementId: string | null;
+  sinistreId: string | null;
   dateEcheance: string | null;
   dateCompletion: string | null;
   periodeRecurrence: string | null;

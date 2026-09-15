@@ -89,3 +89,26 @@ export function calculerAlerteEntretienEquipement(
 export function calculerAlerteImpaye(dateEcheance: string, seuilJoursGrace: number, dateReference: string): boolean {
   return dateReference > ajouterJours(dateEcheance, seuilJoursGrace);
 }
+
+/**
+ * Règle sinistre_stagnation (Module Suivi sinistre et assurance,
+ * 2026-09-16) : délai FIXE et IDENTIQUE quel que soit le statut du
+ * sinistre (décision actée avec Jimmy — pas de seuil différent par
+ * statut), calculé depuis `dateChangementStatut` plutôt qu'une date
+ * métier à venir — même mécanique que calculerAlerteEntretienEquipement
+ * (date cible = ancre + délai, `dateReference >= dateCible`, reste vraie
+ * indéfiniment tant que non traitée). Un sinistre `clos` ne stagne plus
+ * par définition, quelle que soit l'ancienneté de son dernier changement
+ * de statut.
+ */
+export function calculerAlerteSinistreStagnation(
+  statut: string,
+  dateChangementStatut: string,
+  seuilJours: number,
+  dateReference: string
+): boolean {
+  if (statut === "clos") {
+    return false;
+  }
+  return dateReference >= ajouterJours(dateChangementStatut, seuilJours);
+}

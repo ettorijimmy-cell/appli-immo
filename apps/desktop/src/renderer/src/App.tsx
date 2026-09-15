@@ -10,6 +10,7 @@ import { LocatairesPage } from "./pages/LocatairesPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ParametresPage } from "./pages/ParametresPage";
 import { PatrimoinePage } from "./pages/PatrimoinePage";
+import { SinistresPage } from "./pages/SinistresPage";
 import { TableauDeBordPage } from "./pages/TableauDeBordPage";
 import { TachesPage } from "./pages/TachesPage";
 
@@ -32,6 +33,7 @@ function AuthenticatedApp(): React.JSX.Element {
         <Route path="finances" element={<FinancesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="taches" element={<TachesPage />} />
+        <Route path="sinistres" element={<SinistresPage />} />
         <Route path="parametres" element={<ParametresPage />} />
       </Route>
     </Routes>

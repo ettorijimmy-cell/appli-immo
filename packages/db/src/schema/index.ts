@@ -39,3 +39,4 @@ export * from "./contact";
 export * from "./candidat";
 export * from "./evenement-calendrier";
 export * from "./calendrier-abonnement";
+export * from "./sinistre";

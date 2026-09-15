@@ -5,6 +5,7 @@ import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail }
 import { getGarant, getLocataire } from "../locataires/api";
 import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getSci } from "../scis/api";
+import { getSinistre, SINISTRE_TYPE_LABELS } from "../sinistres/api";
 import type { DocumentEntiteType } from "./api";
 
 export interface CacheLibellesEntites {
@@ -77,6 +78,10 @@ export async function resoudreLibelleEntite(
         case "candidat": {
           const candidat = await getCandidat(entiteId);
           return `${libelleCandidat(candidat)} (candidat)`;
+        }
+        case "sinistre": {
+          const sinistre = await getSinistre(entiteId);
+          return `Sinistre ${SINISTRE_TYPE_LABELS[sinistre.type]} du ${sinistre.dateDeclaration}`;
         }
       }
     } catch {

@@ -6,7 +6,8 @@ const LABELS: Record<AlerteType, string> = {
   document_expire: "Document expiré",
   document_expire_proche: "Document bientôt expiré",
   entretien_equipement: "Entretien d'équipement",
-  impaye: "Impayé"
+  impaye: "Impayé",
+  sinistre_stagnation: "Dossier sinistre sans mouvement"
 };
 
 export function ParametresAlertesView(): React.JSX.Element {

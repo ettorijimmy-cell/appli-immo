@@ -5,12 +5,16 @@ import { candidat } from "./candidat";
 import { auditColumns } from "./columns.helpers";
 import { contact } from "./contact";
 import { organisations } from "./organisations";
+import { sinistre } from "./sinistre";
 
 // Module Calendrier d'interventions (2026-09-15).
 export const evenementTypeEnum = pgEnum("evenement_type", [
   "intervention_artisan",
   "visite_candidat",
   "etat_des_lieux",
+  // Rendez-vous d'expertise d'un sinistre (Module Suivi sinistre et
+  // assurance, 2026-09-16) — voir sinistreId ci-dessous.
+  "expertise_sinistre",
   "autre"
 ]);
 
@@ -34,6 +38,10 @@ export const evenementCalendrier = pgTable("evenement_calendrier", {
   appartementId: uuid("appartement_id").references(() => appartements.id),
   contactId: uuid("contact_id").references(() => contact.id),
   candidatId: uuid("candidat_id").references(() => candidat.id),
+  // Rattachement optionnel indépendant, même principe que les 4
+  // précédents (Module Suivi sinistre et assurance, 2026-09-16) — couvre
+  // type='expertise_sinistre' sans être imposé au niveau du schéma.
+  sinistreId: uuid("sinistre_id").references(() => sinistre.id),
   notes: text("notes"),
   organisationId: uuid("organisation_id")
     .notNull()

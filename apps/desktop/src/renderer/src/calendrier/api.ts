@@ -1,13 +1,25 @@
 import { authenticatedFetch } from "../lib/authenticated-fetch";
 
-export type EvenementType = "intervention_artisan" | "visite_candidat" | "etat_des_lieux" | "autre";
+export type EvenementType =
+  | "intervention_artisan"
+  | "visite_candidat"
+  | "etat_des_lieux"
+  | "expertise_sinistre"
+  | "autre";
 
-export const EVENEMENT_TYPES: EvenementType[] = ["intervention_artisan", "visite_candidat", "etat_des_lieux", "autre"];
+export const EVENEMENT_TYPES: EvenementType[] = [
+  "intervention_artisan",
+  "visite_candidat",
+  "etat_des_lieux",
+  "expertise_sinistre",
+  "autre"
+];
 
 export const EVENEMENT_TYPE_LABELS: Record<EvenementType, string> = {
   intervention_artisan: "Intervention artisan",
   visite_candidat: "Visite candidat",
   etat_des_lieux: "État des lieux",
+  expertise_sinistre: "Expertise sinistre",
   autre: "Autre"
 };
 
@@ -21,6 +33,7 @@ export interface EvenementCalendrier {
   appartementId: string | null;
   contactId: string | null;
   candidatId: string | null;
+  sinistreId: string | null;
   notes: string | null;
   archivedAt: string | null;
 }
@@ -34,6 +47,7 @@ export interface CreateEvenementInput {
   appartementId?: string;
   contactId?: string;
   candidatId?: string;
+  sinistreId?: string;
   notes?: string;
 }
 
