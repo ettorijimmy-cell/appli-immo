@@ -1408,12 +1408,22 @@ et la piste de correctif (prorata à préserver exactement, sans dérive
 d'arrondi entre les deux composantes).
 
 ## Gmail (Module Tâches, Étape 3 — intégration OAuth2, 2026-09-01)
+
+**Dormant depuis le Module Messagerie (2026-09-16)** : `TachesService.
+envoyerNotification` envoie désormais via `SmtpEnvoiService` (boîte mail
+dédiée, IMAP/SMTP) — voir section "Messagerie" ci-dessous pour la
+décision technique complète. Tout ce qui suit reste exact
+techniquement et les routes/l'écran Paramètres restent en place, mais
+plus aucun flux applicatif n'appelle `GoogleOAuthService` en usage réel.
+Retrait explicite laissé à une décision future (décision actée avec
+Jimmy), pas fait ici.
+
 Clôt le cycle "notification résolue en `metadata` mais jamais réellement
 envoyée" ouvert depuis les étapes précédentes (alertes, révision de loyer,
-quittance mensuelle) : `TachesService.envoyerNotification(id)` envoie
+quittance mensuelle) : `TachesService.envoyerNotification(id)` envoyait
 effectivement l'email via l'API Gmail (compte Google de l'utilisateur,
-jamais un compte technique partagé) et clôt la tâche — jamais l'inverse
-(voir plus bas, "jamais fait sur un échec d'envoi").
+jamais un compte technique partagé) et clôturait la tâche — jamais
+l'inverse (voir plus bas, "jamais fait sur un échec d'envoi").
 
 ### connexion_gmail
 | Champ | Type | Description |
@@ -1760,6 +1770,135 @@ extension d'un pattern déjà répété ~9 fois dans le projet) :
 **Desktop** : écran "Sinistres", entrée de sidebar dédiée (icône
 `ShieldAlert`) — CRUD complet (liste, fiche, changement de statut,
 montants, pièces jointes, création d'un événement d'expertise).
+
+## Messagerie (module, 2026-09-16)
+
+Niveau "boîte mail dédiée avec lecture + envoi", délibérément moins
+ambitieux qu'un vrai portail externe (voir section "Portail externe" du
+backlog, chantier différé). Une boîte Gmail séparée du compte personnel
+de Jimmy, utilisée uniquement pour la gestion locative.
+
+**Décision technique majeure (actée avec Jimmy après recherche,
+2026-09-16) — révision explicite d'une décision antérieure** : la
+feuille de route du 2026-08-24 ("Messagerie interne") documentait
+initialement une messagerie interne à l'application, *sans*
+synchronisation de boîte mail externe, jugée alors disproportionnée. Ce
+module l'inverse en connaissance de cause, après recherche sur le coût
+réel de l'alternative "API Gmail" : le scope OAuth `gmail.readonly`
+(lecture) est classé "restreint" par Google, ce qui impose un audit de
+sécurité **CASA** payant et annuel (500-4500 $/an) — disproportionné pour
+un usage interne mono-utilisateur. **IMAP (lecture) + SMTP (envoi)**,
+authentifiés par un **mot de passe d'application Gmail** (16 caractères,
+généré côté compte Google, nécessite la validation en 2 étapes activée
+sur ce compte), reste un mécanisme standard et stable, entièrement hors
+du système OAuth/CASA de Google — c'est ce choix qui est implémenté ici,
+pas une simple omission de la décision de 2026-08-24.
+
+**Unification avec le Module Tâches** : les envois automatiques
+(quittances, relances impayé/entretien/document expiré, révision de
+loyer, relance sinistre) passent désormais par cette boîte dédiée
+(`SmtpEnvoiService`), plus par le compte Gmail OAuth personnel
+(`GoogleOAuthService`). `TachesService.envoyerNotification` n'a changé
+que sur ce point précis — signature de `envoyerEmail` volontairement
+identique (`organisationId, destinataire, objet, corps, pieceJointe?`),
+toute la résolution de destinataire/modèle de courrier/génération PDF en
+amont reste inchangée. **`GoogleOAuthService`/`connexion_gmail` restent
+dormants** (routes `/gmail/*` et écran Paramètres inchangés, mais plus
+rien ne les appelle en usage réel) — retrait explicite laissé à une
+décision future, une fois l'unification éprouvée en usage réel.
+
+### boite_mail_dediee
+
+| Champ | Type | Description |
+|---|---|---|
+| email | text | Adresse de la boîte dédiée |
+| mot_de_passe_app_chiffre | text | Chiffré via `EncryptionService` (AES-256-GCM), même mécanique que `comptes_bancaires_sci.iban_chiffre`/`connexion_gmail.access_token_chiffre` — jamais en clair en base, jamais journalisé, jamais déchiffré côté `apps/desktop` (CLAUDE.md) |
+| dernier_uid_synchronise | integer, nullable | Progression de la synchronisation IMAP (`ImapSyncJobService`) : plus haut UID déjà importé. Les UID IMAP sont strictement croissants au sein d'une boîte (RFC 3501) — le job ne récupère que UID > dernier_uid_synchronise, jamais une fenêtre de dates (aucun fuseau horaire à négocier avec le serveur). `null` tant qu'aucune synchronisation n'a eu lieu (récupère tout l'historique disponible au premier passage) |
+| organisation_id | uuid | Index unique partiel `WHERE archived_at IS NULL` — au plus une boîte active par organisation, une reconfiguration archive l'ancienne ligne avant d'en insérer une nouvelle (même principe que `connexion_gmail`) |
+
+### message_communication
+
+| Champ | Type | Description |
+|---|---|---|
+| direction | enum | `envoye` \| `recu` |
+| objet, corps | text, nullable | |
+| email_expediteur, email_destinataire | text | |
+| date_message | timestamptz | |
+| imap_message_id | text, nullable | En-tête RFC 5322/2822 `Message-ID`, exposé par `imapflow` — sert au dédoublonnage à la synchronisation. **Nullable + index unique partiel** (`WHERE imap_message_id IS NOT NULL`, sur `(organisation_id, imap_message_id)`) plutôt qu'un identifiant synthétique inventé pour les messages envoyés : un message composé depuis l'application n'a pas encore d'identifiant côté serveur IMAP au moment de l'insertion (`SmtpEnvoiService` journalise avant tout aller-retour réseau), et "imap message id" n'a de sens que pour un message reçu — ajustement au schéma cible initialement fourni, décision actée avec Jimmy après l'audit préalable |
+| classification_type | enum, défaut `non_classe` | `contact` \| `locataire` \| `candidat` \| `non_classe` — résolu par correspondance EXACTE d'adresse email contre `contact.email`/`locataires.email`/`candidat.email`, scopée à l'organisation (`ClassificationMessageService` + `resoudreClassificationEmail`, packages/core). Si l'adresse correspond à plusieurs entités distinctes (y compris deux lignes de la même table) ou à aucune, le message reste `non_classe` — jamais un choix arbitraire, même discipline que `suggererCategorie` (Charges et fiscalité) |
+| classification_id | uuid, nullable | Id du contact/locataire/candidat selon `classification_type` — pas de FK possible (cible différente selon le type), même principe que `alertes.entite_id`/`documents.entite_id` |
+| organisation_id | uuid | |
+
+**Résolution de la classification** : pour un message **reçu**,
+classifié sur `emailExpediteur` (l'expéditeur réel) ; pour un message
+**envoyé**, classifié sur `emailDestinataire` — dans les deux cas,
+l'adresse du correspondant, jamais celle de la boîte dédiée elle-même.
+
+### piece_jointe_message
+
+| Champ | Type | Description |
+|---|---|---|
+| message_id | uuid, FK `message_communication` | |
+| nom_fichier | text | |
+| chemin_stockage | text | `messages/<messageId>/<pieceJointeId>.enc`, même convention que `construireCheminStockage` (documents) — chiffré via `DocumentStorageService`/`StorageModule` |
+| type_mime | text, nullable | |
+| organisation_id | uuid | |
+
+**Pièces jointes reçues : capturées et stockées, jamais classées
+automatiquement dans `documents`** (décision actée avec Jimmy) — un
+visualiseur intégré (`usePieceApercu`, PDF/image via blob: URL, même
+mécanisme que l'aperçu de document) permet l'ouverture directe depuis le
+fil de messagerie. Une action manuelle "Classer dans Documents"
+(`MessagesCommunicationService.classerDansDocuments`) reste disponible :
+elle **copie** le contenu déjà stocké vers une nouvelle ligne `documents`
+sous une vraie catégorie choisie par l'utilisateur — jamais un partage de
+`cheminStockage` entre les deux tables, les deux copies vivent leur vie
+indépendamment. Portée limitée à cette itération : proposée uniquement
+quand `classificationType` vaut `locataire` ou `candidat` (les deux
+seuls types qui correspondent à une vraie valeur de `documentEntiteType`
+existante — `contact` ne peut être rattaché à aucun document aujourd'hui,
+aucune régression introduite ici).
+
+**`StorageModule`** (extrait de `DocumentsModule`, 2026-09-16) :
+`DocumentStorageService` était déjà utilisé par deux modules sans lien
+avec Documents (`ReferencesModule`, `RemboursementsModule`), chacun le
+redéclarant comme son propre provider (contournement documenté, la classe
+ne dépend que d'`EncryptionService`/`ConfigService`, sans état partagé).
+Un seul module partagé désormais, importé par `DocumentsModule`,
+`ReferencesModule`, `RemboursementsModule` et `MessagerieModule` — pas un
+changement de comportement, juste un déplacement.
+
+**`SmtpEnvoiService`** : envoie via `nodemailer` (Gmail SMTP,
+`smtp.gmail.com:465`), journalise systématiquement le message envoyé
+dans `message_communication` (direction `envoye`) avec sa pièce jointe
+éventuelle — symétrique à `ImapSyncJobService` côté réception, pour que
+l'écran Messagerie affiche un fil unifié envoyé+reçu.
+
+**`ImapSyncJobService`** : job planifié (`@Cron`, toutes les 10 minutes),
+une boîte par organisation, dossier **INBOX uniquement** — les messages
+envoyés depuis l'application sont déjà journalisés par `SmtpEnvoiService`
+au moment de l'envoi, synchroniser aussi le dossier "Envoyés" IMAP
+dupliquerait ces mêmes messages sous un autre chemin sans information
+supplémentaire. Récupération par plage d'UID (`imapflow`), parsing MIME
+via `mailparser`. Une boîte en échec (réseau, identifiants révoqués)
+n'empêche jamais la synchronisation des autres organisations.
+
+**Non-objectifs explicites (tranchés avec Jimmy avant tout code)** :
+- Jamais l'API Gmail OAuth pour ce module (voir décision technique
+  ci-dessus).
+- Jamais de classement automatique des pièces jointes reçues dans
+  `documents` — toujours un geste manuel.
+- Aucun accès externe (portail locataire/candidat) — reste un outil
+  interne, consulté uniquement par Jimmy.
+
+**Desktop** : écran "Messagerie" (nouvelle entrée de sidebar, icône
+`Mail`) — fils groupés par classification (ou par adresse email pour les
+messages non classés, aucune résolution de nom d'affichage à cette
+itération), visualiseur de pièce jointe intégré, formulaire de
+composition/réponse. Configuration de la boîte dédiée dans Paramètres
+(`ConfigurationBoiteMailDedieeView`) : le mot de passe n'est jamais
+renvoyé par le backend une fois enregistré, le formulaire de
+reconfiguration repart toujours d'un champ vide.
 
 ## Tableau de bord (Module 7)
 

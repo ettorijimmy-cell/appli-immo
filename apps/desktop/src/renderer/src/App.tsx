@@ -8,6 +8,7 @@ import { DocumentsPage } from "./pages/DocumentsPage";
 import { FinancesPage } from "./pages/FinancesPage";
 import { LocatairesPage } from "./pages/LocatairesPage";
 import { LoginPage } from "./pages/LoginPage";
+import { MessageriePage } from "./pages/MessageriePage";
 import { ParametresPage } from "./pages/ParametresPage";
 import { PatrimoinePage } from "./pages/PatrimoinePage";
 import { SinistresPage } from "./pages/SinistresPage";
@@ -34,6 +35,7 @@ function AuthenticatedApp(): React.JSX.Element {
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="taches" element={<TachesPage />} />
         <Route path="sinistres" element={<SinistresPage />} />
+        <Route path="messagerie" element={<MessageriePage />} />
         <Route path="parametres" element={<ParametresPage />} />
       </Route>
     </Routes>

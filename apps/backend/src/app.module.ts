@@ -28,6 +28,7 @@ import { GoogleOAuthModule } from "./google-oauth/google-oauth.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
+import { MessagerieModule } from "./messagerie/messagerie.module";
 import { ModelesCourrierModule } from "./modeles-courrier/modeles-courrier.module";
 import { PaiementsModule } from "./paiements/paiements.module";
 import { PowerSyncModule } from "./powersync/powersync.module";
@@ -83,6 +84,7 @@ import { VersementsModule } from "./versements/versements.module";
     EtatDesLieuxDocumentDocxModule,
     QuittanceDocumentDocxModule,
     GoogleOAuthModule,
+    MessagerieModule,
     PowerSyncModule
   ]
 })

@@ -16,8 +16,8 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import type { PieceJointeEmail } from "../google-oauth/construire-message-rfc2822";
-import { GoogleOAuthService } from "../google-oauth/google-oauth.service";
+import type { PieceJointeEmail } from "../messagerie/smtp-envoi.service";
+import { SmtpEnvoiService } from "../messagerie/smtp-envoi.service";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
 import { QuittanceDocumentDocxService } from "../quittance-document-docx/quittance-document-docx.service";
 import { UsersService } from "../users/users.service";
@@ -48,7 +48,7 @@ export class TachesService {
     private readonly requestContext: RequestContextService,
     private readonly modelesCourrierService: ModelesCourrierService,
     private readonly usersService: UsersService,
-    private readonly googleOAuthService: GoogleOAuthService,
+    private readonly smtpEnvoiService: SmtpEnvoiService,
     private readonly quittanceDocumentDocxService: QuittanceDocumentDocxService
   ) {}
 
@@ -222,16 +222,18 @@ export class TachesService {
 
   /**
    * Action générique (Module Tâches, Étape 3 — intégration Gmail,
-   * 2026-09-01) : envoie la notification déjà résolue en amont
-   * (`metadata.notificationObjet`/`notificationCorps` — impaye,
-   * entretien_equipement, document_expire, quittance_mensuelle à la
-   * génération ; revision_loyer une fois `appliquerRevision` passée) via
-   * Gmail, puis marque la tâche `fait`. Ne tente jamais rien si le
-   * destinataire ne peut pas être résolu (locataireId absent, ou
-   * locataire sans email) — message clair, jamais un envoi à une adresse
-   * devinée. Si l'envoi échoue (Gmail non connecté, jeton révoqué, erreur
-   * API), l'exception de GoogleOAuthService remonte telle quelle et la
-   * tâche reste dans son statut actuel — jamais `fait` sur un envoi qui a
+   * 2026-09-01 ; unifiée vers la boîte mail dédiée — Module Messagerie,
+   * 2026-09-16, décision actée avec Jimmy) : envoie la notification déjà
+   * résolue en amont (`metadata.notificationObjet`/`notificationCorps` —
+   * impaye, entretien_equipement, document_expire, quittance_mensuelle à
+   * la génération ; revision_loyer une fois `appliquerRevision` passée ;
+   * sinistre_stagnation vers le contact assureur) via SmtpEnvoiService,
+   * puis marque la tâche `fait`. Ne tente jamais rien si le destinataire
+   * ne peut pas être résolu (locataireId/sinistreId absent, ou email
+   * manquant) — message clair, jamais un envoi à une adresse devinée. Si
+   * l'envoi échoue (boîte mail dédiée non configurée, erreur SMTP),
+   * l'exception de SmtpEnvoiService remonte telle quelle et la tâche
+   * reste dans son statut actuel — jamais `fait` sur un envoi qui a
    * échoué (l'update de statut n'est atteint qu'après un envoi réussi).
    */
   async envoyerNotification(id: string) {
@@ -263,7 +265,7 @@ export class TachesService {
       pieceJointe = { nomFichier: `quittance-${tacheRow.paiementId}.docx`, contenu, mimeType: MIME_DOCX };
     }
 
-    await this.googleOAuthService.envoyerEmail(
+    await this.smtpEnvoiService.envoyerEmail(
       tacheRow.organisationId,
       destinataireEmail,
       notificationObjet,

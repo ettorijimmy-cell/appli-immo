@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { obtenirStatutGmail } from "../gmail/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { obtenirStatutBoiteMailDediee } from "../messagerie/api";
 import {
   appliquerRevisionTache,
   envoyerNotificationTache,
@@ -51,19 +51,21 @@ export function TachesListView(): React.JSX.Element {
   // Compteur toujours visible, indépendant du filtre sélectionné : le
   // filtre par défaut ("À faire") masque les tâches en_cours — une
   // révision appliquée (appliquerRevision) mais dont la notification n'a
-  // pas encore été envoyée (Gmail, étape 3/4) ne doit jamais se perdre
+  // pas encore été envoyée (boîte mail dédiée) ne doit jamais se perdre
   // silencieusement hors de vue en attendant.
   const [nombreEnCours, setNombreEnCours] = useState(0);
   // Chargé une seule fois à l'ouverture de l'écran (pas de polling, même
-  // principe que ConnexionGmailView) — sert uniquement à désactiver le
-  // bouton "Envoyer" avec une infobulle explicite si Gmail n'est pas
-  // connecté ; null tant que non résolu (traité comme non connecté).
-  const [gmailConnecte, setGmailConnecte] = useState<boolean | null>(null);
+  // principe que ConnexionGmailView auparavant) — sert uniquement à
+  // désactiver le bouton "Envoyer" avec une infobulle explicite si la
+  // boîte mail dédiée n'est pas configurée (unification Module Messagerie,
+  // 2026-09-16, remplace la vérification de connexion Gmail OAuth) ; null
+  // tant que non résolu (traité comme non configurée).
+  const [boiteMailConfiguree, setBoiteMailConfiguree] = useState<boolean | null>(null);
 
   useEffect(() => {
-    obtenirStatutGmail()
-      .then((statut) => setGmailConnecte(statut.connecte))
-      .catch(() => setGmailConnecte(false));
+    obtenirStatutBoiteMailDediee()
+      .then((statut) => setBoiteMailConfiguree(statut.configuree))
+      .catch(() => setBoiteMailConfiguree(false));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -133,7 +135,7 @@ export function TachesListView(): React.JSX.Element {
               tache={tache}
               libelle={libelles.get(tache.id) ?? "…"}
               onChanged={refresh}
-              gmailConnecte={gmailConnecte ?? false}
+              boiteMailConfiguree={boiteMailConfiguree ?? false}
             />
           ))}
         </ul>
@@ -146,12 +148,12 @@ function TacheItem({
   tache,
   libelle,
   onChanged,
-  gmailConnecte
+  boiteMailConfiguree
 }: {
   tache: Tache;
   libelle: string;
   onChanged: () => Promise<void>;
-  gmailConnecte: boolean;
+  boiteMailConfiguree: boolean;
 }): React.JSX.Element {
   const metadataRevision = tache.type === "revision_loyer" ? lireMetadataRevisionLoyer(tache.metadata) : null;
   const metadataNotification = lireMetadataNotification(tache.metadata);
@@ -169,10 +171,11 @@ function TacheItem({
     await onChanged();
   }
 
-  // Envoie la notification déjà résolue en metadata via Gmail et marque la
-  // tâche fait (voir TachesService.envoyerNotification) — jamais fait sur
-  // un échec d'envoi, l'exception (Gmail non connecté, jeton révoqué…)
-  // reste affichée sans changer le statut.
+  // Envoie la notification déjà résolue en metadata via la boîte mail
+  // dédiée (SMTP) et marque la tâche fait (voir TachesService.
+  // envoyerNotification) — jamais fait sur un échec d'envoi, l'exception
+  // (boîte mail non configurée, erreur SMTP…) reste affichée sans changer
+  // le statut.
   async function handleEnvoyerNotification(): Promise<void> {
     setIsSendingNotification(true);
     setNotificationError(null);
@@ -206,7 +209,7 @@ function TacheItem({
   // appliquerRevision) : la génération du document n'est pas une action
   // métier au sens de TachesService, "Marquer fait" reste le geste manuel
   // qui clôt la tâche une fois la quittance effectivement transmise (envoi
-  // Gmail hors périmètre de cette étape, docs/backlog.md).
+  // hors périmètre de cette étape, docs/backlog.md).
   async function handleGenererQuittance(): Promise<void> {
     if (!tache.paiementId) return;
     setIsGeneratingDocument(true);
@@ -276,8 +279,8 @@ function TacheItem({
               </span>
             )}
             {metadataNotification ? (
-              // Notification déjà résolue (objet/corps) : l'envoi via Gmail
-              // remplace "Marquer fait", qui n'est plus atteignable ici —
+              // Notification déjà résolue (objet/corps) : l'envoi via la
+              // boîte mail dédiée remplace "Marquer fait", qui n'est plus atteignable ici —
               // c'est envoyerNotification() qui pose le statut fait, jamais
               // un clic manuel sans envoi réel. "Marquer annulée" reste
               // disponible en secours.
@@ -286,8 +289,12 @@ function TacheItem({
                 onClick={() => {
                   void handleEnvoyerNotification();
                 }}
-                disabled={isSendingNotification || !gmailConnecte}
-                title={gmailConnecte ? undefined : "Connectez Gmail dans Paramètres pour envoyer cette notification"}
+                disabled={isSendingNotification || !boiteMailConfiguree}
+                title={
+                  boiteMailConfiguree
+                    ? undefined
+                    : "Configurez la boîte mail dédiée dans Paramètres pour envoyer cette notification"
+                }
                 className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
               >
                 {isSendingNotification ? "Envoi…" : "Envoyer"}

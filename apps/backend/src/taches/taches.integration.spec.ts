@@ -40,7 +40,7 @@ import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { EquipementsModule } from "../equipements/equipements.module";
-import { GoogleOAuthService } from "../google-oauth/google-oauth.service";
+import { SmtpEnvoiService } from "../messagerie/smtp-envoi.service";
 import { IndicesIrlModule } from "../indices-irl/indices-irl.module";
 import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
@@ -1516,14 +1516,16 @@ describe("Tâches — quittance mensuelle (intégration Postgres réelle)", () =
 });
 
 // Vérifie TachesService.envoyerNotification (Module Tâches, Étape 3 —
-// intégration Gmail, 2026-09-01). GoogleOAuthService est remplacé par un
-// double de test (jamais un vrai appel HTTP contre l'API Gmail dans les
-// tests automatisés — consigne explicite) ; QuittanceDocumentDocxService
-// reste le vrai service (génération locale, aucun appel externe) pour
-// vérifier réellement la pièce jointe. Les tâches sont insérées
-// directement avec une notification déjà résolue en metadata, pour isoler
-// la logique d'envoyerNotification de celle des générateurs de tâches
-// (déjà couverte par les describe ci-dessus).
+// intégration Gmail, 2026-09-01 ; unifiée vers la boîte mail dédiée —
+// Module Messagerie, 2026-09-16). SmtpEnvoiService est remplacé par un
+// double de test (jamais un vrai envoi SMTP dans les tests automatisés —
+// consigne explicite, même journalisation dans message_communication
+// testée séparément côté messagerie.integration.spec.ts) ;
+// QuittanceDocumentDocxService reste le vrai service (génération locale,
+// aucun appel externe) pour vérifier réellement la pièce jointe. Les
+// tâches sont insérées directement avec une notification déjà résolue en
+// metadata, pour isoler la logique d'envoyerNotification de celle des
+// générateurs de tâches (déjà couverte par les describe ci-dessus).
 describe("Tâches — envoyerNotification (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
@@ -1539,11 +1541,11 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
   let db: Database;
   let organisationId: string;
   let appartementId: string;
-  let googleOAuthServiceDouble: { envoyerEmail: ReturnType<typeof vi.fn> };
+  let smtpEnvoiServiceDouble: { envoyerEmail: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     db = await begin();
-    googleOAuthServiceDouble = { envoyerEmail: vi.fn(async () => undefined) };
+    smtpEnvoiServiceDouble = { envoyerEmail: vi.fn(async () => undefined) };
 
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -1567,8 +1569,8 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     })
       .overrideProvider(DATABASE_CONNECTION)
       .useValue(db)
-      .overrideProvider(GoogleOAuthService)
-      .useValue(googleOAuthServiceDouble)
+      .overrideProvider(SmtpEnvoiService)
+      .useValue(smtpEnvoiServiceDouble)
       .compile();
 
     scisService = moduleRef.get(ScisService);
@@ -1664,7 +1666,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
 
     const resultat = await tachesService.envoyerNotification(id);
 
-    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledWith(
+    expect(smtpEnvoiServiceDouble.envoyerEmail).toHaveBeenCalledWith(
       organisationId,
       "ilan.devos@example.com",
       "Rappel impayé",
@@ -1710,7 +1712,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
 
     const resultat = await tachesService.envoyerNotification(id);
 
-    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledWith(
+    expect(smtpEnvoiServiceDouble.envoyerEmail).toHaveBeenCalledWith(
       organisationId,
       "contact@assurup.example.com",
       "Relance sinistre",
@@ -1734,7 +1736,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     });
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(/aucun contact assureur renseigné/i);
-    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+    expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 
   it("quittance_mensuelle : joint le document docx généré à la volée", async () => {
@@ -1777,8 +1779,8 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
 
     await tachesService.envoyerNotification(id);
 
-    expect(googleOAuthServiceDouble.envoyerEmail).toHaveBeenCalledTimes(1);
-    const appelPieceJointe = googleOAuthServiceDouble.envoyerEmail.mock.calls[0]?.[4] as
+    expect(smtpEnvoiServiceDouble.envoyerEmail).toHaveBeenCalledTimes(1);
+    const appelPieceJointe = smtpEnvoiServiceDouble.envoyerEmail.mock.calls[0]?.[4] as
       | { nomFichier: string; contenu: Buffer; mimeType: string }
       | undefined;
     expect(appelPieceJointe).toBeDefined();
@@ -1797,7 +1799,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     });
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
-    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+    expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 
   it("rejette si le locataire destinataire n'a pas d'adresse email", async () => {
@@ -1809,7 +1811,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     });
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
-    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+    expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 
   it("rejette avec le motif explicite quand la notification a été marquée indisponible en amont", async () => {
@@ -1821,11 +1823,11 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     });
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(/aucun titulaire actif sur le bail/);
-    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+    expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 
   it("jamais fait sur un échec d'envoi : le statut reste inchangé", async () => {
-    googleOAuthServiceDouble.envoyerEmail.mockRejectedValueOnce(new Error("Gmail non connecté"));
+    smtpEnvoiServiceDouble.envoyerEmail.mockRejectedValueOnce(new Error("Boîte mail dédiée non configurée"));
     const locataireId = await creerLocataire("ilan.devos@example.com");
     const id = await creerTache({
       type: "impaye",
@@ -1833,7 +1835,7 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
       metadata: { notificationObjet: "Rappel impayé", notificationCorps: "Bonjour, votre loyer est en retard." }
     });
 
-    await expect(tachesService.envoyerNotification(id)).rejects.toThrow("Gmail non connecté");
+    await expect(tachesService.envoyerNotification(id)).rejects.toThrow("Boîte mail dédiée non configurée");
 
     const tacheApresEchec = await tachesService.findById(id);
     if (!tacheApresEchec) throw new Error("Tâche attendue introuvable après l'échec d'envoi");
@@ -1851,6 +1853,6 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
     });
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
-    expect(googleOAuthServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+    expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
   });
 });

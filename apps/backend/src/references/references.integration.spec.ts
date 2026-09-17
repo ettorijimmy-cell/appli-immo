@@ -7,7 +7,7 @@ import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EncryptionModule } from "../crypto/encryption.module";
-import { DocumentStorageService } from "../documents/storage/document-storage.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
 import { ReferencesService } from "./references.service";
 
 // Aucune donnée Postgres impliquée (pas de table `documents`, pas

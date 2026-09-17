@@ -5,6 +5,7 @@ import {
   FileText,
   LayoutDashboard,
   ListTodo,
+  Mail,
   Settings,
   ShieldAlert,
   UserSearch,
@@ -34,5 +35,6 @@ export const navItems: NavItem[] = [
   { path: "/documents", label: "Documents", icon: FileText },
   { path: "/taches", label: "Tâches", icon: ListTodo },
   { path: "/sinistres", label: "Sinistres", icon: ShieldAlert },
+  { path: "/messagerie", label: "Messagerie", icon: Mail },
   { path: "/parametres", label: "Paramètres", icon: Settings }
 ];

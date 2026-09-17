@@ -6,7 +6,7 @@ import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import { DocumentStorageService } from "../documents/storage/document-storage.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
 import type { CreateRemboursementDto } from "./dto/create-remboursement.dto";
 import { construireCheminPieceJustificative } from "./storage/construire-chemin-piece-justificative";
 

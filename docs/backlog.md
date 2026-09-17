@@ -1739,6 +1739,40 @@ compris :
 
 Nouvelle entrée de sidebar "Sinistres" (icône `ShieldAlert`).
 
+### Messagerie (module réalisé le 2026-09-16)
+
+Décision initiale (2026-08-24, point 3 ci-dessus) explicitement révisée
+après recherche sur le coût réel de l'API Gmail OAuth restreinte pour ce
+cas d'usage — voir le point 3 révisé ci-dessus et `docs/data-dictionary.md`,
+section "Messagerie", pour le détail complet, y compris :
+
+- **Boîte mail dédiée** (Gmail séparé du compte personnel), authentifiée
+  par un mot de passe d'application, jamais par OAuth — synchronisée en
+  lecture par IMAP (`imapflow`, avancée par UID strictement croissant,
+  jamais par fenêtre de dates) et envoyée par SMTP (`nodemailer`).
+- **Unification des envois automatiques de Tâches** (quittances, relances,
+  révisions de loyer) vers cette boîte dédiée : `TachesService` dépend
+  désormais de `SmtpEnvoiService`, plus de `GoogleOAuthService`.
+  `GoogleOAuthService`/`connexion_gmail` restent en place mais **dormants**
+  — retrait explicite prévu dans un commit séparé, une fois l'unification
+  éprouvée en usage réel, pas avant.
+- **Classification automatique par correspondance exacte d'adresse email**
+  (contact/locataire/candidat) — jamais un choix arbitraire en cas
+  d'ambiguïté (plusieurs entités sur la même adresse) ou d'absence de
+  correspondance : le message reste "non classé".
+- **Pièces jointes reçues** capturées et stockées (Object Storage,
+  chiffrées, via `DocumentStorageService` — extrait en `StorageModule`
+  partagé à cette occasion) avec un visualiseur intégré, mais **pas de
+  classement automatique** dans le système `documents` polymorphe : action
+  manuelle "Classer dans Documents", disponible seulement pour les
+  messages classifiés locataire/candidat (aucun type d'entité `documents`
+  correspondant à `contact` à ce stade).
+- Chaque envoi et chaque réception est journalisé symétriquement dans
+  `message_communication` (`direction` envoyé/reçu), donnant un fil unifié
+  par correspondant ou par entité classifiée dans l'écran desktop.
+
+Nouvelle entrée de sidebar "Messagerie" (icône `Mail`).
+
 ### Génération PDF signé + archivage des documents générés (futur module)
 
 Constat (2026-09-05) : les trois générateurs de documents existants (bail,
@@ -1871,11 +1905,23 @@ Ordre de priorité convenu avec l'utilisateur :
    PDF généré, recopie manuelle dans la téléprocédure) ; le formulaire
    principal et l'Annexe 2 (associés) restent non traités.
 
-3. **Messagerie interne** — messagerie interne à l'application (pas de
-   synchronisation boîte mail externe, jugée disproportionnée), messages
-   horodatés liés à locataire/bail, valeur probante en cas de litige.
-   Point d'intégration avec Tâches (une tâche peut déclencher l'envoi
-   d'un message).
+3. **Messagerie** — décision initiale (ci-dessus, 2026-08-24) : messagerie
+   interne à l'application, pas de synchronisation boîte mail externe,
+   jugée alors disproportionnée. **Décision explicitement révisée le
+   2026-09-16**, après recherche sur le coût réel de l'API Gmail OAuth
+   pour ce cas d'usage (scope `gmail.readonly` classé "restreint" par
+   Google, audit de sécurité CASA payant et annuel, 500-4500 $/an,
+   disproportionné) : implémentée finalement comme une **boîte mail
+   dédiée** (Gmail séparé du compte personnel), synchronisée en lecture
+   par IMAP et envoyée par SMTP via un mot de passe d'application — pas
+   une simple omission de la décision initiale, une inversion actée en
+   connaissance de cause. Messages horodatés liés à locataire/candidat/
+   contact par classification automatique sur l'adresse email. Point
+   d'intégration avec Tâches réalisé : les envois automatiques
+   (quittances, relances) passent désormais par cette boîte dédiée,
+   plus par le compte Gmail OAuth personnel (`GoogleOAuthService`, laissé
+   dormant). Voir `docs/data-dictionary.md`, section "Messagerie", pour
+   le détail complet.
 
 4. **Suivi sinistre et assurance** — anciennement envisagé comme
    "Intervention" (calendrier RDV/visites, voir ci-dessus), reformulé
@@ -1893,7 +1939,8 @@ Ordre de priorité convenu avec l'utilisateur :
 7. **Portail externe (locataires/candidats)** — chantier différé
    volontairement (2026-09-15). Regroupe deux besoins identifiés
    séparément mais de même nature technique : accès locataire à la
-   Messagerie interne (point 3 ci-dessus) et dépôt de dossier en ligne par
+   Messagerie (point 3 ci-dessus, module réalisé le 2026-09-16 — reste un
+   outil interne pour Jimmy à ce stade, aucun accès locataire) et dépôt de dossier en ligne par
    un candidat locataire (module Candidat/Calendrier). Les deux
    nécessitent la même infrastructure fondamentale — authentification
    distincte pour des utilisateurs externes (non-gestionnaires), une

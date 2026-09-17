@@ -3,7 +3,7 @@ import path from "path";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { EncryptionService } from "../../crypto/encryption.service";
+import { EncryptionService } from "../crypto/encryption.service";
 
 // Scaleway impose la région fr-par pour toutes les ressources du projet
 // (voir docs/integrations.md) — pas de variable d'environnement dédiée,

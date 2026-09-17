@@ -40,3 +40,5 @@ export * from "./candidat";
 export * from "./evenement-calendrier";
 export * from "./calendrier-abonnement";
 export * from "./sinistre";
+export * from "./boite-mail-dediee";
+export * from "./message-communication";

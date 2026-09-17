@@ -30,7 +30,7 @@ import type {
 import type { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import type { UpdateDocumentDto } from "./dto/update-document.dto";
 import { construireCheminStockage } from "./storage/construire-chemin-stockage";
-import { DocumentStorageService } from "./storage/document-storage.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
 
 export interface FindAllDocumentsFiltres {
   entiteType?: DocumentEntiteType;
@@ -54,6 +54,22 @@ export class DocumentsService {
   ) {}
 
   async upload(dto: CreateDocumentDto, fichier: Express.Multer.File) {
+    return this.creerDepuisBuffer(dto, fichier.buffer, fichier.originalname, fichier.mimetype, fichier.size);
+  }
+
+  // Extrait d'upload() (Module Messagerie, 2026-09-16) : le contenu binaire
+  // ne vient pas toujours d'un upload multipart — l'action "Classer dans
+  // Documents" d'une pièce jointe de message a déjà le buffer en main
+  // (relu depuis le storage via MessagesCommunicationService), sans jamais
+  // passer par Express.Multer.File. Même logique de validation/stockage
+  // dans les deux cas.
+  async creerDepuisBuffer(
+    dto: CreateDocumentDto,
+    contenu: Buffer,
+    nomFichier: string,
+    mimeType: string,
+    tailleOctets: number
+  ) {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
     this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
     this.verifierCandidatRoleSelonEntiteType(dto.entiteType, dto.candidatRole);
@@ -63,7 +79,7 @@ export class DocumentsService {
     // du blob, pas seulement après l'insertion de la ligne.
     const documentId = uuidv7();
     const cheminStockage = construireCheminStockage(dto.entiteType, dto.entiteId, documentId);
-    await this.storage.enregistrer(fichier.buffer, cheminStockage);
+    await this.storage.enregistrer(contenu, cheminStockage);
 
     const [document] = await this.db
       .insert(documents)
@@ -73,9 +89,9 @@ export class DocumentsService {
         entiteId: dto.entiteId,
         categorie: dto.categorie,
         dateExpiration: dto.dateExpiration ?? null,
-        nomFichier: fichier.originalname,
-        mimeType: fichier.mimetype,
-        tailleOctets: fichier.size,
+        nomFichier,
+        mimeType,
+        tailleOctets,
         cheminStockage,
         etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
         etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null,

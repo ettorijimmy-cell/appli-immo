@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { DocumentStorageService } from "../documents/storage/document-storage.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
 
 interface ReferenceDocument {
   chemin: string;
