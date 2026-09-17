@@ -23,7 +23,8 @@ export function configurerBoiteMailDediee(input: ConfigurerBoiteMailDedieeInput)
 }
 
 export type MessageDirection = "envoye" | "recu";
-export type MessageClassificationType = "contact" | "locataire" | "candidat" | "non_classe";
+export type MessageClassificationType = "contact" | "locataire" | "candidat" | "garant" | "non_classe";
+export type ClassificationTypeChoisie = "contact" | "locataire" | "candidat" | "garant";
 
 export interface MessageCommunication {
   id: string;
@@ -67,6 +68,12 @@ export interface ComposerMessageInput {
   destinataire: string;
   objet: string;
   corps: string;
+  // Renseignés ensemble quand le destinataire est choisi depuis le Carnet
+  // de contacts (sélecteur, 2026-09-16) : classification immédiate, sans
+  // attendre une résolution a posteriori par adresse email — voir
+  // ComposerMessageDto côté backend.
+  classificationType?: ClassificationTypeChoisie;
+  classificationId?: string;
 }
 
 export function composerMessage(input: ComposerMessageInput): Promise<MessageCommunicationDetail> {

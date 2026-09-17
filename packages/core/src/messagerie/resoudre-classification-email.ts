@@ -1,7 +1,7 @@
-export type ClassificationType = "contact" | "locataire" | "candidat" | "non_classe";
+export type ClassificationType = "contact" | "locataire" | "candidat" | "garant" | "non_classe";
 
 export interface CorrespondanceClassification {
-  type: "contact" | "locataire" | "candidat";
+  type: "contact" | "locataire" | "candidat" | "garant";
   id: string;
 }
 

@@ -9,6 +9,8 @@ import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
+import { CandidatsModule } from "../candidats/candidats.module";
+import { CandidatsService } from "../candidats/candidats.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
@@ -36,6 +38,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
   let contactsService: ContactsService;
   let locatairesService: LocatairesService;
   let garantsService: GarantsService;
+  let candidatsService: CandidatsService;
   let scisService: ScisService;
   let bienService: BienService;
   let appartementsService: AppartementsService;
@@ -60,6 +63,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
         BauxModule,
         LocatairesModule,
         GarantsModule,
+        CandidatsModule,
         ContactsModule
       ]
     })
@@ -70,6 +74,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
     contactsService = moduleRef.get(ContactsService);
     locatairesService = moduleRef.get(LocatairesService);
     garantsService = moduleRef.get(GarantsService);
+    candidatsService = moduleRef.get(CandidatsService);
     scisService = moduleRef.get(ScisService);
     bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
@@ -226,7 +231,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
     expect(listeOrgA.map((c) => c.id)).not.toContain(contactOrgB.id);
   });
 
-  it("findAllUnifie agrège locataires + garants (lecture seule) + contacts professionnels", async () => {
+  it("findAllUnifie agrège locataires + garants (lecture seule) + contacts professionnels + candidats", async () => {
     const locataire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
     const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
     const garant = await garantsService.create({
@@ -241,6 +246,11 @@ describe("ContactsService (intégration Postgres réelle)", () => {
       role: "artisan",
       telephone: "0600000000"
     });
+    const candidatEnAttente = await candidatsService.create(userId, {
+      nom: "Petit",
+      prenom: "Julien",
+      email: "julien.petit@example.com"
+    });
 
     const unifie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       contactsService.findAllUnifie()
@@ -254,9 +264,16 @@ describe("ContactsService (intégration Postgres réelle)", () => {
 
     const ligneContact = unifie.find((c) => c.id === contactPro.id);
     expect(ligneContact).toMatchObject({ type: "artisan", nom: "Plomberie Dupont", telephone: "0600000000" });
+
+    const ligneCandidat = unifie.find((c) => c.id === candidatEnAttente.id);
+    expect(ligneCandidat).toMatchObject({
+      type: "candidat",
+      nom: "Julien Petit",
+      email: "julien.petit@example.com"
+    });
   });
 
-  it("findAllUnifie exclut les entités archivées (locataire, garant et contact pro)", async () => {
+  it("findAllUnifie exclut les entités archivées (locataire, garant, contact pro et candidat)", async () => {
     const locataire = await locatairesService.create(userId, { nom: "Archivé", prenom: "Locataire" });
     await locatairesService.archive(locataire.id);
 
@@ -276,6 +293,9 @@ describe("ContactsService (intégration Postgres réelle)", () => {
     });
     await contactsService.archive(contactPro.id);
 
+    const candidat = await candidatsService.create(userId, { nom: "Archivé", prenom: "Candidat" });
+    await candidatsService.archive(candidat.id);
+
     const unifie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       contactsService.findAllUnifie()
     );
@@ -283,5 +303,21 @@ describe("ContactsService (intégration Postgres réelle)", () => {
     expect(unifie.map((c) => c.id)).not.toContain(locataire.id);
     expect(unifie.map((c) => c.id)).not.toContain(garant.id);
     expect(unifie.map((c) => c.id)).not.toContain(contactPro.id);
+    expect(unifie.map((c) => c.id)).not.toContain(candidat.id);
+  });
+
+  // Un candidat "converti" existe déjà comme locataire (voir
+  // CandidatsService.convertirEnLocataire) — l'exclure du carnet unifié
+  // évite un doublon trompeur pour le sélecteur de destinataire
+  // (Module Messagerie, 2026-09-16).
+  it("findAllUnifie exclut les candidats déjà convertis en locataire", async () => {
+    const candidat = await candidatsService.create(userId, { nom: "Converti", prenom: "Candidat" });
+    await candidatsService.update(candidat.id, { statut: "converti" });
+
+    const unifie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      contactsService.findAllUnifie()
+    );
+
+    expect(unifie.map((c) => c.id)).not.toContain(candidat.id);
   });
 });

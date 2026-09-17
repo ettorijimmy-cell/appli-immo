@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { messageCommunication, pieceJointeMessage, type Database } from "db";
 import { and, desc, eq } from "drizzle-orm";
 import type { CreateDocumentDto } from "../documents/dto/create-document.dto";
@@ -11,7 +11,7 @@ import type { ComposerMessageDto } from "./dto/composer-message.dto";
 import { SmtpEnvoiService } from "./smtp-envoi.service";
 
 export interface FindAllMessagesFiltres {
-  classificationType?: "contact" | "locataire" | "candidat" | "non_classe";
+  classificationType?: "contact" | "locataire" | "candidat" | "garant" | "non_classe";
   classificationId?: string;
 }
 
@@ -74,7 +74,17 @@ export class MessagesCommunicationService {
   // Composition libre hors du flux Tâches — délègue entièrement à
   // SmtpEnvoiService (même mécanisme d'envoi/journalisation que les
   // notifications automatiques), jamais un chemin d'envoi dupliqué.
+  // classificationType/classificationId (destinataire choisi depuis le
+  // Carnet de contacts, sélecteur desktop 2026-09-16) doivent être fournis
+  // ensemble ou pas du tout — ComposerMessageDto ne peut pas exprimer
+  // cette contrainte croisée avec class-validator seul, vérifiée ici.
   async composer(userId: string, dto: ComposerMessageDto) {
+    if (
+      (dto.classificationType !== undefined && dto.classificationId === undefined) ||
+      (dto.classificationType === undefined && dto.classificationId !== undefined)
+    ) {
+      throw new BadRequestException("classificationType et classificationId doivent être fournis ensemble");
+    }
     const utilisateur = await this.usersService.findById(userId);
     if (!utilisateur) {
       throw new NotFoundException("Utilisateur introuvable");
@@ -83,7 +93,11 @@ export class MessagesCommunicationService {
       utilisateur.organisationId,
       dto.destinataire,
       dto.objet,
-      dto.corps
+      dto.corps,
+      undefined,
+      dto.classificationType !== undefined && dto.classificationId !== undefined
+        ? { type: dto.classificationType, id: dto.classificationId }
+        : undefined
     );
     return this.findById(messageId);
   }

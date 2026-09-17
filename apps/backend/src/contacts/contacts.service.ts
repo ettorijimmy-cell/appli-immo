@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { contact, mettreAJourAvecAudit, type Database } from "db";
 import { eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
+import { CandidatsService } from "../candidats/candidats.service";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { GarantsService } from "../garants/garants.service";
 import { LocatairesService } from "../locataires/locataires.service";
@@ -12,10 +13,11 @@ import type { UpdateContactDto } from "./dto/update-contact.dto";
 type ContactRow = typeof contact.$inferSelect;
 
 export interface ContactUnifie {
-  // "locataire"/"garant" pour les entités déjà gérées ailleurs (lecture
-  // seule ici), sinon le rôle du contact professionnel — pas de valeur
-  // "contact" générique, le type EST l'information utile à l'affichage.
-  type: "locataire" | "garant" | ContactRow["role"];
+  // "locataire"/"garant"/"candidat" pour les entités déjà gérées ailleurs
+  // (lecture seule ici), sinon le rôle du contact professionnel — pas de
+  // valeur "contact" générique, le type EST l'information utile à
+  // l'affichage.
+  type: "locataire" | "garant" | "candidat" | ContactRow["role"];
   id: string;
   nom: string;
   telephone: string | null;
@@ -34,7 +36,8 @@ export class ContactsService {
     private readonly requestContext: RequestContextService,
     private readonly usersService: UsersService,
     private readonly locatairesService: LocatairesService,
-    private readonly garantsService: GarantsService
+    private readonly garantsService: GarantsService,
+    private readonly candidatsService: CandidatsService
   ) {}
 
   async create(userId: string, dto: CreateContactDto) {
@@ -115,10 +118,11 @@ export class ContactsService {
   // .findAll()) ; cette méthode ne fait qu'assembler leurs résultats,
   // jamais une deuxième logique de scoping.
   async findAllUnifie(): Promise<ContactUnifie[]> {
-    const [locatairesActifs, garantsActifs, contactsActifs] = await Promise.all([
+    const [locatairesActifs, garantsActifs, contactsActifs, candidatsActifs] = await Promise.all([
       this.locatairesService.findAll(),
       this.garantsService.findAll(),
-      this.findAll()
+      this.findAll(),
+      this.candidatsService.findAll()
     ]);
 
     const resultat: ContactUnifie[] = [];
@@ -155,6 +159,22 @@ export class ContactsService {
         type: c.role,
         id: c.id,
         nom: c.nom,
+        telephone: c.telephone,
+        email: c.email
+      });
+    }
+    // Exclut les candidats "converti" : ce candidat existe déjà comme
+    // locataire dans la liste ci-dessus une fois converti — l'y retrouver
+    // deux fois sous deux types différents serait trompeur pour un
+    // sélecteur de destinataire (Module Messagerie, 2026-09-16).
+    for (const c of candidatsActifs) {
+      if (c.archivedAt !== null || c.statut === "converti") {
+        continue;
+      }
+      resultat.push({
+        type: "candidat",
+        id: c.id,
+        nom: `${c.prenom} ${c.nom}`,
         telephone: c.telephone,
         email: c.email
       });

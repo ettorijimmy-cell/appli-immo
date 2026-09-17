@@ -1825,7 +1825,7 @@ décision future, une fois l'unification éprouvée en usage réel.
 | email_expediteur, email_destinataire | text | |
 | date_message | timestamptz | |
 | imap_message_id | text, nullable | En-tête RFC 5322/2822 `Message-ID`, exposé par `imapflow` — sert au dédoublonnage à la synchronisation. **Nullable + index unique partiel** (`WHERE imap_message_id IS NOT NULL`, sur `(organisation_id, imap_message_id)`) plutôt qu'un identifiant synthétique inventé pour les messages envoyés : un message composé depuis l'application n'a pas encore d'identifiant côté serveur IMAP au moment de l'insertion (`SmtpEnvoiService` journalise avant tout aller-retour réseau), et "imap message id" n'a de sens que pour un message reçu — ajustement au schéma cible initialement fourni, décision actée avec Jimmy après l'audit préalable |
-| classification_type | enum, défaut `non_classe` | `contact` \| `locataire` \| `candidat` \| `non_classe` — résolu par correspondance EXACTE d'adresse email contre `contact.email`/`locataires.email`/`candidat.email`, scopée à l'organisation (`ClassificationMessageService` + `resoudreClassificationEmail`, packages/core). Si l'adresse correspond à plusieurs entités distinctes (y compris deux lignes de la même table) ou à aucune, le message reste `non_classe` — jamais un choix arbitraire, même discipline que `suggererCategorie` (Charges et fiscalité) |
+| classification_type | enum, défaut `non_classe` | `contact` \| `locataire` \| `candidat` \| `garant` \| `non_classe` (`garant` ajouté 2026-09-16, voir "Extension — sélecteur de destinataire" plus bas) — résolu par correspondance EXACTE d'adresse email contre `contact.email`/`locataires.email`/`candidat.email`/`garants.email`, scopée à l'organisation (`ClassificationMessageService` + `resoudreClassificationEmail`, packages/core), sauf classification fournie explicitement à la composition (sélecteur de destinataire). Si l'adresse correspond à plusieurs entités distinctes (y compris deux lignes de la même table) ou à aucune, le message reste `non_classe` — jamais un choix arbitraire, même discipline que `suggererCategorie` (Charges et fiscalité) |
 | classification_id | uuid, nullable | Id du contact/locataire/candidat selon `classification_type` — pas de FK possible (cible différente selon le type), même principe que `alertes.entite_id`/`documents.entite_id` |
 | organisation_id | uuid | |
 
@@ -1853,11 +1853,12 @@ fil de messagerie. Une action manuelle "Classer dans Documents"
 elle **copie** le contenu déjà stocké vers une nouvelle ligne `documents`
 sous une vraie catégorie choisie par l'utilisateur — jamais un partage de
 `cheminStockage` entre les deux tables, les deux copies vivent leur vie
-indépendamment. Portée limitée à cette itération : proposée uniquement
-quand `classificationType` vaut `locataire` ou `candidat` (les deux
-seuls types qui correspondent à une vraie valeur de `documentEntiteType`
-existante — `contact` ne peut être rattaché à aucun document aujourd'hui,
-aucune régression introduite ici).
+indépendamment. Proposée quand `classificationType` vaut `locataire`,
+`garant` ou `candidat` (les seuls types qui correspondent à une vraie
+valeur de `documentEntiteType` existante — `contact` ne peut être
+rattaché à aucun document aujourd'hui, aucune régression introduite ici ;
+`garant` ajouté 2026-09-16 en même temps que le sélecteur de destinataire,
+`documentEntiteType` le supportait déjà).
 
 **`StorageModule`** (extrait de `DocumentsModule`, 2026-09-16) :
 `DocumentStorageService` était déjà utilisé par deux modules sans lien
@@ -1890,6 +1891,49 @@ n'empêche jamais la synchronisation des autres organisations.
   `documents` — toujours un geste manuel.
 - Aucun accès externe (portail locataire/candidat) — reste un outil
   interne, consulté uniquement par Jimmy.
+
+### Extension — sélecteur de destinataire depuis le Carnet de contacts (2026-09-16)
+
+Audit préalable mené avant implémentation (4 points posés par Jimmy) —
+décisions actées :
+
+- **`classification_type` gagne la valeur `garant`** (migration additive,
+  `ALTER TYPE ... ADD VALUE`) — trou découvert pendant l'audit, absent du
+  schéma cible initial du module Messagerie : le Carnet de contacts expose
+  les garants comme destinataire possible, mais aucune valeur de
+  classification ne pouvait les représenter jusqu'ici. `resoudreClassificationEmail`
+  (packages/core) et `ClassificationMessageService.resoudre` (interroge
+  désormais aussi `garants.email`, scopé organisation) étendus en
+  conséquence — **symétrique à l'envoi et à la réception** : un message
+  composé vers un garant choisi dans le carnet ET la réponse reçue de ce
+  même garant se classent tous deux `garant`/même id, un seul fil.
+- **`/contacts/unifie` étendu aux candidats** (`ContactsService.findAllUnifie`,
+  `CandidatsModule` importé par `ContactsModule`) — réutilisation de
+  l'endpoint déjà partagé par le Carnet de contacts plutôt qu'un endpoint
+  dédié à Messagerie, décision prise après audit (aucune dépendance
+  circulaire, même discipline de scoping organisation/archivage que
+  locataires/garants). Exclut les candidats déjà `converti` (existent déjà
+  comme locataire dans la même liste, doublon trompeur pour un sélecteur
+  de destinataire).
+- **Classification immédiate à la composition** : `ComposerMessageDto`
+  accepte `classificationType`/`classificationId` optionnels (fournis
+  ensemble ou pas du tout, vérifié par `MessagesCommunicationService.composer`
+  — pas exprimable par `class-validator` seul dans les deux sens à la
+  fois). Quand fournis, `SmtpEnvoiService.envoyerEmail` **bypass**
+  entièrement `ClassificationMessageService.resoudre` — le message est
+  classé sur l'entité choisie dans le carnet, jamais sur une correspondance
+  d'adresse recalculée (utile en particulier si l'entité n'a pas d'email
+  enregistré et que l'utilisateur saisit une adresse à la main : la
+  classification reste celle de la personne choisie).
+- **Personne sans email enregistré (locataire/garant/contact/candidat)** :
+  reste sélectionnable dans le carnet (jamais exclue) — le champ
+  destinataire se retrouve vide et attend une saisie manuelle, la
+  classification choisie est conservée malgré tout.
+- **Vue "par fils" déjà existante** : l'écran Messagerie (construit au
+  Module Messagerie initial) groupait déjà les messages par
+  `(classificationType, classificationId)` ou par adresse email brute pour
+  les non classés — audité et confirmé conforme au besoin, aucune
+  duplication de cet écran pour cette extension.
 
 **Desktop** : écran "Messagerie" (nouvelle entrée de sidebar, icône
 `Mail`) — fils groupés par classification (ou par adresse email pour les

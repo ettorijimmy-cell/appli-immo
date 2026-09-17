@@ -17,6 +17,11 @@ describe("resoudreClassificationEmail", () => {
     expect(resultat).toEqual({ type: "candidat", id: "candidat-1" });
   });
 
+  it("classe sur une correspondance garant unique", () => {
+    const resultat = resoudreClassificationEmail([{ type: "garant", id: "garant-1" }]);
+    expect(resultat).toEqual({ type: "garant", id: "garant-1" });
+  });
+
   it("reste non_classe quand aucune correspondance", () => {
     expect(resoudreClassificationEmail([])).toEqual({ type: "non_classe", id: null });
   });

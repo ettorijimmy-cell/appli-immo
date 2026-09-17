@@ -1,0 +1,1 @@
+ALTER TYPE "public"."message_classification_type" ADD VALUE 'garant' BEFORE 'non_classe';

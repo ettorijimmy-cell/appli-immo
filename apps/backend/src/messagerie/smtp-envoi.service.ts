@@ -1,5 +1,6 @@
 import { BadGatewayException, Inject, Injectable } from "@nestjs/common";
 import { messageCommunication, pieceJointeMessage, type Database } from "db";
+import type { ResultatClassification } from "core";
 import { uuidv7 } from "uuidv7";
 import nodemailer from "nodemailer";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -43,12 +44,19 @@ export class SmtpEnvoiService {
   // TachesService.envoyerNotification (seul appelant historique, qui
   // ignore la valeur de retour), utilisé uniquement par
   // MessagesCommunicationService.composer() pour renvoyer le message créé.
+  //
+  // classificationChoisie (optionnel) : classification déjà connue de
+  // l'appelant (destinataire choisi depuis le Carnet de contacts,
+  // sélecteur desktop 2026-09-16) — bypass la résolution par adresse email
+  // (ClassificationMessageService.resoudre), jamais utilisée en même
+  // temps que cette résolution automatique.
   async envoyerEmail(
     organisationId: string,
     destinataire: string,
     objet: string,
     corps: string,
-    pieceJointe?: PieceJointeEmail
+    pieceJointe?: PieceJointeEmail,
+    classificationChoisie?: ResultatClassification
   ): Promise<string> {
     const { email, motDePasseApp } = await this.boiteMailDedieeService.obtenirIdentifiants(organisationId);
 
@@ -76,7 +84,7 @@ export class SmtpEnvoiService {
       throw new BadGatewayException(`Échec de l'envoi via la boîte mail dédiée (SMTP) : ${messageErreur}`);
     }
 
-    return this.journaliserEnvoi(organisationId, email, destinataire, objet, corps, pieceJointe);
+    return this.journaliserEnvoi(organisationId, email, destinataire, objet, corps, pieceJointe, classificationChoisie);
   }
 
   private async journaliserEnvoi(
@@ -85,9 +93,11 @@ export class SmtpEnvoiService {
     destinataire: string,
     objet: string,
     corps: string,
-    pieceJointe?: PieceJointeEmail
+    pieceJointe?: PieceJointeEmail,
+    classificationChoisie?: ResultatClassification
   ): Promise<string> {
-    const classification = await this.classificationMessageService.resoudre(destinataire, organisationId);
+    const classification =
+      classificationChoisie ?? (await this.classificationMessageService.resoudre(destinataire, organisationId));
 
     const [ligne] = await this.db
       .insert(messageCommunication)

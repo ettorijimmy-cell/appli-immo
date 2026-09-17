@@ -14,11 +14,12 @@ import {
   type ContactUnifie
 } from "./api";
 
-type FiltreType = "" | "locataire" | "garant" | ContactRole;
+type FiltreType = "" | "locataire" | "garant" | "candidat" | ContactRole;
 
 const LABELS_TYPE: Record<ContactUnifie["type"], string> = {
   locataire: "Locataire",
   garant: "Garant",
+  candidat: "Candidat",
   ...CONTACT_ROLE_LABELS
 };
 

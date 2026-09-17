@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { CONTACT_ROLE_LABELS, listContactsUnifies, type ContactUnifie } from "../contacts/api";
 import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { CATEGORIE_LABELS } from "../documents/labels";
-import type { DocumentCategorie } from "../documents/api";
+import type { DocumentCategorie, DocumentEntiteType } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import {
   classerPieceJointeDansDocuments,
   composerMessage,
   getMessage,
   listMessages,
+  type ClassificationTypeChoisie,
   type MessageClassificationType,
   type MessageCommunication,
   type MessageCommunicationDetail,
@@ -19,16 +21,36 @@ const CLASSIFICATION_LABELS: Record<MessageClassificationType, string> = {
   contact: "Contact",
   locataire: "Locataire",
   candidat: "Candidat",
+  garant: "Garant",
   non_classe: "Non classé"
 };
 
-// "Classer dans Documents" n'est proposé que pour locataire/candidat : ce
-// sont les deux seuls types de classification qui correspondent à une
-// vraie valeur de documentEntiteType existante (contact ne peut être
-// rattaché à aucun document aujourd'hui — voir packages/db/src/schema/
-// documents.ts, aucune régression introduite ici). Portée volontairement
-// limitée à ce cas le plus courant pour cette itération.
-const CLASSIFICATIONS_CLASSABLES: MessageClassificationType[] = ["locataire", "candidat"];
+// "Classer dans Documents" n'est proposé que pour locataire/garant/candidat :
+// ce sont les seuls types de classification qui correspondent à une vraie
+// valeur de documentEntiteType existante (contact ne peut être rattaché à
+// aucun document aujourd'hui — voir packages/db/src/schema/documents.ts,
+// aucune régression introduite ici). "garant" ajouté en même temps que le
+// sélecteur de destinataire (2026-09-16) : documentEntiteType le supportait
+// déjà, seule la classification de message ne le permettait pas.
+const CLASSIFICATIONS_CLASSABLES: MessageClassificationType[] = ["locataire", "garant", "candidat"];
+
+// Mappe le type du Carnet de contacts (qui distingue chaque rôle de contact
+// professionnel : artisan/diagnostiqueur/syndic/assureur/autre) vers le type
+// de classification d'un message (plus grossier : tout contact pro devient
+// "contact") — sélecteur de destinataire, 2026-09-16.
+function resoudreClassificationDepuisCarnet(type: ContactUnifie["type"]): ClassificationTypeChoisie {
+  if (type === "locataire" || type === "garant" || type === "candidat") {
+    return type;
+  }
+  return "contact";
+}
+
+function libelleTypeCarnet(type: ContactUnifie["type"]): string {
+  if (type === "locataire") return "Locataire";
+  if (type === "garant") return "Garant";
+  if (type === "candidat") return "Candidat";
+  return CONTACT_ROLE_LABELS[type];
+}
 
 interface Fil {
   cle: string;
@@ -91,6 +113,49 @@ export function MessagerieView(): React.JSX.Element {
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
+  // Sélecteur de destinataire depuis le Carnet de contacts (2026-09-16) :
+  // chargé une fois à l'ouverture de l'écran, jamais rafraîchi
+  // automatiquement (même principe que boiteMailConfiguree dans
+  // TachesListView) — un carnet modifié pendant que l'écran est ouvert
+  // nécessite juste de rouvrir l'écran, cas rare pour un usage interne.
+  const [contactsCarnet, setContactsCarnet] = useState<ContactUnifie[]>([]);
+  const [carnetSelectionneCle, setCarnetSelectionneCle] = useState("");
+  const [classificationChoisie, setClassificationChoisie] = useState<{
+    type: ClassificationTypeChoisie;
+    id: string;
+  } | null>(null);
+
+  useEffect(() => {
+    listContactsUnifies()
+      .then(setContactsCarnet)
+      .catch(() => setContactsCarnet([]));
+  }, []);
+
+  // Sélection dans le carnet : préremplit l'email (laissé vide si la
+  // personne n'en a pas — saisie manuelle possible, jamais bloquant, voir
+  // docs/backlog.md) et classe le message immédiatement, sans attendre une
+  // résolution a posteriori par adresse. La saisie manuelle du destinataire
+  // (handleDestinataireManuel) efface cette classification : une fois
+  // l'adresse modifiée à la main, elle ne correspond plus forcément à la
+  // personne choisie.
+  function handleSelectionnerCarnet(cle: string): void {
+    setCarnetSelectionneCle(cle);
+    if (cle === "") {
+      setClassificationChoisie(null);
+      return;
+    }
+    const contactChoisi = contactsCarnet.find((c) => `${c.type}:${c.id}` === cle);
+    if (!contactChoisi) return;
+    setDestinataire(contactChoisi.email ?? "");
+    setClassificationChoisie({ type: resoudreClassificationDepuisCarnet(contactChoisi.type), id: contactChoisi.id });
+  }
+
+  function handleDestinataireManuel(valeur: string): void {
+    setDestinataire(valeur);
+    setCarnetSelectionneCle("");
+    setClassificationChoisie(null);
+  }
+
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -138,6 +203,8 @@ export function MessagerieView(): React.JSX.Element {
     setObjet("");
     setCorps("");
     setSendError(null);
+    setCarnetSelectionneCle("");
+    setClassificationChoisie(null);
   }
 
   async function handleEnvoyer(e: FormEvent): Promise<void> {
@@ -145,7 +212,15 @@ export function MessagerieView(): React.JSX.Element {
     setIsSending(true);
     setSendError(null);
     try {
-      await composerMessage({ destinataire, objet, corps });
+      await composerMessage({
+        destinataire,
+        objet,
+        corps,
+        ...(classificationChoisie && {
+          classificationType: classificationChoisie.type,
+          classificationId: classificationChoisie.id
+        })
+      });
       setObjet("");
       setCorps("");
       await refresh();
@@ -169,6 +244,8 @@ export function MessagerieView(): React.JSX.Element {
               setObjet("");
               setCorps("");
               setSendError(null);
+              setCarnetSelectionneCle("");
+              setClassificationChoisie(null);
             }}
             className="text-xs text-indigo-700 hover:text-indigo-800"
           >
@@ -223,12 +300,28 @@ export function MessagerieView(): React.JSX.Element {
         <form onSubmit={handleEnvoyer} className="max-w-lg space-y-2 rounded-md border border-slate-200 p-3">
           <h3 className="text-sm font-semibold text-slate-700">{fil ? "Répondre" : "Nouveau message"}</h3>
           <label className="block text-sm">
+            Choisir dans le carnet de contacts
+            <select
+              value={carnetSelectionneCle}
+              onChange={(e) => handleSelectionnerCarnet(e.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+            >
+              <option value="">— Saisie manuelle —</option>
+              {contactsCarnet.map((c) => (
+                <option key={`${c.type}:${c.id}`} value={`${c.type}:${c.id}`}>
+                  {c.nom} — {libelleTypeCarnet(c.type)}
+                  {c.email ? "" : " (pas d'email enregistré)"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
             Destinataire
             <input
               type="email"
               required
               value={destinataire}
-              onChange={(e) => setDestinataire(e.target.value)}
+              onChange={(e) => handleDestinataireManuel(e.target.value)}
               className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
             />
           </label>
@@ -337,12 +430,16 @@ function PieceJointeItem({
     !classe && classificationId !== null && CLASSIFICATIONS_CLASSABLES.includes(classificationType);
 
   async function handleClasser(): Promise<void> {
-    if (!classificationId) return;
+    if (!classificationId || !peutClasser) return;
     setIsClassing(true);
     setError(null);
     try {
+      // peutClasser garantit classificationType ∈ {locataire, garant,
+      // candidat} (CLASSIFICATIONS_CLASSABLES) — ces trois valeurs
+      // correspondent exactement à des DocumentEntiteType valides.
+      const entiteType = classificationType as Extract<DocumentEntiteType, "locataire" | "garant" | "candidat">;
       await classerPieceJointeDansDocuments(piece.id, {
-        entiteType: classificationType === "locataire" ? "locataire" : "candidat",
+        entiteType,
         entiteId: classificationId,
         categorie
       });

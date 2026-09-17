@@ -6,15 +6,20 @@ import { organisations } from "./organisations";
 export const messageDirectionEnum = pgEnum("message_direction", ["envoye", "recu"]);
 
 // Résolu par correspondance exacte d'adresse email contre contact.email/
-// locataires.email/candidat.email (packages/core, resoudreClassificationEmail)
-// — jamais un choix arbitraire en cas d'ambiguïté (plusieurs entités
-// distinctes partagent l'adresse) ou d'absence de correspondance : le
-// message reste 'non_classe', même discipline que suggererCategorie
-// (Charges et fiscalité).
+// locataires.email/candidat.email/garants.email (packages/core,
+// resoudreClassificationEmail) — jamais un choix arbitraire en cas
+// d'ambiguïté (plusieurs entités distinctes partagent l'adresse) ou
+// d'absence de correspondance : le message reste 'non_classe', même
+// discipline que suggererCategorie (Charges et fiscalité).
+// "garant" ajouté après coup (sélecteur de destinataire depuis le Carnet
+// de contacts, 2026-09-16) : la classification immédiate d'un message
+// composé vers un garant choisi dans le carnet exigeait cette valeur, qui
+// manquait par oubli dans le schéma cible initial du module Messagerie.
 export const messageClassificationTypeEnum = pgEnum("message_classification_type", [
   "contact",
   "locataire",
   "candidat",
+  "garant",
   "non_classe"
 ]);
 

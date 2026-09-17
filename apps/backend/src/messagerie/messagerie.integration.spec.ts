@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { mkdir, rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { BadGatewayException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -21,13 +21,23 @@ import {
 } from "db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AppartementsModule } from "../appartements/appartements.module";
+import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
+import { BauxModule } from "../baux/baux.module";
+import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
+import { GarantsModule } from "../garants/garants.module";
+import { GarantsService } from "../garants/garants.service";
+import { ScisModule } from "../scis/scis.module";
+import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { BoiteMailDedieeService } from "./boite-mail-dediee.service";
@@ -164,6 +174,11 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
   let imapSyncJobService: ImapSyncJobService;
   let messagesCommunicationService: MessagesCommunicationService;
   let requestContextService: RequestContextService;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let garantsService: GarantsService;
   let db: Database;
   let organisationId: string;
   let userId: string;
@@ -187,6 +202,11 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         UsersModule,
         AuthModule,
         DocumentsModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        GarantsModule,
         MessagerieModule
       ]
     })
@@ -200,6 +220,11 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
     imapSyncJobService = moduleRef.get(ImapSyncJobService);
     messagesCommunicationService = moduleRef.get(MessagesCommunicationService);
     requestContextService = moduleRef.get(RequestContextService);
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    garantsService = moduleRef.get(GarantsService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -234,6 +259,53 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
 
   async function configurerBoite(email = "boite-dediee@example.com"): Promise<void> {
     await boiteMailDedieeService.configurer(userId, { email, motDePasseApp: "abcdefghijklmnop" });
+  }
+
+  // Chaîne minimale SCI -> bien -> appartement -> bail, requise par la
+  // contrainte de clé étrangère garants.bail_id (jamais de garant orphelin,
+  // voir packages/db/src/schema/garants.ts) — même construction que
+  // contacts.integration.spec.ts pour le même besoin.
+  async function creerGarantDeTest(email: string): Promise<{ id: string }> {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Messagerie Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Messagerie Test",
+      adresse: "1 rue Messagerie",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    return garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: "Claire",
+      email,
+      typeGarantie: "personne_physique"
+    });
   }
 
   describe("BoiteMailDedieeService", () => {
@@ -328,6 +400,13 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
 
       const resultat = await classificationMessageService.resoudre("martin.candidat@example.com", organisationId);
       expect(resultat).toEqual({ type: "candidat", id: cand.id });
+    });
+
+    it("classe sur un garant quand une seule correspondance existe", async () => {
+      const garant = await creerGarantDeTest("claire.durand@example.com");
+
+      const resultat = await classificationMessageService.resoudre("claire.durand@example.com", organisationId);
+      expect(resultat).toEqual({ type: "garant", id: garant.id });
     });
 
     it("reste non_classe quand aucune correspondance", async () => {
@@ -474,6 +553,33 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
 
       const apres = await boiteMailDedieeService.trouverActive(organisationId);
       expect(apres?.dernierUidSynchronise).toBe(5);
+    });
+
+    it("classe un message reçu d'un garant — symétrique à la classification à l'envoi (fil unifié)", async () => {
+      await configurerBoite();
+      const garant = await creerGarantDeTest("claire.durand@example.com");
+
+      messagesImapAFournir.valeur = [
+        {
+          uid: 1,
+          source: construireEmailBrut({
+            from: "Claire Durand <claire.durand@example.com>",
+            to: "boite-dediee@example.com",
+            subject: "Réponse au sujet du dossier",
+            date: "Mon, 01 Sep 2026 10:00:00 +0200",
+            messageId: "<msg-garant@example.com>",
+            corps: "Voici ma réponse."
+          })
+        }
+      ];
+
+      const boite = await boiteMailDedieeService.trouverActive(organisationId);
+      if (!boite) throw new Error("Boîte attendue introuvable");
+      await imapSyncJobService.synchroniserBoite(boite);
+
+      const [ligne] = await db.select().from(messageCommunication).where(eq(messageCommunication.organisationId, organisationId));
+      expect(ligne?.classificationType).toBe("garant");
+      expect(ligne?.classificationId).toBe(garant.id);
     });
 
     it("stocke les pièces jointes d'un message reçu sans jamais créer de ligne documents", async () => {
@@ -662,6 +768,54 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
       expect(sendMailMock).toHaveBeenCalledTimes(1);
       expect(resultat?.direction).toBe("envoye");
       expect(resultat?.objet).toBe("Bonjour");
+    });
+
+    // Sélecteur de destinataire depuis le Carnet de contacts (desktop,
+    // 2026-09-16) : classificationType/classificationId fournis explicitement
+    // court-circuitent la résolution automatique par adresse email — même
+    // avec une adresse qui n'a AUCUNE correspondance en base (la résolution
+    // automatique aurait renvoyé non_classe), la classification demandée est
+    // bien celle appliquée.
+    it("composer applique la classification fournie explicitement, sans attendre de correspondance d'adresse", async () => {
+      await configurerBoite();
+      const garant = await creerGarantDeTest("autre-adresse-que-celle-du-garant@example.com");
+
+      const resultat = await messagesCommunicationService.composer(userId, {
+        destinataire: "adresse-non-repertoriee@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "garant",
+        classificationId: garant.id
+      });
+
+      expect(resultat?.classificationType).toBe("garant");
+      expect(resultat?.classificationId).toBe(garant.id);
+    });
+
+    it("composer rejette classificationType sans classificationId", async () => {
+      await configurerBoite();
+      await expect(
+        messagesCommunicationService.composer(userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Bonjour",
+          corps: "Message de test",
+          classificationType: "locataire"
+        })
+      ).rejects.toThrow(BadRequestException);
+      expect(sendMailMock).not.toHaveBeenCalled();
+    });
+
+    it("composer rejette classificationId sans classificationType", async () => {
+      await configurerBoite();
+      await expect(
+        messagesCommunicationService.composer(userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Bonjour",
+          corps: "Message de test",
+          classificationId: randomUUID()
+        })
+      ).rejects.toThrow(BadRequestException);
+      expect(sendMailMock).not.toHaveBeenCalled();
     });
 
     it("obtenirContenuPieceJointe déchiffre le contenu réellement stocké", async () => {
