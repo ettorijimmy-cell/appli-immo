@@ -57,11 +57,19 @@ export interface MessageCommunicationDetail extends MessageCommunication {
 }
 
 export function listMessages(
-  filtres: { classificationType?: MessageClassificationType; classificationId?: string } = {}
+  filtres: {
+    classificationType?: MessageClassificationType;
+    classificationId?: string;
+    // Même convention que FindAllDocumentsFiltres.avecArchives
+    // (documents/api.ts) : absent = comportement par défaut (archivés
+    // exclus) inchangé.
+    avecArchives?: boolean;
+  } = {}
 ): Promise<MessageCommunication[]> {
   const params = new URLSearchParams();
   if (filtres.classificationType) params.set("classificationType", filtres.classificationType);
   if (filtres.classificationId) params.set("classificationId", filtres.classificationId);
+  if (filtres.avecArchives) params.set("avecArchives", "true");
   const query = params.toString();
   return authenticatedFetch<MessageCommunication[]>(`/messagerie/messages${query ? `?${query}` : ""}`);
 }
@@ -114,4 +122,10 @@ export function executerJobSyncMessagerie(): Promise<number> {
 // email sur Gmail, masque uniquement côté app.
 export function archiverMessage(id: string): Promise<MessageCommunication> {
   return authenticatedFetch<MessageCommunication>(`/messagerie/messages/${id}/archiver`, { method: "PATCH" });
+}
+
+// Symétrique d'archiverMessage (2026-09-17) — visible seulement depuis la
+// vue "Afficher les archivés".
+export function desarchiverMessage(id: string): Promise<MessageCommunication> {
+  return authenticatedFetch<MessageCommunication>(`/messagerie/messages/${id}/desarchiver`, { method: "PATCH" });
 }

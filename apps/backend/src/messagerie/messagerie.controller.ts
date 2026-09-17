@@ -28,11 +28,13 @@ export class MessagerieController {
   @Get("messages")
   findAllMessages(
     @Query("classificationType") classificationType?: FindAllMessagesFiltres["classificationType"],
-    @Query("classificationId") classificationId?: string
+    @Query("classificationId") classificationId?: string,
+    @Query("avecArchives") avecArchives?: string
   ) {
     const filtres: FindAllMessagesFiltres = {
       ...(classificationType !== undefined && { classificationType }),
-      ...(classificationId !== undefined && { classificationId })
+      ...(classificationId !== undefined && { classificationId }),
+      avecArchives: avecArchives === "true"
     };
     return this.messagesCommunicationService.findAll(filtres);
   }
@@ -53,6 +55,13 @@ export class MessagerieController {
   @Patch("messages/:id/archiver")
   archiverMessage(@Param("id") id: string) {
     return this.messagesCommunicationService.archiver(id);
+  }
+
+  // Symétrique de archiver() — visible seulement depuis la vue "Afficher
+  // les archivés" côté desktop.
+  @Patch("messages/:id/desarchiver")
+  desarchiverMessage(@Param("id") id: string) {
+    return this.messagesCommunicationService.desarchiver(id);
   }
 
   // Seul point d'accès au contenu en clair d'une pièce jointe — jamais de

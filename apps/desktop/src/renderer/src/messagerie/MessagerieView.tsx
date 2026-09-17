@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { CONTACT_ROLE_LABELS, listContactsUnifies, type ContactUnifie } from "../contacts/api";
 import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { CATEGORIE_LABELS } from "../documents/labels";
@@ -9,6 +10,7 @@ import {
   archiverMessage,
   classerPieceJointeDansDocuments,
   composerMessage,
+  desarchiverMessage,
   getMessage,
   listMessages,
   type ClassificationTypeChoisie,
@@ -195,6 +197,10 @@ export function MessagerieView(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [detailsParMessage, setDetailsParMessage] = useState<Map<string, MessageCommunicationDetail>>(new Map());
   const { apercu, ouvrir: ouvrirApercu, fermer: fermerApercu } = useMessagerieApercu();
+  // Toggle global (2026-09-17), même principe que ArchiveToggle dans
+  // DocumentsListView : un seul fetch (pas de vue "archivés" séparée par
+  // fil), les messages archivés réapparaissent dans leur fil existant.
+  const [showArchived, setShowArchived] = useState(false);
 
   const [destinataire, setDestinataire] = useState("");
   const [objet, setObjet] = useState("");
@@ -248,14 +254,14 @@ export function MessagerieView(): React.JSX.Element {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      setMessages(await listMessages());
+      setMessages(await listMessages({ avecArchives: showArchived }));
       setError(null);
     } catch {
       setError("Impossible de charger les messages");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     void refresh();
@@ -341,6 +347,7 @@ export function MessagerieView(): React.JSX.Element {
             Nouveau
           </button>
         </div>
+        <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
         {isLoading ? (
           <p className="text-sm text-slate-500">Chargement…</p>
         ) : error ? (
@@ -483,44 +490,55 @@ function MessageItem({
 }): React.JSX.Element {
   const [isArchiving, setIsArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const estArchive = message.archivedAt !== null;
 
   // Archivage à l'unité du message (2026-09-17), jamais un fil entier —
   // masque uniquement côté app (le vrai email reste intact sur Gmail,
   // jamais d'appel IMAP). Clic direct, pas de dialogue de confirmation :
   // même convention que contact.archive()/candidat.archive(), aucun autre
   // bouton "Archiver" de l'app n'en utilise — l'action reste réversible en
-  // base (un flag, jamais une perte de données).
-  async function handleArchiver(): Promise<void> {
+  // base (un flag, jamais une perte de données). Désarchiver (2026-09-17) :
+  // symétrique, visible seulement quand estArchive (donc seulement via
+  // "Afficher les archivés" côté écran, ce message étant sinon absent de
+  // la liste par défaut).
+  async function handleBasculerArchivage(): Promise<void> {
     setIsArchiving(true);
     setError(null);
     try {
-      await archiverMessage(message.id);
+      if (estArchive) {
+        await desarchiverMessage(message.id);
+      } else {
+        await archiverMessage(message.id);
+      }
       await onRefresh();
     } catch {
-      setError("Impossible d'archiver ce message");
+      setError(estArchive ? "Impossible de désarchiver ce message" : "Impossible d'archiver ce message");
       setIsArchiving(false);
     }
   }
 
   return (
-    <li className="rounded-md border border-slate-200 p-3">
+    <li className={`rounded-md border border-slate-200 p-3 ${estArchive ? ARCHIVED_ROW_CLASSNAME : ""}`}>
       <div className="flex items-center justify-between text-xs text-slate-500">
-        <span
-          className={`rounded-full px-2 py-0.5 font-medium ${
-            message.direction === "envoye" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"
-          }`}
-        >
-          {message.direction === "envoye" ? "Envoyé" : "Reçu"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full px-2 py-0.5 font-medium ${
+              message.direction === "envoye" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {message.direction === "envoye" ? "Envoyé" : "Reçu"}
+          </span>
+          {estArchive && <ArchiveBadge />}
+        </div>
         <div className="flex items-center gap-2">
           <span>{new Date(message.dateMessage).toLocaleString("fr-FR")}</span>
           <button
             type="button"
             disabled={isArchiving}
-            onClick={() => void handleArchiver()}
+            onClick={() => void handleBasculerArchivage()}
             className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
           >
-            {isArchiving ? "Archivage…" : "Archiver"}
+            {isArchiving ? (estArchive ? "Désarchivage…" : "Archivage…") : estArchive ? "Désarchiver" : "Archiver"}
           </button>
         </div>
       </div>

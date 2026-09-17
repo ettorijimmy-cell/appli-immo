@@ -13,6 +13,10 @@ import { SmtpEnvoiService } from "./smtp-envoi.service";
 export interface FindAllMessagesFiltres {
   classificationType?: "contact" | "locataire" | "candidat" | "garant" | "non_classe";
   classificationId?: string;
+  // Même convention que FindAllDocumentsFiltres.avecArchives
+  // (documents.service.ts) : absent/false = comportement par défaut
+  // inchangé (archivés exclus), true = levé — jamais l'inverse.
+  avecArchives?: boolean;
 }
 
 type MessageCommunicationRow = typeof messageCommunication.$inferSelect;
@@ -52,9 +56,12 @@ export class MessagesCommunicationService {
       conditions.push(eq(messageCommunication.classificationId, filtres.classificationId));
     }
     // Un message archivé (action manuelle "Archiver", jamais une action sur
-    // la vraie boîte Gmail) ne réapparaît plus dans la liste — pas de vue
-    // "archivés" à ce stade, non demandée, ce serait de la sur-ingénierie.
-    conditions.push(isNull(messageCommunication.archivedAt));
+    // la vraie boîte Gmail) ne réapparaît plus dans la liste par défaut —
+    // avecArchives lève ce filtre pour la vue "Afficher les archivés"
+    // (2026-09-17), même mécanique que FindAllDocumentsFiltres.avecArchives.
+    if (!filtres.avecArchives) {
+      conditions.push(isNull(messageCommunication.archivedAt));
+    }
     const lignes = await this.db
       .select()
       .from(messageCommunication)
@@ -117,6 +124,24 @@ export class MessagesCommunicationService {
       messageCommunication,
       id,
       { archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!ligne) {
+      throw new NotFoundException("Message introuvable");
+    }
+    return this.versDto(ligne as MessageCommunicationRow);
+  }
+
+  // Symétrique d'archiver() (2026-09-17) — première action de
+  // "désarchivage" du codebase, aucun autre module (contact/candidat/
+  // locataire/...) n'en propose. Retire archivedAt, le message redevient
+  // visible par défaut dans findAll() sans avecArchives.
+  async desarchiver(id: string) {
+    const [ligne] = await mettreAJourAvecAudit(
+      this.db,
+      messageCommunication,
+      id,
+      { archivedAt: null },
       this.requestContext.getUtilisateurId()
     );
     if (!ligne) {

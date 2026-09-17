@@ -1054,5 +1054,67 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
       const resultat = await messagesCommunicationService.findById(ligne.id);
       expect(resultat?.archivedAt).not.toBeNull();
     });
+
+    it("findAll avec avecArchives:true inclut les messages archivés, sans changer le comportement par défaut", async () => {
+      const [messageVisible] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "visible2@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      const [messageArchive] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "archive2@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      if (!messageVisible || !messageArchive) throw new Error("Échec de l'insertion des messages de test");
+      await messagesCommunicationService.archiver(messageArchive.id);
+
+      const sansArchives = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        messagesCommunicationService.findAll({})
+      );
+      expect(sansArchives.map((m) => m.id)).not.toContain(messageArchive.id);
+
+      const avecArchives = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        messagesCommunicationService.findAll({ avecArchives: true })
+      );
+      expect(avecArchives.map((m) => m.id)).toContain(messageVisible.id);
+      expect(avecArchives.map((m) => m.id)).toContain(messageArchive.id);
+    });
+
+    it("desarchiver retire archivedAt — le message redevient visible par défaut", async () => {
+      const [ligne] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "x@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      if (!ligne) throw new Error("Échec de l'insertion du message de test");
+      await messagesCommunicationService.archiver(ligne.id);
+
+      const resultat = await messagesCommunicationService.desarchiver(ligne.id);
+      expect(resultat.archivedAt).toBeNull();
+
+      const [ligneEnBase] = await db.select().from(messageCommunication).where(eq(messageCommunication.id, ligne.id));
+      expect(ligneEnBase?.archivedAt).toBeNull();
+
+      const resultats = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        messagesCommunicationService.findAll({})
+      );
+      expect(resultats.map((m) => m.id)).toContain(ligne.id);
+    });
   });
 });

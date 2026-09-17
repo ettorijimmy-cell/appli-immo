@@ -2020,12 +2020,8 @@ mécanisme à moitié fait.
   backend disparaît naturellement du fil sans logique supplémentaire.
 - `MessagesCommunicationService.archiver(id)` : même pattern exact que les
   autres `archive()` du projet (`mettreAJourAvecAudit`, pose `archivedAt`,
-  jamais de `DELETE`). `findAll()` exclut désormais systématiquement les
-  messages archivés (`isNull(messageCommunication.archivedAt)`) — pas de
-  flag pour les réafficher, aucune vue "archivés" demandée à ce stade
-  (ajouter ce flag sans usage aurait été de la sur-ingénierie). `findById`
-  reste volontairement accessible pour un message archivé — jamais masqué
-  sur sa propre fiche.
+  jamais de `DELETE`). `findById` reste volontairement accessible pour un
+  message archivé — jamais masqué sur sa propre fiche.
 - **Ne touche jamais au vrai email sur Gmail** : aucun appel IMAP de
   suppression/déplacement, l'archivage masque uniquement côté app — une
   suppression réelle côté Gmail serait une action destructive sur une
@@ -2037,6 +2033,36 @@ mécanisme à moitié fait.
   (`contact.archive`/`candidat.archive` non plus), cohérent avec le reste :
   l'action reste réversible en base (un flag, jamais une perte de
   données), contrairement à une vraie suppression.
+
+### Extension — consulter et désarchiver un message (2026-09-17)
+
+Audit préalable : le motif "afficher les archivés" existe déjà et est
+largement réutilisé (`apps/desktop/src/renderer/src/components/
+ArchiveFilter.tsx` — `ArchiveToggle`/`ArchiveBadge`/`ARCHIVED_ROW_CLASSNAME`,
+utilisé par Documents, Locataires, Patrimoine, Baux, État des lieux,
+Tableau de bord ; backend miroir `avecArchives?: boolean` sur
+`FindAllDocumentsFiltres`, voir `documents.service.ts`) — repris ici à
+l'identique, y compris le nom `avecArchives` (jamais `inclureArchives`,
+pour rester cohérent). **Aucun précédent en revanche pour "désarchiver"** :
+aucun autre module (contact/candidat/locataire/sci/bien/appartement/bail/
+équipement) ne propose de retour en arrière — première action de ce type
+du codebase.
+
+- `FindAllMessagesFiltres.avecArchives` : absent/`false` = comportement
+  par défaut inchangé (archivés exclus, `isNull(archivedAt)`) ; `true` =
+  filtre levé — même mécanique que `FindAllDocumentsFiltres.avecArchives`.
+- `MessagesCommunicationService.desarchiver(id)` : symétrique exact
+  d'`archiver(id)` (`mettreAJourAvecAudit`, pose `archivedAt: null`).
+- **Toggle global, pas par fil** — l'écran fait un seul `listMessages()`
+  et reconstruit les fils côté client (`construireFils`) ; un message
+  archivé réapparaît dans son fil existant une fois `avecArchives` activé,
+  jamais dans une vue "Archivés" séparée. Placé dans l'en-tête "Fils"
+  (`MessagerieView.tsx`), même emplacement que `ArchiveToggle` dans
+  `DocumentsListView`.
+- **Desktop** : `ArchiveBadge` + `ARCHIVED_ROW_CLASSNAME` sur un message
+  archivé affiché ; le bouton "Archiver" devient "Désarchiver"
+  (`PATCH messagerie/messages/:id/desarchiver`) sur ce message précis —
+  jamais les deux boutons visibles en même temps.
 
 ## Tableau de bord (Module 7)
 
