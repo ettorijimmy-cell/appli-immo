@@ -31,8 +31,11 @@ export const paiements = pgTable("paiements", {
   // uniquement par l'agrégation du tableau de bord (Module 7), sans
   // changement sur leur usage. Nullables : compatibilité avec les échéances
   // déjà existantes avant cette colonne, jamais rétro-remplies. Renseignées
-  // systématiquement pour toute nouvelle échéance par
-  // AlertesJobService.genererEcheancesRecurrentes.
+  // systématiquement pour toute nouvelle échéance, qu'elle soit récurrente
+  // (AlertesJobService.genererEcheancesRecurrentes) ou la toute première à
+  // l'activation du bail (BauxService.activer(), via
+  // calculerDecompositionEcheanceEntree — corrigé le 2026-09-17, bloquait
+  // jusque-là systématiquement la quittance du premier mois).
   loyerHorsCharges: decimal("loyer_hors_charges", { precision: 10, scale: 2 }),
   charges: decimal("charges", { precision: 10, scale: 2 })
 });

@@ -744,31 +744,36 @@ les trois parcours ci-dessus).
   davantage de tables, à la manière de `tache`/`bien`) — à trancher au
   moment de traiter cette dette, pas maintenant.
 
-- **L'échéance d'ENTRÉE générée par `BauxService.activer()` ne renseigne pas
-  `paiements.loyer_hors_charges`/`paiements.charges`.** Découvert le
-  2026-08-31 en implémentant la quittance mensuelle (Module Tâches, Étape 4,
-  docs/data-dictionary.md section "Quittance mensuelle") : seul
-  `AlertesJobService.genererEcheancesRecurrentes` (échéances des mois
-  suivants) fige ces deux colonnes ; l'échéance du premier mois (générée à
-  l'activation, potentiellement proratisée si `dateDebut` ne tombe pas le
-  1er) ne les renseigne toujours pas. Conséquence concrète : une quittance
-  ne peut pas être générée pour le tout premier mois d'un bail tant que
-  cette échéance n'est pas figée a posteriori — `validerCompletudeGenerationQuittance`
-  bloque explicitement (comportement voulu : jamais un montant recalculé
-  deviné sur ce document), mais c'est un vrai manque fonctionnel, pas
-  seulement une limite théorique. Non corrigé maintenant (délibérément,
-  décision explicite) car le calcul n'est pas trivial : `activer()` peut
-  proratiser le montant total (`calculerMontantEcheanceEntree`) quand
-  `dateDebut` ne tombe pas le 1er du mois, et scinder ce total proratisé en
-  deux composantes (loyer hors charges + charges) sans risquer une dérive
-  d'un centime entre les deux (à la manière de `calculerLoyerNetRecuEcheance`,
-  qui dérive la seconde composante par SOUSTRACTION plutôt que par une
-  seconde proration indépendante, précisément pour garantir cette exactitude)
-  demande une vraie fonction `packages/core` dédiée, pas une extension
-  triviale du code existant. Piste de correctif : proratiser
-  `loyerMensuel`/`provisionsCharges` séparément avec `calculerProrataOccupationPartielle`,
-  puis dériver l'une des deux composantes par soustraction du total déjà
-  calculé (jamais deux prorata indépendants sommés).
+- **L'échéance d'ENTRÉE générée par `BauxService.activer()` ne renseignait
+  pas `paiements.loyer_hors_charges`/`paiements.charges` — corrigé
+  (2026-09-17).** Découvert le 2026-08-31 en implémentant la quittance
+  mensuelle (Module Tâches, Étape 4, docs/data-dictionary.md section
+  "Quittance mensuelle") : seul `AlertesJobService.genererEcheancesRecurrentes`
+  (échéances des mois suivants) figeait ces deux colonnes ; l'échéance du
+  premier mois (générée à l'activation, potentiellement proratisée si
+  `dateDebut` ne tombe pas le 1er) ne les renseignait pas, bloquant
+  systématiquement la quittance du tout premier mois d'un bail
+  (`validerCompletudeGenerationQuittance`, comportement voulu — jamais un
+  montant recalculé deviné sur ce document — mais un vrai manque
+  fonctionnel, pas seulement une limite théorique).
+
+  **Corrigé** via `calculerDecompositionEcheanceEntree`
+  (packages/core/src/baux/echeances.ts), appelée depuis
+  `BauxService.activer()` : `charges` proratisé normalement avec
+  `calculerProrataOccupationPartielle` (troncature), `loyerHorsCharges`
+  DÉRIVÉ par soustraction du montant total déjà proratisé
+  (`montant - charges`) plutôt que proratisé indépendamment — même
+  principe que `calculerLoyerNetRecuEcheance`, qui dérive sa seconde
+  composante par soustraction précisément pour garantir cette exactitude.
+  Règle de résolution actée avec l'utilisateur avant implémentation :
+  `loyerHorsCharges + charges === montant` toujours exactement vérifié ;
+  l'écart d'arrondi éventuel entre deux troncatures indépendantes (jusqu'à
+  1 centime) est absorbé sur la composante loyer, jamais laissé divergent
+  sur un document à valeur probante. Tests réels : `packages/core`
+  (troncature normale, dérivation par soustraction, absence de provisions,
+  invariant `loyerHorsCharges + charges === montant`) et intégration
+  Postgres réelle (`quittance-document-docx.integration.spec.ts`,
+  génération réussie de la quittance de l'échéance d'entrée).
 
 - **Migration `0042_broad_revanche.sql` (contrainte `bien_sci_id_coherent`
   actualisée) a échoué une première fois sur Scaleway — résolu (2026-09-05).**
@@ -819,23 +824,25 @@ les trois parcours ci-dessus).
   concernés.
 
 - **`GoogleOAuthService.recupererEmailCompte` supposait que `users.getProfile`
-  fonctionnait avec le seul scope `gmail.send` — résolu (2026-09-04), avant
-  tout test réel.** Constaté le 2026-09-01 en implémentant le flux OAuth2
-  Gmail (Module Tâches, Étape 3, docs/data-dictionary.md section Gmail),
-  creusé et corrigé le 2026-09-04 avant le premier commit : `gmail.send`
-  est un scope volontairement étroit (accès en écriture seule à l'envoi,
-  aucun droit de lecture) qui ne couvre très probablement pas
-  `users.getProfile`, même pour de simples métadonnées de compte — risque
-  réel de blocage `403` dès le premier appel réel, pas seulement une
-  hypothèse théorique. **Corrigé** : `recupererEmailCompte`/`users.
-  getProfile` supprimés, remplacés par le décodage du claim `email` de
-  l'`id_token` OpenID Connect obtenu à l'échange de code (scopes non
-  sensibles `openid`/`email` ajoutés à la demande de consentement, aucune
-  review Google requise). **Action encore requise par Jimmy, hors code** :
-  ajouter `openid` et `.../auth/userinfo.email` à l'écran de consentement
-  OAuth (Google Cloud Console, Data access) en plus de `gmail.send` déjà
-  configuré, avant le premier test réel de connexion — voir
-  docs/data-dictionary.md, section Gmail, pour le détail.
+  fonctionnait avec le seul scope `gmail.send` — tentative de correction
+  abandonnée le 2026-09-16.** Constaté le 2026-09-01 en implémentant le
+  flux OAuth2 Gmail (Module Tâches, Étape 3, docs/data-dictionary.md
+  section Gmail) : `gmail.send` est un scope volontairement étroit (accès
+  en écriture seule à l'envoi, aucun droit de lecture) qui ne couvre très
+  probablement pas `users.getProfile`, même pour de simples métadonnées de
+  compte. Le 2026-09-04, avant tout test réel, le code a été modifié pour
+  décoder le claim `email` de l'`id_token` OpenID Connect à la place
+  (scopes `openid`/`email` ajoutés à la demande de consentement). **Cette
+  piste a été abandonnée le 2026-09-16** : en tentant d'ajouter ces scopes
+  à l'écran de consentement OAuth (Google Cloud Console), Jimmy s'est
+  heurté à une exigence de vidéo de démonstration bloquante pour la
+  vérification de l'app — jugée disproportionnée, décision de revenir à
+  `gmail.send` seul (déjà fonctionnel, déjà testé en conditions réelles
+  pour l'envoi). Plus aucune action requise côté Google Cloud Console.
+  `recupererEmailCompte`/`users.getProfile` n'ont pas été restaurés dans le
+  code (le flux est resté dormant, voir docs/data-dictionary.md, section
+  Gmail, pour le détail de l'incohérence code/configuration qui en
+  résulte).
 
 ---
 
@@ -1839,23 +1846,23 @@ Ordre de priorité convenu avec l'utilisateur :
    sections correspondantes, pour le détail de chaque étape.
 
    **Étape 3 (Gmail OAuth2) terminée (2026-09-01)** — dernière brique du
-   module : `TachesService.envoyerNotification` envoie réellement l'email
-   (compte Gmail de l'utilisateur, jamais un compte technique partagé) et
-   clôt la tâche, jamais l'inverse. `locataireId` — non peuplé
-   automatiquement jusqu'ici pour 4 des 5 types de tâche (seule la
-   quittance mensuelle le renseignait) — est désormais résolu et persisté
+   module à l'époque : `TachesService.envoyerNotification` envoyait
+   réellement l'email (compte Gmail de l'utilisateur, jamais un compte
+   technique partagé) et clôturait la tâche, jamais l'inverse. `locataireId`
+   — non peuplé automatiquement jusqu'ici pour 4 des 5 types de tâche
+   (seule la quittance mensuelle le renseignait) — a été résolu et persisté
    pour les 5 types, corrigeant un trou bloquant découvert en préparant
-   cette étape. `emailCompte` résolu par décodage de l'`id_token` OpenID
-   Connect (scopes non sensibles `openid`/`email` ajoutés, aucune review
-   Google) plutôt que par `users.getProfile` — corrigé avant le premier
-   commit après avoir identifié que `gmail.send` seul ne couvrait
-   très probablement pas cet endpoint (voir docs/data-dictionary.md,
-   section Gmail, et Dette technique ci-dessus pour le détail). **Action
-   requise par Jimmy, hors code** : ajouter `openid` et
-   `.../auth/userinfo.email` à l'écran de consentement OAuth (Google Cloud
-   Console, Data access), en plus de `gmail.send` déjà configuré, avant le
-   premier test réel de connexion. **Module Tâches désormais complet de
-   bout en bout** (détection → tâche → action → notification envoyée).
+   cette étape (ce point reste acquis). `emailCompte` était censé être
+   résolu par décodage de l'`id_token` OpenID Connect (scopes `openid`/
+   `email` ajoutés côté code) plutôt que par `users.getProfile`, jugé
+   probablement bloqué avec le seul scope `gmail.send` — mais l'ajout de
+   ces scopes côté Google Cloud Console a été abandonné le 2026-09-16
+   (exigence de vidéo de démonstration bloquante, voir Dette technique
+   ci-dessus et docs/data-dictionary.md section Gmail) : retour à
+   `gmail.send` seul, aucune action Console restante. Cette étape 3 est de
+   toute façon devenue dormante peu après : l'envoi des notifications passe
+   depuis par la boîte mail dédiée (voir "Messagerie" plus haut), pas par
+   ce flux OAuth Gmail personnel.
 
    **Étape 4 (2026-09-05) : page dédiée dans la sidebar.** Jimmy a levé
    explicitement la limite de 6 entrées de la sidebar (docs/app-spec.md,

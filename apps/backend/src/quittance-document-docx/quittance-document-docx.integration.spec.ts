@@ -223,6 +223,35 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
     expect(texte).toContain("Brive");
   });
 
+  it("génère un .docx complet pour l'échéance d'entrée (loyerHorsCharges/charges figés par activer(), premier mois)", async () => {
+    const { bailId } = await creerBailAvecTitulaire();
+    // Échéance de janvier créée par activer() elle-même (dateDebut = 1er du
+    // mois, jamais par genererEcheancesRecurrentes) — correction du
+    // 2026-09-17 (docs/backlog.md) : loyerHorsCharges/charges ne sont plus
+    // jamais nuls ici, la quittance du premier mois n'est plus bloquée.
+    const [echeanceJanvier] = await db.select().from(paiements).where(eq(paiements.bailId, bailId)).limit(1);
+    if (!echeanceJanvier) throw new Error("Échéance de janvier attendue introuvable");
+    expect(echeanceJanvier.loyerHorsCharges).toBe("700.00");
+    expect(echeanceJanvier.charges).toBe("100.00");
+    await versementsService.ajouter({
+      paiementId: echeanceJanvier.id,
+      montant: "800.00",
+      mode: "virement",
+      dateVersement: "2026-01-05"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      quittanceDocumentDocxService.genererDocumentQuittanceDocx(echeanceJanvier.id)
+    );
+
+    expect(buffer.length).toBeGreaterThan(0);
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain("700.00");
+    expect(texte).toContain("100.00");
+    expect(texte).toContain("800.00");
+    expect(texte).toContain("janvier 2026");
+  });
+
   it("bloque si le paiement n'est pas de type loyer ou n'est pas réglé (statut != paye)", async () => {
     const { bailId } = await creerBailAvecTitulaire();
     const [echeanceJanvier] = await db.select().from(paiements).where(eq(paiements.bailId, bailId)).limit(1);
@@ -238,11 +267,18 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
 
   it("bloque si loyerHorsCharges/charges sont absents (échéance antérieure au 2026-08-31)", async () => {
     const { bailId } = await creerBailAvecTitulaire();
-    // Échéance d'entrée générée par activer() : jamais figée à ce jour
-    // (dette technique documentée, docs/backlog.md).
+    // Depuis la correction du 2026-09-17 (docs/backlog.md), activer() fige
+    // aussi loyerHorsCharges/charges sur l'échéance d'entrée — il n'existe
+    // donc plus de cas réel qui produise naturellement des colonnes nulles.
+    // On simule ici une échéance ANTÉRIEURE à l'introduction de ces
+    // colonnes (2026-08-31), jamais rétro-remplie (voir packages/db/src/
+    // schema/paiements.ts) : seul cas encore possible en pratique.
     const [echeanceJanvier] = await db.select().from(paiements).where(eq(paiements.bailId, bailId)).limit(1);
     if (!echeanceJanvier) throw new Error("Échéance de janvier attendue introuvable");
-    expect(echeanceJanvier.loyerHorsCharges).toBeNull();
+    await db
+      .update(paiements)
+      .set({ loyerHorsCharges: null, charges: null })
+      .where(eq(paiements.id, echeanceJanvier.id));
     await versementsService.ajouter({
       paiementId: echeanceJanvier.id,
       montant: echeanceJanvier.montant,

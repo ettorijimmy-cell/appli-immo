@@ -1398,14 +1398,19 @@ Date de règlement résolue via le dernier `versements` actif du paiement
 `bail-document-docx` via `BienService.resoudreNomBailleur` (voir section
 `bien`).
 
-**Dette technique documentée** : l'échéance d'ENTRÉE générée par
+**Dette technique corrigée (2026-09-17)** : l'échéance d'ENTRÉE générée par
 `BauxService.activer()` (distincte du job récurrent
-`genererEcheancesRecurrentes`) ne renseigne pas encore `loyer_hors_charges`/
-`charges` — une quittance ne peut donc pas encore être générée pour le
-premier mois d'un nouveau bail tant que cette échéance n'est pas figée a
-posteriori. Voir docs/backlog.md, section Dette technique, pour le détail
-et la piste de correctif (prorata à préserver exactement, sans dérive
-d'arrondi entre les deux composantes).
+`genererEcheancesRecurrentes`) ne renseignait pas `loyer_hors_charges`/
+`charges` — la quittance du premier mois d'un nouveau bail était donc
+systématiquement bloquée. Corrigé via `calculerDecompositionEcheanceEntree`
+(packages/core/src/baux/echeances.ts) : `charges` proratisé normalement
+(troncature), `loyerHorsCharges` DÉRIVÉ par soustraction
+(`montant - charges`), jamais proratisé indépendamment — garantit
+`loyerHorsCharges + charges === montant` exactement, décision produit
+actée avec l'utilisateur : l'écart d'arrondi éventuel entre deux
+troncatures indépendantes (jusqu'à 1 centime) est toujours absorbé sur la
+composante loyer plutôt que sur les charges, jamais laissé divergent sur
+un document à valeur probante.
 
 ## Gmail (Module Tâches, Étape 3 — intégration OAuth2, 2026-09-01)
 
@@ -1456,18 +1461,27 @@ redirection vers l'app desktop, impossible depuis un navigateur système
 générique ; l'écran Paramètres reflète l'état à sa prochaine ouverture
 (`GET /gmail/statut`, pas de polling).
 
-**Scopes demandés : `openid email` + `gmail.send`.** `openid`/`email` sont
-non sensibles (aucune review Google requise) et servent uniquement à
-obtenir un `id_token` (JWT OpenID Connect) dans la réponse d'échange de
-code — `gmail.send` seul ne donne accès à aucun endpoint de lecture, pas
-même `users.getProfile` (voir "Dette technique corrigée" ci-dessous).
-`emailCompte` est décodé directement depuis le claim `email` de cet
-`id_token` (`GoogleOAuthService.decoderEmailDepuisIdToken`), **sans
-vérification de signature** — l'`id_token` est obtenu directement depuis
-`oauth2.googleapis.com/token` en HTTPS serveur-à-serveur, jamais transmis
-par le client ni exposé à une falsification possible ; Google documente ce
-cas comme dispensé de vérification (contrairement à un `id_token` reçu
-côté client).
+**Scope réellement configuré côté Google Cloud Console : `gmail.send`
+seul.** Le code (`GoogleOAuthService`, `SCOPES = "openid email gmail.send"`)
+demande toujours `openid`/`email` en plus dans l'URL de consentement — ces
+deux scopes avaient été ajoutés le 2026-09-04 pour résoudre `emailCompte`
+par décodage d'`id_token` plutôt que par `users.getProfile` (voir "Dette
+technique" ci-dessous) — mais **jamais autorisés côté Console** : en
+tentant de les ajouter à l'écran de consentement OAuth, Jimmy s'est heurté
+à une exigence de vidéo de démonstration bloquante pour la vérification de
+l'app, jugée disproportionnée. **Décision prise le 2026-09-16 : abandon de
+cet ajout, retour à `gmail.send` seul**, scope déjà fonctionnel et testé en
+conditions réelles pour l'envoi. Plus aucune action requise côté Google
+Cloud Console.
+
+**Incohérence code/configuration qui en résulte** : le code demande
+toujours `openid`/`email` dans l'URL de consentement alors que la Console
+n'autorise que `gmail.send` — si ce flux (aujourd'hui dormant, voir
+ci-dessous) était un jour réactivé sans correction, le consentement
+échouerait sur les scopes non autorisés. Non corrigé à ce jour car
+`GoogleOAuthService` est un module dormant depuis le passage de l'envoi de
+notifications à la boîte mail dédiée (voir section "Messagerie") — aucun
+appel réel ne passe plus par ce flux.
 
 Côté desktop : canal IPC générique `shell:openExternal` (`apps/desktop/src/
 main/index.ts`, restreint à `http(s)`) ouvre l'URL de consentement dans le
@@ -1497,18 +1511,17 @@ réussi — toute exception (Gmail non connecté, jeton révoqué, erreur API)
 remonte telle quelle au frontend et la tâche reste dans son statut courant,
 jamais fermée sur un envoi qui n'a pas eu lieu.
 
-**Dette technique corrigée (2026-09-04)** : la version initiale de cette
-étape appelait `users.getProfile` avec le seul scope `gmail.send` pour
-résoudre `email_compte` — risque de blocage identifié avant le premier
-test réel (`gmail.send` ne donne accès à aucun endpoint de lecture Gmail,
-`users.getProfile` inclus). Remplacé par le décodage de l'`id_token`
-obtenu via les scopes `openid`/`email` (voir ci-dessus) — élimine l'appel
-HTTP et la dépendance à un scope non couvert par la configuration Google
-Cloud existante. **Action requise côté Google Cloud Console (Data
-access)** : ajouter `openid` et `.../auth/userinfo.email` (ou `email`) à
-la liste des scopes autorisés de l'écran de consentement OAuth, en plus de
-`gmail.send` déjà configuré — scopes non sensibles, aucune review Google,
-ajout en quelques secondes.
+**Dette technique (2026-09-04, tentative de correction abandonnée le
+2026-09-16)** : la version initiale de cette étape appelait
+`users.getProfile` avec le seul scope `gmail.send` pour résoudre
+`email_compte` — risque de blocage identifié avant le premier test réel
+(`gmail.send` ne donne accès à aucun endpoint de lecture Gmail,
+`users.getProfile` inclus). Le code a été modifié pour décoder l'`id_token`
+via les scopes `openid`/`email` à la place, mais l'ajout de ces scopes côté
+Google Cloud Console a ensuite été abandonné (voir "Scope réellement
+configuré" ci-dessus) — `users.getProfile`/`recupererEmailCompte` n'ont pas
+été restaurés, faute d'usage réel : ce flux est dormant depuis le passage à
+la boîte mail dédiée avant qu'un vrai test de connexion n'ait eu lieu.
 
 ## modele_courrier (Module Tâches, Étape 2, 2026-08-29)
 Brique transverse, pas un module à part entière — infrastructure de modèle

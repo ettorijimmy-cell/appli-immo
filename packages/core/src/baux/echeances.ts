@@ -98,6 +98,40 @@ export function calculerMontantEcheanceEntree(
   return calculerProrataOccupationPartielle(montantPlein, dernierJourDuMois, dateDebut);
 }
 
+export interface DecompositionEcheanceEntree {
+  montant: string;
+  loyerHorsCharges: string;
+  charges: string;
+}
+
+/**
+ * Décomposition loyer/charges de l'échéance d'entrée, pour figer
+ * `paiements.loyer_hors_charges`/`charges` (docs/data-dictionary.md,
+ * section baux) — sans ces deux colonnes, `validerCompletudeGenerationQuittance`
+ * bloque la quittance du premier mois.
+ *
+ * `charges` est proratisé normalement (troncature, comme
+ * `calculerProrataOccupationPartielle`). `loyerHorsCharges` est ensuite
+ * DÉRIVÉ par soustraction (`montant - charges`), jamais proratisé
+ * indépendamment : deux troncatures séparées peuvent différer d'un
+ * centime de la troncature de leur somme (`montant`), et sur un document à
+ * valeur probante, `loyerHorsCharges + charges === montant` prime sur la
+ * répartition exacte — l'écart d'arrondi éventuel, s'il existe, est donc
+ * toujours absorbé sur la composante loyer, jamais sur les charges ni
+ * perdu (décision produit actée le 2026-09-17).
+ */
+export function calculerDecompositionEcheanceEntree(
+  loyerMensuel: string,
+  provisionsCharges: string | null,
+  dateDebut: string
+): DecompositionEcheanceEntree {
+  const montant = calculerMontantEcheanceEntree(loyerMensuel, provisionsCharges, dateDebut);
+  const dernierJourDuMois = calculerDernierJourDuMois(dateDebut);
+  const charges = calculerProrataOccupationPartielle(provisionsCharges ?? "0.00", dernierJourDuMois, dateDebut);
+  const loyerHorsCharges = centimesVersMontant(montantEnCentimes(montant) - montantEnCentimes(charges));
+  return { montant, loyerHorsCharges, charges };
+}
+
 /**
  * Bornes du mois calendaire contenant `dateReference` (borne de fin
  * exclusive), pour retrouver l'échéance de loyer à proratiser à la

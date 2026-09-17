@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { centimesVersMontant, montantEnCentimes } from "../paiements/montant";
 import {
   calculerBornesMoisCalendaire,
   calculerDateEcheanceRecurrente,
+  calculerDecompositionEcheanceEntree,
   calculerDernierJourDuMois,
   calculerMontantEcheanceEntree,
   calculerMontantEcheanceLoyer,
@@ -105,6 +107,56 @@ describe("calculerMontantEcheanceEntree", () => {
   it("inclut les provisions pour charges dans le montant proratisé", () => {
     // 980.00 (930 loyer + 50 charges) / 31 * 12 jours = 379.35 (tronqué)
     expect(calculerMontantEcheanceEntree("930.00", "50.00", "2026-07-20")).toBe("379.35");
+  });
+});
+
+describe("calculerDecompositionEcheanceEntree", () => {
+  it("facture le mois entier si date_debut tombe le 1er du mois", () => {
+    expect(calculerDecompositionEcheanceEntree("930.00", "50.00", "2026-07-01")).toEqual({
+      montant: "980.00",
+      loyerHorsCharges: "930.00",
+      charges: "50.00"
+    });
+  });
+
+  it("proratise loyer et charges de façon cohérente quand la division tombe juste", () => {
+    // juillet = 31 jours, occupation du 20 au 31 inclus = 12 jours ; 930 * 12 / 31 = 360.00 exactement
+    expect(calculerDecompositionEcheanceEntree("930.00", "50.00", "2026-07-20")).toEqual({
+      montant: "379.35",
+      loyerHorsCharges: "360.00",
+      charges: "19.35"
+    });
+  });
+
+  it("absorbe l'écart d'arrondi sur loyerHorsCharges quand les troncatures indépendantes divergeraient", () => {
+    // septembre = 30 jours, occupation du 15 au 30 inclus = 16 jours.
+    // montant (troncature de la SOMME) : 850.00 * 16 / 30 = 453.333... -> 453.33
+    // charges (proratisé normalement) : 50.00 * 16 / 30 = 26.666... -> 26.66
+    // loyer proratisé INDÉPENDAMMENT aurait donné 800.00 * 16 / 30 = 426.666... -> 426.66,
+    // soit 426.66 + 26.66 = 453.32 (un centime de moins que montant) : c'est
+    // précisément l'écart que la dérivation par soustraction élimine.
+    expect(calculerDecompositionEcheanceEntree("800.00", "50.00", "2026-09-15")).toEqual({
+      montant: "453.33",
+      loyerHorsCharges: "426.67",
+      charges: "26.66"
+    });
+  });
+
+  it("traite l'absence de provisions pour charges comme 0.00, jamais null", () => {
+    expect(calculerDecompositionEcheanceEntree("930.00", null, "2026-07-20")).toEqual({
+      montant: "360.00",
+      loyerHorsCharges: "360.00",
+      charges: "0.00"
+    });
+  });
+
+  it("garantit toujours loyerHorsCharges + charges === montant", () => {
+    const { montant, loyerHorsCharges, charges } = calculerDecompositionEcheanceEntree(
+      "800.00",
+      "50.00",
+      "2026-09-15"
+    );
+    expect(centimesVersMontant(montantEnCentimes(loyerHorsCharges) + montantEnCentimes(charges))).toBe(montant);
   });
 });
 

@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   calculerBornesMoisCalendaire,
-  calculerMontantEcheanceEntree,
+  calculerDecompositionEcheanceEntree,
   calculerMontantEcheanceLoyer,
   calculerMontantRecuTotal,
   calculerProrataOccupationPartielle,
@@ -187,8 +187,8 @@ export class BauxService {
       }
 
       // jour_echeance n'intervient jamais sur la première échéance (voir
-      // calculerMontantEcheanceEntree, packages/core) — il reste requis ici
-      // uniquement pour ne jamais activer un bail qui ne pourrait plus
+      // calculerDecompositionEcheanceEntree, packages/core) — il reste
+      // requis ici uniquement pour ne jamais activer un bail qui ne pourrait plus
       // jamais être facturé une fois le job récurrent du Module 6
       // construit (docs/data-dictionary.md, section baux).
       if (bail.jourEcheance === null) {
@@ -264,11 +264,25 @@ export class BauxService {
           dateEcheance: bail.dateDebut
         });
       }
+      // loyerHorsCharges/charges FIGÉS dès la création, même principe que
+      // AlertesJobService.genererEcheancesRecurrentes (packages/db/src/
+      // schema/paiements.ts) — sans eux, validerCompletudeGenerationQuittance
+      // bloquerait systématiquement la quittance du premier mois. Dérivés
+      // via calculerDecompositionEcheanceEntree (packages/core) : charges
+      // proratisé, loyerHorsCharges = montant - charges (jamais proratisé
+      // indépendamment, voir sa documentation).
+      const decompositionEntree = calculerDecompositionEcheanceEntree(
+        bail.loyerMensuel,
+        bail.provisionsCharges,
+        bail.dateDebut
+      );
       await tx.insert(paiements).values({
         bailId: id,
         type: "loyer",
-        montant: calculerMontantEcheanceEntree(bail.loyerMensuel, bail.provisionsCharges, bail.dateDebut),
-        dateEcheance: bail.dateDebut
+        montant: decompositionEntree.montant,
+        dateEcheance: bail.dateDebut,
+        loyerHorsCharges: decompositionEntree.loyerHorsCharges,
+        charges: decompositionEntree.charges
       });
 
       return this.versDto(bailActive as BailRow);
