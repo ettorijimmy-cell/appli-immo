@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { messageCommunication, pieceJointeMessage, type Database } from "db";
-import { and, desc, eq } from "drizzle-orm";
+import { messageCommunication, mettreAJourAvecAudit, pieceJointeMessage, type Database } from "db";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { CreateDocumentDto } from "../documents/dto/create-document.dto";
 import { DocumentsService } from "../documents/documents.service";
 import { RequestContextService } from "../common/request-context";
@@ -51,6 +51,10 @@ export class MessagesCommunicationService {
     if (filtres.classificationId) {
       conditions.push(eq(messageCommunication.classificationId, filtres.classificationId));
     }
+    // Un message archivé (action manuelle "Archiver", jamais une action sur
+    // la vraie boîte Gmail) ne réapparaît plus dans la liste — pas de vue
+    // "archivés" à ce stade, non demandée, ce serait de la sur-ingénierie.
+    conditions.push(isNull(messageCommunication.archivedAt));
     const lignes = await this.db
       .select()
       .from(messageCommunication)
@@ -100,6 +104,25 @@ export class MessagesCommunicationService {
         : undefined
     );
     return this.findById(messageId);
+  }
+
+  // Archivage à l'unité du message — jamais un fil entier, même discipline
+  // que contact.archive()/candidat.archive() (toujours l'unité la plus
+  // fine). Masque uniquement côté app : jamais un appel IMAP, le vrai
+  // email reste intact sur la boîte Gmail (décision actée avec Jimmy,
+  // suppression réelle côté Gmail explicitement hors périmètre).
+  async archiver(id: string) {
+    const [ligne] = await mettreAJourAvecAudit(
+      this.db,
+      messageCommunication,
+      id,
+      { archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!ligne) {
+      throw new NotFoundException("Message introuvable");
+    }
+    return this.versDto(ligne as MessageCommunicationRow);
   }
 
   // Contenu déchiffré d'une pièce jointe — jamais mis en cache côté

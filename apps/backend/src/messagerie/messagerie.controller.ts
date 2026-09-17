@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, StreamableFile } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, StreamableFile } from "@nestjs/common";
 import type { Request } from "express";
 import { BoiteMailDedieeService } from "./boite-mail-dediee.service";
 import { CreateDocumentDto } from "../documents/dto/create-document.dto";
@@ -45,6 +45,14 @@ export class MessagerieController {
   @Post("messages/composer")
   composer(@Req() req: Request, @Body() dto: ComposerMessageDto) {
     return this.messagesCommunicationService.composer(req.user!.sub, dto);
+  }
+
+  // Archivage à l'unité du message, jamais un fil entier — même principe
+  // que contacts/:id/archiver. Ne touche jamais au vrai email sur Gmail
+  // (aucun appel IMAP), masque uniquement côté app.
+  @Patch("messages/:id/archiver")
+  archiverMessage(@Param("id") id: string) {
+    return this.messagesCommunicationService.archiver(id);
   }
 
   // Seul point d'accès au contenu en clair d'une pièce jointe — jamais de

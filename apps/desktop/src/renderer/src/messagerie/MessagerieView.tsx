@@ -6,6 +6,7 @@ import { CATEGORIE_LABELS } from "../documents/labels";
 import type { DocumentCategorie, DocumentEntiteType } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import {
+  archiverMessage,
   classerPieceJointeDansDocuments,
   composerMessage,
   getMessage,
@@ -480,6 +481,27 @@ function MessageItem({
   onOuvrirPieceJointe: (id: string) => Promise<void>;
   onRefresh: () => Promise<void>;
 }): React.JSX.Element {
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Archivage à l'unité du message (2026-09-17), jamais un fil entier —
+  // masque uniquement côté app (le vrai email reste intact sur Gmail,
+  // jamais d'appel IMAP). Clic direct, pas de dialogue de confirmation :
+  // même convention que contact.archive()/candidat.archive(), aucun autre
+  // bouton "Archiver" de l'app n'en utilise — l'action reste réversible en
+  // base (un flag, jamais une perte de données).
+  async function handleArchiver(): Promise<void> {
+    setIsArchiving(true);
+    setError(null);
+    try {
+      await archiverMessage(message.id);
+      await onRefresh();
+    } catch {
+      setError("Impossible d'archiver ce message");
+      setIsArchiving(false);
+    }
+  }
+
   return (
     <li className="rounded-md border border-slate-200 p-3">
       <div className="flex items-center justify-between text-xs text-slate-500">
@@ -490,8 +512,23 @@ function MessageItem({
         >
           {message.direction === "envoye" ? "Envoyé" : "Reçu"}
         </span>
-        <span>{new Date(message.dateMessage).toLocaleString("fr-FR")}</span>
+        <div className="flex items-center gap-2">
+          <span>{new Date(message.dateMessage).toLocaleString("fr-FR")}</span>
+          <button
+            type="button"
+            disabled={isArchiving}
+            onClick={() => void handleArchiver()}
+            className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+          >
+            {isArchiving ? "Archivage…" : "Archiver"}
+          </button>
+        </div>
       </div>
+      {error && (
+        <p role="alert" className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      )}
       {message.objet && <p className="mt-1 text-sm font-medium text-slate-700">{message.objet}</p>}
       <CorpsMessage message={message} />
       {piecesJointes.length > 0 && (

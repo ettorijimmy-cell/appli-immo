@@ -42,6 +42,7 @@ export interface MessageCommunication {
   classificationType: MessageClassificationType;
   classificationId: string | null;
   organisationId: string;
+  archivedAt: string | null;
 }
 
 export interface PieceJointeMessage {
@@ -106,4 +107,11 @@ export function classerPieceJointeDansDocuments(pieceJointeId: string, input: Cl
 // même principe que executerJobAlertes/executerJobTaches.
 export function executerJobSyncMessagerie(): Promise<number> {
   return authenticatedFetch<number>("/messagerie/executer-job-sync", { method: "POST" });
+}
+
+// Archivage à l'unité du message (2026-09-17), jamais un fil entier — même
+// principe que archiveContact/archiveCandidat. Ne touche jamais au vrai
+// email sur Gmail, masque uniquement côté app.
+export function archiverMessage(id: string): Promise<MessageCommunication> {
+  return authenticatedFetch<MessageCommunication>(`/messagerie/messages/${id}/archiver`, { method: "PATCH" });
 }

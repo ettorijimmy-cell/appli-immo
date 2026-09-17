@@ -1991,6 +1991,40 @@ composition/réponse. Configuration de la boîte dédiée dans Paramètres
 renvoyé par le backend une fois enregistré, le formulaire de
 reconfiguration repart toujours d'un champ vide.
 
+### Extension — archivage d'un message (2026-09-17)
+
+Audit préalable : `message_communication` porte déjà `archivedAt` (via
+`auditColumns`, comme toute table métier) et le champ était déjà exposé
+dans le DTO, mais **rien n'était encore branché dessus** — ni backend
+(aucune méthode `archive()`, `findAll()` ne filtrait pas les archivés), ni
+frontend. Une vraie fonctionnalité ajoutée ici, pas la découverte d'un
+mécanisme à moitié fait.
+
+- **Granularité : le message individuel, jamais un fil entier** — même
+  discipline que `contact.archive()`/`candidat.archive()` (toujours
+  l'unité la plus fine). Techniquement direct : les fils sont reconstruits
+  côté desktop depuis la liste plate des messages, un message exclu par le
+  backend disparaît naturellement du fil sans logique supplémentaire.
+- `MessagesCommunicationService.archiver(id)` : même pattern exact que les
+  autres `archive()` du projet (`mettreAJourAvecAudit`, pose `archivedAt`,
+  jamais de `DELETE`). `findAll()` exclut désormais systématiquement les
+  messages archivés (`isNull(messageCommunication.archivedAt)`) — pas de
+  flag pour les réafficher, aucune vue "archivés" demandée à ce stade
+  (ajouter ce flag sans usage aurait été de la sur-ingénierie). `findById`
+  reste volontairement accessible pour un message archivé — jamais masqué
+  sur sa propre fiche.
+- **Ne touche jamais au vrai email sur Gmail** : aucun appel IMAP de
+  suppression/déplacement, l'archivage masque uniquement côté app — une
+  suppression réelle côté Gmail serait une action destructive sur une
+  donnée externe, explicitement hors périmètre (décision actée avec
+  Jimmy).
+- **Desktop** : bouton "Archiver" sur chaque message d'un fil (`PATCH
+  messagerie/messages/:id/archiver`), clic direct sans dialogue de
+  confirmation — aucun bouton "Archiver" de l'app n'en utilise
+  (`contact.archive`/`candidat.archive` non plus), cohérent avec le reste :
+  l'action reste réversible en base (un flag, jamais une perte de
+  données), contrairement à une vraie suppression.
+
 ## Tableau de bord (Module 7)
 
 N'introduit aucune nouvelle table — uniquement des agrégations en lecture

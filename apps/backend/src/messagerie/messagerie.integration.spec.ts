@@ -979,5 +979,80 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
       const [documentEnBase] = await db.select().from(documents).where(eq(documents.id, document.id));
       expect(documentEnBase?.cheminStockage).not.toBe(piece!.cheminStockage);
     });
+
+    // Archivage à l'unité du message (2026-09-17) : jamais un DELETE, même
+    // discipline que contact.archive()/candidat.archive() — un message
+    // archivé n'est jamais renvoyé par le vrai email sur Gmail, cette
+    // action ne touche que la ligne en base.
+    it("archiver pose archivedAt sans jamais supprimer la ligne", async () => {
+      const [ligne] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "x@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      if (!ligne) throw new Error("Échec de l'insertion du message de test");
+
+      const resultat = await messagesCommunicationService.archiver(ligne.id);
+      expect(resultat.archivedAt).not.toBeNull();
+
+      const [ligneEnBase] = await db.select().from(messageCommunication).where(eq(messageCommunication.id, ligne.id));
+      expect(ligneEnBase).toBeDefined();
+      expect(ligneEnBase?.archivedAt).not.toBeNull();
+    });
+
+    it("findAll exclut les messages archivés par défaut", async () => {
+      const [messageVisible] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "visible@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      const [messageArchive] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "archive@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      if (!messageVisible || !messageArchive) throw new Error("Échec de l'insertion des messages de test");
+      await messagesCommunicationService.archiver(messageArchive.id);
+
+      const resultats = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        messagesCommunicationService.findAll({})
+      );
+
+      expect(resultats.map((m) => m.id)).toContain(messageVisible.id);
+      expect(resultats.map((m) => m.id)).not.toContain(messageArchive.id);
+    });
+
+    it("findById reste accessible pour un message archivé — jamais masqué sur sa propre fiche", async () => {
+      const [ligne] = await db
+        .insert(messageCommunication)
+        .values({
+          direction: "recu",
+          emailExpediteur: "x@example.com",
+          emailDestinataire: "boite@example.com",
+          dateMessage: new Date(),
+          organisationId
+        })
+        .returning();
+      if (!ligne) throw new Error("Échec de l'insertion du message de test");
+      await messagesCommunicationService.archiver(ligne.id);
+
+      const resultat = await messagesCommunicationService.findById(ligne.id);
+      expect(resultat?.archivedAt).not.toBeNull();
+    });
   });
 });
