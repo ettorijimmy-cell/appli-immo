@@ -1672,10 +1672,12 @@ compris :
   invalide ou inexistant).
 - **`candidat` devient son propre module de navigation** (sidebar
   "Candidats"), décision révisée en cours de conception (le prompt initial
-  le rattachait au Calendrier) — anticipation du futur portail externe de
-  dépôt de dossier (voir "Portail externe" ci-dessous), qui a besoin d'une
-  base candidat déjà solide. Le Calendrier référence un candidat sans
-  posséder son cycle de vie.
+  le rattachait au Calendrier) — anticipation, à l'époque, d'un futur
+  portail externe de dépôt de dossier qui aurait eu besoin d'une base
+  candidat déjà solide. Ce portail a depuis été écarté (voir "Portail
+  externe" ci-dessous, décision du 2026-09-16) ; la séparation candidat/
+  calendrier reste pertinente indépendamment de ce motif d'origine — le
+  Calendrier référence un candidat sans posséder son cycle de vie.
 - `calculerTauxEffort` (packages/core) : purement informatif, aucun seuil
   "acceptable" codé en dur.
 - Générateur ICS (`genererIcs`, packages/core) fait main, RFC 5545, avec
@@ -1936,16 +1938,18 @@ Ordre de priorité convenu avec l'utilisateur :
    technique transverse (système de templates réutilisables) à construire
    en même temps que Tâches et Messagerie, pas ajoutée après coup.
 
-7. **Portail externe (locataires/candidats)** — chantier différé
-   volontairement (2026-09-15). Regroupe deux besoins identifiés
-   séparément mais de même nature technique : accès locataire à la
-   Messagerie (point 3 ci-dessus, module réalisé le 2026-09-16 — reste un
-   outil interne pour Jimmy à ce stade, aucun accès locataire) et dépôt de dossier en ligne par
-   un candidat locataire (module Candidat/Calendrier). Les deux
-   nécessitent la même infrastructure fondamentale — authentification
-   distincte pour des utilisateurs externes (non-gestionnaires), une
-   interface web dédiée (pas Electron), et un modèle de sécurité à
-   concevoir spécifiquement (scoping strict par locataire/candidat, jamais
-   d'accès croisé). À traiter comme son propre chantier de conception
-   complet le moment venu, pas comme une extension mineure d'un autre
-   module.
+7. **Portail externe (locataires/candidats) — écarté, décision prise le
+   2026-09-16.** D'abord noté "différé volontairement" le 2026-09-15, puis
+   réévalué avec Jimmy sur le coût réel plutôt que laissé en attente
+   indéfinie : authentification distincte pour des utilisateurs externes
+   (non-gestionnaires), interface web dédiée (pas Electron), modèle de
+   sécurité à concevoir spécifiquement (scoping strict par
+   locataire/candidat, jamais d'accès croisé) — jugé trop lourd pour la
+   valeur apportée. **Ne sera pas fait, du moins pas dans un avenir
+   proche.** Ce n'est pas un report tacite : si le besoin resurgit, il
+   faudra une nouvelle décision explicite, pas une reprise de ce ticket.
+   Regroupait deux besoins de même nature technique, tous deux restés des
+   outils internes pour Jimmy, sans accès externe : accès locataire à la
+   Messagerie (point 3 ci-dessus, module réalisé le 2026-09-16) et dépôt
+   de dossier en ligne par un candidat locataire (module
+   Candidat/Calendrier).
