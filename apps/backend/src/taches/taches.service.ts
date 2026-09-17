@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { formaterListeNoms, resoudreModeleCourrier } from "core";
+import { formaterListeNoms, resoudreModeleCourrier, type ResultatClassification } from "core";
 import {
   appartements,
   bailLocataires,
@@ -251,7 +251,7 @@ export class TachesService {
     // sinistre, jamais un locataire — résolution séparée (Module Suivi
     // sinistre et assurance, 2026-09-16). Tous les autres types restent
     // tenant-centric (locataireId -> locataires.email), inchangé.
-    const destinataireEmail =
+    const { email: destinataireEmail, classification } =
       tacheRow.type === "sinistre_stagnation"
         ? await this.resoudreEmailAssureur(tacheRow.sinistreId)
         : await this.resoudreEmailLocataire(tacheRow.locataireId);
@@ -265,12 +265,20 @@ export class TachesService {
       pieceJointe = { nomFichier: `quittance-${tacheRow.paiementId}.docx`, contenu, mimeType: MIME_DOCX };
     }
 
+    // classification transmise explicitement (identité déjà résolue
+    // ci-dessus par locataireId/contactAssureurId) — jamais laissée à une
+    // résolution a posteriori par adresse email, qui n'offre aucune
+    // garantie de classer correctement (bug découvert en usage réel,
+    // 2026-09-16 : un envoi resté 'non_classe' malgré un email correct sur
+    // le profil du locataire). Même discipline que le sélecteur manuel de
+    // destinataire du Carnet de contacts.
     await this.smtpEnvoiService.envoyerEmail(
       tacheRow.organisationId,
       destinataireEmail,
       notificationObjet,
       notificationCorps,
-      pieceJointe
+      pieceJointe,
+      classification
     );
 
     const [tacheMiseAJour] = await mettreAJourAvecAudit(
@@ -286,7 +294,9 @@ export class TachesService {
     return this.versDto(tacheMiseAJour as TacheRow);
   }
 
-  private async resoudreEmailLocataire(locataireId: string | null): Promise<string> {
+  private async resoudreEmailLocataire(
+    locataireId: string | null
+  ): Promise<{ email: string; classification: ResultatClassification }> {
     if (!locataireId) {
       throw new BadRequestException("Aucun destinataire résolu pour cette tâche (aucun titulaire actif sur le bail).");
     }
@@ -298,10 +308,12 @@ export class TachesService {
     if (!locataireDestinataire || !locataireDestinataire.email) {
       throw new BadRequestException("Le locataire destinataire n'a pas d'adresse email renseignée.");
     }
-    return locataireDestinataire.email;
+    return { email: locataireDestinataire.email, classification: { type: "locataire", id: locataireId } };
   }
 
-  private async resoudreEmailAssureur(sinistreId: string | null): Promise<string> {
+  private async resoudreEmailAssureur(
+    sinistreId: string | null
+  ): Promise<{ email: string; classification: ResultatClassification }> {
     if (!sinistreId) {
       throw new BadRequestException("Aucun destinataire résolu pour cette tâche (sinistreId manquant).");
     }
@@ -321,7 +333,7 @@ export class TachesService {
     if (!contactDestinataire || !contactDestinataire.email) {
       throw new BadRequestException("Le contact assureur n'a pas d'adresse email renseignée.");
     }
-    return contactDestinataire.email;
+    return { email: contactDestinataire.email, classification: { type: "contact", id: sinistreRow.contactAssureurId } };
   }
 
   private extraireMetadataNotificationEnvoi(metadata: unknown): { notificationObjet: string; notificationCorps: string } {

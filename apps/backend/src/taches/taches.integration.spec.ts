@@ -1671,7 +1671,8 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
       "ilan.devos@example.com",
       "Rappel impayé",
       "Bonjour Ilan, votre loyer est en retard.",
-      undefined
+      undefined,
+      { type: "locataire", id: locataireId }
     );
     expect(resultat.statut).toBe("fait");
     expect(resultat.dateCompletion).not.toBeNull();
@@ -1717,7 +1718,8 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
       "contact@assurup.example.com",
       "Relance sinistre",
       "Bonjour Assurup, relance.",
-      undefined
+      undefined,
+      { type: "contact", id: contactAssureur.id }
     );
     expect(resultat.statut).toBe("fait");
   });

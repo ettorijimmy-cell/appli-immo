@@ -52,6 +52,31 @@ function libelleTypeCarnet(type: ContactUnifie["type"]): string {
   return CONTACT_ROLE_LABELS[type];
 }
 
+// Résout le nom + rôle affichable d'un fil classé à partir du carnet déjà
+// chargé pour le sélecteur de destinataire (2026-09-16) — évite un appel
+// réseau dédié. "contact" est générique côté classification (tout rôle pro
+// confondu), donc recherché par id seul plutôt que par (type, id) comme
+// pour locataire/garant/candidat. Retourne null si le fil n'est pas classé
+// ou si l'entité n'est plus dans le carnet (ex. archivée depuis) — la vue
+// retombe alors sur l'affichage de l'adresse email brute, comportement
+// préexistant.
+function resoudreCorrespondantAffichage(
+  fil: Fil,
+  contactsCarnet: ContactUnifie[]
+): { nom: string; role: string } | null {
+  if (fil.classificationType === "non_classe" || fil.classificationId === null) {
+    return null;
+  }
+  const contactTrouve =
+    fil.classificationType === "contact"
+      ? contactsCarnet.find((c) => c.id === fil.classificationId)
+      : contactsCarnet.find((c) => c.type === fil.classificationType && c.id === fil.classificationId);
+  if (!contactTrouve) {
+    return null;
+  }
+  return { nom: contactTrouve.nom, role: libelleTypeCarnet(contactTrouve.type) };
+}
+
 interface Fil {
   cle: string;
   correspondant: string;
@@ -262,22 +287,38 @@ export function MessagerieView(): React.JSX.Element {
           <p className="text-sm text-slate-500">Aucun message.</p>
         ) : (
           <ul className="space-y-1">
-            {fils.map((f) => (
-              <li key={f.cle}>
-                <button
-                  type="button"
-                  onClick={() => ouvrirFil(f)}
-                  className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
-                    filSelectionne === f.cle ? "bg-indigo-100 text-indigo-800" : "hover:bg-slate-100"
-                  }`}
-                >
-                  <div className="truncate font-medium">{f.correspondant}</div>
-                  {f.classificationType !== "non_classe" && (
-                    <span className="text-xs text-slate-500">{CLASSIFICATION_LABELS[f.classificationType]}</span>
-                  )}
-                </button>
-              </li>
-            ))}
+            {fils.map((f) => {
+              const correspondantAffiche = resoudreCorrespondantAffichage(f, contactsCarnet);
+              return (
+                <li key={f.cle}>
+                  <button
+                    type="button"
+                    onClick={() => ouvrirFil(f)}
+                    className={`w-full rounded-md px-2 py-1.5 text-left text-sm ${
+                      filSelectionne === f.cle ? "bg-indigo-100 text-indigo-800" : "hover:bg-slate-100"
+                    }`}
+                  >
+                    {correspondantAffiche ? (
+                      <>
+                        <div className="truncate font-medium">
+                          {correspondantAffiche.nom} — {correspondantAffiche.role}
+                        </div>
+                        <span className="block truncate text-xs text-slate-400" title={f.correspondant}>
+                          {f.correspondant}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="truncate font-medium">{f.correspondant}</div>
+                        {f.classificationType !== "non_classe" && (
+                          <span className="text-xs text-slate-500">{CLASSIFICATION_LABELS[f.classificationType]}</span>
+                        )}
+                      </>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
