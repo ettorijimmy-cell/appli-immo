@@ -104,7 +104,7 @@ export class SmtpEnvoiService {
       .values({
         direction: "envoye",
         objet,
-        corps,
+        corpsTexte: corps,
         emailExpediteur: email,
         emailDestinataire: destinataire,
         dateMessage: new Date(),

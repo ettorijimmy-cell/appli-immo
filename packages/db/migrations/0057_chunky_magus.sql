@@ -1,0 +1,1 @@
+ALTER TABLE "message_communication" ADD COLUMN "corps_html" text;

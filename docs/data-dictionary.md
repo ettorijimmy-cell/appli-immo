@@ -1821,7 +1821,9 @@ décision future, une fois l'unification éprouvée en usage réel.
 | Champ | Type | Description |
 |---|---|---|
 | direction | enum | `envoye` \| `recu` |
-| objet, corps | text, nullable | |
+| objet | text, nullable | |
+| corps_texte | text, nullable | Colonne SQL `corps` (nom historique conservé — un renommage de colonne n'est pas détectable de façon fiable par `drizzle-kit generate` en mode non interactif, aurait risqué un DROP+ADD sur tout l'historique ; seul le nom côté code a changé). Texte brut : `parsed.text` (mailparser) pour un message reçu, ou le texte tapé dans le formulaire de composition desktop pour un message envoyé — jamais de HTML à l'envoi, hors périmètre de cette itération |
+| corps_html | text, nullable | Ajouté 2026-09-16 (bug corrigé : balises HTML brutes affichées telles quelles côté desktop — `corps` contenait auparavant `parsed.text ?? parsed.html`, sans jamais séparer ni nettoyer). **Toujours déjà nettoyé** avant l'écriture (`sanitize-html`, `ImapSyncJobService`, allowlist stricte — pas de `<script>`, pas de gestionnaires d'événements, pas d'`<img>` volontairement exclu cette itération, liens restreints aux schémas `http`/`https`/`mailto`) : jamais le HTML brut d'un email reçu, contenu externe non fiable (risque XSS réel). `null` pour les messages envoyés et pour les messages reçus sans partie HTML. Deuxième passe de nettoyage (`DOMPurify`) côté desktop juste avant le rendu dans le DOM — défense en profondeur, même discipline que la validation du montant négatif (front + back), jamais une seule ligne de défense pour du contenu externe |
 | email_expediteur, email_destinataire | text | |
 | date_message | timestamptz | |
 | imap_message_id | text, nullable | En-tête RFC 5322/2822 `Message-ID`, exposé par `imapflow` — sert au dédoublonnage à la synchronisation. **Nullable + index unique partiel** (`WHERE imap_message_id IS NOT NULL`, sur `(organisation_id, imap_message_id)`) plutôt qu'un identifiant synthétique inventé pour les messages envoyés : un message composé depuis l'application n'a pas encore d'identifiant côté serveur IMAP au moment de l'insertion (`SmtpEnvoiService` journalise avant tout aller-retour réseau), et "imap message id" n'a de sens que pour un message reçu — ajustement au schéma cible initialement fourni, décision actée avec Jimmy après l'audit préalable |
@@ -1833,6 +1835,51 @@ décision future, une fois l'unification éprouvée en usage réel.
 classifié sur `emailExpediteur` (l'expéditeur réel) ; pour un message
 **envoyé**, classifié sur `emailDestinataire` — dans les deux cas,
 l'adresse du correspondant, jamais celle de la boîte dédiée elle-même.
+
+### Extension — rendu HTML sécurisé des messages reçus (2026-09-16)
+
+Bug corrigé, remonté par test manuel : un message HTML reçu affichait ses
+balises brutes (`<div>`, `&nbsp;`...) côté desktop. Audit préalable mené
+avant correctif — décisions actées :
+
+- mailparser expose `parsed.text` et `parsed.html` séparément ; l'ancien
+  code (`corps: parsed.text ?? parsed.html`) perdait systématiquement l'un
+  des deux et ne nettoyait jamais rien — le HTML brut d'un email HTML-only
+  (cas fréquent, aucune partie texte alternative) finissait stocké tel
+  quel. Confirmé aussi : aucune bibliothèque de nettoyage HTML n'existait
+  dans le projet avant ce correctif.
+- **`corps` → `corpsTexte` + `corpsHtml`** (voir table ci-dessus) plutôt
+  qu'un champ unique — les deux versions existent indépendamment côté
+  mailparser, les garder séparées lève toute ambiguïté sur ce qui a été
+  nettoyé.
+- **Défense en profondeur, deux passes** : `sanitize-html` (Node) nettoie
+  une fois à la réception avant l'écriture en base (`ImapSyncJobService`)
+  — rien de dangereux n'est jamais persisté ; `DOMPurify` (DOM) nettoie une
+  seconde fois côté desktop juste avant `dangerouslySetInnerHTML`
+  (`MessagerieView`, composant `CorpsMessage`) — dernier filet avant le
+  rendu réel. Même discipline que la validation du montant négatif (front
+  + back) : jamais une seule ligne de défense pour du contenu externe non
+  fiable. Impossible de partager une seule implémentation via
+  `packages/core`, qui doit rester "sans dépendance Node ni navigateur"
+  (CLAUDE.md) — un sanitizer dépend forcément de l'un ou l'autre.
+- **Allowlist stricte, pas les valeurs par défaut** des deux
+  bibliothèques : mise en forme de base (gras, listes, tableaux,
+  citations, titres) et liens `http`/`https`/`mailto` uniquement — jamais
+  `javascript:`/`data:` en `href`. **`<img>` volontairement exclu** cette
+  itération (pixels de suivi, images `cid:` déjà réencodées par
+  mailparser en `data:` URI potentiellement lourdes) — non demandé,
+  repli sur le visualiseur de pièce jointe existant pour toute image
+  jointe.
+- **Liens jamais ouverts dans la fenêtre Electron elle-même** : clic
+  intercepté et routé vers `window.api.shell.openExternal` (même
+  principe que `ConnexionGmailView`), jamais une navigation interne à
+  l'app.
+- **Messages historiques non rétro-nettoyés** : ceux déjà en base avec du
+  HTML brut dans l'ancien champ `corps` (devenu `corpsTexte`) continuent
+  d'afficher des balises littérales — `corpsHtml` reste `null` pour eux,
+  aucun backfill. Même principe que le message mal classé du correctif
+  précédent (2026-09-16) : laissé tel quel, un reclassement/nettoyage
+  manuel ponctuel serait envisagé si un cas réel se présentait.
 
 ### piece_jointe_message
 

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import DOMPurify from "dompurify";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
 import { CONTACT_ROLE_LABELS, listContactsUnifies, type ContactUnifie } from "../contacts/api";
 import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { CATEGORIE_LABELS } from "../documents/labels";
@@ -33,6 +34,68 @@ const CLASSIFICATION_LABELS: Record<MessageClassificationType, string> = {
 // sélecteur de destinataire (2026-09-16) : documentEntiteType le supportait
 // déjà, seule la classification de message ne le permettait pas.
 const CLASSIFICATIONS_CLASSABLES: MessageClassificationType[] = ["locataire", "garant", "candidat"];
+
+// corpsHtml est déjà nettoyé côté backend (sanitize-html, à la réception,
+// voir ImapSyncJobService) — cette configuration DOMPurify est une
+// deuxième passe, défense en profondeur juste avant le rendu dans le DOM
+// (même discipline que la validation du montant négatif, front + back).
+// Pas d'<img> (choix déjà fait côté backend, aucune image n'y survit) ;
+// seuls les liens http(s)/mailto passent, jamais javascript:/data:.
+const DOMPURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "p",
+    "br",
+    "div",
+    "span",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "td",
+    "th"
+  ],
+  ALLOWED_ATTR: ["href"],
+  ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i
+};
+
+// Rendu HTML riche (gras, liens, mise en forme) pour un message reçu, avec
+// repli sur le texte brut si l'email n'avait pas de partie HTML — jamais
+// les deux affichés en même temps. Les liens ne naviguent jamais dans la
+// fenêtre Electron elle-même (même principe que ConnexionGmailView) : le
+// clic est intercepté et routé vers window.api.shell.openExternal.
+function CorpsMessage({ message }: { message: MessageCommunication }): React.JSX.Element | null {
+  if (message.corpsHtml) {
+    const html = DOMPurify.sanitize(message.corpsHtml, DOMPURIFY_CONFIG);
+    function handleClick(e: MouseEvent<HTMLDivElement>): void {
+      const lien = (e.target as HTMLElement).closest("a");
+      if (lien?.href) {
+        e.preventDefault();
+        void window.api.shell.openExternal(lien.href);
+      }
+    }
+    return <div className="mt-1 text-sm text-slate-600" onClick={handleClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  }
+  if (message.corpsTexte) {
+    return <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{message.corpsTexte}</p>;
+  }
+  return null;
+}
 
 // Mappe le type du Carnet de contacts (qui distingue chaque rôle de contact
 // professionnel : artisan/diagnostiqueur/syndic/assureur/autre) vers le type
@@ -430,7 +493,7 @@ function MessageItem({
         <span>{new Date(message.dateMessage).toLocaleString("fr-FR")}</span>
       </div>
       {message.objet && <p className="mt-1 text-sm font-medium text-slate-700">{message.objet}</p>}
-      {message.corps && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{message.corps}</p>}
+      <CorpsMessage message={message} />
       {piecesJointes.length > 0 && (
         <ul className="mt-2 space-y-1">
           {piecesJointes.map((piece) => (

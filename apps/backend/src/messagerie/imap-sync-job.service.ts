@@ -4,6 +4,7 @@ import { boiteMailDediee, messageCommunication, pieceJointeMessage, type Databas
 import { and, eq, isNull } from "drizzle-orm";
 import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
+import sanitizeHtml from "sanitize-html";
 import { uuidv7 } from "uuidv7";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentStorageService } from "../storage/document-storage.service";
@@ -12,6 +13,50 @@ import { ClassificationMessageService } from "./classification-message.service";
 
 const IMAP_HOST = "imap.gmail.com";
 const IMAP_PORT = 993;
+
+// Le HTML d'un email reçu est un contenu externe non fiable (risque XSS
+// réel — cf. audit préalable, 2026-09-16) : allowlist stricte plutôt que
+// les valeurs par défaut de sanitize-html. Volontairement exclu de cette
+// itération : <img> — les emails HTML embarquent souvent des pixels de
+// suivi (src distant) ou des images cid: déjà réencodées par mailparser en
+// data: URI potentiellement lourdes ; aucune demande explicite pour les
+// images, seulement "gras, liens, mise en forme". Repli exact sur le
+// visualiseur de pièce jointe existant pour toute image jointe.
+const OPTIONS_SANITIZE_HTML_MESSAGE_RECU: sanitizeHtml.IOptions = {
+  allowedTags: [
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "p",
+    "br",
+    "div",
+    "span",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "td",
+    "th"
+  ],
+  allowedAttributes: { a: ["href"] },
+  // Bloque explicitement javascript:/data: en href — seuls des liens
+  // authentiques (http/https) ou mailto ont un sens dans un email reçu.
+  allowedSchemes: ["http", "https", "mailto"],
+  disallowedTagsMode: "discard"
+};
 
 type BoiteMailDedieeRow = typeof boiteMailDediee.$inferSelect;
 
@@ -137,12 +182,18 @@ export class ImapSyncJobService {
     const emailDestinataire = premiereAdresse(parsed.to);
     const classification = await this.classificationMessageService.resoudre(emailExpediteur, organisationId);
 
+    // corpsHtml nettoyé une fois ici, à la réception — jamais le HTML brut
+    // stocké (audit préalable, 2026-09-16). Une deuxième passe (DOMPurify)
+    // a lieu côté desktop juste avant le rendu, défense en profondeur.
+    const corpsHtml = parsed.html !== false ? sanitizeHtml(parsed.html, OPTIONS_SANITIZE_HTML_MESSAGE_RECU) : null;
+
     const [ligne] = await this.db
       .insert(messageCommunication)
       .values({
         direction: "recu",
         objet: parsed.subject ?? null,
-        corps: parsed.text ?? (parsed.html !== false ? parsed.html : null) ?? null,
+        corpsTexte: parsed.text ?? null,
+        corpsHtml,
         emailExpediteur,
         emailDestinataire,
         dateMessage: parsed.date ?? new Date(),

@@ -30,7 +30,12 @@ export interface MessageCommunication {
   id: string;
   direction: MessageDirection;
   objet: string | null;
-  corps: string | null;
+  // corpsHtml est déjà nettoyé côté backend (sanitize-html, à la
+  // réception) — jamais du HTML brut. Nettoyé une seconde fois avec
+  // DOMPurify juste avant le rendu (défense en profondeur, 2026-09-16),
+  // jamais affiché tel quel sans cette deuxième passe.
+  corpsTexte: string | null;
+  corpsHtml: string | null;
   emailExpediteur: string;
   emailDestinataire: string;
   dateMessage: string;

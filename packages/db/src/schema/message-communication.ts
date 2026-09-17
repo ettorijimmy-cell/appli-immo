@@ -29,7 +29,26 @@ export const messageCommunication = pgTable(
     ...auditColumns,
     direction: messageDirectionEnum("direction").notNull(),
     objet: text("objet"),
-    corps: text("corps"),
+    // Corps texte brut : parsed.text (mailparser) pour un message reçu, ou
+    // le texte tapé dans le formulaire de composition desktop pour un
+    // message envoyé (jamais de HTML à l'envoi, hors périmètre de cette
+    // itération). Colonne SQL restée "corps" (nom historique) plutôt que
+    // renommée en "corps_texte" — un renommage de colonne n'est pas
+    // détectable de façon fiable par `drizzle-kit generate` en mode non
+    // interactif, ça aurait risqué une perte de données (DROP + ADD) sur
+    // tout l'historique des messages ; seul le nom côté code change,
+    // 2026-09-16 (bug corrigé : balises HTML brutes affichées telles
+    // quelles côté desktop).
+    corpsTexte: text("corps"),
+    // Corps HTML **déjà nettoyé** (sanitize-html, ImapSyncJobService) —
+    // jamais le HTML brut d'un email reçu, contenu externe non fiable
+    // (risque XSS réel). `null` pour les messages envoyés (composition
+    // reste texte brut) et pour les messages reçus sans partie HTML.
+    // Nettoyage en profondeur : une deuxième passe (DOMPurify) a lieu côté
+    // desktop juste avant l'insertion dans le DOM, même discipline que la
+    // validation du montant négatif (front + back) — jamais une seule
+    // ligne de défense pour du contenu externe non fiable.
+    corpsHtml: text("corps_html"),
     emailExpediteur: text("email_expediteur").notNull(),
     emailDestinataire: text("email_destinataire").notNull(),
     dateMessage: timestamp("date_message", { withTimezone: true }).notNull(),
