@@ -9,7 +9,7 @@ import {
   type LigneReleveCsvAvecId,
   type PaiementARapprocher
 } from "core";
-import { bailLocataires, locataires, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { appartements, bailLocataires, baux, bien, locataires, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -42,7 +42,25 @@ export class PaiementsService {
     return this.versDto(paiement);
   }
 
+  // paiements n'a pas de colonne organisationId directe : le scoping passe
+  // par une triple jointure paiements -> baux -> appartements -> bien
+  // (bien.organisationId), même profondeur que BailLocatairesService.
   async findAll(bailId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(bailId ? [eq(paiements.bailId, bailId)] : [])
+      ];
+      const rows = await this.db
+        .select({ paiement: paiements })
+        .from(paiements)
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.paiement));
+    }
     const lignes = bailId
       ? await this.db.select().from(paiements).where(eq(paiements.bailId, bailId))
       : await this.db.select().from(paiements);
@@ -147,10 +165,25 @@ export class PaiementsService {
       ...ligne
     }));
 
-    const paiementsCandidats = await this.db
-      .select()
-      .from(paiements)
-      .where(and(isNull(paiements.archivedAt), inArray(paiements.statut, ["impaye", "partiel"])));
+    // Scoping critique (chantier scoping multi-organisation, Commit 4b) :
+    // sans ce filtre, une ligne de relevé bancaire d'une organisation
+    // pouvait être proposée en rapprochement contre une échéance impayée
+    // d'une AUTRE organisation — pas seulement une liste trop large
+    // affichée, un vrai risque de mélange de données financières entre
+    // organisations réelles (voir docs/data-dictionary.md pour le détail).
+    const organisationId = this.requestContext.getOrganisationId();
+    const conditionsCandidats = and(isNull(paiements.archivedAt), inArray(paiements.statut, ["impaye", "partiel"]));
+    const paiementsCandidats: PaiementRow[] = organisationId
+      ? (
+          await this.db
+            .select({ paiement: paiements })
+            .from(paiements)
+            .innerJoin(baux, eq(baux.id, paiements.bailId))
+            .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+            .innerJoin(bien, eq(bien.id, appartements.bienId))
+            .where(and(conditionsCandidats, eq(bien.organisationId, organisationId)))
+        ).map((row) => row.paiement)
+      : await this.db.select().from(paiements).where(conditionsCandidats);
 
     const bailIds = [...new Set(paiementsCandidats.map((paiement) => paiement.bailId))];
     const nomsParBail = await this.recupererNomsLocatairesParBail(bailIds);

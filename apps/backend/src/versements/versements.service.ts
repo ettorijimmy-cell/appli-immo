@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerMontantRecuTotal, calculerStatutPaiement } from "core";
-import { mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -15,7 +15,27 @@ export class VersementsService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  // versements n'a pas de colonne organisationId directe : le scoping passe
+  // par une quadruple jointure versements -> paiements -> baux ->
+  // appartements -> bien (bien.organisationId), la chaîne la plus longue
+  // de ce chantier.
   async findAll(paiementId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(paiementId ? [eq(versements.paiementId, paiementId)] : [])
+      ];
+      const rows = await this.db
+        .select({ versement: versements })
+        .from(versements)
+        .innerJoin(paiements, eq(paiements.id, versements.paiementId))
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.versement));
+    }
     const lignes = paiementId
       ? await this.db.select().from(versements).where(eq(versements.paiementId, paiementId))
       : await this.db.select().from(versements);

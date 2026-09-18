@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerMontantRecuTotal, montantEnCentimes } from "core";
-import { baux, mettreAJourAvecAudit, paiements, remboursements, versements, type Database } from "db";
+import { appartements, baux, bien, mettreAJourAvecAudit, paiements, remboursements, versements, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
@@ -21,7 +21,25 @@ export class RemboursementsService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  // remboursements n'a pas de colonne organisationId directe : le scoping
+  // passe par une triple jointure remboursements -> baux -> appartements ->
+  // bien (bien.organisationId), même profondeur que PaiementsService.
   async findAll(bailId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(bailId ? [eq(remboursements.bailId, bailId)] : [])
+      ];
+      const rows = await this.db
+        .select({ remboursement: remboursements })
+        .from(remboursements)
+        .innerJoin(baux, eq(baux.id, remboursements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.remboursement));
+    }
     const lignes = bailId
       ? await this.db.select().from(remboursements).where(eq(remboursements.bailId, bailId))
       : await this.db.select().from(remboursements);

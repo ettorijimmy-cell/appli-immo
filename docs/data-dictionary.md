@@ -2460,6 +2460,62 @@ ImmeublesLegacy/Appartements/Equipements ensemble, toute la chaîne
 d'un coup) et `baux/locataires-baux.integration.spec.ts` (deux tests,
 Baux puis BailLocataires).
 
+### Scoping des findAll() financiers + rapprocherCsv (Commit 4, sous-commit 4b, 2026-09-18)
+
+`PaiementsService.findAll()`, `VersementsService.findAll()`,
+`RemboursementsService.findAll()` : ne filtraient jusqu'ici jamais par
+organisation. Aucune des trois tables n'a de colonne `organisationId`
+directe — le scoping passe par une jointure jusqu'à `bien.organisationId`,
+toujours via `bailId` (jamais le `paiementId` optionnel de
+`remboursements` — l'ancre stable reste `bailId`, même principe que le
+commentaire du schéma) :
+
+- `paiements` : triple jointure `paiements -> baux -> appartements ->
+  bien`.
+- `versements` : quadruple jointure `versements -> paiements -> baux ->
+  appartements -> bien` — la chaîne la plus longue de ce chantier.
+- `remboursements` : triple jointure `remboursements -> baux ->
+  appartements -> bien`.
+
+**Cas prioritaire — `PaiementsService.rapprocherCsv()`** : identifié en
+audit comme le seul cas de ce chantier où l'absence de scoping n'était pas
+qu'une liste trop large affichée, mais un risque réel de mélange de
+données financières entre organisations — une ligne de relevé bancaire
+importée par une organisation pouvait être proposée en rapprochement
+contre l'échéance impayée d'une AUTRE organisation. La requête
+`paiementsCandidats` (sélection des paiements `impaye`/`partiel`
+éligibles) est scopée avec la même chaîne de jointure que
+`PaiementsService.findAll()`, avant tout calcul de solde restant ou appel
+à `proposerRapprochements` (packages/core) — ces deux fonctions restent
+inchangées, elles reçoivent simplement un ensemble de candidats déjà
+filtré.
+
+Toutes les FK de la chaîne (`paiements.bailId`, `baux.appartementId`,
+`appartements.bienId`, `versements.paiementId`, `remboursements.bailId`,
+`bien.organisationId`) sont `NOT NULL` en base (vérifié dans
+`packages/db/src/schema`) : une jointure interne (`innerJoin`) ne peut
+donc jamais exclure silencieusement une ligne qu'une jointure externe
+aurait gardée — pas de risque de faux négatif pour `rapprocherCsv`.
+
+Revue `financial-logic-reviewer` demandée explicitement avant ce
+sous-commit malgré l'absence de changement de logique de calcul (WHERE/
+jointures uniquement) : aucun point bloquant. Point identifié à surveiller
+pour un sous-commit ultérieur (Commit 5, `findById()`/ownership checks) —
+pas une régression de ce sous-commit : les écritures
+(`VersementsService.ajouter/annuler`, `RemboursementsService.create/
+archive`, `PaiementsService.create/update/archive`) acceptent toujours un
+`paiementId`/`bailId` sans vérifier son appartenance à l'organisation
+appelante.
+
+**Tests d'isolation multi-organisation ajoutés** dans
+`paiements.integration.spec.ts` (scoping `findAll` + `rapprocherCsv`,
+avec un paiement leurre de même montant/échéance dans une autre
+organisation) et `remboursements.integration.spec.ts` (scoping
+`findAll`) — aucun n'existait avant ce sous-commit. `VersementsService`
+n'avait jusqu'ici aucun test dédié à `findAll()` du tout (seulement des
+usages indirects via `ajouter`/`annuler`) ; le test de scoping ajouté dans
+`paiements.integration.spec.ts` en est la première couverture directe.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local

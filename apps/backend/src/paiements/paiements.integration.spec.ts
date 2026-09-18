@@ -54,6 +54,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
   let bailId: string;
 
   beforeEach(async () => {
@@ -113,6 +114,7 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
     userId = user.id;
+    organisationId = organisation.id;
 
     const sci = await scisService.create(userId, { nom: "SCI Paiements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const bien = await bienService.create(userId, {
@@ -600,5 +602,332 @@ describe("Paiements — versements, calcul de statut, rapprochement CSV (intégr
     const paiementMisAJour = await paiementsService.findById(paiement.id);
     expect(paiementMisAJour?.updatedBy).toBe(userId);
     expect(paiementMisAJour?.version).toBe(2);
+  });
+
+  // Sous-commit 4b (chantier scoping multi-organisation, 2026-09-18) :
+  // PaiementsService.findAll() ne filtrait jusqu'ici jamais par
+  // organisation. paiements n'a pas de colonne organisationId directe — le
+  // scoping passe par une triple jointure paiements -> baux ->
+  // appartements -> bien (bien.organisationId).
+  it("PaiementsService.findAll scope par organisation — un paiement d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Paiements" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-paiements-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgPaiements",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Paiements",
+      regimeFiscal: "IR",
+      adresse: "2 rue de Test",
+      codePostal: "75002",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Paiements",
+      adresse: "2 rue des Paiements",
+      codePostal: "75002",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const autreBail = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const paiementOrgB = await paiementsService.create({
+      bailId: autreBail.id,
+      type: "loyer",
+      montant: "800.00",
+      dateEcheance: "2026-09-01"
+    });
+    const paiementOrgA = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "850.00",
+      dateEcheance: "2026-09-01"
+    });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
+      paiementsService.findAll()
+    );
+    expect(listeOrgA.map((p) => p.id)).toContain(paiementOrgA.id);
+    expect(listeOrgA.map((p) => p.id)).not.toContain(paiementOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => paiementsService.findAll()
+    );
+    expect(listeOrgB.map((p) => p.id)).toContain(paiementOrgB.id);
+    expect(listeOrgB.map((p) => p.id)).not.toContain(paiementOrgA.id);
+
+    // Combinaison bailId + organisation (AND, jamais OR ni l'un qui écrase
+    // l'autre) : sous le contexte de l'organisation A, filtrer par le bail
+    // de l'organisation B doit renvoyer une liste vide.
+    const listeOrgAAvecFiltreAutreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => paiementsService.findAll(autreBail.id)
+    );
+    expect(listeOrgAAvecFiltreAutreBail).toHaveLength(0);
+    const listeOrgAAvecFiltrePropreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => paiementsService.findAll(bailId)
+    );
+    // toContain, pas toEqual : findAll() ne filtre pas archivedAt (comportement
+    // préexistant, hors périmètre de ce scoping) — l'échéance auto-générée à
+    // l'activation, archivée dans le beforeEach, reste incluse en plus de
+    // paiementOrgA. Seul ce qui importe ici est vérifié : le filtre bailId
+    // reste effectif (aucun résultat de bailOrgB) et n'est pas neutralisé.
+    expect(listeOrgAAvecFiltrePropreBail.map((p) => p.id)).toContain(paiementOrgA.id);
+    expect(listeOrgAAvecFiltrePropreBail.every((p) => p.bailId === bailId)).toBe(true);
+  });
+
+  // Sous-commit 4b : versements n'a pas de colonne organisationId directe —
+  // le scoping passe par une quadruple jointure versements -> paiements ->
+  // baux -> appartements -> bien (bien.organisationId).
+  it("VersementsService.findAll scope par organisation — un versement d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Versements" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-versements-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgVersements",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Versements",
+      regimeFiscal: "IR",
+      adresse: "3 rue de Test",
+      codePostal: "75003",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Versements",
+      adresse: "3 rue des Paiements",
+      codePostal: "75003",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const autreBail = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const paiementOrgB = await paiementsService.create({
+      bailId: autreBail.id,
+      type: "loyer",
+      montant: "800.00",
+      dateEcheance: "2026-09-01"
+    });
+    const versementOrgB = await versementsService.ajouter({
+      paiementId: paiementOrgB.id,
+      montant: "800.00",
+      mode: "virement",
+      dateVersement: "2026-09-02"
+    });
+
+    const paiementOrgA = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "850.00",
+      dateEcheance: "2026-09-01"
+    });
+    const versementOrgA = await versementsService.ajouter({
+      paiementId: paiementOrgA.id,
+      montant: "850.00",
+      mode: "virement",
+      dateVersement: "2026-09-02"
+    });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
+      versementsService.findAll()
+    );
+    expect(listeOrgA.map((v) => v.id)).toContain(versementOrgA.id);
+    expect(listeOrgA.map((v) => v.id)).not.toContain(versementOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => versementsService.findAll()
+    );
+    expect(listeOrgB.map((v) => v.id)).toContain(versementOrgB.id);
+    expect(listeOrgB.map((v) => v.id)).not.toContain(versementOrgA.id);
+
+    // Combinaison paiementId + organisation (AND) : sous le contexte de
+    // l'organisation A, filtrer par le paiement de l'organisation B doit
+    // renvoyer une liste vide.
+    const listeOrgAAvecFiltreAutrePaiement = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => versementsService.findAll(paiementOrgB.id)
+    );
+    expect(listeOrgAAvecFiltreAutrePaiement).toHaveLength(0);
+    const listeOrgAAvecFiltrePropreVersement = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => versementsService.findAll(paiementOrgA.id)
+    );
+    expect(listeOrgAAvecFiltrePropreVersement.map((v) => v.id)).toEqual([versementOrgA.id]);
+  });
+
+  // Sous-commit 4b — cas prioritaire signalé en audit : sans ce scoping,
+  // rapprocherCsv() pouvait proposer le paiement impayé D'UNE AUTRE
+  // ORGANISATION comme candidat de rapprochement pour une ligne de relevé
+  // bancaire importée par l'organisation courante — pas seulement une liste
+  // trop large affichée, un vrai risque de confirmer un versement contre
+  // l'échéance d'un tiers sans aucun rapport avec l'import (voir
+  // docs/data-dictionary.md pour le détail du risque).
+  it("rapprocherCsv ne propose jamais le paiement impayé d'une autre organisation, même avec un montant/date identiques", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Rapprochement" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-rapprochement-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgRapprochement",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Rapprochement",
+      regimeFiscal: "IR",
+      adresse: "4 rue de Test",
+      codePostal: "75004",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Rapprochement",
+      adresse: "4 rue des Paiements",
+      codePostal: "75004",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "850.00"
+    });
+    const autreBail = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const autreLocataire = await locatairesService.create(autreUser.id, { nom: "Etranger", prenom: "Bob" });
+    await bailLocatairesService.create({ bailId: autreBail.id, locataireId: autreLocataire.id, role: "titulaire" });
+    // Même montant, même échéance que le paiement de l'organisation A créé
+    // ci-dessous — le pire cas : sans le scoping, ce paiement serait un
+    // candidat de rapprochement au moins aussi fort (voire exclusif si son
+    // libellé matche mieux) que celui de la bonne organisation.
+    const paiementOrgB = await paiementsService.create({
+      bailId: autreBail.id,
+      type: "loyer",
+      montant: "850.00",
+      dateEcheance: "2026-09-01"
+    });
+
+    const locataire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
+    await bailLocatairesService.create({ bailId, locataireId: locataire.id, role: "titulaire" });
+    const paiementOrgA = await paiementsService.create({
+      bailId,
+      type: "loyer",
+      montant: "850.00",
+      dateEcheance: "2026-09-01"
+    });
+
+    const csv = "Date,Montant,Libelle\n2026-09-02,850.00,VIR LOYER SEPTEMBRE\n";
+
+    const resultatOrgA = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => paiementsService.rapprocherCsv({ contenuCsv: csv })
+    );
+    const idsCandidatsOrgA = (resultatOrgA.propositions[0]?.candidats ?? []).map((c) => c.paiementId);
+    expect(idsCandidatsOrgA).toContain(paiementOrgA.id);
+    expect(idsCandidatsOrgA).not.toContain(paiementOrgB.id);
+    expect(resultatOrgA.paiements.map((p) => p.id)).not.toContain(paiementOrgB.id);
+
+    const resultatOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => paiementsService.rapprocherCsv({ contenuCsv: csv })
+    );
+    const idsCandidatsOrgB = (resultatOrgB.propositions[0]?.candidats ?? []).map((c) => c.paiementId);
+    expect(idsCandidatsOrgB).toContain(paiementOrgB.id);
+    expect(idsCandidatsOrgB).not.toContain(paiementOrgA.id);
+    expect(resultatOrgB.paiements.map((p) => p.id)).not.toContain(paiementOrgA.id);
   });
 });

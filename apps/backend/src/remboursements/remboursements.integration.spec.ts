@@ -16,6 +16,7 @@ import { BauxService } from "../baux/baux.service";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
+import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { PaiementsModule } from "../paiements/paiements.module";
@@ -59,7 +60,10 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
   let paiementsService: PaiementsService;
   let versementsService: VersementsService;
   let remboursementsService: RemboursementsService;
+  let requestContextService: RequestContextService;
   let db: Database;
+  let userId: string;
+  let organisationId: string;
   let bailId: string;
   let depotGarantiePaiementId: string;
 
@@ -95,6 +99,7 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
     paiementsService = moduleRef.get(PaiementsService);
     versementsService = moduleRef.get(VersementsService);
     remboursementsService = moduleRef.get(RemboursementsService);
+    requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
       .insert(organisations)
@@ -118,6 +123,8 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
     if (!user) {
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
+    userId = user.id;
+    organisationId = organisation.id;
 
     const sci = await scisService.create(user.id, { nom: "SCI Remboursements Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
     const bien = await bienService.create(user.id, {
@@ -442,5 +449,113 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
         mode: "virement"
       })
     ).rejects.toThrow(ConflictException);
+  });
+
+  // Sous-commit 4b (chantier scoping multi-organisation, 2026-09-18) :
+  // RemboursementsService.findAll() ne filtrait jusqu'ici jamais par
+  // organisation. remboursements n'a pas de colonne organisationId directe
+  // — le scoping passe par une triple jointure remboursements -> baux ->
+  // appartements -> bien (bien.organisationId).
+  it("RemboursementsService.findAll scope par organisation — un remboursement d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Remboursements" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-remboursements-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgRemboursements",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Remboursements",
+      regimeFiscal: "IR",
+      adresse: "2 rue de Test",
+      codePostal: "75002",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Remboursements",
+      adresse: "2 rue des Remboursements",
+      codePostal: "75002",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const autreBail = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const remboursementOrgB = await remboursementsService.create({
+      bailId: autreBail.id,
+      type: "depot_garantie",
+      montantOrigine: "1000.00",
+      montantRembourse: "1000.00",
+      dateRemboursement: "2026-07-15",
+      mode: "virement"
+    });
+
+    const remboursementOrgA = await remboursementsService.create({
+      bailId,
+      paiementId: depotGarantiePaiementId,
+      type: "depot_garantie",
+      montantOrigine: "1000.00",
+      montantRembourse: "1000.00",
+      dateRemboursement: "2026-07-15",
+      mode: "virement"
+    });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
+      remboursementsService.findAll()
+    );
+    expect(listeOrgA.map((r) => r.id)).toContain(remboursementOrgA.id);
+    expect(listeOrgA.map((r) => r.id)).not.toContain(remboursementOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => remboursementsService.findAll()
+    );
+    expect(listeOrgB.map((r) => r.id)).toContain(remboursementOrgB.id);
+    expect(listeOrgB.map((r) => r.id)).not.toContain(remboursementOrgA.id);
+
+    // Combinaison bailId + organisation (AND) : sous le contexte de
+    // l'organisation A, filtrer par le bail de l'organisation B doit
+    // renvoyer une liste vide.
+    const listeOrgAAvecFiltreAutreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => remboursementsService.findAll(autreBail.id)
+    );
+    expect(listeOrgAAvecFiltreAutreBail).toHaveLength(0);
+    const listeOrgAAvecFiltrePropreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => remboursementsService.findAll(bailId)
+    );
+    expect(listeOrgAAvecFiltrePropreBail.map((r) => r.id)).toEqual([remboursementOrgA.id]);
   });
 });
