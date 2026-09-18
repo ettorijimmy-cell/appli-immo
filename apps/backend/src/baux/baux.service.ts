@@ -12,7 +12,7 @@ import {
   peutActiverBail,
   preremplirLoyerBail
 } from "core";
-import { appartements, baux, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -77,7 +77,25 @@ export class BauxService {
     return this.versDto(bail);
   }
 
+  // baux n'a pas de colonne organisationId directe : le scoping passe par
+  // une double jointure baux -> appartements -> bien (bien.organisationId),
+  // même chaîne que GarantsService.create() pour résoudre l'organisation
+  // depuis un bail.
   async findAll(appartementId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(appartementId ? [eq(baux.appartementId, appartementId)] : [])
+      ];
+      const rows = await this.db
+        .select({ bail: baux })
+        .from(baux)
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.bail));
+    }
     const lignes = appartementId
       ? await this.db.select().from(baux).where(eq(baux.appartementId, appartementId))
       : await this.db.select().from(baux);

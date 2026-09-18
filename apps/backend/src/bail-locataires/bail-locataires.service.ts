@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bailLocataires, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bailLocataires, baux, bien, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -29,18 +29,32 @@ export class BailLocatairesService {
     return this.versDto(lien);
   }
 
+  // bail_locataires n'a pas de colonne organisationId directe : le scoping
+  // passe par une triple jointure bail_locataires -> baux -> appartements
+  // -> bien (bien.organisationId), un niveau plus loin que BauxService.
   async findAll(bailId?: string, locataireId?: string) {
-    const conditions = [
+    const conditionsBase = [
       ...(bailId ? [eq(bailLocataires.bailId, bailId)] : []),
       ...(locataireId ? [eq(bailLocataires.locataireId, locataireId)] : [])
     ];
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const rows = await this.db
+        .select({ lien: bailLocataires })
+        .from(bailLocataires)
+        .innerJoin(baux, eq(baux.id, bailLocataires.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(bien.organisationId, organisationId), ...conditionsBase));
+      return rows.map((row) => this.versDto(row.lien));
+    }
     const lignes =
-      conditions.length === 0
+      conditionsBase.length === 0
         ? await this.db.select().from(bailLocataires)
         : await this.db
             .select()
             .from(bailLocataires)
-            .where(conditions.length === 1 ? conditions[0] : and(...conditions));
+            .where(conditionsBase.length === 1 ? conditionsBase[0] : and(...conditionsBase));
     return lignes.map((lien) => this.versDto(lien));
   }
 

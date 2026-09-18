@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { creerRattachementProprietaire } from "core";
 import { mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -53,7 +53,24 @@ export class ScisService {
     });
   }
 
+  // scis n'a pas de colonne organisationId directe : le scoping passe par
+  // organisation_sci (table de liaison, voir create() ci-dessus). role
+  // ('proprietaire' ou 'mandataire') n'est volontairement pas filtré ici —
+  // les deux donnent un accès légitime à la SCI.
   async findAll() {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const rattachements = await this.db
+        .select({ sciId: organisationSci.sciId })
+        .from(organisationSci)
+        .where(eq(organisationSci.organisationId, organisationId));
+      const sciIds = rattachements.map((rattachement) => rattachement.sciId);
+      if (sciIds.length === 0) {
+        return [];
+      }
+      const lignes = await this.db.select().from(scis).where(inArray(scis.id, sciIds));
+      return lignes.map((sci) => this.versDto(sci));
+    }
     const lignes = await this.db.select().from(scis);
     return lignes.map((sci) => this.versDto(sci));
   }

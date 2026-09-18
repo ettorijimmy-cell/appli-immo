@@ -1,6 +1,7 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { immeublesLegacy, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { immeublesLegacy, organisationSci, type Database } from "db";
+import { and, eq, inArray } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 
 type ImmeubleRow = typeof immeublesLegacy.$inferSelect;
@@ -14,12 +15,32 @@ type ImmeubleRow = typeof immeublesLegacy.$inferSelect;
 // rattachés à une ligne de cette table restent consultables.
 @Injectable()
 export class ImmeublesService {
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService
+  ) {}
 
+  // immeubles_legacy n'a qu'une FK directe vers scis, pas d'organisationId
+  // (voir packages/db/src/schema/immeubles.ts) : même chemin de scoping que
+  // ScisService.findAll() (via organisation_sci), une étape plus loin.
   async findAll(sciId?: string) {
-    const lignes = sciId
-      ? await this.db.select().from(immeublesLegacy).where(eq(immeublesLegacy.sciId, sciId))
-      : await this.db.select().from(immeublesLegacy);
+    const organisationId = this.requestContext.getOrganisationId();
+    const conditions = [...(sciId ? [eq(immeublesLegacy.sciId, sciId)] : [])];
+    if (organisationId) {
+      const rattachements = await this.db
+        .select({ sciId: organisationSci.sciId })
+        .from(organisationSci)
+        .where(eq(organisationSci.organisationId, organisationId));
+      const sciIds = rattachements.map((rattachement) => rattachement.sciId);
+      if (sciIds.length === 0) {
+        return [];
+      }
+      conditions.push(inArray(immeublesLegacy.sciId, sciIds));
+    }
+    const lignes =
+      conditions.length > 0
+        ? await this.db.select().from(immeublesLegacy).where(and(...conditions))
+        : await this.db.select().from(immeublesLegacy);
     return lignes.map((immeuble) => this.versDto(immeuble));
   }
 

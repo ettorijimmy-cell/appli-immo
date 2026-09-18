@@ -75,7 +75,23 @@ export class AppartementsService {
     return this.versDto(appartement);
   }
 
+  // appartements n'a pas de colonne organisationId directe : le scoping
+  // passe par une jointure vers bien (bien.organisationId), même chaîne que
+  // BauxService/EquipementsService.
   async findAll(bienId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(bienId ? [eq(appartements.bienId, bienId)] : [])
+      ];
+      const rows = await this.db
+        .select({ appartement: appartements })
+        .from(appartements)
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.appartement));
+    }
     const lignes = bienId
       ? await this.db.select().from(appartements).where(eq(appartements.bienId, bienId))
       : await this.db.select().from(appartements);

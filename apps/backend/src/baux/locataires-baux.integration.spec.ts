@@ -631,6 +631,210 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     expect(listeOrgB.map((g) => g.id)).not.toContain(garantOrgA.id);
   });
 
+  // Sous-commit 4a (chantier scoping multi-organisation, 2026-09-18) :
+  // BauxService.findAll() ne filtrait jusqu'ici jamais par organisation.
+  // baux n'a pas de colonne organisationId directe — le scoping passe par
+  // une jointure baux -> appartements -> bien (bien.organisationId).
+  it("BauxService.findAll scope par organisation — un bail d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Baux" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-baux-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgBaux",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI Baux",
+      regimeFiscal: "IR",
+      adresse: "2 rue de Test",
+      codePostal: "75002",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble Baux",
+      adresse: "2 rue du Bail",
+      codePostal: "75002",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const bailOrgB = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const bailOrgA = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
+      bauxService.findAll()
+    );
+    expect(listeOrgA.map((b) => b.id)).toContain(bailOrgA.id);
+    expect(listeOrgA.map((b) => b.id)).not.toContain(bailOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => bauxService.findAll()
+    );
+    expect(listeOrgB.map((b) => b.id)).toContain(bailOrgB.id);
+    expect(listeOrgB.map((b) => b.id)).not.toContain(bailOrgA.id);
+
+    // Combinaison appartementId + organisation (AND, jamais OR ni l'un qui
+    // écrase l'autre) : sous le contexte de l'organisation A, filtrer par
+    // l'appartement de l'organisation B (qui existe réellement en base)
+    // doit renvoyer une liste vide — pas la liste non filtrée de
+    // l'organisation A (le filtre appartementId serait alors ignoré).
+    const listeOrgAAvecFiltreAutreAppartement = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => bauxService.findAll(autreAppartement.id)
+    );
+    expect(listeOrgAAvecFiltreAutreAppartement).toHaveLength(0);
+
+    // Et la combinaison reste effective sur la propre donnée de
+    // l'organisation A (le filtre appartementId n'est pas neutralisé par
+    // l'ajout de la condition organisation).
+    const listeOrgAAvecFiltrePropreAppartement = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => bauxService.findAll(appartementId)
+    );
+    expect(listeOrgAAvecFiltrePropreAppartement.map((b) => b.id)).toEqual([bailOrgA.id]);
+  });
+
+  // Sous-commit 4a : bail_locataires n'a pas de colonne organisationId
+  // directe — le scoping passe par une triple jointure bail_locataires ->
+  // baux -> appartements -> bien (bien.organisationId), un niveau plus loin
+  // que BauxService.findAll() ci-dessus.
+  it("BailLocatairesService.findAll scope par organisation — un rattachement d'une autre organisation n'apparaît pas", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation BailLocataires" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-bail-locataires-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgBailLocataires",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const autreSci = await scisService.create(autreUser.id, {
+      nom: "Autre SCI BailLocataires",
+      regimeFiscal: "IR",
+      adresse: "3 rue de Test",
+      codePostal: "75003",
+      ville: "Paris"
+    });
+    const autreBien = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: autreSci.id,
+      nom: "Autre Immeuble BailLocataires",
+      adresse: "3 rue du Bail",
+      codePostal: "75003",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const autreAppartement = await appartementsService.create({
+      bienId: autreBien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel",
+      loyerReference: "800.00"
+    });
+    const bailOrgB = await bauxService.create({
+      appartementId: autreAppartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      jourEcheance: 5
+    });
+    const locataireOrgB = await locatairesService.create(autreUser.id, { nom: "Etranger", prenom: "Bob" });
+    const lienOrgB = await bailLocatairesService.create({
+      bailId: bailOrgB.id,
+      locataireId: locataireOrgB.id,
+      role: "titulaire"
+    });
+
+    const bailOrgA = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+    const locataireOrgA = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
+    const lienOrgA = await bailLocatairesService.create({
+      bailId: bailOrgA.id,
+      locataireId: locataireOrgA.id,
+      role: "titulaire"
+    });
+
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
+      bailLocatairesService.findAll()
+    );
+    expect(listeOrgA.map((l) => l.id)).toContain(lienOrgA.id);
+    expect(listeOrgA.map((l) => l.id)).not.toContain(lienOrgB.id);
+
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => bailLocatairesService.findAll()
+    );
+    expect(listeOrgB.map((l) => l.id)).toContain(lienOrgB.id);
+    expect(listeOrgB.map((l) => l.id)).not.toContain(lienOrgA.id);
+
+    // Combinaison bailId + organisation (AND, jamais OR ni l'un qui écrase
+    // l'autre) : sous le contexte de l'organisation A, filtrer par le bail
+    // de l'organisation B (qui existe réellement en base) doit renvoyer une
+    // liste vide — pas la liste non filtrée de l'organisation A (le filtre
+    // bailId serait alors ignoré).
+    const listeOrgAAvecFiltreAutreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => bailLocatairesService.findAll(bailOrgB.id)
+    );
+    expect(listeOrgAAvecFiltreAutreBail).toHaveLength(0);
+
+    // Et la combinaison reste effective sur la propre donnée de
+    // l'organisation A.
+    const listeOrgAAvecFiltrePropreBail = await requestContextService.executerAvecContexte(
+      { utilisateurId: userId, organisationId },
+      () => bailLocatairesService.findAll(bailOrgA.id)
+    );
+    expect(listeOrgAAvecFiltrePropreBail.map((l) => l.id)).toEqual([lienOrgA.id]);
+  });
+
   // Vérifie que mettreAJourAvecAudit (packages/db) fonctionne aussi bien
   // avec la transaction (`tx`) utilisée par activer()/resilier() qu'avec
   // `this.db` directement — les deux écritures de la même transaction

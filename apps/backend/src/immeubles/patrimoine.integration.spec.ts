@@ -658,4 +658,189 @@ describe("Patrimoine — hiérarchie SCI -> Bien -> Appartement -> Équipement (
     const misAJour = await appartementsService.update(appartement.id, { typeEnergie: "gaz" });
     expect(misAJour.typeEnergie).toBe("gaz");
   });
+
+  // Sous-commit 4a (chantier scoping multi-organisation, 2026-09-18) :
+  // ScisService/BienService/ImmeublesService/AppartementsService/
+  // EquipementsService.findAll() ne filtraient jusqu'ici jamais par
+  // organisation. Un même bail/SCI/bien/appartement/équipement créé par une
+  // autre organisation apparaissait dans les listes de toutes les
+  // organisations. Vérifié explicitement ici, pour toute la chaîne, avec
+  // organisationId réellement posé en contexte (comme le ferait
+  // UserContextInterceptor pour une vraie requête HTTP) — contrairement à
+  // tous les autres tests de ce fichier, qui tournent volontairement hors
+  // contexte (organisationId toujours null, branche non scopée).
+  it("findAll() de ScisService/BienService/ImmeublesService/AppartementsService/EquipementsService scope par organisation", async () => {
+    const [autreOrganisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Autre Organisation Patrimoine" })
+      .returning();
+    if (!autreOrganisation) {
+      throw new Error("Échec de l'insertion de l'autre organisation de test");
+    }
+    const [autreUser] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: autreOrganisation.id,
+        email: `autre-org-patrimoine-${randomUUID()}@example.com`,
+        nom: "Autre",
+        prenom: "OrgPatrimoine",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!autreUser) {
+      throw new Error("Échec de l'insertion de l'autre utilisateur de test");
+    }
+
+    const sciOrgA = await scisService.create(userId, {
+      nom: "SCI Org A",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bienOrgA = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sciOrgA.id,
+      nom: "Immeuble Org A",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const [immeubleLegacyOrgA] = await db
+      .insert(immeublesLegacy)
+      .values({ sciId: sciOrgA.id, nom: "Immeuble Legacy Org A", adresse: "1 rue de Test" })
+      .returning();
+    if (!immeubleLegacyOrgA) {
+      throw new Error("Échec de l'insertion de l'immeuble legacy de test (org A)");
+    }
+    const appartementOrgA = await appartementsService.create({
+      bienId: bienOrgA.id,
+      numero: "A1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const equipementOrgA = await equipementsService.create({
+      appartementId: appartementOrgA.id,
+      type: "chaudiere"
+    });
+
+    const sciOrgB = await scisService.create(autreUser.id, {
+      nom: "SCI Org B",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bienOrgB = await bienService.create(autreUser.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sciOrgB.id,
+      nom: "Immeuble Org B",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const [immeubleLegacyOrgB] = await db
+      .insert(immeublesLegacy)
+      .values({ sciId: sciOrgB.id, nom: "Immeuble Legacy Org B", adresse: "1 rue de Test" })
+      .returning();
+    if (!immeubleLegacyOrgB) {
+      throw new Error("Échec de l'insertion de l'immeuble legacy de test (org B)");
+    }
+    const appartementOrgB = await appartementsService.create({
+      bienId: bienOrgB.id,
+      numero: "B1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const equipementOrgB = await equipementsService.create({
+      appartementId: appartementOrgB.id,
+      type: "chaudiere"
+    });
+
+    // Sens Org A : chaque service vérifié indépendamment (5 assertions
+    // séparées, pas une vérification combinée qui masquerait un service
+    // cassé individuellement).
+    await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, async () => {
+      const scisOrgA = await scisService.findAll();
+      expect(scisOrgA.map((s) => s.id)).toContain(sciOrgA.id);
+      expect(scisOrgA.map((s) => s.id)).not.toContain(sciOrgB.id);
+
+      const biensOrgA = await bienService.findAll();
+      expect(biensOrgA.map((b) => b.id)).toContain(bienOrgA.id);
+      expect(biensOrgA.map((b) => b.id)).not.toContain(bienOrgB.id);
+
+      const immeublesLegacyOrgA = await immeublesService.findAll();
+      expect(immeublesLegacyOrgA.map((i) => i.id)).toContain(immeubleLegacyOrgA.id);
+      expect(immeublesLegacyOrgA.map((i) => i.id)).not.toContain(immeubleLegacyOrgB.id);
+
+      const appartementsOrgA = await appartementsService.findAll();
+      expect(appartementsOrgA.map((a) => a.id)).toContain(appartementOrgA.id);
+      expect(appartementsOrgA.map((a) => a.id)).not.toContain(appartementOrgB.id);
+
+      const equipementsOrgA = await equipementsService.findAll();
+      expect(equipementsOrgA.map((e) => e.id)).toContain(equipementOrgA.id);
+      expect(equipementsOrgA.map((e) => e.id)).not.toContain(equipementOrgB.id);
+
+      // Combinaison filtre existant + organisation (AND, jamais OR ni l'un
+      // qui écrase l'autre) : un sciId/bienId/appartementId qui existe
+      // réellement en base mais appartient à l'autre organisation doit
+      // renvoyer une liste vide sous ce contexte — pas la liste non filtrée
+      // de l'organisation courante (le filtre serait alors ignoré), pas la
+      // ligne de l'autre organisation (l'organisation serait alors ignorée).
+      expect(await bienService.findAll(sciOrgB.id)).toHaveLength(0);
+      expect(await immeublesService.findAll(sciOrgB.id)).toHaveLength(0);
+      expect(await appartementsService.findAll(bienOrgB.id)).toHaveLength(0);
+      expect(await equipementsService.findAll(appartementOrgB.id)).toHaveLength(0);
+      // Et la même combinaison sur la propre donnée de l'organisation
+      // continue de fonctionner (le filtre reste effectif, pas neutralisé
+      // par l'ajout de la condition organisation).
+      expect((await bienService.findAll(sciOrgA.id)).map((b) => b.id)).toEqual([bienOrgA.id]);
+      expect((await appartementsService.findAll(bienOrgA.id)).map((a) => a.id)).toEqual([appartementOrgA.id]);
+      expect((await equipementsService.findAll(appartementOrgA.id)).map((e) => e.id)).toEqual([equipementOrgA.id]);
+    });
+
+    // Sens Org B, symétrique — sans cette vérification, un bug qui ne
+    // se manifesterait que dans un sens (ex. une jointure mal orientée)
+    // resterait invisible.
+    await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      async () => {
+        const scisOrgB = await scisService.findAll();
+        expect(scisOrgB.map((s) => s.id)).toContain(sciOrgB.id);
+        expect(scisOrgB.map((s) => s.id)).not.toContain(sciOrgA.id);
+
+        const biensOrgB = await bienService.findAll();
+        expect(biensOrgB.map((b) => b.id)).toContain(bienOrgB.id);
+        expect(biensOrgB.map((b) => b.id)).not.toContain(bienOrgA.id);
+
+        const immeublesLegacyOrgB = await immeublesService.findAll();
+        expect(immeublesLegacyOrgB.map((i) => i.id)).toContain(immeubleLegacyOrgB.id);
+        expect(immeublesLegacyOrgB.map((i) => i.id)).not.toContain(immeubleLegacyOrgA.id);
+
+        const appartementsOrgB = await appartementsService.findAll();
+        expect(appartementsOrgB.map((a) => a.id)).toContain(appartementOrgB.id);
+        expect(appartementsOrgB.map((a) => a.id)).not.toContain(appartementOrgA.id);
+
+        const equipementsOrgB = await equipementsService.findAll();
+        expect(equipementsOrgB.map((e) => e.id)).toContain(equipementOrgB.id);
+        expect(equipementsOrgB.map((e) => e.id)).not.toContain(equipementOrgA.id);
+
+        expect(await bienService.findAll(sciOrgA.id)).toHaveLength(0);
+        expect(await immeublesService.findAll(sciOrgA.id)).toHaveLength(0);
+        expect(await appartementsService.findAll(bienOrgA.id)).toHaveLength(0);
+        expect(await equipementsService.findAll(appartementOrgA.id)).toHaveLength(0);
+      }
+    );
+  });
 });

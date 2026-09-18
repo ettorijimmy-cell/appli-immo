@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { bien, bienImmeubleDetail, mettreAJourAvecAudit, scis, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -109,17 +109,25 @@ export class BienService {
     });
   }
 
+  // organisationId est une colonne directe de bien (voir create() ci-dessus)
+  // : aucune jointure requise, contrairement à ScisService/AppartementsService.
   async findAll(sciId?: string) {
-    const rows = sciId
-      ? await this.db
-          .select({ bien, detail: bienImmeubleDetail })
-          .from(bien)
-          .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id))
-          .where(eq(bien.sciId, sciId))
-      : await this.db
-          .select({ bien, detail: bienImmeubleDetail })
-          .from(bien)
-          .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id));
+    const organisationId = this.requestContext.getOrganisationId();
+    const conditions = [
+      ...(sciId ? [eq(bien.sciId, sciId)] : []),
+      ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])
+    ];
+    const rows =
+      conditions.length > 0
+        ? await this.db
+            .select({ bien, detail: bienImmeubleDetail })
+            .from(bien)
+            .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id))
+            .where(and(...conditions))
+        : await this.db
+            .select({ bien, detail: bienImmeubleDetail })
+            .from(bien)
+            .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id));
     return rows.map((row) => this.versDto(row.bien, row.detail));
   }
 

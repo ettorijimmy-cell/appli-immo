@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { equipements, mettreAJourAvecAudit, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { appartements, bien, equipements, mettreAJourAvecAudit, type Database } from "db";
+import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateEquipementDto } from "./dto/create-equipement.dto";
@@ -31,7 +31,24 @@ export class EquipementsService {
     return this.versDto(equipement);
   }
 
+  // equipements n'a pas de colonne organisationId directe : le scoping
+  // passe par une double jointure equipements -> appartements -> bien
+  // (bien.organisationId), même chaîne que BauxService.findAll().
   async findAll(appartementId?: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const conditions = [
+        eq(bien.organisationId, organisationId),
+        ...(appartementId ? [eq(equipements.appartementId, appartementId)] : [])
+      ];
+      const rows = await this.db
+        .select({ equipement: equipements })
+        .from(equipements)
+        .innerJoin(appartements, eq(appartements.id, equipements.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(...conditions));
+      return rows.map((row) => this.versDto(row.equipement));
+    }
     const lignes = appartementId
       ? await this.db.select().from(equipements).where(eq(equipements.appartementId, appartementId))
       : await this.db.select().from(equipements);

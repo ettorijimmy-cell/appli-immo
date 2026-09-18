@@ -2387,6 +2387,79 @@ tests sans rapport avec le problème traité ici ; la porter au niveau de
 l'interceptor la limite exactement à ce qui représente une vraie requête
 HTTP.
 
+### Scoping des findAll() de la chaîne patrimoniale (Commit 4, sous-commit 4a, 2026-09-18)
+
+`ScisService.findAll()`, `BienService.findAll()`, `ImmeublesService.findAll()`
+(table `immeubles_legacy`, lecture seule), `AppartementsService.findAll()`,
+`BauxService.findAll()`, `EquipementsService.findAll()`,
+`BailLocatairesService.findAll()` : ne filtraient jusqu'ici jamais par
+organisation, contrairement aux 10 services migrés au Commit 3. Corrigé via
+`this.requestContext.getOrganisationId()`, même mécanisme centralisé.
+
+**Aucune de ces 7 tables n'a de colonne `organisationId` directe, sauf
+`bien`** (colonne réelle, posée à la création — voir
+`packages/db/src/schema/bien.ts`). Le chemin de scoping varie donc par
+table, vérifié individuellement plutôt que généralisé à l'aveugle :
+
+- `bien.organisationId` : condition directe, sans jointure.
+- `scis` : aucune colonne, aucune FK directe vers une organisation — le
+  seul chemin est la table de liaison `organisation_sci`
+  (`organisation_sci.sciId` + `organisation_sci.organisationId`, voir
+  `packages/db/src/schema/organisation-sci.ts`). Résolu en deux requêtes
+  (liste des `sciId` rattachés, puis `inArray(scis.id, sciIds)`) plutôt
+  qu'une jointure, pour éviter tout risque de ligne dupliquée si une même
+  SCI avait plusieurs rattachements pour la même organisation. Le rôle du
+  rattachement (`proprietaire`/`mandataire`) n'est volontairement pas
+  filtré — les deux donnent un accès légitime. `organisation_sci.dateFin`
+  n'est pas non plus filtré : la colonne existe pour un usage futur (fin de
+  rattachement) mais aucun code ne la renseigne aujourd'hui
+  (`creerRattachementProprietaire`, packages/core, la pose toujours à
+  `null`) — à réévaluer si un mécanisme de transfert de SCI entre
+  organisations est introduit.
+- `immeubles_legacy` (table renommée, lecture seule depuis le 2026-08-27) :
+  une seule FK directe vers `scis` (`sciId`, pas de table de liaison
+  propre) — même chemin que `ScisService.findAll()`, une étape plus loin
+  (`immeubles_legacy.sciId` -> `organisation_sci`). **Compatibilité avec le
+  gel du 2026-08-27 vérifiée explicitement avant d'inclure cette table
+  dans ce sous-commit** : le gel porte exclusivement sur les chemins
+  d'écriture (`create`/`update`/`archive` retirés) — scoper `findAll()` ne
+  touche aucune écriture, aucun schéma, aucune migration. Le mécanisme que
+  le gel protège (documents historiques `entiteType='immeuble'`, résolus
+  par `DocumentsService.verifierEntiteExiste`) interroge `immeubles_legacy`
+  par une requête directe indépendante, jamais via `ImmeublesService`
+  (`findAll()` ni `findById()`) — donc strictement aucune interaction entre
+  ce changement et ce mécanisme. Vérifié aussi directement en base (Postgres
+  de dev) : les 2 lignes existantes de `immeubles_legacy` ont chacune un
+  `sciId` couvert par `organisation_sci` (aucune ligne orpheline qui
+  disparaîtrait à tort de toutes les listes faute de rattachement) et 0
+  document ne référence `entiteType='immeuble'` à ce jour. `GET /immeubles`
+  est un endpoint HTTP réel, protégé par `JwtAuthGuard` (global) mais pas
+  encore par le scoping — donc exposé à la même classe de fuite inter-
+  organisations que le reste de ce chantier avant ce correctif.
+- `appartements` : jointure vers `bien` (`appartements.bienId` ->
+  `bien.id` -> `bien.organisationId`).
+- `baux` : double jointure `baux` -> `appartements` -> `bien`, même chaîne
+  que celle déjà utilisée par `GarantsService.create()` pour résoudre
+  l'organisation d'un bail (voir section Commit 2/3 ci-dessus).
+- `equipements` : double jointure `equipements` -> `appartements` -> `bien`.
+- `bail_locataires` : triple jointure `bail_locataires` -> `baux` ->
+  `appartements` -> `bien`, un niveau plus loin que `baux`.
+
+Comme pour les 10 services du Commit 3, le pattern reste
+`if (organisationId) { requête scopée } else { requête non scopée }` —
+jamais un `organisationId` absent ne fait échouer une méthode utilisée
+hors contexte HTTP (jobs, tests directs). Un `utilisateurId` authentifié
+sans `organisationId` reste par ailleurs rejeté en amont par
+`UserContextInterceptor` (voir section précédente) avant même d'atteindre
+ces services.
+
+**Tests d'isolation multi-organisation ajoutés** (aucun n'existait avant ce
+sous-commit, ces `findAll()` n'étaient jamais scopés) :
+`immeubles/patrimoine.integration.spec.ts` (un test couvrant Scis/Bien/
+ImmeublesLegacy/Appartements/Equipements ensemble, toute la chaîne
+d'un coup) et `baux/locataires-baux.integration.spec.ts` (deux tests,
+Baux puis BailLocataires).
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local
