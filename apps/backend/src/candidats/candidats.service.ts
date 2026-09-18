@@ -63,9 +63,20 @@ export class CandidatsService {
     return lignes.map((ligne) => this.versDto(ligne));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP). N'affecte PAS
+  // convertirEnLocataire() ci-dessous : cette méthode refait sa propre
+  // requête brute sur candidatId, sans jamais appeler this.findById()
+  // (Catégorie C, hors périmètre de ce sous-commit).
   async findById(id: string) {
     const [ligne] = await this.db.select().from(candidat).where(eq(candidat.id, id)).limit(1);
-    return ligne ? this.versDto(ligne) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Candidat introuvable");
+    }
+    return this.versDto(ligne);
   }
 
   async update(id: string, dto: UpdateCandidatDto) {

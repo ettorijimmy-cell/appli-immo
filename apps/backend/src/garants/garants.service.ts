@@ -76,9 +76,17 @@ export class GarantsService {
     return lignes.map((garant) => this.versDto(garant));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [garant] = await this.db.select().from(garants).where(eq(garants.id, id)).limit(1);
-    return garant ? this.versDto(garant) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!garant || (organisationId && garant.organisationId !== organisationId)) {
+      throw new NotFoundException("Garant introuvable");
+    }
+    return this.versDto(garant);
   }
 
   async update(id: string, dto: UpdateGarantDto) {

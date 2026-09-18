@@ -61,9 +61,17 @@ export class LocatairesService {
     return lignes.map((locataire) => this.versDto(locataire));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [locataire] = await this.db.select().from(locataires).where(eq(locataires.id, id)).limit(1);
-    return locataire ? this.versDto(locataire) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!locataire || (organisationId && locataire.organisationId !== organisationId)) {
+      throw new NotFoundException("Locataire introuvable");
+    }
+    return this.versDto(locataire);
   }
 
   async update(id: string, dto: UpdateLocataireDto) {

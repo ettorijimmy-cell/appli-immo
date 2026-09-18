@@ -63,9 +63,17 @@ export class SinistresService {
     return lignes.map((ligne) => this.versDto(ligne));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [ligne] = await this.db.select().from(sinistre).where(eq(sinistre.id, id)).limit(1);
-    return ligne ? this.versDto(ligne) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Sinistre introuvable");
+    }
+    return this.versDto(ligne);
   }
 
   // dateChangementStatut n'est mise à jour que si le statut soumis diffère

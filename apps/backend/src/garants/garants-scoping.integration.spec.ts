@@ -1,0 +1,165 @@
+import { randomUUID } from "crypto";
+import { NotFoundException } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { Test, type TestingModule } from "@nestjs/testing";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AppartementsModule } from "../appartements/appartements.module";
+import { AppartementsService } from "../appartements/appartements.service";
+import { AuthModule } from "../auth/auth.module";
+import { BauxModule } from "../baux/baux.module";
+import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
+import { CommonModule } from "../common/common.module";
+import { RequestContextService } from "../common/request-context";
+import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { UsersModule } from "../users/users.module";
+import { GarantsModule } from "./garants.module";
+import { GarantsService } from "./garants.service";
+
+interface FixtureOrganisation {
+  organisationId: string;
+  userId: string;
+  garantId: string;
+}
+
+// Sous-commit 5a (chantier scoping multi-organisation, 2026-09-18) :
+// GarantsService.findById() ne vérifiait jusqu'ici jamais l'appartenance à
+// l'organisation. organisationId est une colonne directe (dénormalisée
+// depuis bien.organisationId à la création, voir GarantsService.create) :
+// contrôle par simple comparaison, sans jointure à la lecture. Aucun autre
+// appelant interne (vérifié par grep — seul GarantsController.findOne
+// l'appelle).
+describe("GarantsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let db: Database;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let garantsService: GarantsService;
+  let requestContextService: RequestContextService;
+
+  let orgA: FixtureOrganisation;
+  let orgB: FixtureOrganisation;
+
+  async function creerFixtureOrganisation(suffixe: string): Promise<FixtureOrganisation> {
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: `Organisation Garants Scoping ${suffixe}` })
+      .returning();
+    if (!organisation) {
+      throw new Error("Échec de l'insertion de l'organisation de test");
+    }
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `garants-scoping-${suffixe}-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: `GarantsScoping${suffixe}`,
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) {
+      throw new Error("Échec de l'insertion de l'utilisateur de test");
+    }
+
+    const bien = await bienService.create(user.id, {
+      type: "maison",
+      proprietaireType: "personne_physique",
+      nomProprietaire: `Propriétaire ${suffixe}`,
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: suffixe,
+      type: "T3",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const bail = await bauxService.create({ appartementId: appartement.id, typeBail: "vide", dateDebut: "2026-01-01" });
+    const garant = await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: `Claire${suffixe}`,
+      typeGarantie: "personne_physique"
+    });
+
+    return { organisationId: organisation.id, userId: user.id, garantId: garant.id };
+  }
+
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        UsersModule,
+        AuthModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        GarantsModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
+
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    garantsService = moduleRef.get(GarantsService);
+    requestContextService = moduleRef.get(RequestContextService);
+
+    orgA = await creerFixtureOrganisation("A");
+    orgB = await creerFixtureOrganisation("B");
+  });
+
+  afterEach(async () => {
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  function contexteOrgA<T>(fn: () => Promise<T>): Promise<T> {
+    return requestContextService.executerAvecContexte({ utilisateurId: orgA.userId, organisationId: orgA.organisationId }, fn);
+  }
+  function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
+    return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
+  }
+
+  it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {
+    const garant = await contexteOrgA(() => garantsService.findById(orgA.garantId));
+    expect(garant.id).toBe(orgA.garantId);
+  });
+
+  it("404 sur le garantId d'une autre organisation", async () => {
+    await expect(contexteOrgB(() => garantsService.findById(orgA.garantId))).rejects.toThrow(NotFoundException);
+  });
+
+  it("404 sur un garantId inexistant", async () => {
+    await expect(contexteOrgA(() => garantsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+  });
+
+  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+    const garant = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+      garantsService.findById(orgA.garantId)
+    );
+    expect(garant.id).toBe(orgA.garantId);
+  });
+});

@@ -30,6 +30,7 @@ type View =
 export function PatrimoinePage(): React.JSX.Element {
   const [searchParams] = useSearchParams();
   const [view, setView] = useState<View>({ level: "scis" });
+  const [erreurDeepLink, setErreurDeepLink] = useState<string | null>(null);
 
   // Deep-link depuis la palette de commandes (Module 8, Ctrl+K) :
   // ?appartementId / ?bienId / ?sciId ouvrent directement la fiche
@@ -42,6 +43,12 @@ export function PatrimoinePage(): React.JSX.Element {
   const parametresBruts = searchParams.toString();
 
   useEffect(() => {
+    // Toujours réinitialisé en tout premier (avant le early-return
+    // ci-dessous) : sans ça, une erreur affichée pour un deep-link caduc
+    // resterait affichée indéfiniment si l'utilisateur navigue ensuite
+    // vers /patrimoine sans aucun paramètre.
+    setErreurDeepLink(null);
+
     const params = new URLSearchParams(parametresBruts);
     const appartementId = params.get("appartementId");
     const bienId = params.get("bienId");
@@ -56,26 +63,48 @@ export function PatrimoinePage(): React.JSX.Element {
       return;
     }
 
+    // getAppartement/getBien lèvent désormais NotFoundException (404,
+    // jamais 403 — chantier scoping multi-organisation, Sous-commit 5a)
+    // pour un id inexistant ou d'une autre organisation. Sans ce
+    // try/catch, la promesse rejetée restait silencieuse (aucun message,
+    // page figée) — même pattern d'erreur que LocataireDetailView/
+    // SciDetailView (bandeau role="alert").
     void (async () => {
-      if (appartementId) {
-        const appartement = await getAppartement(appartementId);
-        const bien = await getBien(appartement.bienId);
-        setView({
-          level: "appartement",
-          sciId: bien.sciId,
-          bienId: bien.id,
-          appartementId,
-          nouveauBail,
-          onglet
-        });
-      } else if (bienId) {
-        const bien = await getBien(bienId);
-        setView({ level: "bien", sciId: bien.sciId, bienId });
-      } else if (sciId) {
-        setView({ level: "sci", sciId });
+      try {
+        if (appartementId) {
+          const appartement = await getAppartement(appartementId);
+          const bien = await getBien(appartement.bienId);
+          setView({
+            level: "appartement",
+            sciId: bien.sciId,
+            bienId: bien.id,
+            appartementId,
+            nouveauBail,
+            onglet
+          });
+        } else if (bienId) {
+          const bien = await getBien(bienId);
+          setView({ level: "bien", sciId: bien.sciId, bienId });
+        } else if (sciId) {
+          setView({ level: "sci", sciId });
+        }
+      } catch {
+        setErreurDeepLink(
+          appartementId
+            ? "Cet appartement n'existe pas ou n'est plus accessible."
+            : "Ce bien n'existe pas ou n'est plus accessible."
+        );
       }
     })();
   }, [parametresBruts]);
+
+  if (erreurDeepLink) {
+    return (
+      <p role="alert" className="text-sm text-red-600">
+        {erreurDeepLink}
+      </p>
+    );
+  }
 
   if (view.level === "scis") {
     return (

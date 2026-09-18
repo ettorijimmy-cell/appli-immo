@@ -78,9 +78,19 @@ export class EvenementsCalendrierService {
     return lignes.map((ligne) => this.versDto(ligne));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP). N'affecte pas
+  // findAllPourOrganisation() ci-dessous (flux ICS, chemin distinct,
+  // n'appelle pas findById()).
   async findById(id: string) {
     const [ligne] = await this.db.select().from(evenementCalendrier).where(eq(evenementCalendrier.id, id)).limit(1);
-    return ligne ? this.versDto(ligne) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Événement introuvable");
+    }
+    return this.versDto(ligne);
   }
 
   async update(id: string, dto: UpdateEvenementCalendrierDto) {

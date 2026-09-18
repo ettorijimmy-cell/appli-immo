@@ -69,10 +69,18 @@ export class MessagesCommunicationService {
     return lignes.map((ligne) => this.versDto(ligne));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP). Appelé en interne par
+  // composer() ci-dessous (this.findById(messageId)) — sans impact : le
+  // message vient d'être créé avec l'organisationId de l'utilisateur
+  // courant, donc toujours dans l'organisation de l'appelant.
   async findById(id: string) {
     const [ligne] = await this.db.select().from(messageCommunication).where(eq(messageCommunication.id, id)).limit(1);
-    if (!ligne) {
-      return null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Message introuvable");
     }
     const piecesJointes = await this.db
       .select()

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { contact, createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, sinistre, utilisateurs, type Database } from "db";
@@ -151,8 +152,13 @@ describe("Sinistres — CRUD (intégration Postgres réelle)", () => {
     expect(ligne).toBeDefined();
   });
 
-  it("findById() renvoie null pour un id inexistant", async () => {
-    expect(await sinistresService.findById(randomUUID())).toBeNull();
+  // Sous-commit 5a (chantier scoping multi-organisation, 2026-09-18) :
+  // findById() lève désormais NotFoundException pour un id inexistant
+  // (au lieu de renvoyer null), même comportement que pour un id d'une
+  // autre organisation — voir sinistres-scoping.integration.spec.ts pour
+  // la couverture complète du contrôle d'appartenance.
+  it("findById() lève NotFoundException pour un id inexistant", async () => {
+    await expect(sinistresService.findById(randomUUID())).rejects.toThrow(NotFoundException);
   });
 
   it("findAll() ne renvoie que les sinistres de l'organisation de l'utilisateur authentifié en contexte", async () => {

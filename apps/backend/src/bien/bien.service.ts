@@ -131,6 +131,10 @@ export class BienService {
     return rows.map((row) => this.versDto(row.bien, row.detail));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
+  // multi-organisation, 2026-09-18) : même message que "n'existe pas",
+  // aucune différence observable — même principe que B1-B6. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [row] = await this.db
       .select({ bien, detail: bienImmeubleDetail })
@@ -138,7 +142,11 @@ export class BienService {
       .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id))
       .where(eq(bien.id, id))
       .limit(1);
-    return row ? this.versDto(row.bien, row.detail) : null;
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!row || (organisationId && row.bien.organisationId !== organisationId)) {
+      throw new NotFoundException("Bien introuvable");
+    }
+    return this.versDto(row.bien, row.detail);
   }
 
   /**
