@@ -5,9 +5,11 @@ import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
+import { AuditModule } from "../audit/audit.module";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
+import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DepensesModule } from "../depenses/depenses.module";
 import { DepensesService } from "../depenses/depenses.service";
@@ -43,6 +45,8 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
         ConfigModule.forRoot({ isGlobal: true }),
         CommonModule,
         DatabaseModule,
+        EncryptionModule,
+        AuditModule,
         UsersModule,
         ScisModule,
         BienModule,

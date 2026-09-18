@@ -2577,6 +2577,60 @@ masquer un chemin cassé individuellement), plus un test dédié au cas
 jointure, `organisation_sci`) pour prouver que le `OR` ne fuit ni
 n'omet aucun type.
 
+### Scoping de TableauDeBordService, 7 méthodes (Commit 4, sous-commit 4d, 2026-09-18)
+
+`getEnTete`, `getCartes`, `getRevenusLocatifs`, `getRemboursementsEnAttente`,
+`getChecklistDocumentaire`, `getCompletudeDocumentaire`, `getSynthese` ne
+filtraient jusqu'ici jamais par organisation. Service hétérogène — chaque
+méthode a été auditée individuellement (table(s) source, chemin de
+jointure) plutôt que de supposer un pattern commun :
+
+- `getEnTete` : `appartements -> bien` (jointure simple).
+- `getCartes` : `paiements -> baux -> appartements -> bien` (triple
+  jointure) pour les impayés ; `documents` (polymorphe, 11 `entiteType`,
+  Commit 4c) résolu en réutilisant directement
+  `DocumentsService.findAll({})` plutôt que de dupliquer les 11 branches
+  de résolution — `TableauDeBordModule` importe désormais `DocumentsModule`
+  (aucune dépendance circulaire, pattern d'injection croisée déjà établi
+  ailleurs dans ce backend) ; `alertes` reste **volontairement non
+  scopée** (table hors périmètre de tout ce chantier, Étape 0).
+- `getRevenusLocatifs` : scoping appliqué sur la requête source de
+  l'agrégation par mois (`versements -> paiements -> baux -> appartements
+  -> bien`), jamais sur le résultat déjà cumulé.
+- `getRemboursementsEnAttente` : tout le calcul (paiements/versements/
+  remboursements) est ancré sur `baux.id` — scoper la seule requête
+  racine `bauxResilies` (même chaîne que ci-dessus) suffit.
+- `getChecklistDocumentaire` : `appartements` via `bien` ; `locataires`
+  et `garants` via leur colonne `organisationId` propre (Commit 3, une
+  simple jointure ou condition, jamais besoin de remonter par bail) — les
+  requêtes `documents` qui en découlent héritent du scoping sans
+  modification propre, puisque `appartementIds`/`locataireIds`/`garantIds`
+  sont déjà restreints à l'organisation courante.
+- `getCompletudeDocumentaire` : **seule méthode à accesseur par un id
+  unique fourni par l'appelant**, pas une liste à filtrer — traitée avec
+  un contrôle d'appartenance explicite (404 `NotFoundException`, jamais
+  403, même principe que prévu pour le Commit 5) plutôt qu'un filtrage de
+  liste : `appartement` vérifié via `bien.organisationId` ; `locataire`/
+  `garant`/`candidat` via leur colonne `organisationId` propre.
+- `getSynthese` : 4 requêtes racines (`scis` via `organisation_sci`,
+  `bien` direct, `appartements` via `bien`, `baux` via
+  `appartements -> bien`) **toutes** scopées explicitement, plus la
+  requête d'agrégation `versementsPeriode` — jamais en s'appuyant sur la
+  seule restriction en cascade par clé étrangère qui découlerait du
+  scoping de `scis`/`bien` seuls (une organisation B non scopée sur ses
+  biens/appartements/baux resterait sinon repérable, ne serait-ce que par
+  le nom de sa SCI apparaissant avec une liste de biens vide, dans la
+  réponse d'une organisation A).
+
+**Tests d'isolation multi-organisation ajoutés** dans un fichier dédié,
+`tableau-de-bord-scoping.integration.spec.ts` (aucun n'existait avant ce
+sous-commit) : un test par méthode, chacun avec des montants ET des
+effectifs délibérément différents entre les deux organisations (jamais
+seulement "présent vs absent") — une fuite de scoping se serait traduite
+par un total identique aux deux organisations, un total fusionné (somme
+des deux), ou un compte d'appartements vacants incohérent, ce qu'un test
+vérifiant seulement "non vide" aurait laissé passer.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local

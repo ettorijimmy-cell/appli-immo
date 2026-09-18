@@ -22,8 +22,11 @@ import {
   bailLocataires,
   baux,
   bien,
+  candidat,
   documents,
   garants,
+  locataires,
+  organisationSci,
   paiements,
   remboursements,
   scis,
@@ -31,7 +34,9 @@ import {
   type Database
 } from "db";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { DocumentsService } from "../documents/documents.service";
 
 function dateDuJour(): string {
   return new Date().toISOString().slice(0, 10);
@@ -120,10 +125,26 @@ function enumererMois(periodeDebut: string, periodeFin: string): string[] {
 export class TableauDeBordService {
   private readonly logger = new Logger(TableauDeBordService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
+    private readonly requestContext: RequestContextService,
+    private readonly documentsService: DocumentsService
+  ) {}
 
+  // appartements n'a pas de colonne organisationId directe : le scoping
+  // passe par une jointure vers bien (bien.organisationId), même chaîne
+  // que AppartementsService.findAll() (Commit 4a).
   async getEnTete() {
-    const tousAppartements = await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
+    const organisationId = this.requestContext.getOrganisationId();
+    const tousAppartements = organisationId
+      ? (
+          await this.db
+            .select({ appartement: appartements })
+            .from(appartements)
+            .innerJoin(bien, eq(bien.id, appartements.bienId))
+            .where(and(isNull(appartements.archivedAt), eq(bien.organisationId, organisationId)))
+        ).map((ligne) => ligne.appartement)
+      : await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
 
     const loues = tousAppartements.filter((a) => a.statut === "loue");
     const vacants = tousAppartements.filter((a) => a.statut === "vacant");
@@ -142,19 +163,35 @@ export class TableauDeBordService {
     };
   }
 
+  // paiements n'a pas de colonne organisationId directe : le scoping passe
+  // par une triple jointure paiements -> baux -> appartements -> bien,
+  // même chaîne que PaiementsService.findAll() (Commit 4b). documents est
+  // polymorphe (11 entiteType, Commit 4c) : plutôt que dupliquer les 11
+  // branches de résolution ici, on réutilise directement
+  // DocumentsService.findAll({}) — déjà scopée par organisation, aucun
+  // filtre entiteType nécessaire pour un simple comptage. alertes reste
+  // volontairement non scopée : table explicitement hors périmètre de ce
+  // chantier (Étape 0, docs/backlog.md).
   async getCartes() {
     const dateReference = dateDuJour();
+    const organisationId = this.requestContext.getOrganisationId();
 
-    const paiementsEnRetardOuAVenir = await this.db
-      .select()
-      .from(paiements)
-      .where(
-        and(
-          inArray(paiements.type, ["loyer", "charges"]),
-          inArray(paiements.statut, ["impaye", "partiel"]),
-          isNull(paiements.archivedAt)
-        )
-      );
+    const conditionsPaiements = and(
+      inArray(paiements.type, ["loyer", "charges"]),
+      inArray(paiements.statut, ["impaye", "partiel"]),
+      isNull(paiements.archivedAt)
+    );
+    const paiementsEnRetardOuAVenir = organisationId
+      ? (
+          await this.db
+            .select({ paiement: paiements })
+            .from(paiements)
+            .innerJoin(baux, eq(baux.id, paiements.bailId))
+            .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+            .innerJoin(bien, eq(bien.id, appartements.bienId))
+            .where(and(conditionsPaiements, eq(bien.organisationId, organisationId)))
+        ).map((ligne) => ligne.paiement)
+      : await this.db.select().from(paiements).where(conditionsPaiements);
 
     const impayes = paiementsEnRetardOuAVenir.filter((p) => p.dateEcheance < dateReference);
     const aVenir = paiementsEnRetardOuAVenir.filter((p) => p.dateEcheance >= dateReference);
@@ -177,9 +214,9 @@ export class TableauDeBordService {
       return total + (montantEnCentimes(p.montant) - montantEnCentimes(montantRecu));
     }, 0);
 
-    const tousLesDocuments = await this.db.select().from(documents).where(isNull(documents.archivedAt));
+    const tousLesDocuments = await this.documentsService.findAll({});
     const documentsExpires = tousLesDocuments.filter(
-      (d) => calculerStatutDocument(d.dateExpiration, false, dateReference) === "expire"
+      (d) => calculerStatutDocument(d.dateExpiration, d.archivedAt !== null, dateReference) === "expire"
     ).length;
 
     const alertesActives = await this.db.select().from(alertes).where(eq(alertes.statut, "active"));
@@ -228,24 +265,43 @@ export class TableauDeBordService {
       appartementIdsAutorises = appartementsAutorises.map((a) => a.id);
     }
 
-    const versementsPeriode = await this.db
-      .select({
-        id: versements.id,
-        montant: versements.montant,
-        dateVersement: versements.dateVersement,
-        bailId: paiements.bailId
-      })
-      .from(versements)
-      .innerJoin(paiements, eq(versements.paiementId, paiements.id))
-      .where(
-        and(
-          eq(paiements.type, "loyer"),
-          gte(versements.dateVersement, periodeDebut),
-          lte(versements.dateVersement, periodeFin),
-          isNull(versements.archivedAt),
-          isNull(paiements.archivedAt)
-        )
-      );
+    // Scoping appliqué ICI, sur la requête source de l'agrégation par mois
+    // ci-dessous — jamais sur le résultat déjà cumulé. paiements/versements
+    // n'ont pas de colonne organisationId directe : chaîne versements ->
+    // paiements -> baux -> appartements -> bien, même profondeur que
+    // VersementsService.findAll() (Commit 4b).
+    const organisationId = this.requestContext.getOrganisationId();
+    const conditionsVersements = and(
+      eq(paiements.type, "loyer"),
+      gte(versements.dateVersement, periodeDebut),
+      lte(versements.dateVersement, periodeFin),
+      isNull(versements.archivedAt),
+      isNull(paiements.archivedAt)
+    );
+    const versementsPeriode = organisationId
+      ? await this.db
+          .select({
+            id: versements.id,
+            montant: versements.montant,
+            dateVersement: versements.dateVersement,
+            bailId: paiements.bailId
+          })
+          .from(versements)
+          .innerJoin(paiements, eq(versements.paiementId, paiements.id))
+          .innerJoin(baux, eq(baux.id, paiements.bailId))
+          .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+          .innerJoin(bien, eq(bien.id, appartements.bienId))
+          .where(and(conditionsVersements, eq(bien.organisationId, organisationId)))
+      : await this.db
+          .select({
+            id: versements.id,
+            montant: versements.montant,
+            dateVersement: versements.dateVersement,
+            bailId: paiements.bailId
+          })
+          .from(versements)
+          .innerJoin(paiements, eq(versements.paiementId, paiements.id))
+          .where(conditionsVersements);
 
     const bailIds = [...new Set(versementsPeriode.map((v) => v.bailId))];
     const bauxConcernes = bailIds.length
@@ -315,8 +371,23 @@ export class TableauDeBordService {
   // l'immeuble ou du bail concerné (même principe que le correctif Module 7
   // sur les revenus/le taux d'occupation) : un trop-perçu réel reste une
   // obligation financière réelle même après un archivage ultérieur.
+  // Tout ce qui suit (paiements/versements/remboursements) est ancré sur
+  // bail.id : scoper la requête racine bauxResilies (même chaîne
+  // baux -> appartements -> bien que partout ailleurs) suffit à exclure
+  // en amont tout bail d'une autre organisation — jamais sur le résultat
+  // déjà cumulé de la boucle ci-dessous.
   async getRemboursementsEnAttente() {
-    const bauxResilies = await this.db.select().from(baux).where(isNotNull(baux.dateFin));
+    const organisationId = this.requestContext.getOrganisationId();
+    const bauxResilies = organisationId
+      ? (
+          await this.db
+            .select({ bail: baux })
+            .from(baux)
+            .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+            .innerJoin(bien, eq(bien.id, appartements.bienId))
+            .where(and(isNotNull(baux.dateFin), eq(bien.organisationId, organisationId)))
+        ).map((ligne) => ligne.bail)
+      : await this.db.select().from(baux).where(isNotNull(baux.dateFin));
     const resultats: Array<{ bailId: string; paiementId: string; montant: string }> = [];
 
     for (const bail of bauxResilies) {
@@ -385,12 +456,25 @@ export class TableauDeBordService {
   // état exhaustif de tout ce qui va bien.
   async getChecklistDocumentaire() {
     const dateReference = dateDuJour();
+    const organisationId = this.requestContext.getOrganisationId();
 
     // --- Appartements : DPE/élec-gaz/CREP/ERP, rattachés à l'appartement OU
     // à son bien parent (même logique de détection que
     // BailDocumentDocxService). Appartements archivés exclus : un bien qui
     // ne fait plus partie du parc n'a plus besoin d'être diagnostiqué.
-    const tousAppartements = await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
+    // Scopé via bien.organisationId : les requêtes documents ci-dessous
+    // n'ont ensuite besoin d'aucun filtre d'organisation propre, puisque
+    // appartementIds/bienIds sont déjà restreints à l'organisation
+    // courante.
+    const tousAppartements = organisationId
+      ? (
+          await this.db
+            .select({ appartement: appartements })
+            .from(appartements)
+            .innerJoin(bien, eq(bien.id, appartements.bienId))
+            .where(and(isNull(appartements.archivedAt), eq(bien.organisationId, organisationId)))
+        ).map((ligne) => ligne.appartement)
+      : await this.db.select().from(appartements).where(isNull(appartements.archivedAt));
     const appartementIds = tousAppartements.map((a) => a.id);
     const bienIds = [...new Set(tousAppartements.map((a) => a.bienId))];
 
@@ -441,12 +525,25 @@ export class TableauDeBordService {
 
     // --- Locataires actifs : rattachés via bail_locataires non archivé à
     // un bail statut actif/préavis (décision tranchée avec l'utilisateur —
-    // pas les locataires historiques).
-    const locatairesActifs = await this.db
-      .select({ locataireId: bailLocataires.locataireId, bailId: bailLocataires.bailId })
-      .from(bailLocataires)
-      .innerJoin(baux, eq(bailLocataires.bailId, baux.id))
-      .where(and(isNull(bailLocataires.archivedAt), inArray(baux.statut, ["actif", "preavis"])));
+    // pas les locataires historiques). locataires porte sa propre colonne
+    // organisationId (Commit 3) : une jointure suffit, jamais besoin de
+    // remonter par bail -> appartement -> bien pour ce cas précis.
+    const conditionsLocatairesActifs = and(
+      isNull(bailLocataires.archivedAt),
+      inArray(baux.statut, ["actif", "preavis"])
+    );
+    const locatairesActifs = organisationId
+      ? await this.db
+          .select({ locataireId: bailLocataires.locataireId, bailId: bailLocataires.bailId })
+          .from(bailLocataires)
+          .innerJoin(baux, eq(bailLocataires.bailId, baux.id))
+          .innerJoin(locataires, eq(locataires.id, bailLocataires.locataireId))
+          .where(and(conditionsLocatairesActifs, eq(locataires.organisationId, organisationId)))
+      : await this.db
+          .select({ locataireId: bailLocataires.locataireId, bailId: bailLocataires.bailId })
+          .from(bailLocataires)
+          .innerJoin(baux, eq(bailLocataires.bailId, baux.id))
+          .where(conditionsLocatairesActifs);
 
     const locataireIds = [...new Set(locatairesActifs.map((l) => l.locataireId))];
     const documentsPieceIdentiteLocataires =
@@ -479,12 +576,19 @@ export class TableauDeBordService {
     // --- Garants actifs : bailId pointant vers un bail statut actif/
     // préavis, garant lui-même non archivé (contrairement à locataires,
     // garants.bailId est une FK directe — un garant appartient à un seul
-    // bail dès sa création, pas de table de jonction à filtrer).
+    // bail dès sa création, pas de table de jonction à filtrer). garants
+    // porte aussi sa propre colonne organisationId (Commit 3, dénormalisée
+    // à la création) : condition directe, aucune jointure supplémentaire.
+    const conditionsGarantsActifs = and(isNull(garants.archivedAt), inArray(baux.statut, ["actif", "preavis"]));
     const garantsActifs = await this.db
       .select({ id: garants.id, bailId: garants.bailId })
       .from(garants)
       .innerJoin(baux, eq(garants.bailId, baux.id))
-      .where(and(isNull(garants.archivedAt), inArray(baux.statut, ["actif", "preavis"])));
+      .where(
+        organisationId
+          ? and(conditionsGarantsActifs, eq(garants.organisationId, organisationId))
+          : conditionsGarantsActifs
+      );
 
     const garantIds = garantsActifs.map((g) => g.id);
     const documentsPieceIdentiteGarants =
@@ -521,12 +625,20 @@ export class TableauDeBordService {
   // de détection (evaluerCompletudeCategories) — seule la forme du résultat
   // diffère, jamais la règle de "qu'est-ce qui compte comme valide"
   // (docs/backlog.md, checklist documentaire).
+  // Accesseur par un seul id fourni par l'appelant — contrairement aux 6
+  // autres méthodes de ce service (listes/agrégats à filtrer), le bon
+  // équivalent du scoping ici est un contrôle d'appartenance explicite :
+  // 404 (jamais 403, même principe que prévu pour le Commit 5) si l'entité
+  // résolue n'appartient pas à l'organisation courante — plutôt que de
+  // renvoyer silencieusement la complétude documentaire d'une entité
+  // d'une autre organisation.
   async getCompletudeDocumentaire(
     entiteType: "appartement" | "locataire" | "garant" | "candidat",
     entiteId: string,
     role?: "candidat" | "garant"
   ): Promise<CompletudeCategorie[]> {
     const dateReference = dateDuJour();
+    const organisationId = this.requestContext.getOrganisationId();
 
     // Candidat : deux jeux de documents distincts (le candidat lui-même et
     // son garant), distingués par documents.candidat_role — jamais une
@@ -534,6 +646,16 @@ export class TableauDeBordService {
     if (entiteType === "candidat") {
       if (!role) {
         throw new BadRequestException("role est obligatoire pour entiteType 'candidat' ('candidat' ou 'garant').");
+      }
+      if (organisationId) {
+        const [candidatRow] = await this.db
+          .select({ organisationId: candidat.organisationId })
+          .from(candidat)
+          .where(eq(candidat.id, entiteId))
+          .limit(1);
+        if (!candidatRow || candidatRow.organisationId !== organisationId) {
+          throw new NotFoundException("Candidat introuvable");
+        }
       }
       const documentsDuRole = await this.db
         .select()
@@ -554,6 +676,16 @@ export class TableauDeBordService {
       if (!appartement) {
         throw new NotFoundException("Appartement introuvable");
       }
+      if (organisationId) {
+        const [bienRow] = await this.db
+          .select({ organisationId: bien.organisationId })
+          .from(bien)
+          .where(eq(bien.id, appartement.bienId))
+          .limit(1);
+        if (!bienRow || bienRow.organisationId !== organisationId) {
+          throw new NotFoundException("Appartement introuvable");
+        }
+      }
       const documentsCombines = await this.db
         .select()
         .from(documents)
@@ -573,6 +705,29 @@ export class TableauDeBordService {
 
     if (entiteType !== "locataire" && entiteType !== "garant") {
       throw new BadRequestException("entiteType doit être appartement, locataire ou garant.");
+    }
+    if (organisationId) {
+      // locataires et garants portent chacun leur propre colonne
+      // organisationId (Commit 3) : lecture directe, aucune jointure.
+      if (entiteType === "locataire") {
+        const [ligne] = await this.db
+          .select({ organisationId: locataires.organisationId })
+          .from(locataires)
+          .where(eq(locataires.id, entiteId))
+          .limit(1);
+        if (!ligne || ligne.organisationId !== organisationId) {
+          throw new NotFoundException("Locataire introuvable");
+        }
+      } else {
+        const [ligne] = await this.db
+          .select({ organisationId: garants.organisationId })
+          .from(garants)
+          .where(eq(garants.id, entiteId))
+          .limit(1);
+        if (!ligne || ligne.organisationId !== organisationId) {
+          throw new NotFoundException("Garant introuvable");
+        }
+      }
     }
     const documentsDeLEntite = await this.db
       .select()
@@ -603,25 +758,74 @@ export class TableauDeBordService {
     // bien en nom propre (proprietaire_type='personne_physique') n'a pas
     // sa place dans cette vue organisée par SCI, avant comme après cette
     // migration (pas une régression introduite ici).
-    const [tousLesScis, tousLesBiens, tousLesAppartements, tousLesBaux, versementsPeriode] = await Promise.all([
-      this.db.select().from(scis),
-      this.db.select().from(bien),
-      this.db.select().from(appartements),
-      this.db.select().from(baux),
-      this.db
-        .select({ id: versements.id, montant: versements.montant, bailId: paiements.bailId })
-        .from(versements)
-        .innerJoin(paiements, eq(versements.paiementId, paiements.id))
-        .where(
-          and(
-            eq(paiements.type, "loyer"),
-            gte(versements.dateVersement, periodeDebut),
-            lte(versements.dateVersement, periodeFin),
-            isNull(versements.archivedAt),
-            isNull(paiements.archivedAt)
-          )
-        )
-    ]);
+    // Scoping explicite des 4 requêtes racines PLUS la requête d'agrégation
+    // (versementsPeriode) — chacune vérifiée et scopée indépendamment,
+    // jamais en s'appuyant implicitement sur la restriction en cascade
+    // par clé étrangère qui découlerait du seul scoping de scis/bien (une
+    // organisation B, non scopée sur ses biens/appartements/baux, resterait
+    // sinon repérable — ne serait-ce que par son nom de SCI apparaissant
+    // avec une liste de biens vide — dans la réponse d'une organisation A).
+    const organisationId = this.requestContext.getOrganisationId();
+    const conditionsVersementsSynthese = and(
+      eq(paiements.type, "loyer"),
+      gte(versements.dateVersement, periodeDebut),
+      lte(versements.dateVersement, periodeFin),
+      isNull(versements.archivedAt),
+      isNull(paiements.archivedAt)
+    );
+
+    let tousLesScis: (typeof scis.$inferSelect)[];
+    let tousLesBiens: (typeof bien.$inferSelect)[];
+    let tousLesAppartements: (typeof appartements.$inferSelect)[];
+    let tousLesBaux: (typeof baux.$inferSelect)[];
+    let versementsPeriode: Array<{ id: string; montant: string; bailId: string }>;
+
+    if (organisationId) {
+      const [sciIdsRattaches, biensRows, appartementsRows, bauxRows, versementsRows] = await Promise.all([
+        this.db
+          .select({ id: organisationSci.sciId })
+          .from(organisationSci)
+          .where(eq(organisationSci.organisationId, organisationId)),
+        this.db.select().from(bien).where(eq(bien.organisationId, organisationId)),
+        this.db
+          .select({ appartement: appartements })
+          .from(appartements)
+          .innerJoin(bien, eq(bien.id, appartements.bienId))
+          .where(eq(bien.organisationId, organisationId)),
+        this.db
+          .select({ bail: baux })
+          .from(baux)
+          .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+          .innerJoin(bien, eq(bien.id, appartements.bienId))
+          .where(eq(bien.organisationId, organisationId)),
+        this.db
+          .select({ id: versements.id, montant: versements.montant, bailId: paiements.bailId })
+          .from(versements)
+          .innerJoin(paiements, eq(versements.paiementId, paiements.id))
+          .innerJoin(baux, eq(baux.id, paiements.bailId))
+          .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+          .innerJoin(bien, eq(bien.id, appartements.bienId))
+          .where(and(conditionsVersementsSynthese, eq(bien.organisationId, organisationId)))
+      ]);
+      const sciIds = sciIdsRattaches.map((ligne) => ligne.id);
+      tousLesScis = sciIds.length > 0 ? await this.db.select().from(scis).where(inArray(scis.id, sciIds)) : [];
+      tousLesBiens = biensRows;
+      tousLesAppartements = appartementsRows.map((ligne) => ligne.appartement);
+      tousLesBaux = bauxRows.map((ligne) => ligne.bail);
+      versementsPeriode = versementsRows;
+    } else {
+      [tousLesScis, tousLesBiens, tousLesAppartements, tousLesBaux, versementsPeriode] = await Promise.all([
+        this.db.select().from(scis),
+        this.db.select().from(bien),
+        this.db.select().from(appartements),
+        this.db.select().from(baux),
+        this.db
+          .select({ id: versements.id, montant: versements.montant, bailId: paiements.bailId })
+          .from(versements)
+          .innerJoin(paiements, eq(versements.paiementId, paiements.id))
+          .where(conditionsVersementsSynthese)
+      ]);
+    }
 
     const bauxParId = new Map(tousLesBaux.map((b) => [b.id, b]));
 
