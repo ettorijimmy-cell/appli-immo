@@ -176,6 +176,7 @@ export class RemboursementsService {
     if (!remboursement || !remboursement.pieceJustificativeChemin) {
       throw new NotFoundException("Pièce justificative introuvable");
     }
+    await this.verifierAppartenanceRemboursement(remboursement.id);
     const contenu = await this.storage.lire(remboursement.pieceJustificativeChemin, { chiffrer: true });
     const utilisateurId = this.requestContext.getUtilisateurId();
     if (utilisateurId) {
@@ -190,6 +191,29 @@ export class RemboursementsService {
       nomFichier: remboursement.pieceJustificativeNomFichier ?? "piece-justificative",
       mimeType: remboursement.pieceJustificativeMimeType ?? "application/octet-stream"
     };
+  }
+
+  // Contrôle d'appartenance (Commit B5, chantier scoping multi-organisation,
+  // 2026-09-18) : même chemin de jointure que findAll() (remboursements ->
+  // baux -> appartements -> bien), même message que la pièce justificative
+  // absente ci-dessus — jamais de distinction observable entre "introuvable"
+  // et "d'une autre organisation".
+  private async verifierAppartenanceRemboursement(remboursementId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: remboursements.id })
+      .from(remboursements)
+      .innerJoin(baux, eq(baux.id, remboursements.bailId))
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(remboursements.id, remboursementId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Pièce justificative introuvable");
+    }
   }
 
   // commentaire est exclu du Sync Stream remboursements (texte libre non

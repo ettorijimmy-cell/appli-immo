@@ -392,6 +392,17 @@ export class DocumentsService {
     if (!document) {
       throw new NotFoundException("Document introuvable");
     }
+    // Contrôle d'appartenance (Commit B4, chantier scoping multi-organisation,
+    // 2026-09-18) : réutilise resoudreEntiteIdsOrganisation (Sous-commit 4c)
+    // plutôt que de dupliquer les 11 chemins de résolution — même message
+    // que le document inexistant ci-dessus, avant tout déchiffrement.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
+      if (!idsValides.includes(document.entiteId)) {
+        throw new NotFoundException("Document introuvable");
+      }
+    }
     const contenu = await this.storage.lire(document.cheminStockage);
     const utilisateurId = this.requestContext.getUtilisateurId();
     if (utilisateurId) {

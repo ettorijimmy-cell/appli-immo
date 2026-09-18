@@ -86,6 +86,17 @@ export class BailDocumentDocxService {
       throw new NotFoundException("Bien introuvable");
     }
 
+    // Contrôle d'appartenance (Commit B1, chantier scoping multi-organisation,
+    // 2026-09-18) : NotFoundException avec le même message que le bail
+    // inexistant ci-dessus — jamais de distinction observable entre "bail
+    // introuvable" et "bail d'une autre organisation", même principe qu'au
+    // Sous-commit 4d. Placé avant toute donnée supplémentaire (SCI,
+    // locataires, garants, IRL) et avant le rendu du docx.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId && bienRow.organisationId !== organisationId) {
+      throw new NotFoundException("Bail introuvable");
+    }
+
     // Bailleur : sci.nom (bien en SCI) ou bien.nomProprietaire (nom propre,
     // atteignable depuis la migration Bien, 2026-08-25) — résolu via le
     // service partagé BienService.resoudreNomBailleur (corrige le bug

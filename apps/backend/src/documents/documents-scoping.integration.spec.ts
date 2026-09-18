@@ -2,13 +2,15 @@ import { randomUUID } from "crypto";
 import { rm } from "fs/promises";
 import os from "os";
 import path from "path";
+import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, immeublesLegacy, organisations, utilisateurs, type Database } from "db";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
+import { AuditService } from "../audit/audit.service";
 import { AuthModule } from "../auth/auth.module";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
@@ -32,6 +34,8 @@ import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { SinistresModule } from "../sinistres/sinistres.module";
 import { SinistresService } from "../sinistres/sinistres.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
+import { StorageModule } from "../storage/storage.module";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { DocumentsModule } from "./documents.module";
@@ -95,6 +99,8 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
   let sinistresService: SinistresService;
   let documentsService: DocumentsService;
   let requestContextService: RequestContextService;
+  let auditService: AuditService;
+  let documentStorageService: DocumentStorageService;
 
   let orgA: FixtureOrganisation;
   let orgB: FixtureOrganisation;
@@ -233,6 +239,7 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
         CandidatsModule,
         DepensesModule,
         SinistresModule,
+        StorageModule,
         DocumentsModule
       ]
     })
@@ -252,12 +259,15 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
     sinistresService = moduleRef.get(SinistresService);
     documentsService = moduleRef.get(DocumentsService);
     requestContextService = moduleRef.get(RequestContextService);
+    auditService = moduleRef.get(AuditService);
+    documentStorageService = moduleRef.get(DocumentStorageService);
 
     orgA = await creerFixtureOrganisation("A");
     orgB = await creerFixtureOrganisation("B");
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await moduleRef?.close();
     await rollback();
   });
@@ -398,5 +408,61 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
     expect(idsOrgB).not.toContain(bienOrgA.id);
     expect(idsOrgB).not.toContain(bailOrgA.id);
     expect(idsOrgB).not.toContain(sciOrgA.id);
+  });
+
+  // Commit B4 (chantier scoping multi-organisation, 2026-09-18) :
+  // telecharger(id) refaisait sa propre requête SQL et déchiffrait le
+  // contenu sans aucun contrôle d'appartenance — corrigé en réutilisant
+  // resoudreEntiteIdsOrganisation (Sous-commit 4c). storage.lire et
+  // logAccesDocumentSensible (via logAccesDonneeSensible) doivent rester
+  // non appelés sur le chemin refusé, pas seulement produire un 404.
+  describe("telecharger — contrôle d'appartenance", () => {
+    it("télécharge normalement le contenu quand le document appartient à l'organisation appelante", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const resultat = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.telecharger(documentOrgA.id)
+      );
+      expect(resultat.contenu.toString("utf8")).toBe("contenu-bien-A");
+    });
+
+    it("404 sur le document d'une autre organisation, sans jamais déchiffrer ni journaliser", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+      const lireSpy = vi.spyOn(documentStorageService, "lire");
+      const auditSpy = vi.spyOn(auditService, "logAccesDonneeSensible");
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.telecharger(documentOrgA.id)
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      expect(lireSpy).not.toHaveBeenCalled();
+      expect(auditSpy).not.toHaveBeenCalled();
+    });
+
+    it("404 sur un id inexistant, sans jamais déchiffrer", async () => {
+      const lireSpy = vi.spyOn(documentStorageService, "lire");
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.telecharger(randomUUID())
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      expect(lireSpy).not.toHaveBeenCalled();
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const resultat = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.telecharger(documentOrgA.id)
+      );
+      expect(resultat.contenu.toString("utf8")).toBe("contenu-bien-A");
+    });
   });
 });

@@ -74,6 +74,16 @@ export class QuittanceDocumentDocxService {
       throw new NotFoundException("Bien introuvable");
     }
 
+    // Contrôle d'appartenance (Commit B2, chantier scoping multi-organisation,
+    // 2026-09-18) : même message que le paiement inexistant ci-dessus —
+    // jamais de distinction observable entre "paiement introuvable" et
+    // "paiement d'une autre organisation". Placé avant toute donnée
+    // supplémentaire et avant le rendu du docx.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId && bienRow.organisationId !== organisationId) {
+      throw new NotFoundException("Paiement introuvable");
+    }
+
     // Bailleur : même service partagé que bail-document-docx (corrige le
     // même bug SCI-only à la source, docs/backlog.md, 2026-08-31).
     const nomBailleur = await this.bienService.resoudreNomBailleur(bienRow.id);
