@@ -102,9 +102,31 @@ export class BauxService {
     return lignes.map((bail) => this.versDto(bail));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
+  // multi-organisation, 2026-09-18) : baux n'a pas de colonne
+  // organisationId directe (voir findAll() ci-dessus), le contrôle passe
+  // par une double jointure appartements -> bien. Même message que
+  // "n'existe pas", aucune différence observable. Skip si organisationId
+  // absent (hors contexte HTTP).
   async findById(id: string) {
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
-    return bail ? this.versDto(bail) : null;
+    if (!bail) {
+      throw new NotFoundException("Bail introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: baux.id })
+        .from(baux)
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(baux.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Bail introuvable");
+      }
+    }
+    return this.versDto(bail);
   }
 
   async update(id: string, dto: UpdateBailDto) {

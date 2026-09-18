@@ -98,13 +98,33 @@ export class AppartementsService {
     return lignes.map((appartement) => this.versDto(appartement));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
+  // multi-organisation, 2026-09-18) : appartements n'a pas de colonne
+  // organisationId directe (voir findAll() ci-dessus), le contrôle passe
+  // par une jointure vers bien. Même message que "n'existe pas", aucune
+  // différence observable. Skip si organisationId absent (hors contexte
+  // HTTP).
   async findById(id: string) {
     const [appartement] = await this.db
       .select()
       .from(appartements)
       .where(eq(appartements.id, id))
       .limit(1);
-    return appartement ? this.versDto(appartement) : null;
+    if (!appartement) {
+      throw new NotFoundException("Appartement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: bien.id })
+        .from(bien)
+        .where(and(eq(bien.id, appartement.bienId), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+    }
+    return this.versDto(appartement);
   }
 
   async update(id: string, dto: UpdateAppartementDto) {

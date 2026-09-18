@@ -263,10 +263,36 @@ export class EtatsDesLieuxService {
   // que DocumentsService.findAll. Nécessaire pour que le composant
   // ArchiveToggle/ArchiveBadge partagé (apps/desktop) puisse les
   // réafficher, au lieu de les rendre définitivement invisibles.
+  // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
+  // multi-organisation, 2026-09-18) : etatsDesLieux n'a pas de colonne
+  // organisationId directe, le contrôle passe par une triple jointure
+  // baux -> appartements -> bien (via bailId), même chemin que findAll()
+  // des autres services de cette profondeur. Même message que "n'existe
+  // pas", aucune différence observable. Skip si organisationId absent
+  // (hors contexte HTTP). Protège aussi findByBailId() ci-dessous (délègue
+  // à this.findById()) et, par ricochet, EtatDesLieuxDocumentDocxService
+  // .genererDocumentEtatDesLieuxDocx() qui appelle cette méthode en
+  // interne (B3, audit du Commit 5 — voir etat-des-lieux-document-docx
+  // -scoping.integration.spec.ts) : une génération sur un état des lieux
+  // de sa propre organisation continue de fonctionner normalement.
   async findById(id: string, avecArchives = false) {
     const [entete] = await this.db.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id)).limit(1);
     if (!entete) {
-      return null;
+      throw new NotFoundException("État des lieux introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: etatsDesLieux.id })
+        .from(etatsDesLieux)
+        .innerJoin(baux, eq(baux.id, etatsDesLieux.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(etatsDesLieux.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("État des lieux introuvable");
+      }
     }
     const filtreCles = avecArchives
       ? eq(etatDesLieuxCles.etatDesLieuxId, id)

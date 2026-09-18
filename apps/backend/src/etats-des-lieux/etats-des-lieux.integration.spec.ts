@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -487,8 +488,12 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     expect(complet?.entree).toBeNull();
   });
 
-  it("findById() sur un id inexistant renvoie null (pas d'exception)", async () => {
-    const resultat = await etatsDesLieuxService.findById(randomUUID());
-    expect(resultat).toBeNull();
+  // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
+  // findById() lève désormais NotFoundException pour un id inexistant
+  // (au lieu de renvoyer null), même comportement que pour un id d'une
+  // autre organisation — voir etats-des-lieux-scoping.integration.spec.ts
+  // pour la couverture complète du contrôle d'appartenance.
+  it("findById() lève NotFoundException pour un id inexistant", async () => {
+    await expect(etatsDesLieuxService.findById(randomUUID())).rejects.toThrow(NotFoundException);
   });
 });

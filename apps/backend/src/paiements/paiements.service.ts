@@ -67,9 +67,32 @@ export class PaiementsService {
     return lignes.map((paiement) => this.versDto(paiement));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
+  // multi-organisation, 2026-09-18) : paiements n'a pas de colonne
+  // organisationId directe (voir findAll() ci-dessus), le contrôle passe
+  // par une triple jointure baux -> appartements -> bien. Même message
+  // que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
-    return paiement ? this.versDto(paiement) : null;
+    if (!paiement) {
+      throw new NotFoundException("Paiement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: paiements.id })
+        .from(paiements)
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(paiements.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Paiement introuvable");
+      }
+    }
+    return this.versDto(paiement);
   }
 
   // Ne touche jamais aux versements (voir VersementsService), mais si

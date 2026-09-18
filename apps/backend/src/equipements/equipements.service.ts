@@ -55,13 +55,35 @@ export class EquipementsService {
     return lignes.map((equipement) => this.versDto(equipement));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
+  // multi-organisation, 2026-09-18) : equipements n'a pas de colonne
+  // organisationId directe (voir findAll() ci-dessus), le contrôle passe
+  // par une double jointure appartements -> bien. Même message que
+  // "n'existe pas", aucune différence observable. Skip si organisationId
+  // absent (hors contexte HTTP).
   async findById(id: string) {
     const [equipement] = await this.db
       .select()
       .from(equipements)
       .where(eq(equipements.id, id))
       .limit(1);
-    return equipement ? this.versDto(equipement) : null;
+    if (!equipement) {
+      throw new NotFoundException("Équipement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: equipements.id })
+        .from(equipements)
+        .innerJoin(appartements, eq(appartements.id, equipements.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(equipements.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Équipement introuvable");
+      }
+    }
+    return this.versDto(equipement);
   }
 
   async update(id: string, dto: UpdateEquipementDto) {
