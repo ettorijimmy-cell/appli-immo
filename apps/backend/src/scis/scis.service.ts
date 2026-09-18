@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { creerRattachementProprietaire } from "core";
 import { mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -75,9 +75,30 @@ export class ScisService {
     return lignes.map((sci) => this.versDto(sci));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5b, chantier scoping
+  // multi-organisation, 2026-09-18) : scis n'a pas de colonne
+  // organisationId directe (voir findAll() ci-dessus), le contrôle passe
+  // par une requête organisation_sci dédiée — même chemin que
+  // ComptesBancairesSciService.verifierAppartenanceSci (commit B6). Même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [sci] = await this.db.select().from(scis).where(eq(scis.id, id)).limit(1);
-    return sci ? this.versDto(sci) : null;
+    if (!sci) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [rattachement] = await this.db
+        .select({ sciId: organisationSci.sciId })
+        .from(organisationSci)
+        .where(and(eq(organisationSci.sciId, id), eq(organisationSci.organisationId, organisationId)))
+        .limit(1);
+      if (!rattachement) {
+        throw new NotFoundException("SCI introuvable");
+      }
+    }
+    return this.versDto(sci);
   }
 
   async update(id: string, dto: UpdateSciDto) {

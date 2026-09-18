@@ -1,4 +1,4 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { immeublesLegacy, organisationSci, type Database } from "db";
 import { and, eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
@@ -44,9 +44,32 @@ export class ImmeublesService {
     return lignes.map((immeuble) => this.versDto(immeuble));
   }
 
+  // Contrôle d'appartenance (Sous-commit 5b, chantier scoping
+  // multi-organisation, 2026-09-18) : immeubles_legacy n'a qu'une FK vers
+  // scis, deux sauts jusqu'à organisation_sci (même chemin que
+  // findAll() ci-dessus). Le gel en écriture de cette table (2026-08-27)
+  // ne porte que sur create()/update()/archive() — jamais sur la lecture
+  // ni sur son scoping, qui reste nécessaire (DocumentsService continue
+  // de résoudre les documents historiques rattachés à ces lignes). Même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
     const [immeuble] = await this.db.select().from(immeublesLegacy).where(eq(immeublesLegacy.id, id)).limit(1);
-    return immeuble ? this.versDto(immeuble) : null;
+    if (!immeuble) {
+      throw new NotFoundException("Immeuble introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [rattachement] = await this.db
+        .select({ sciId: organisationSci.sciId })
+        .from(organisationSci)
+        .where(and(eq(organisationSci.sciId, immeuble.sciId), eq(organisationSci.organisationId, organisationId)))
+        .limit(1);
+      if (!rattachement) {
+        throw new NotFoundException("Immeuble introuvable");
+      }
+    }
+    return this.versDto(immeuble);
   }
 
   private versDto(immeuble: ImmeubleRow) {
