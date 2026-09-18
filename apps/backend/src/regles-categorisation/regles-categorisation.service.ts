@@ -37,16 +37,14 @@ export class ReglesCategorisationService {
 
   // Utilisé par l'écran de gestion des règles — même mécanisme de scoping
   // que DepensesService.findAll (toute requête HTTP réelle passe par le
-  // JwtAuthGuard global, donc getUtilisateurId() y est toujours
-  // résolvable).
+  // JwtAuthGuard global, donc getOrganisationId() y est toujours
+  // résolvable). Lu directement depuis le JWT décodé (Commit 2,
+  // docs/data-dictionary.md), jamais un lookup UsersService.
   async findAll() {
     const conditions = [isNull(regleCategorisation.archivedAt)];
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(regleCategorisation.organisationId, utilisateur.organisationId));
-      }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(regleCategorisation.organisationId, organisationId));
     }
     const lignes = await this.db
       .select()

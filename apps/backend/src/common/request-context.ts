@@ -8,10 +8,14 @@ interface ContexteRequete {
   // request.user.organisationId (JWT décodé par JwtAuthGuard, voir
   // Commit 1) — jamais un lookup DB, contrairement à l'ancien pattern
   // getUtilisateurId() + UsersService.findById() répété service par
-  // service. Optionnel pour ne pas casser les ~15 tests d'intégration
-  // existants qui appellent executerAvecContexte({ utilisateurId })
-  // sans organisationId (aucun n'en a besoin aujourd'hui, ce commit ne
-  // migre aucun service) — absent équivaut à null.
+  // service. Optionnel pour ne pas casser les nombreux tests d'intégration
+  // qui appellent executerAvecContexte({ utilisateurId }) directement (hors
+  // UserContextInterceptor) pour des méthodes sans rapport avec le scoping
+  // par organisation — absent équivaut à null. Pour une vraie requête HTTP,
+  // utilisateurId présent sans organisationId est rejeté en amont par
+  // UserContextInterceptor (JWT pré-migration Commit 1) : ce service reste
+  // volontairement permissif, ce n'est pas son rôle de porter cette
+  // invariante.
   organisationId?: string | null;
 }
 

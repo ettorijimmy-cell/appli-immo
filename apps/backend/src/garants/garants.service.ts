@@ -3,7 +3,6 @@ import { appartements, baux, bien, garants, mettreAJourAvecAudit, type Database 
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import { UsersService } from "../users/users.service";
 import type { CreateGarantDto } from "./dto/create-garant.dto";
 import type { UpdateGarantDto } from "./dto/update-garant.dto";
 
@@ -13,8 +12,7 @@ type GarantRow = typeof garants.$inferSelect;
 export class GarantsService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
-    private readonly requestContext: RequestContextService,
-    private readonly usersService: UsersService
+    private readonly requestContext: RequestContextService
   ) {}
 
   async create(dto: CreateGarantDto) {
@@ -62,12 +60,11 @@ export class GarantsService {
     if (bailId) {
       conditions.push(eq(garants.bailId, bailId));
     }
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(garants.organisationId, utilisateur.organisationId));
-      }
+    // Mécanisme centralisé (Commit 2, docs/data-dictionary.md) : lu
+    // directement depuis le JWT décodé, jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(garants.organisationId, organisationId));
     }
     const lignes =
       conditions.length > 0

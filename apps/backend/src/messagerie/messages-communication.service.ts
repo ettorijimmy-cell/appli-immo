@@ -42,12 +42,11 @@ export class MessagesCommunicationService {
 
   async findAll(filtres: FindAllMessagesFiltres) {
     const conditions = [];
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(messageCommunication.organisationId, utilisateur.organisationId));
-      }
+    // Mécanisme centralisé (Commit 2, docs/data-dictionary.md) : lu
+    // directement depuis le JWT décodé, jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(messageCommunication.organisationId, organisationId));
     }
     if (filtres.classificationType) {
       conditions.push(eq(messageCommunication.classificationType, filtres.classificationType));

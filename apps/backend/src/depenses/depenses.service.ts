@@ -112,14 +112,12 @@ export class DepensesService {
     // Scoping multi-tenant — même mécanisme que TachesService.findAll
     // (commit b5f503f, 2026-08-31 : findAll() non scopé par organisation
     // était un bug, corrigé après coup) : toute requête HTTP réelle passe
-    // par le JwtAuthGuard global, donc getUtilisateurId() y est toujours
-    // résolvable.
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(depense.organisationId, utilisateur.organisationId));
-      }
+    // par le JwtAuthGuard global, donc getOrganisationId() y est toujours
+    // résolvable. Lu directement depuis le JWT décodé (Commit 2,
+    // docs/data-dictionary.md), jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(depense.organisationId, organisationId));
     }
     if (filtres.categorie) {
       conditions.push(eq(depense.categorie, filtres.categorie));

@@ -177,11 +177,12 @@ describe("Sinistres — CRUD (intégration Postgres réelle)", () => {
     const sinistreOrgA = await sinistresService.create(userId, { type: "degat_eaux", dateDeclaration: "2026-09-01" });
     const sinistreOrgB = await sinistresService.create(autreUser.id, { type: "vol", dateDeclaration: "2026-09-01" });
 
-    const sinistresOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const sinistresOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       sinistresService.findAll()
     );
-    const sinistresOrgB = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
-      sinistresService.findAll()
+    const sinistresOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => sinistresService.findAll()
     );
 
     expect(sinistresOrgA.some((s) => s.id === sinistreOrgA.id)).toBe(true);

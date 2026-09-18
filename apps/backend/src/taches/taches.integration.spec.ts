@@ -543,11 +543,12 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
       .returning();
     if (!tacheOrgA || !tacheOrgB) throw new Error("Échec de l'insertion des tâches de test");
 
-    const taches = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const taches = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       tachesService.findAll({})
     );
-    const tachesAutre = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
-      tachesService.findAll({})
+    const tachesAutre = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => tachesService.findAll({})
     );
     const tachesSansContexte = await tachesService.findAll({});
 

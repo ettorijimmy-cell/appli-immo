@@ -532,14 +532,15 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     const locataireOrgA = await locatairesService.create(userId, { nom: "Dupont", prenom: "Alice" });
     const locataireOrgB = await locatairesService.create(autreUser.id, { nom: "Etranger", prenom: "Bob" });
 
-    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       locatairesService.findAll()
     );
     expect(listeOrgA.map((l) => l.id)).toContain(locataireOrgA.id);
     expect(listeOrgA.map((l) => l.id)).not.toContain(locataireOrgB.id);
 
-    const listeOrgB = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
-      locatairesService.findAll()
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => locatairesService.findAll()
     );
     expect(listeOrgB.map((l) => l.id)).toContain(locataireOrgB.id);
     expect(listeOrgB.map((l) => l.id)).not.toContain(locataireOrgA.id);
@@ -616,14 +617,15 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       typeGarantie: "personne_physique"
     });
 
-    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       garantsService.findAll()
     );
     expect(listeOrgA.map((g) => g.id)).toContain(garantOrgA.id);
     expect(listeOrgA.map((g) => g.id)).not.toContain(garantOrgB.id);
 
-    const listeOrgB = await requestContextService.executerAvecContexte({ utilisateurId: autreUser.id }, () =>
-      garantsService.findAll()
+    const listeOrgB = await requestContextService.executerAvecContexte(
+      { utilisateurId: autreUser.id, organisationId: autreOrganisation.id },
+      () => garantsService.findAll()
     );
     expect(listeOrgB.map((g) => g.id)).toContain(garantOrgB.id);
     expect(listeOrgB.map((g) => g.id)).not.toContain(garantOrgA.id);

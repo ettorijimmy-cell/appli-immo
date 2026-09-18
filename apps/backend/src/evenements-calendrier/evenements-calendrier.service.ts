@@ -56,12 +56,11 @@ export class EvenementsCalendrierService {
   // mois), pas une vraie recherche d'intervalles chevauchants.
   async findAll(filtres: FindAllEvenementsFiltres) {
     const conditions = [];
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(evenementCalendrier.organisationId, utilisateur.organisationId));
-      }
+    // Mécanisme centralisé (Commit 2, docs/data-dictionary.md) : lu
+    // directement depuis le JWT décodé, jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(evenementCalendrier.organisationId, organisationId));
     }
     if (filtres.periodeDebut) {
       conditions.push(gte(evenementCalendrier.dateDebut, new Date(filtres.periodeDebut)));

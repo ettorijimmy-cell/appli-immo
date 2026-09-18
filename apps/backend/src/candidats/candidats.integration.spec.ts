@@ -193,7 +193,7 @@ describe("CandidatsService (intégration Postgres réelle)", () => {
     const candidatOrgA = await candidatsService.create(userId, { nom: "Candidat", prenom: "A" });
     const candidatOrgB = await candidatsService.create(autreUser.id, { nom: "Candidat", prenom: "B" });
 
-    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       candidatsService.findAll()
     );
     expect(listeOrgA.map((c) => c.id)).toContain(candidatOrgA.id);

@@ -181,7 +181,7 @@ describe("EvenementsCalendrierService (intégration Postgres réelle)", () => {
       dateDebut: "2026-09-20T09:00:00.000Z"
     });
 
-    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       evenementsService.findAll({})
     );
     expect(listeOrgA.map((e) => e.id)).toContain(evenementOrgA.id);

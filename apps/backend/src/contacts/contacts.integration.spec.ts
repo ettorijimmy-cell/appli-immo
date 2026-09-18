@@ -46,6 +46,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
   let requestContextService: RequestContextService;
   let db: Database;
   let userId: string;
+  let organisationId: string;
   let appartementId: string;
 
   beforeEach(async () => {
@@ -104,6 +105,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
     userId = user.id;
+    organisationId = organisation.id;
 
     const sci = await scisService.create(userId, {
       nom: "SCI Contacts Test",
@@ -224,7 +226,7 @@ describe("ContactsService (intégration Postgres réelle)", () => {
       role: "diagnostiqueur"
     });
 
-    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const listeOrgA = await requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId }, () =>
       contactsService.findAll()
     );
     expect(listeOrgA.map((c) => c.id)).toContain(contactOrgA.id);

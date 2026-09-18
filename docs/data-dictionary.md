@@ -2322,6 +2322,71 @@ dans ce commit, conformément à la consigne "aucun service métier touché
 ici". Testé unitairement (présent → valeur renvoyée ; absent → rejet
 explicite), pas via un controller de test jetable.
 
+### Migration des 10 services scopés vers le mécanisme centralisé (Commit 3, 2026-09-18)
+
+`TachesService`, `MessagesCommunicationService`, `LocatairesService`,
+`GarantsService`, `ContactsService`, `CandidatsService`,
+`SinistresService`, `EvenementsCalendrierService`, `DepensesService`,
+`ReglesCategorisationService` : le lookup manuel répété
+(`getUtilisateurId()` → `usersService.findById()` →
+`utilisateur.organisationId`) est remplacé par
+`this.requestContext.getOrganisationId()`. Refactor de cohérence pur —
+comportement fonctionnel inchangé, aucune nouvelle logique de filtrage.
+`UsersService` retiré de l'injection de `TachesService` et
+`GarantsService` (devenu inutilisé dans ces deux fichiers) ; conservé
+partout où il sert encore une autre méthode (ex. `create(userId, ...)`
+qui reçoit `userId` en paramètre explicite, sans rapport avec le
+contexte de requête).
+
+**Différence de fallback identifiée et acceptée** : un JWT émis avant le
+Commit 1 (sans claim `organisationId`) mais pas encore expiré verrait
+l'ancien mécanisme scoper correctement (résolution via DB depuis
+`utilisateurId`) alors que le nouveau ne filtre pas du tout pour cette
+requête précise (retourne toutes organisations), faute d'`organisationId`
+dans le contexte. Fenêtre bornée à `JWT_EXPIRES_IN_SECONDS` (1h par
+défaut) après déploiement, déjà couverte par la reconnexion imposée par
+le Commit 1. Aucun autre écart de comportement identifié.
+
+**Tests de scoping existants adaptés, pas de nouvelle logique testée** :
+`taches.integration.spec.ts`, `sinistres.integration.spec.ts`,
+`evenements-calendrier.integration.spec.ts`,
+`contacts.integration.spec.ts` (variable `organisationId` ajoutée,
+absente jusqu'ici), `candidats.integration.spec.ts`,
+`baux/locataires-baux.integration.spec.ts` (Locataires + Garants) :
+simulaient une requête HTTP via `executerAvecContexte({ utilisateurId })`
+seul, ce qui suffisait quand le service résolvait lui-même
+`organisationId` par lookup — désormais `UserContextInterceptor`
+fournirait ce champ directement depuis le JWT pour toute vraie requête,
+donc le fixture doit le fournir aussi pour rester représentatif.
+
+**Mitigation de la fenêtre de fallback non filtré (même commit)** :
+l'écart ci-dessus n'est pas qu'un inconfort — pendant la fenêtre de ~1h,
+une vraie requête HTTP authentifiée avec un JWT pré-Commit-1 obtenait
+silencieusement la liste **toutes organisations confondues** des services
+migrés, faute d'`organisationId` en contexte. `UserContextInterceptor`
+(`apps/backend/src/common/user-context.interceptor.ts`) rejette
+désormais explicitement ce cas précis — `utilisateurId` présent (JWT
+valide, `sub` décodé) mais `organisationId` absent — avec une
+`UnauthorizedException`, avant même d'atteindre le handler. Le cas
+légitime hors requête HTTP (jobs, tests appelant
+`executerAvecContexte()` directement), où `utilisateurId` et
+`organisationId` sont tous les deux absents, n'est pas concerné et
+continue de fonctionner sans exception.
+
+Volontairement placé dans `UserContextInterceptor`, pas dans
+`RequestContextService.executerAvecContexte()` elle-même : cette
+dernière est aussi appelée directement, en dehors de toute requête HTTP
+réelle, par des dizaines de tests d'intégration sans rapport avec le
+scoping par organisation (`bail-document-docx`,
+`etat-des-lieux-document-docx`, `quittance-document-docx`, `documents`,
+`paiements`, et les méthodes `create`/`update`/`archive`/`findAllUnifie`
+des services déjà cités) — simuler `{ utilisateurId }` seul y reste
+légitime, ces méthodes n'appellent jamais `getOrganisationId()`. Porter
+l'invariante au niveau de `RequestContextService` aurait donc cassé ces
+tests sans rapport avec le problème traité ici ; la porter au niveau de
+l'interceptor la limite exactement à ce qui représente une vraie requête
+HTTP.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local

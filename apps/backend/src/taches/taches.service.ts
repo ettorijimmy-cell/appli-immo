@@ -20,7 +20,6 @@ import type { PieceJointeEmail } from "../messagerie/smtp-envoi.service";
 import { SmtpEnvoiService } from "../messagerie/smtp-envoi.service";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
 import { QuittanceDocumentDocxService } from "../quittance-document-docx/quittance-document-docx.service";
-import { UsersService } from "../users/users.service";
 
 const CODE_MODELE_REVISION_LOYER = "revision_loyer";
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -47,7 +46,6 @@ export class TachesService {
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
     private readonly modelesCourrierService: ModelesCourrierService,
-    private readonly usersService: UsersService,
     private readonly smtpEnvoiService: SmtpEnvoiService,
     private readonly quittanceDocumentDocxService: QuittanceDocumentDocxService
   ) {}
@@ -56,18 +54,15 @@ export class TachesService {
     const conditions = [];
     // Scoping multi-tenant : toute requête HTTP réelle passe par le
     // JwtAuthGuard global (apps/backend/src/auth/auth.module.ts), donc
-    // getUtilisateurId() y est toujours résolvable — c'est le seul cas qui
-    // compte pour l'isolation entre organisations. En dehors d'un contexte
-    // HTTP (scripts, tests appelant le service directement), il n'y a pas
-    // d'utilisateur à filtrer : on ne restreint pas, comme le reste des
-    // champs d'audit qui dépendent déjà de getUtilisateurId() (ex.
-    // mettreAJourAvecAudit).
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        conditions.push(eq(tache.organisationId, utilisateur.organisationId));
-      }
+    // getOrganisationId() y est toujours résolvable — c'est le seul cas
+    // qui compte pour l'isolation entre organisations. En dehors d'un
+    // contexte HTTP (scripts, tests appelant le service directement), il
+    // n'y a pas d'organisation à filtrer : on ne restreint pas. Lu
+    // directement depuis le JWT décodé (Commit 2, docs/data-dictionary.md)
+    // — jamais un lookup UsersService, contrairement à l'ancien pattern.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      conditions.push(eq(tache.organisationId, organisationId));
     }
     if (filtres.statut) {
       conditions.push(eq(tache.statut, filtres.statut));

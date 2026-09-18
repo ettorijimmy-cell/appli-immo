@@ -65,13 +65,12 @@ export class ContactsService {
   }
 
   async findAll() {
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        const lignes = await this.db.select().from(contact).where(eq(contact.organisationId, utilisateur.organisationId));
-        return lignes.map((ligne) => this.versDto(ligne));
-      }
+    // Mécanisme centralisé (Commit 2, docs/data-dictionary.md) : lu
+    // directement depuis le JWT décodé, jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const lignes = await this.db.select().from(contact).where(eq(contact.organisationId, organisationId));
+      return lignes.map((ligne) => this.versDto(ligne));
     }
     const lignes = await this.db.select().from(contact);
     return lignes.map((ligne) => this.versDto(ligne));

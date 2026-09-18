@@ -50,15 +50,14 @@ export class SinistresService {
   }
 
   // Même pattern de scoping que CandidatsService/ContactsService — no-op
-  // en dehors d'un contexte HTTP (scripts/tests directs).
+  // en dehors d'un contexte HTTP (scripts/tests directs). Mécanisme
+  // centralisé (Commit 2, docs/data-dictionary.md) : lu directement
+  // depuis le JWT décodé, jamais un lookup UsersService.
   async findAll() {
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        const lignes = await this.db.select().from(sinistre).where(eq(sinistre.organisationId, utilisateur.organisationId));
-        return lignes.map((ligne) => this.versDto(ligne));
-      }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const lignes = await this.db.select().from(sinistre).where(eq(sinistre.organisationId, organisationId));
+      return lignes.map((ligne) => this.versDto(ligne));
     }
     const lignes = await this.db.select().from(sinistre);
     return lignes.map((ligne) => this.versDto(ligne));

@@ -47,16 +47,15 @@ export class LocatairesService {
   // la lecture — un locataire créé avant d'être rattaché à un bail reste
   // ainsi visible (voir packages/db/src/schema/locataires.ts).
   async findAll() {
-    const utilisateurId = this.requestContext.getUtilisateurId();
-    if (utilisateurId) {
-      const utilisateur = await this.usersService.findById(utilisateurId);
-      if (utilisateur) {
-        const lignes = await this.db
-          .select()
-          .from(locataires)
-          .where(eq(locataires.organisationId, utilisateur.organisationId));
-        return lignes.map((locataire) => this.versDto(locataire));
-      }
+    // Mécanisme centralisé (Commit 2, docs/data-dictionary.md) : lu
+    // directement depuis le JWT décodé, jamais un lookup UsersService.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const lignes = await this.db
+        .select()
+        .from(locataires)
+        .where(eq(locataires.organisationId, organisationId));
+      return lignes.map((locataire) => this.versDto(locataire));
     }
     const lignes = await this.db.select().from(locataires);
     return lignes.map((locataire) => this.versDto(locataire));
