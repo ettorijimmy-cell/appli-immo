@@ -465,4 +465,93 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
       expect(resultat.contenu.toString("utf8")).toBe("contenu-bien-A");
     });
   });
+
+  // Sous-commit 5d (chantier scoping multi-organisation, 2026-09-18) :
+  // findById(id) renvoyait n'importe quel document sans jamais vérifier
+  // l'organisation appelante — corrigé en réutilisant
+  // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
+  // telecharger() (commit B4). Trois entiteType couverts pour prouver que
+  // la résolution polymorphe fonctionne correctement dans ce nouveau
+  // contexte : 'sci' (via organisation_sci), 'appartement' (jointure
+  // simple vers bien), 'locataire' (colonne organisationId directe) —
+  // les 8 autres chemins sont déjà couverts pour findAll() plus haut dans
+  // ce fichier et partagent la même fonction de résolution.
+  describe("findById — contrôle d'appartenance", () => {
+    it("entiteType='sci' (via organisation_sci) : succès même organisation, 404 cross-org", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("sci", orgA.sciId, orgB.sciId);
+
+      const trouve = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.findById(documentOrgA.id)
+      );
+      expect(trouve.id).toBe(documentOrgA.id);
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.findById(documentOrgA.id)
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("entiteType='appartement' (jointure simple vers bien) : succès même organisation, 404 cross-org", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations(
+        "appartement",
+        orgA.appartementId,
+        orgB.appartementId
+      );
+
+      const trouve = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.findById(documentOrgA.id)
+      );
+      expect(trouve.id).toBe(documentOrgA.id);
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.findById(documentOrgA.id)
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("entiteType='locataire' (colonne organisationId directe) : succès même organisation, 404 cross-org", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations(
+        "locataire",
+        orgA.locataireId,
+        orgB.locataireId
+      );
+
+      const trouve = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.findById(documentOrgA.id)
+      );
+      expect(trouve.id).toBe(documentOrgA.id);
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.findById(documentOrgA.id)
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un id inexistant", async () => {
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.findById(randomUUID())
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const trouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.findById(documentOrgA.id)
+      );
+      expect(trouve.id).toBe(documentOrgA.id);
+    });
+  });
 });

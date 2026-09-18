@@ -346,9 +346,28 @@ export class DocumentsService {
     }
   }
 
+  // Contrôle d'appartenance (Sous-commit 5d, chantier scoping
+  // multi-organisation, 2026-09-18) : réutilise resoudreEntiteIdsOrganisation
+  // (Sous-commit 4c), même principe que telecharger() (commit B4) — jamais
+  // une deuxième logique de résolution polymorphe. Même message que
+  // "n'existe pas", aucune différence observable. Skip si organisationId
+  // absent (hors contexte HTTP). Aucun appelant interne (vérifié par grep
+  // — seul DocumentsController.findOne l'appelle ; telecharger() et
+  // remplacerDocument() refont chacun leur propre requête brute sur `id`,
+  // sans jamais appeler this.findById()).
   async findById(id: string) {
     const [document] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
-    return document ? this.versDto(document) : null;
+    if (!document) {
+      throw new NotFoundException("Document introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
+      if (!idsValides.includes(document.entiteId)) {
+        throw new NotFoundException("Document introuvable");
+      }
+    }
+    return this.versDto(document);
   }
 
   async update(id: string, dto: UpdateDocumentDto) {
