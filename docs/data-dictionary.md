@@ -2273,6 +2273,55 @@ lisant le code, pas supposé. Rien à changer ici : le scoping PowerSync
 repose sur les Sync Streams (filtrage côté dashboard PowerSync par
 `request.user_id`), pas sur ce JWT applicatif.
 
+### Mécanisme centralisé d'accès à `organisationId` (Commit 2, 2026-09-18)
+
+**Audit préalable — comment les services actuels reçoivent leurs
+paramètres**, avant de choisir entre un mécanisme contrôleur (decorator
+→ paramètre explicite passé au service) et un mécanisme service
+(provider/contexte interne) : dans les ~10 services déjà scopés
+(`TachesService`, `MessagesCommunicationService`, `LocatairesService`,
+`GarantsService`, `ContactsService`, `CandidatsService`,
+`SinistresService`, `EvenementsCalendrierService`, `DepensesService`,
+`ReglesCategorisationService`), **aucun controller ne passe
+`utilisateurId`/`organisationId` en paramètre explicite à une méthode de
+service** — chaque service le lit lui-même depuis
+`RequestContextService` dans le corps de sa propre méthode. Les seuls
+appels avec `organisationId` en paramètre explicite trouvés
+(`ReglesCategorisationService.findAllActives(organisationId)`) sont des
+appels **service → service** (ex. `DepensesService.parserCsv`, qui a
+déjà résolu `organisationId` pour son propre compte et le transmet à
+l'appel suivant) — jamais un controller qui l'extrairait d'abord pour le
+redistribuer.
+
+**Décision : mécanisme au niveau service, pas controller→service.**
+`RequestContextService` (AsyncLocalStorage, déjà en place pour
+`utilisateurId`) gagne un second champ `organisationId` et une méthode
+`getOrganisationId()`, posés par `UserContextInterceptor` directement
+depuis `request.user.organisationId` (JWT décodé par `JwtAuthGuard`,
+Commit 1) — **aucun lookup DB**. C'est la continuité exacte du pattern
+déjà répété dans les ~10 services scopés : ils appelleront
+`this.requestContext.getOrganisationId()` au lieu de refaire
+`getUtilisateurId()` + `UsersService.findById()` (migration prévue au
+Commit 3, aucun service touché ici). Pas besoin d'un provider
+`Scope.REQUEST` NestJS (plus lourd, invalide le cache singleton de tous
+les providers qui en dépendent, transitivement) : AsyncLocalStorage
+remplit déjà exactement ce rôle, sans ce coût.
+
+**`@CurrentOrganisation()` — decorator contrôleur, construit en plus,
+pas encore utilisé.** `apps/backend/src/common/current-organisation.
+decorator.ts` : extrait `organisationId` directement depuis
+`request.user`, échec explicite (`UnauthorizedException`) si absent
+plutôt qu'un `undefined` silencieux qui filtrerait une requête sur
+"undefined". Logique extraite dans `resoudreOrganisationCourante`
+(fonction testable directement, `createParamDecorator` ne renvoie que le
+décorateur, pas la logique — même principe que `JwtAuthGuard.
+canActivate`/`jwt-auth.guard.spec.ts`). Fourni pour un futur controller
+qui aurait besoin d'`organisationId` explicitement (aucun cas identifié
+dans l'audit ci-dessus aujourd'hui) — pas câblé dans un controller réel
+dans ce commit, conformément à la consigne "aucun service métier touché
+ici". Testé unitairement (présent → valeur renvoyée ; absent → rejet
+explicite), pas via un controller de test jetable.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local

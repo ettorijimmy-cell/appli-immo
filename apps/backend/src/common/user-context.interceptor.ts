@@ -15,6 +15,10 @@ export class UserContextInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
     const utilisateurId = request.user?.sub ?? null;
-    return this.requestContext.executerAvecContexte({ utilisateurId }, () => next.handle());
+    // organisationId lu directement depuis le JWT décodé (request.user,
+    // posé par JwtAuthGuard) — jamais un lookup DB ici (voir Commit 1,
+    // AuthService.login).
+    const organisationId = request.user?.organisationId ?? null;
+    return this.requestContext.executerAvecContexte({ utilisateurId, organisationId }, () => next.handle());
   }
 }
