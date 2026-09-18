@@ -25,6 +25,7 @@ describe("AuthService.validateUser", () => {
     const service = buildService({
       id: "1",
       email: "a@a.com",
+      organisationId: "org-1",
       motDePasseHash,
       statut: "archive"
     });
@@ -33,16 +34,29 @@ describe("AuthService.validateUser", () => {
 
   it("rejette un mauvais mot de passe", async () => {
     const motDePasseHash = await argon2.hash("bon-mot-de-passe");
-    const service = buildService({ id: "1", email: "a@a.com", motDePasseHash, statut: "actif" });
+    const service = buildService({
+      id: "1",
+      email: "a@a.com",
+      organisationId: "org-1",
+      motDePasseHash,
+      statut: "actif"
+    });
     await expect(service.validateUser("a@a.com", "mauvais")).resolves.toBeNull();
   });
 
-  it("valide un utilisateur actif avec le bon mot de passe", async () => {
+  it("valide un utilisateur actif avec le bon mot de passe et renvoie organisationId", async () => {
     const motDePasseHash = await argon2.hash("bon-mot-de-passe");
-    const service = buildService({ id: "1", email: "a@a.com", motDePasseHash, statut: "actif" });
+    const service = buildService({
+      id: "1",
+      email: "a@a.com",
+      organisationId: "org-1",
+      motDePasseHash,
+      statut: "actif"
+    });
     await expect(service.validateUser("a@a.com", "bon-mot-de-passe")).resolves.toEqual({
       id: "1",
-      email: "a@a.com"
+      email: "a@a.com",
+      organisationId: "org-1"
     });
   });
 });

@@ -92,9 +92,9 @@ describe("AuthService (intégration Postgres réelle)", () => {
     await rootDb.$client.end();
   });
 
-  it("valide un utilisateur réel avec le bon mot de passe et émet un JWT exploitable", async () => {
+  it("valide un utilisateur réel avec le bon mot de passe et émet un JWT exploitable (organisationId inclus)", async () => {
     const user = await authService.validateUser(email, password);
-    expect(user).toEqual({ id: expect.any(String), email });
+    expect(user).toEqual({ id: expect.any(String), email, organisationId: expect.any(String) });
 
     const { accessToken } = await authService.login(user!);
     const [, payloadSegment] = accessToken.split(".");
@@ -104,6 +104,7 @@ describe("AuthService (intégration Postgres réelle)", () => {
     const payload = JSON.parse(Buffer.from(payloadSegment, "base64url").toString("utf8"));
     expect(payload.email).toBe(email);
     expect(payload.sub).toBe(user!.id);
+    expect(payload.organisationId).toBe(user!.organisationId);
   });
 
   it("rejette un mauvais mot de passe contre la vraie table utilisateurs", async () => {

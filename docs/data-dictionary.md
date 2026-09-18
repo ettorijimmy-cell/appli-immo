@@ -2243,6 +2243,36 @@ simple code HTTP), **jamais** de détail de connexion DB, de version
 applicative, ou de stack trace : un endpoint volontairement non
 authentifié est par nature accessible à quiconque atteint le conteneur.
 
+### `organisationId` dans le JWT (chantier scoping multi-organisation, 2026-09-18)
+
+Jusqu'ici, chaque service scopé (`TachesService`,
+`MessagesCommunicationService`, `LocatairesService`...) refaisait le
+même aller-retour à chaque requête :
+`RequestContextService.getUtilisateurId()` → `UsersService.findById()` →
+`utilisateur.organisationId`. Le JWT (`AuthService.login`) porte
+désormais `organisationId` directement dans son payload
+(`{ sub, email, organisationId }`), résolu une seule fois au login
+(`utilisateurs.organisationId` est `NOT NULL` — toujours présent). Le
+guard (`JwtAuthGuard`) décode déjà l'intégralité du payload dans
+`request.user` sans changement de code — seule la déclaration de type
+(`apps/backend/src/types/express.d.ts`) a été étendue pour refléter le
+nouveau champ.
+
+**Invalide toutes les sessions existantes** : un JWT émis avant ce
+changement ne porte pas `organisationId` — reconnexion nécessaire pour
+tous les utilisateurs, accepté et voulu (pas de mécanisme de migration de
+session en douceur, la fenêtre d'impact est nulle en usage interne
+actuel).
+
+**Jeton PowerSync — mécanisme totalement séparé, non concerné.**
+`PowerSyncService.emettreCredentials` (`apps/backend/src/powersync/
+powersync.service.ts`) signe avec `jose` (`SignJWT`), un secret dédié
+(`POWERSYNC_JWT_SECRET`, distinct de `JWT_SECRET`), et un payload minimal
+(`sub`/`iss`/`aud`, aucune claim `email`/`organisationId`) — vérifié en
+lisant le code, pas supposé. Rien à changer ici : le scoping PowerSync
+repose sur les Sync Streams (filtrage côté dashboard PowerSync par
+`request.user_id`), pas sur ce JWT applicatif.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local
