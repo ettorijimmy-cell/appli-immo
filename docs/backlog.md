@@ -844,6 +844,23 @@ les trois parcours ci-dessus).
   Gmail, pour le détail de l'incohérence code/configuration qui en
   résulte).
 
+- **Scoping multi-organisation incomplet — chantier de mise en conformité
+  démarré le 2026-09-18.** Audit préalable en lecture seule (aucune
+  modification) : la quasi-totalité des `findAll()` backend ne filtrait
+  pas par organisation, et tous les `findById()` étaient lisibles par id
+  connu sans vérification d'appartenance — risque nul aujourd'hui (une
+  seule organisation réelle en usage), mais bloquant avant tout SaaS
+  multi-utilisateur. Chantier découpé en commits successifs, chacun
+  soumis à Jimmy avant le suivant (voir docs/data-dictionary.md, section
+  Authentification, pour le détail du Commit 1 — `organisationId` dans le
+  JWT). Hors périmètre, explicitement : `alertes` (aucune colonne ni FK
+  vers organisation — la seule voie serait une résolution polymorphe via
+  `entiteId`/`type`, 5 cas, jamais construite dans ce chantier ; 2 lignes
+  en base au moment de l'audit), `parametres_alertes` (config globale
+  volontaire, 4 lignes), `indices_irl` (donnée publique INSEE),
+  `elements_inventaire_meuble` (catalogue partagé par design), les jobs
+  `@Cron` (itération globale volontaire, déjà corrects).
+
 ---
 
 ## Maintenance
