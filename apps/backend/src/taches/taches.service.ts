@@ -86,16 +86,12 @@ export class TachesService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP). N'affecte PAS
-  // appliquerRevision()/envoyerNotification() ci-dessous : ces méthodes
-  // refont chacune leur propre requête brute sur `id`, sans jamais appeler
-  // this.findById() (Catégorie C, hors périmètre de ce sous-commit).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreTacheAvecAppartenance() (Priorité 1, Catégorie C,
+  // 2026-09-18), partagée avec appliquerRevision()/envoyerNotification()
+  // ci-dessous — jamais une deuxième implémentation du même contrôle.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Tâche introuvable");
-    }
+    const ligne = await this.resoudreTacheAvecAppartenance(id);
     return this.versDto(ligne);
   }
 
@@ -120,10 +116,12 @@ export class TachesService {
    * hors périmètre de cette étape.
    */
   async appliquerRevision(id: string, nouveauLoyerValide: string) {
-    const [tacheRow] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
-    if (!tacheRow) {
-      throw new NotFoundException("Tâche introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute résolution de bail/notification
+    // (Priorité 1, Catégorie C, chantier scoping multi-organisation,
+    // 2026-09-18) : sans lui, cette méthode réécrivait le loyer réel d'un
+    // bail étranger et fabriquait un historique de révision falsifié pour
+    // n'importe quel id de tâche fourni.
+    const tacheRow = await this.resoudreTacheAvecAppartenance(id);
     if (tacheRow.type !== "revision_loyer") {
       throw new BadRequestException("Cette action n'est disponible que pour une tâche de type 'revision_loyer'.");
     }
@@ -243,10 +241,13 @@ export class TachesService {
    * échoué (l'update de statut n'est atteint qu'après un envoi réussi).
    */
   async envoyerNotification(id: string) {
-    const [tacheRow] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
-    if (!tacheRow) {
-      throw new NotFoundException("Tâche introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute résolution de destinataire,
+    // toute génération de document et tout envoi réel (Priorité 1,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-18) :
+    // sans lui, un id de tâche d'une autre organisation menait à un envoi
+    // d'email réel (visible du destinataire, journalisé chez le
+    // fournisseur SMTP), pièce jointe financière étrangère comprise.
+    const tacheRow = await this.resoudreTacheAvecAppartenance(id);
     if (tacheRow.statut !== "a_faire" && tacheRow.statut !== "en_cours") {
       throw new BadRequestException(`Cette tâche ne peut plus être envoyée (statut actuel : '${tacheRow.statut}').`);
     }
@@ -381,6 +382,23 @@ export class TachesService {
       indiceReferenceValeur: m.indiceReferenceValeur,
       indicePrecedentValeur: m.indicePrecedentValeur
     };
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(),
+  // étendu en Priorité 1/Catégorie C à appliquerRevision()/
+  // envoyerNotification() — 2026-09-18) : même message que "n'existe
+  // pas", aucune différence observable. Skip si organisationId absent
+  // (hors contexte HTTP). Renvoie la ligne brute (pas le DTO) : les deux
+  // appelants ci-dessus ont besoin des colonnes internes (metadata,
+  // bailId, sinistreId, paiementId, locataireId), pas de la projection
+  // publique.
+  private async resoudreTacheAvecAppartenance(id: string): Promise<TacheRow> {
+    const [ligne] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Tâche introuvable");
+    }
+    return ligne;
   }
 
   private async changerStatut(id: string, statut: "fait" | "annulee", dateCompletion: Date | null) {
