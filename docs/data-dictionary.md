@@ -2516,6 +2516,67 @@ n'avait jusqu'ici aucun test dédié à `findAll()` du tout (seulement des
 usages indirects via `ajouter`/`annuler`) ; le test de scoping ajouté dans
 `paiements.integration.spec.ts` en est la première couverture directe.
 
+### Scoping de DocumentsService.findAll() — cas polymorphe, 11 entiteType (Commit 4, sous-commit 4c, 2026-09-18)
+
+`documents.entiteId` est une référence polymorphe : le chemin de
+résolution vers `bien.organisationId` dépend de `entiteType`
+(`documentEntiteTypeEnum`, `packages/db/src/schema/documents.ts`).
+**L'audit initial de ce chantier en comptait 7 — il y en a réellement
+11** aujourd'hui (`bien`, `depense`, `candidat`, `sinistre` ajoutés par
+des modules postérieurs à cet audit). Aucun des 11 ne pointe vers
+`alertes` (table explicitement hors scope de ce chantier).
+
+**6 cas à colonne `organisationId` propre** (aucune jointure) :
+`locataire`, `garant`, `bien`, `depense`, `candidat`, `sinistre`.
+
+**5 cas à chaîne de jointure**, vérifiés individuellement plutôt que
+généralisés :
+- `sci` : aucune colonne ni FK directe vers une organisation — résolu via
+  `organisation_sci` (même mécanisme que `ScisService.findAll()`,
+  Commit 4a).
+- `immeuble` (`immeubles_legacy`) : `sciId` -> `scis.id`, puis via
+  `organisation_sci` — une étape plus loin que `sci`.
+- `appartement` : jointure simple `appartements.bienId -> bien.id`.
+- `bail` : double jointure `baux.appartementId -> appartements.id ->
+  bien.id`.
+- `etat_des_lieux` : triple jointure `etats_des_lieux.bailId -> baux.id
+  -> appartements.id -> bien.id` — la chaîne la plus profonde de ce
+  sous-commit.
+
+Chaque chemin est implémenté dans une méthode privée dédiée
+(`resoudreEntiteIdsOrganisation`), un `case` par `entiteType` — jamais un
+seul pattern de jointure appliqué à l'aveugle à toutes les lignes.
+
+**Point de conception déterminant : `entiteType` est un filtre optionnel
+réellement utilisé sans valeur.** `GET /documents` l'accepte en
+paramètre de requête optionnel, et `DocumentsListView.tsx` (l'écran
+"Documents" global du desktop) appelle `listDocuments({ avecArchives:
+true })` **sans** `entiteType` — un usage réel qui liste tous les types
+confondus. `findAll()` gère donc deux sous-chemins :
+- `entiteType` fourni : résolution du seul chemin correspondant, puis
+  `entiteId IN (idsValides)`.
+- `entiteType` absent : résolution des 11 chemins séparément, combinés
+  en `OR` — `(entiteType = X AND entiteId IN idsValidesDeX)` pour chaque
+  `X` — jamais une jointure unique qui supposerait à tort un chemin
+  commun à toutes les lignes.
+
+**Échelle des listes `IN (...)` vérifiée avant de généraliser ce
+pattern** (déjà utilisé en Commit 4a pour `scis`/`immeubles_legacy`) :
+comptage réel en base de dev, au plus 4 lignes dans n'importe laquelle
+des 11 tables cibles. À l'échelle réelle de l'application (~20
+logements), quelques dizaines d'UUID par organisation au maximum — un
+`IN (...)` de cette taille est un usage standard de Postgres, aucun
+risque de requête démesurée.
+
+**Tests d'isolation multi-organisation ajoutés** dans un fichier dédié,
+`documents-scoping.integration.spec.ts` (aucun n'existait avant ce
+sous-commit) : **un test par `entiteType`** (11 tests, chacun avec ses
+propres fixtures Org A/Org B — pas un test générique unique qui aurait pu
+masquer un chemin cassé individuellement), plus un test dédié au cas
+`entiteType` absent, combinant 3 des 11 chemins (colonne directe,
+jointure, `organisation_sci`) pour prouver que le `OR` ne fuit ni
+n'omet aucun type.
+
 ### Sécurité PowerSync — deux mécanismes de protection distincts, à ne jamais confondre
 
 Découvert le 2026-08-13 en inspectant directement le fichier SQLite local
