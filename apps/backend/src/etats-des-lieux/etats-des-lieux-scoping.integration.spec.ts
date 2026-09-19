@@ -2,7 +2,27 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import {
+  createDbClient,
+  DEFAULT_DEV_DATABASE_URL,
+  elementsInventaireMeuble,
+  etatDesLieuxCles,
+  etatDesLieuxCompteurs,
+  etatDesLieuxEquipementsDivers,
+  etatDesLieuxInventaire,
+  etatDesLieuxPieceCuisine,
+  etatDesLieuxPieceEntree,
+  etatDesLieuxPieceSejour,
+  etatDesLieuxPiecesAutre,
+  etatDesLieuxPiecesChambre,
+  etatDesLieuxPiecesSalleDeBain,
+  etatDesLieuxPiecesWc,
+  etatsDesLieux,
+  organisations,
+  utilisateurs,
+  type Database
+} from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -39,7 +59,26 @@ interface FixtureOrganisation {
 //   etat-des-lieux-document-docx-scoping.integration.spec.ts, qui
 //   confirme aussi que la génération continue de fonctionner normalement
 //   pour un état des lieux de sa propre organisation.
-describe("EtatsDesLieuxService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// Priorité 4 (chantier scoping multi-organisation, Catégorie C, 2026-09-19) :
+// updateHeader() et les 11 submitX() (pièces, compteurs, clés, équipements
+// divers, inventaire) passaient tous par verifierExiste(), qui ne
+// vérifiait que l'existence de la ligne — jamais l'organisation. Ce sont
+// des documents à valeur légale : une écriture par une autre organisation
+// en corromprait le contenu source, même si la génération docx en sortie
+// reste protégée (B3). Corrigé en fusionnant le contrôle d'appartenance
+// dans verifierExiste() lui-même (même helper privé verifierAppartenance()
+// que findById(), un seul point de vérité) — les 11 submitX() en héritent
+// automatiquement puisqu'ils l'appelaient déjà tous en première ligne ;
+// seul updateHeader() a reçu un appel explicite en plus. Vérifié par grep :
+// verifierExiste() n'a aucun appelant interne en dehors de ces 11
+// méthodes. Couverture ci-dessous : un test paramétré (une entrée par
+// méthode) plutôt que 12 blocs quasi identiques — chaque cas prouve, pour
+// le rejet cross-organisation, qu'aucune ligne n'a été écrite dans la
+// section correspondante (les tables de section sont créées par upsert,
+// donc "aucune ligne" est la preuve la plus forte possible pour un premier
+// appel).
+describe("EtatsDesLieuxService — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -153,38 +192,221 @@ describe("EtatsDesLieuxService.findById — contrôle d'appartenance à l'organi
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand l'état des lieux appartient à l'organisation appelante", async () => {
-    const etatDesLieux = await contexteOrgA(() => etatsDesLieuxService.findById(orgA.etatDesLieuxId));
-    expect(etatDesLieux.id).toBe(orgA.etatDesLieuxId);
+  describe("findById / findByBailId", () => {
+    it("réussit normalement quand l'état des lieux appartient à l'organisation appelante", async () => {
+      const etatDesLieux = await contexteOrgA(() => etatsDesLieuxService.findById(orgA.etatDesLieuxId));
+      expect(etatDesLieux.id).toBe(orgA.etatDesLieuxId);
+    });
+
+    it("404 sur l'etatDesLieuxId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => etatsDesLieuxService.findById(orgA.etatDesLieuxId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un etatDesLieuxId inexistant", async () => {
+      await expect(contexteOrgA(() => etatsDesLieuxService.findById(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const etatDesLieux = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        etatsDesLieuxService.findById(orgA.etatDesLieuxId)
+      );
+      expect(etatDesLieux.id).toBe(orgA.etatDesLieuxId);
+    });
+
+    it("findByBailId() est protégé par ricochet : 404 sur un bailId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => etatsDesLieuxService.findByBailId(orgA.bailId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("findByBailId() réussit normalement quand le bail appartient à l'organisation appelante", async () => {
+      const etatDesLieux = await contexteOrgA(() => etatsDesLieuxService.findByBailId(orgA.bailId));
+      expect(etatDesLieux?.id).toBe(orgA.etatDesLieuxId);
+    });
   });
 
-  it("404 sur l'etatDesLieuxId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => etatsDesLieuxService.findById(orgA.etatDesLieuxId))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+  describe("updateHeader et les 11 submitX — contrôle d'appartenance hérité de verifierExiste()", () => {
+    interface CasSection {
+      nom: string;
+      soumettre: (etatDesLieuxId: string) => Promise<unknown>;
+      // Prouve qu'aucune écriture n'a eu lieu dans la section touchée par
+      // cette méthode après un rejet cross-organisation.
+      verifierAucuneEcriture: (etatDesLieuxId: string) => Promise<void>;
+    }
 
-  it("404 sur un etatDesLieuxId inexistant", async () => {
-    await expect(contexteOrgA(() => etatsDesLieuxService.findById(randomUUID()))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+    function casSections(): CasSection[] {
+      return [
+        {
+          nom: "updateHeader",
+          soumettre: (id) => etatsDesLieuxService.updateHeader(id, { dateEntree: "2026-08-01" }),
+          verifierAucuneEcriture: async (id) => {
+            const [entete] = await db.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id));
+            expect(entete?.dateEntree).toBeNull();
+          }
+        },
+        {
+          nom: "submitPieceEntree",
+          soumettre: (id) => etatsDesLieuxService.submitPieceEntree(id, { mur: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPieceEntree)
+              .where(eq(etatDesLieuxPieceEntree.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceSejour",
+          soumettre: (id) => etatsDesLieuxService.submitPieceSejour(id, { mur: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPieceSejour)
+              .where(eq(etatDesLieuxPieceSejour.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceCuisine",
+          soumettre: (id) => etatsDesLieuxService.submitPieceCuisine(id, { evier: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPieceCuisine)
+              .where(eq(etatDesLieuxPieceCuisine.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceChambre",
+          soumettre: (id) => etatsDesLieuxService.submitPieceChambre(id, { numero: 1, mur: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPiecesChambre)
+              .where(eq(etatDesLieuxPiecesChambre.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceSalleDeBain",
+          soumettre: (id) =>
+            etatsDesLieuxService.submitPieceSalleDeBain(id, { numero: 1, lavabo: { etatEntree: "TB" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPiecesSalleDeBain)
+              .where(eq(etatDesLieuxPiecesSalleDeBain.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceWc",
+          soumettre: (id) => etatsDesLieuxService.submitPieceWc(id, { numero: 1, wc: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPiecesWc)
+              .where(eq(etatDesLieuxPiecesWc.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitPieceAutre",
+          soumettre: (id) =>
+            etatsDesLieuxService.submitPieceAutre(id, { numero: 1, libelle: "Buanderie", sol: { etatEntree: "B" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxPiecesAutre)
+              .where(eq(etatDesLieuxPiecesAutre.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitCompteurs",
+          soumettre: (id) =>
+            etatsDesLieuxService.submitCompteurs(id, { electricite: { numeroCompteurEntree: "ELEC123" } }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxCompteurs)
+              .where(eq(etatDesLieuxCompteurs.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitCles",
+          soumettre: (id) =>
+            etatsDesLieuxService.submitCles(id, { lignes: [{ typeCle: "immeuble", nombreEntree: 2 }] }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db.select().from(etatDesLieuxCles).where(eq(etatDesLieuxCles.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitEquipementsDivers",
+          soumettre: (id) =>
+            etatsDesLieuxService.submitEquipementsDivers(id, {
+              lignes: [{ libelle: "Store banne", etatEntree: "bon", nombreEntree: 1 }]
+            }),
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxEquipementsDivers)
+              .where(eq(etatDesLieuxEquipementsDivers.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        },
+        {
+          nom: "submitInventaire",
+          soumettre: async (id) => {
+            const [element] = await db.select().from(elementsInventaireMeuble).limit(1);
+            if (!element) {
+              throw new Error("Catalogue inventaire meublé vide — le seed a-t-il tourné ?");
+            }
+            return etatsDesLieuxService.submitInventaire(id, {
+              lignes: [{ elementId: element.id, nombreEntree: 1, etatEntree: "bon" }]
+            });
+          },
+          verifierAucuneEcriture: async (id) => {
+            const lignes = await db
+              .select()
+              .from(etatDesLieuxInventaire)
+              .where(eq(etatDesLieuxInventaire.etatDesLieuxId, id));
+            expect(lignes).toHaveLength(0);
+          }
+        }
+      ];
+    }
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const etatDesLieux = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      etatsDesLieuxService.findById(orgA.etatDesLieuxId)
-    );
-    expect(etatDesLieux.id).toBe(orgA.etatDesLieuxId);
-  });
+    for (const cas of casSections()) {
+      describe(cas.nom, () => {
+        it("réussit normalement quand l'état des lieux appartient à l'organisation appelante", async () => {
+          await expect(contexteOrgA(() => cas.soumettre(orgA.etatDesLieuxId))).resolves.toBeDefined();
+        });
 
-  it("findByBailId() est protégé par ricochet : 404 sur un bailId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => etatsDesLieuxService.findByBailId(orgA.bailId))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+        it("404 sur l'etatDesLieuxId d'une autre organisation, sans jamais écrire la section correspondante", async () => {
+          await expect(contexteOrgB(() => cas.soumettre(orgA.etatDesLieuxId))).rejects.toThrow(NotFoundException);
+          await cas.verifierAucuneEcriture(orgA.etatDesLieuxId);
+        });
 
-  it("findByBailId() réussit normalement quand le bail appartient à l'organisation appelante", async () => {
-    const etatDesLieux = await contexteOrgA(() => etatsDesLieuxService.findByBailId(orgA.bailId));
-    expect(etatDesLieux?.id).toBe(orgA.etatDesLieuxId);
+        it("404 sur un etatDesLieuxId inexistant", async () => {
+          await expect(contexteOrgA(() => cas.soumettre(randomUUID()))).rejects.toThrow(NotFoundException);
+        });
+
+        it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+          await expect(
+            requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+              cas.soumettre(orgA.etatDesLieuxId)
+            )
+          ).resolves.toBeDefined();
+        });
+      });
+    }
   });
 });

@@ -264,36 +264,22 @@ export class EtatsDesLieuxService {
   // ArchiveToggle/ArchiveBadge partagé (apps/desktop) puisse les
   // réafficher, au lieu de les rendre définitivement invisibles.
   // Contrôle d'appartenance (Sous-commit 5c, chantier scoping
-  // multi-organisation, 2026-09-18) : etatsDesLieux n'a pas de colonne
-  // organisationId directe, le contrôle passe par une triple jointure
-  // baux -> appartements -> bien (via bailId), même chemin que findAll()
-  // des autres services de cette profondeur. Même message que "n'existe
-  // pas", aucune différence observable. Skip si organisationId absent
-  // (hors contexte HTTP). Protège aussi findByBailId() ci-dessous (délègue
-  // à this.findById()) et, par ricochet, EtatDesLieuxDocumentDocxService
-  // .genererDocumentEtatDesLieuxDocx() qui appelle cette méthode en
-  // interne (B3, audit du Commit 5 — voir etat-des-lieux-document-docx
-  // -scoping.integration.spec.ts) : une génération sur un état des lieux
-  // de sa propre organisation continue de fonctionner normalement.
+  // multi-organisation, 2026-09-18 ; extrait dans verifierAppartenance() en
+  // Priorité 4, 2026-09-19, partagé avec verifierExiste() — voir sa doc
+  // ci-dessous pour le détail du chemin de jointure) : délègue désormais à
+  // ce helper plutôt que de dupliquer la vérification d'organisation. Protège aussi
+  // findByBailId() ci-dessous (délègue à this.findById()) et, par
+  // ricochet, EtatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx()
+  // qui appelle cette méthode en interne (B3, audit du Commit 5 — voir
+  // etat-des-lieux-document-docx-scoping.integration.spec.ts) : une
+  // génération sur un état des lieux de sa propre organisation continue de
+  // fonctionner normalement.
   async findById(id: string, avecArchives = false) {
     const [entete] = await this.db.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id)).limit(1);
     if (!entete) {
       throw new NotFoundException("État des lieux introuvable");
     }
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const [ligne] = await this.db
-        .select({ id: etatsDesLieux.id })
-        .from(etatsDesLieux)
-        .innerJoin(baux, eq(baux.id, etatsDesLieux.bailId))
-        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
-        .innerJoin(bien, eq(bien.id, appartements.bienId))
-        .where(and(eq(etatsDesLieux.id, id), eq(bien.organisationId, organisationId)))
-        .limit(1);
-      if (!ligne) {
-        throw new NotFoundException("État des lieux introuvable");
-      }
-    }
+    await this.verifierAppartenance(id);
     const filtreCles = avecArchives
       ? eq(etatDesLieuxCles.etatDesLieuxId, id)
       : and(eq(etatDesLieuxCles.etatDesLieuxId, id), isNull(etatDesLieuxCles.archivedAt));
@@ -379,6 +365,7 @@ export class EtatsDesLieuxService {
   }
 
   async updateHeader(id: string, dto: UpdateEtatDesLieuxDto) {
+    await this.verifierExiste(id);
     const [entete] = await mettreAJourAvecAudit(
       this.db,
       etatsDesLieux,
@@ -873,6 +860,18 @@ export class EtatsDesLieuxService {
     );
   }
 
+  // Contrôle d'appartenance (Priorité 4, chantier scoping multi-organisation,
+  // 2026-09-19) : verifierExiste() ne vérifiait jusqu'ici que l'existence de
+  // la ligne, jamais l'appartenance à l'organisation — appelée en première
+  // ligne par updateHeader() et les 11 submitX() (pièces, compteurs, clés,
+  // équipements divers, inventaire). Ce sont des documents à valeur légale
+  // dont le contenu source serait corrompu par une écriture d'une autre
+  // organisation, même si la génération docx en sortie reste protégée (B3).
+  // Délègue la vérification d'organisation à verifierAppartenance()
+  // ci-dessous, le même helper que findById() (Sous-commit 5c) — un seul
+  // point de vérité, même message "n'existe pas" dans les deux cas, aucune
+  // différence observable. Seuls les 11 submitX() appellent verifierExiste()
+  // en interne (vérifié par grep) ; aucun autre appelant.
   private async verifierExiste(etatDesLieuxId: string): Promise<void> {
     const [entete] = await this.db
       .select({ id: etatsDesLieux.id })
@@ -880,6 +879,32 @@ export class EtatsDesLieuxService {
       .where(eq(etatsDesLieux.id, etatDesLieuxId))
       .limit(1);
     if (!entete) {
+      throw new NotFoundException("État des lieux introuvable");
+    }
+    await this.verifierAppartenance(etatDesLieuxId);
+  }
+
+  // Extrait de findById() (Sous-commit 5c) : etatsDesLieux n'a pas de
+  // colonne organisationId directe, le contrôle passe par une triple
+  // jointure baux -> appartements -> bien (via bailId), même chemin que
+  // findAll() des autres services de cette profondeur. Skip si
+  // organisationId absent (hors contexte HTTP, comportement préexistant
+  // préservé). Suppose que l'existence de la ligne a déjà été vérifiée par
+  // l'appelant.
+  private async verifierAppartenance(etatDesLieuxId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: etatsDesLieux.id })
+      .from(etatsDesLieux)
+      .innerJoin(baux, eq(baux.id, etatsDesLieux.bailId))
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(etatsDesLieux.id, etatDesLieuxId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
       throw new NotFoundException("État des lieux introuvable");
     }
   }
