@@ -64,17 +64,19 @@ export class LocatairesService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreLocataireAvecAppartenance() (Priorité 3a, 2026-09-19), partagée
+  // avec update()/archive() ci-dessous.
   async findById(id: string) {
-    const [locataire] = await this.db.select().from(locataires).where(eq(locataires.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!locataire || (organisationId && locataire.organisationId !== organisationId)) {
-      throw new NotFoundException("Locataire introuvable");
-    }
+    const locataire = await this.resoudreLocataireAvecAppartenance(id);
     return this.versDto(locataire);
   }
 
   async update(id: string, dto: UpdateLocataireDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreLocataireAvecAppartenance(id);
+
     const [locataire] = await mettreAJourAvecAudit(
       this.db,
       locataires,
@@ -89,6 +91,10 @@ export class LocatairesService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreLocataireAvecAppartenance(id);
+
     const [locataire] = await mettreAJourAvecAudit(
       this.db,
       locataires,
@@ -100,6 +106,19 @@ export class LocatairesService {
       throw new NotFoundException("Locataire introuvable");
     }
     return this.versDto(locataire as LocataireRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreLocataireAvecAppartenance(id: string): Promise<LocataireRow> {
+    const [locataire] = await this.db.select().from(locataires).where(eq(locataires.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!locataire || (organisationId && locataire.organisationId !== organisationId)) {
+      throw new NotFoundException("Locataire introuvable");
+    }
+    return locataire;
   }
 
   // anonymise_le (champ interne au mécanisme d'anonymisation RGPD, pas

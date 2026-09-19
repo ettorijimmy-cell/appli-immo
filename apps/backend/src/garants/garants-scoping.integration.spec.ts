@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, garants, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -32,7 +33,12 @@ interface FixtureOrganisation {
 // contrôle par simple comparaison, sans jointure à la lecture. Aucun autre
 // appelant interne (vérifié par grep — seul GarantsController.findOne
 // l'appelle).
-describe("GarantsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreGarantAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul GarantsController).
+describe("GarantsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -143,23 +149,77 @@ describe("GarantsService.findById — contrôle d'appartenance à l'organisation
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {
-    const garant = await contexteOrgA(() => garantsService.findById(orgA.garantId));
-    expect(garant.id).toBe(orgA.garantId);
+  describe("findById", () => {
+    it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {
+      const garant = await contexteOrgA(() => garantsService.findById(orgA.garantId));
+      expect(garant.id).toBe(orgA.garantId);
+    });
+
+    it("404 sur le garantId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => garantsService.findById(orgA.garantId))).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un garantId inexistant", async () => {
+      await expect(contexteOrgA(() => garantsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const garant = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        garantsService.findById(orgA.garantId)
+      );
+      expect(garant.id).toBe(orgA.garantId);
+    });
   });
 
-  it("404 sur le garantId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => garantsService.findById(orgA.garantId))).rejects.toThrow(NotFoundException);
+  describe("update", () => {
+    it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {
+      const garant = await contexteOrgA(() => garantsService.update(orgA.garantId, { telephone: "0611111111" }));
+      expect(garant.telephone).toBe("0611111111");
+    });
+
+    it("404 sur le garantId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => garantsService.update(orgA.garantId, { telephone: "0611111111" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(garants).where(eq(garants.id, orgA.garantId));
+      expect(inchange?.telephone).toBeNull();
+    });
+
+    it("404 sur un garantId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => garantsService.update(randomUUID(), { telephone: "0611111111" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const garant = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        garantsService.update(orgA.garantId, { telephone: "0611111111" })
+      );
+      expect(garant.telephone).toBe("0611111111");
+    });
   });
 
-  it("404 sur un garantId inexistant", async () => {
-    await expect(contexteOrgA(() => garantsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => garantsService.archive(orgA.garantId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const garant = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      garantsService.findById(orgA.garantId)
-    );
-    expect(garant.id).toBe(orgA.garantId);
+    it("404 sur le garantId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => garantsService.archive(orgA.garantId))).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(garants).where(eq(garants.id, orgA.garantId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un garantId inexistant", async () => {
+      await expect(contexteOrgA(() => garantsService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        garantsService.archive(orgA.garantId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

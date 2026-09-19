@@ -66,13 +66,11 @@ export class SinistresService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreSinistreAvecAppartenance() (Priorité 3a, 2026-09-19), partagée
+  // avec update()/archive() ci-dessous.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(sinistre).where(eq(sinistre.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Sinistre introuvable");
-    }
+    const ligne = await this.resoudreSinistreAvecAppartenance(id);
     return this.versDto(ligne);
   }
 
@@ -82,10 +80,9 @@ export class SinistresService {
   // calculerAlerteSinistreStagnation, une écriture non conditionnelle la
   // ferait dériver de son sens ("depuis quand ce statut n'a pas bougé").
   async update(id: string, dto: UpdateSinistreDto) {
-    const [actuel] = await this.db.select().from(sinistre).where(eq(sinistre.id, id)).limit(1);
-    if (!actuel) {
-      throw new NotFoundException("Sinistre introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3a,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
+    const actuel = await this.resoudreSinistreAvecAppartenance(id);
 
     const statutChange = dto.statut !== undefined && dto.statut !== actuel.statut;
 
@@ -103,6 +100,10 @@ export class SinistresService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreSinistreAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       sinistre,
@@ -114,6 +115,19 @@ export class SinistresService {
       throw new NotFoundException("Sinistre introuvable");
     }
     return this.versDto(ligne as SinistreRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreSinistreAvecAppartenance(id: string): Promise<SinistreRow> {
+    const [ligne] = await this.db.select().from(sinistre).where(eq(sinistre.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Sinistre introuvable");
+    }
+    return ligne;
   }
 
   private versDto(ligne: SinistreRow) {

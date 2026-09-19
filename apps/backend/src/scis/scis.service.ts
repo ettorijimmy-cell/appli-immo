@@ -81,8 +81,55 @@ export class ScisService {
   // par une requête organisation_sci dédiée — même chemin que
   // ComptesBancairesSciService.verifierAppartenanceSci (commit B6). Même
   // message que "n'existe pas", aucune différence observable. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreSciAvecAppartenance() (Priorité 3a, 2026-09-19), partagée avec
+  // update()/archive() ci-dessous.
   async findById(id: string) {
+    const sci = await this.resoudreSciAvecAppartenance(id);
+    return this.versDto(sci);
+  }
+
+  async update(id: string, dto: UpdateSciDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreSciAvecAppartenance(id);
+
+    const [sci] = await mettreAJourAvecAudit(
+      this.db,
+      scis,
+      id,
+      { ...dto },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!sci) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    return this.versDto(sci as SciRow);
+  }
+
+  async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreSciAvecAppartenance(id);
+
+    const [sci] = await mettreAJourAvecAudit(
+      this.db,
+      scis,
+      id,
+      { statut: "archive", archivedAt: new Date() },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!sci) {
+      throw new NotFoundException("SCI introuvable");
+    }
+    return this.versDto(sci as SciRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5b pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreSciAvecAppartenance(id: string): Promise<SciRow> {
     const [sci] = await this.db.select().from(scis).where(eq(scis.id, id)).limit(1);
     if (!sci) {
       throw new NotFoundException("SCI introuvable");
@@ -98,35 +145,7 @@ export class ScisService {
         throw new NotFoundException("SCI introuvable");
       }
     }
-    return this.versDto(sci);
-  }
-
-  async update(id: string, dto: UpdateSciDto) {
-    const [sci] = await mettreAJourAvecAudit(
-      this.db,
-      scis,
-      id,
-      { ...dto },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
-    }
-    return this.versDto(sci as SciRow);
-  }
-
-  async archive(id: string) {
-    const [sci] = await mettreAJourAvecAudit(
-      this.db,
-      scis,
-      id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
-    }
-    return this.versDto(sci as SciRow);
+    return sci;
   }
 
   private versDto(sci: SciRow) {

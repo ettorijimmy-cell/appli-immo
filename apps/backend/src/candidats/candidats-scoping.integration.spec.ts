@@ -41,7 +41,9 @@ interface FixtureOrganisation {
 // (Catégorie C, audit séparé). Corrigé en Priorité 2 (2026-09-19) via un
 // helper privé partagé, resoudreCandidatAvecAppartenance() : voir le
 // describe dédié plus bas dans ce fichier pour sa couverture cross-org.
-describe("CandidatsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+// update()/archive() avaient la même lacune — corrigées en Priorité 3a
+// (2026-09-19), même helper.
+describe("CandidatsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -122,26 +124,82 @@ describe("CandidatsService.findById — contrôle d'appartenance à l'organisati
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le candidat appartient à l'organisation appelante", async () => {
-    const candidat = await contexteOrgA(() => candidatsService.findById(orgA.candidatId));
-    expect(candidat.id).toBe(orgA.candidatId);
+  describe("findById", () => {
+    it("réussit normalement quand le candidat appartient à l'organisation appelante", async () => {
+      const candidatTrouve = await contexteOrgA(() => candidatsService.findById(orgA.candidatId));
+      expect(candidatTrouve.id).toBe(orgA.candidatId);
+    });
+
+    it("404 sur le candidatId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => candidatsService.findById(orgA.candidatId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un candidatId inexistant", async () => {
+      await expect(contexteOrgA(() => candidatsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const candidatTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        candidatsService.findById(orgA.candidatId)
+      );
+      expect(candidatTrouve.id).toBe(orgA.candidatId);
+    });
   });
 
-  it("404 sur le candidatId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => candidatsService.findById(orgA.candidatId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand le candidat appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() => candidatsService.update(orgA.candidatId, { notes: "modifié" }));
+      expect(misAJour.notes).toBe("modifié");
+    });
+
+    it("404 sur le candidatId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => candidatsService.update(orgA.candidatId, { notes: "modifié" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(candidat).where(eq(candidat.id, orgA.candidatId));
+      expect(inchange?.notes).toBeNull();
+    });
+
+    it("404 sur un candidatId inexistant", async () => {
+      await expect(contexteOrgA(() => candidatsService.update(randomUUID(), { notes: "modifié" }))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        candidatsService.update(orgA.candidatId, { notes: "modifié" })
+      );
+      expect(misAJour.notes).toBe("modifié");
+    });
   });
 
-  it("404 sur un candidatId inexistant", async () => {
-    await expect(contexteOrgA(() => candidatsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le candidat appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => candidatsService.archive(orgA.candidatId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const candidatTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      candidatsService.findById(orgA.candidatId)
-    );
-    expect(candidatTrouve.id).toBe(orgA.candidatId);
+    it("404 sur le candidatId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => candidatsService.archive(orgA.candidatId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(candidat).where(eq(candidat.id, orgA.candidatId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un candidatId inexistant", async () => {
+      await expect(contexteOrgA(() => candidatsService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        candidatsService.archive(orgA.candidatId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });
 

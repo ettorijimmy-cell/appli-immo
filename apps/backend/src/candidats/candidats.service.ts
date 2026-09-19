@@ -75,6 +75,10 @@ export class CandidatsService {
   }
 
   async update(id: string, dto: UpdateCandidatDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreCandidatAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       candidat,
@@ -89,6 +93,10 @@ export class CandidatsService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreCandidatAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       candidat,

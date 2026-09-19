@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, scis, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
@@ -26,7 +27,12 @@ interface FixtureOrganisation {
 // autre appelant interne (vérifié par grep — seul ScisController.findOne
 // l'appelle ; DocumentsService résout sci/organisation_sci par ses
 // propres requêtes, sans jamais appeler ScisService.findById()).
-describe("ScisService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreSciAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul ScisController).
+describe("ScisService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -105,23 +111,78 @@ describe("ScisService.findById — contrôle d'appartenance à l'organisation (i
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand la SCI appartient à l'organisation appelante", async () => {
-    const sci = await contexteOrgA(() => scisService.findById(orgA.sciId));
-    expect(sci.id).toBe(orgA.sciId);
+  describe("findById", () => {
+    it("réussit normalement quand la SCI appartient à l'organisation appelante", async () => {
+      const sciTrouvee = await contexteOrgA(() => scisService.findById(orgA.sciId));
+      expect(sciTrouvee.id).toBe(orgA.sciId);
+    });
+
+    it("404 sur le sciId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => scisService.findById(orgA.sciId))).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un sciId inexistant", async () => {
+      await expect(contexteOrgA(() => scisService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const sciTrouvee = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        scisService.findById(orgA.sciId)
+      );
+      expect(sciTrouvee.id).toBe(orgA.sciId);
+    });
   });
 
-  it("404 sur le sciId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => scisService.findById(orgA.sciId))).rejects.toThrow(NotFoundException);
+  describe("update", () => {
+    it("réussit normalement quand la SCI appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() => scisService.update(orgA.sciId, { ville: "Lyon" }));
+      expect(misAJour.ville).toBe("Lyon");
+    });
+
+    it("404 sur le sciId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => scisService.update(orgA.sciId, { ville: "Lyon" }))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchangee] = await db.select().from(scis).where(eq(scis.id, orgA.sciId));
+      expect(inchangee?.ville).toBe("Paris");
+    });
+
+    it("404 sur un sciId inexistant", async () => {
+      await expect(contexteOrgA(() => scisService.update(randomUUID(), { ville: "Lyon" }))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        scisService.update(orgA.sciId, { ville: "Lyon" })
+      );
+      expect(misAJour.ville).toBe("Lyon");
+    });
   });
 
-  it("404 sur un sciId inexistant", async () => {
-    await expect(contexteOrgA(() => scisService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand la SCI appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => scisService.archive(orgA.sciId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const sci = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      scisService.findById(orgA.sciId)
-    );
-    expect(sci.id).toBe(orgA.sciId);
+    it("404 sur le sciId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => scisService.archive(orgA.sciId))).rejects.toThrow(NotFoundException);
+      const [inchangee] = await db.select().from(scis).where(eq(scis.id, orgA.sciId));
+      expect(inchangee?.archivedAt).toBeNull();
+      expect(inchangee?.statut).not.toBe("archive");
+    });
+
+    it("404 sur un sciId inexistant", async () => {
+      await expect(contexteOrgA(() => scisService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        scisService.archive(orgA.sciId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

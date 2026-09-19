@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { bien, createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
@@ -24,7 +25,14 @@ interface FixtureOrganisation {
 // l'organisation. organisationId est une colonne directe de bien : le
 // contrôle est une simple comparaison après lecture. Aucun autre appelant
 // interne (vérifié par grep — seul BienController.findOne l'appelle).
-describe("BienService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() refaisaient chacune leur propre écriture via
+// mettreAJourAvecAudit sans jamais vérifier l'organisation — non protégées
+// par ce sous-commit (Catégorie C, audit séparé). Corrigées en Priorité 3a
+// (2026-09-19) via resoudreBienAvecAppartenance(), le même helper privé
+// que findById() ci-dessus (aucun appelant interne pour ces deux méthodes,
+// seul BienController).
+describe("BienService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -111,23 +119,78 @@ describe("BienService.findById — contrôle d'appartenance à l'organisation (i
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
-    const bien = await contexteOrgA(() => bienService.findById(orgA.bienId));
-    expect(bien.id).toBe(orgA.bienId);
+  describe("findById", () => {
+    it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
+      const bienTrouve = await contexteOrgA(() => bienService.findById(orgA.bienId));
+      expect(bienTrouve.id).toBe(orgA.bienId);
+    });
+
+    it("404 sur le bienId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => bienService.findById(orgA.bienId))).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un bienId inexistant", async () => {
+      await expect(contexteOrgA(() => bienService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const bienTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bienService.findById(orgA.bienId)
+      );
+      expect(bienTrouve.id).toBe(orgA.bienId);
+    });
   });
 
-  it("404 sur le bienId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => bienService.findById(orgA.bienId))).rejects.toThrow(NotFoundException);
+  describe("update", () => {
+    it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
+      const bienMisAJour = await contexteOrgA(() => bienService.update(orgA.bienId, { ville: "Lyon" }));
+      expect(bienMisAJour.ville).toBe("Lyon");
+    });
+
+    it("404 sur le bienId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => bienService.update(orgA.bienId, { ville: "Lyon" }))).rejects.toThrow(
+        NotFoundException
+      );
+      const [bienInchange] = await db.select().from(bien).where(eq(bien.id, orgA.bienId));
+      expect(bienInchange?.ville).toBe("Paris");
+    });
+
+    it("404 sur un bienId inexistant", async () => {
+      await expect(contexteOrgA(() => bienService.update(randomUUID(), { ville: "Lyon" }))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const bienMisAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bienService.update(orgA.bienId, { ville: "Lyon" })
+      );
+      expect(bienMisAJour.ville).toBe("Lyon");
+    });
   });
 
-  it("404 sur un bienId inexistant", async () => {
-    await expect(contexteOrgA(() => bienService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
+      const bienArchive = await contexteOrgA(() => bienService.archive(orgA.bienId));
+      expect(bienArchive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const bien = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      bienService.findById(orgA.bienId)
-    );
-    expect(bien.id).toBe(orgA.bienId);
+    it("404 sur le bienId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => bienService.archive(orgA.bienId))).rejects.toThrow(NotFoundException);
+      const [bienInchange] = await db.select().from(bien).where(eq(bien.id, orgA.bienId));
+      expect(bienInchange?.archivedAt).toBeNull();
+      expect(bienInchange?.statut).not.toBe("archive");
+    });
+
+    it("404 sur un bienId inexistant", async () => {
+      await expect(contexteOrgA(() => bienService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const bienArchive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bienService.archive(orgA.bienId)
+      );
+      expect(bienArchive.archivedAt).not.toBeNull();
+    });
   });
 });

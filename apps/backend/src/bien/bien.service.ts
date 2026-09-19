@@ -134,19 +134,12 @@ export class BienService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreBienAvecAppartenance() (Priorité 3a, 2026-09-19), partagée avec
+  // update()/archive() ci-dessous.
   async findById(id: string) {
-    const [row] = await this.db
-      .select({ bien, detail: bienImmeubleDetail })
-      .from(bien)
-      .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id))
-      .where(eq(bien.id, id))
-      .limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!row || (organisationId && row.bien.organisationId !== organisationId)) {
-      throw new NotFoundException("Bien introuvable");
-    }
-    return this.versDto(row.bien, row.detail);
+    const { bienRow, detailRow } = await this.resoudreBienAvecAppartenance(id);
+    return this.versDto(bienRow, detailRow);
   }
 
   /**
@@ -179,6 +172,10 @@ export class BienService {
   }
 
   async update(id: string, dto: UpdateBienDto) {
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3a,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreBienAvecAppartenance(id);
+
     const { typeHabitat, regimeJuridique, syndic, nbLots, chargesCoproAnnuelles, ...bienChamps } = dto;
 
     // typeHabitat/regimeJuridique restent immuables pour un bien de type
@@ -238,6 +235,10 @@ export class BienService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreBienAvecAppartenance(id);
+
     const [bienArchive] = await mettreAJourAvecAudit(
       this.db,
       bien,
@@ -254,6 +255,24 @@ export class BienService {
       .where(eq(bienImmeubleDetail.bienId, id))
       .limit(1);
     return this.versDto(bienArchive as BienRow, detail ?? null);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreBienAvecAppartenance(id: string): Promise<{ bienRow: BienRow; detailRow: BienImmeubleDetailRow | null }> {
+    const [row] = await this.db
+      .select({ bien, detail: bienImmeubleDetail })
+      .from(bien)
+      .leftJoin(bienImmeubleDetail, eq(bienImmeubleDetail.bienId, bien.id))
+      .where(eq(bien.id, id))
+      .limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!row || (organisationId && row.bien.organisationId !== organisationId)) {
+      throw new NotFoundException("Bien introuvable");
+    }
+    return { bienRow: row.bien, detailRow: row.detail };
   }
 
   private versDto(bienRow: BienRow, detail: BienImmeubleDetailRow | null) {

@@ -386,12 +386,13 @@ export class TachesService {
 
   // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(),
   // étendu en Priorité 1/Catégorie C à appliquerRevision()/
-  // envoyerNotification() — 2026-09-18) : même message que "n'existe
-  // pas", aucune différence observable. Skip si organisationId absent
-  // (hors contexte HTTP). Renvoie la ligne brute (pas le DTO) : les deux
-  // appelants ci-dessus ont besoin des colonnes internes (metadata,
-  // bailId, sinistreId, paiementId, locataireId), pas de la projection
-  // publique.
+  // envoyerNotification() — 2026-09-18 ; puis en Priorité 3a à
+  // changerStatut(), donc marquerFait()/marquerAnnulee() — 2026-09-19) :
+  // même message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP). Renvoie la ligne brute (pas
+  // le DTO) : les appelants ci-dessus ont besoin des colonnes internes
+  // (metadata, bailId, sinistreId, paiementId, locataireId), pas de la
+  // projection publique.
   private async resoudreTacheAvecAppartenance(id: string): Promise<TacheRow> {
     const [ligne] = await this.db.select().from(tache).where(eq(tache.id, id)).limit(1);
     const organisationId = this.requestContext.getOrganisationId();
@@ -402,6 +403,11 @@ export class TachesService {
   }
 
   private async changerStatut(id: string, statut: "fait" | "annulee", dateCompletion: Date | null) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : partagé avec
+    // findById()/appliquerRevision()/envoyerNotification() ci-dessus.
+    await this.resoudreTacheAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       tache,

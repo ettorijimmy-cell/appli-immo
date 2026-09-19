@@ -69,6 +69,14 @@ export class ReglesCategorisationService {
   // à cette étape : modifier une règle revient à l'archiver et en créer
   // une nouvelle, plus simple pour un aussi petit volume de données.
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : ce service n'a
+    // jamais eu de findById() (aucun endpoint de lecture à l'unité), donc
+    // pas de helper préexistant à réutiliser contrairement aux autres
+    // services de cette priorité — extrait ici directement, même principe
+    // que Catégorie A (colonne organisationId directe).
+    await this.resoudreRegleAvecAppartenance(id);
+
     const [regle] = await mettreAJourAvecAudit(
       this.db,
       regleCategorisation,
@@ -80,6 +88,15 @@ export class ReglesCategorisationService {
       throw new NotFoundException("Règle de catégorisation introuvable");
     }
     return this.versDto(regle as RegleCategorisationRow);
+  }
+
+  private async resoudreRegleAvecAppartenance(id: string): Promise<RegleCategorisationRow> {
+    const [ligne] = await this.db.select().from(regleCategorisation).where(eq(regleCategorisation.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Règle de catégorisation introuvable");
+    }
+    return ligne;
   }
 
   private versDto(ligne: RegleCategorisationRow) {

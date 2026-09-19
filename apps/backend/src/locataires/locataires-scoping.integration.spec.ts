@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, locataires, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
@@ -24,7 +25,12 @@ interface FixtureOrganisation {
 // à l'organisation. organisationId est une colonne directe : contrôle par
 // simple comparaison. Aucun autre appelant interne (vérifié par grep —
 // seul LocatairesController.findOne l'appelle).
-describe("LocatairesService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreLocataireAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul LocatairesController).
+describe("LocatairesService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -104,25 +110,82 @@ describe("LocatairesService.findById — contrôle d'appartenance à l'organisat
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le locataire appartient à l'organisation appelante", async () => {
-    const locataire = await contexteOrgA(() => locatairesService.findById(orgA.locataireId));
-    expect(locataire.id).toBe(orgA.locataireId);
+  describe("findById", () => {
+    it("réussit normalement quand le locataire appartient à l'organisation appelante", async () => {
+      const locataire = await contexteOrgA(() => locatairesService.findById(orgA.locataireId));
+      expect(locataire.id).toBe(orgA.locataireId);
+    });
+
+    it("404 sur le locataireId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => locatairesService.findById(orgA.locataireId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un locataireId inexistant", async () => {
+      await expect(contexteOrgA(() => locatairesService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const locataire = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        locatairesService.findById(orgA.locataireId)
+      );
+      expect(locataire.id).toBe(orgA.locataireId);
+    });
   });
 
-  it("404 sur le locataireId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => locatairesService.findById(orgA.locataireId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand le locataire appartient à l'organisation appelante", async () => {
+      const locataire = await contexteOrgA(() => locatairesService.update(orgA.locataireId, { ville: "Lyon" }));
+      expect(locataire.ville).toBe("Lyon");
+    });
+
+    it("404 sur le locataireId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => locatairesService.update(orgA.locataireId, { ville: "Lyon" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(locataires).where(eq(locataires.id, orgA.locataireId));
+      expect(inchange?.ville).toBeNull();
+    });
+
+    it("404 sur un locataireId inexistant", async () => {
+      await expect(contexteOrgA(() => locatairesService.update(randomUUID(), { ville: "Lyon" }))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const locataire = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        locatairesService.update(orgA.locataireId, { ville: "Lyon" })
+      );
+      expect(locataire.ville).toBe("Lyon");
+    });
   });
 
-  it("404 sur un locataireId inexistant", async () => {
-    await expect(contexteOrgA(() => locatairesService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le locataire appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => locatairesService.archive(orgA.locataireId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const locataire = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      locatairesService.findById(orgA.locataireId)
-    );
-    expect(locataire.id).toBe(orgA.locataireId);
+    it("404 sur le locataireId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => locatairesService.archive(orgA.locataireId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(locataires).where(eq(locataires.id, orgA.locataireId));
+      expect(inchange?.archivedAt).toBeNull();
+      expect(inchange?.statut).not.toBe("archive");
+    });
+
+    it("404 sur un locataireId inexistant", async () => {
+      await expect(contexteOrgA(() => locatairesService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        locatairesService.archive(orgA.locataireId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

@@ -79,17 +79,19 @@ export class ContactsService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreContactAvecAppartenance() (Priorité 3a, 2026-09-19), partagée
+  // avec update()/archive() ci-dessous.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(contact).where(eq(contact.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Contact introuvable");
-    }
+    const ligne = await this.resoudreContactAvecAppartenance(id);
     return this.versDto(ligne);
   }
 
   async update(id: string, dto: UpdateContactDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreContactAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       contact,
@@ -104,6 +106,10 @@ export class ContactsService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreContactAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       contact,
@@ -187,6 +193,19 @@ export class ContactsService {
       });
     }
     return resultat;
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreContactAvecAppartenance(id: string): Promise<ContactRow> {
+    const [ligne] = await this.db.select().from(contact).where(eq(contact.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Contact introuvable");
+    }
+    return ligne;
   }
 
   private versDto(ligne: ContactRow) {

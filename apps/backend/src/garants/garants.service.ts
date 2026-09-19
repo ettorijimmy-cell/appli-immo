@@ -79,17 +79,19 @@ export class GarantsService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreGarantAvecAppartenance() (Priorité 3a, 2026-09-19), partagée
+  // avec update()/archive() ci-dessous.
   async findById(id: string) {
-    const [garant] = await this.db.select().from(garants).where(eq(garants.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!garant || (organisationId && garant.organisationId !== organisationId)) {
-      throw new NotFoundException("Garant introuvable");
-    }
+    const garant = await this.resoudreGarantAvecAppartenance(id);
     return this.versDto(garant);
   }
 
   async update(id: string, dto: UpdateGarantDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreGarantAvecAppartenance(id);
+
     const [garant] = await mettreAJourAvecAudit(
       this.db,
       garants,
@@ -104,6 +106,10 @@ export class GarantsService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreGarantAvecAppartenance(id);
+
     const [garant] = await mettreAJourAvecAudit(
       this.db,
       garants,
@@ -115,6 +121,19 @@ export class GarantsService {
       throw new NotFoundException("Garant introuvable");
     }
     return this.versDto(garant as GarantRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreGarantAvecAppartenance(id: string): Promise<GarantRow> {
+    const [garant] = await this.db.select().from(garants).where(eq(garants.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!garant || (organisationId && garant.organisationId !== organisationId)) {
+      throw new NotFoundException("Garant introuvable");
+    }
+    return garant;
   }
 
   // profession/revenus (données financières précises,

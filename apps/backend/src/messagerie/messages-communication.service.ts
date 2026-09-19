@@ -75,13 +75,11 @@ export class MessagesCommunicationService {
   // organisationId absent (hors contexte HTTP). Appelé en interne par
   // composer() ci-dessous (this.findById(messageId)) — sans impact : le
   // message vient d'être créé avec l'organisationId de l'utilisateur
-  // courant, donc toujours dans l'organisation de l'appelant.
+  // courant, donc toujours dans l'organisation de l'appelant. Réutilise
+  // désormais resoudreMessageAvecAppartenance() (Priorité 3a, 2026-09-19),
+  // partagée avec archiver()/desarchiver() ci-dessous.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(messageCommunication).where(eq(messageCommunication.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Message introuvable");
-    }
+    const ligne = await this.resoudreMessageAvecAppartenance(id);
     const piecesJointes = await this.db
       .select()
       .from(pieceJointeMessage)
@@ -126,6 +124,10 @@ export class MessagesCommunicationService {
   // email reste intact sur la boîte Gmail (décision actée avec Jimmy,
   // suppression réelle côté Gmail explicitement hors périmètre).
   async archiver(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreMessageAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       messageCommunication,
@@ -144,6 +146,10 @@ export class MessagesCommunicationService {
   // locataire/...) n'en propose. Retire archivedAt, le message redevient
   // visible par défaut dans findAll() sans avecArchives.
   async desarchiver(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreMessageAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       messageCommunication,
@@ -159,16 +165,14 @@ export class MessagesCommunicationService {
 
   // Contenu déchiffré d'une pièce jointe — jamais mis en cache côté
   // serveur, relu depuis le storage à chaque appel (même principe que
-  // DocumentsService, cf. téléchargement de document).
+  // DocumentsService, cf. téléchargement de document). Contrôle
+  // d'appartenance ajouté en Priorité 3a (2026-09-19), réutilisant
+  // resoudrePieceJointeAvecAppartenance() (Priorité 2) — cette méthode avait
+  // été signalée comme lacune restante sans être corrigée à l'époque ; sa
+  // correction étant triviale (même helper déjà en place), incluse ici
+  // plutôt que reportée à nouveau.
   async obtenirContenuPieceJointe(pieceJointeId: string) {
-    const [piece] = await this.db
-      .select()
-      .from(pieceJointeMessage)
-      .where(eq(pieceJointeMessage.id, pieceJointeId))
-      .limit(1);
-    if (!piece) {
-      throw new NotFoundException("Pièce jointe introuvable");
-    }
+    const piece = await this.resoudrePieceJointeAvecAppartenance(pieceJointeId);
     const contenu = await this.documentStorageService.lire(piece.cheminStockage);
     return { contenu, nomFichier: piece.nomFichier, typeMime: piece.typeMime };
   }
@@ -206,9 +210,8 @@ export class MessagesCommunicationService {
   // contrôle par simple comparaison, même principe que Catégorie A. Même
   // message que "n'existe pas", aucune différence observable. Skip si
   // organisationId absent (hors contexte HTTP). Utilisé par
-  // classerDansDocuments() ci-dessus ; obtenirContenuPieceJointe() a la même
-  // lacune (aucun contrôle d'appartenance) mais reste hors périmètre de
-  // cette Priorité 2 — non demandé, signalé pour arbitrage futur.
+  // classerDansDocuments() et, depuis Priorité 3a, obtenirContenuPieceJointe()
+  // ci-dessus.
   private async resoudrePieceJointeAvecAppartenance(pieceJointeId: string): Promise<PieceJointeMessageRow> {
     const [piece] = await this.db
       .select()
@@ -220,6 +223,19 @@ export class MessagesCommunicationService {
       throw new NotFoundException("Pièce jointe introuvable");
     }
     return piece;
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à archiver()/desarchiver() — 2026-09-19) :
+  // même message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreMessageAvecAppartenance(id: string): Promise<MessageCommunicationRow> {
+    const [ligne] = await this.db.select().from(messageCommunication).where(eq(messageCommunication.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Message introuvable");
+    }
+    return ligne;
   }
 
   private versDto(ligne: MessageCommunicationRow) {

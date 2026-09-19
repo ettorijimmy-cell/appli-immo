@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, sinistre, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
@@ -24,7 +25,12 @@ interface FixtureOrganisation {
 // à l'organisation. organisationId est une colonne directe : contrôle par
 // simple comparaison. Aucun autre appelant interne (vérifié par grep —
 // seul SinistresController.findOne l'appelle).
-describe("SinistresService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreSinistreAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul SinistresController).
+describe("SinistresService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -107,25 +113,83 @@ describe("SinistresService.findById — contrôle d'appartenance à l'organisati
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le sinistre appartient à l'organisation appelante", async () => {
-    const sinistre = await contexteOrgA(() => sinistresService.findById(orgA.sinistreId));
-    expect(sinistre.id).toBe(orgA.sinistreId);
+  describe("findById", () => {
+    it("réussit normalement quand le sinistre appartient à l'organisation appelante", async () => {
+      const sinistreTrouve = await contexteOrgA(() => sinistresService.findById(orgA.sinistreId));
+      expect(sinistreTrouve.id).toBe(orgA.sinistreId);
+    });
+
+    it("404 sur le sinistreId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => sinistresService.findById(orgA.sinistreId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un sinistreId inexistant", async () => {
+      await expect(contexteOrgA(() => sinistresService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const sinistreTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        sinistresService.findById(orgA.sinistreId)
+      );
+      expect(sinistreTrouve.id).toBe(orgA.sinistreId);
+    });
   });
 
-  it("404 sur le sinistreId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => sinistresService.findById(orgA.sinistreId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand le sinistre appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() =>
+        sinistresService.update(orgA.sinistreId, { description: "modifié" })
+      );
+      expect(misAJour.description).toBe("modifié");
+    });
+
+    it("404 sur le sinistreId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => sinistresService.update(orgA.sinistreId, { description: "modifié" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(sinistre).where(eq(sinistre.id, orgA.sinistreId));
+      expect(inchange?.description).toBeNull();
+    });
+
+    it("404 sur un sinistreId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => sinistresService.update(randomUUID(), { description: "modifié" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        sinistresService.update(orgA.sinistreId, { description: "modifié" })
+      );
+      expect(misAJour.description).toBe("modifié");
+    });
   });
 
-  it("404 sur un sinistreId inexistant", async () => {
-    await expect(contexteOrgA(() => sinistresService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le sinistre appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => sinistresService.archive(orgA.sinistreId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const sinistre = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      sinistresService.findById(orgA.sinistreId)
-    );
-    expect(sinistre.id).toBe(orgA.sinistreId);
+    it("404 sur le sinistreId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => sinistresService.archive(orgA.sinistreId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(sinistre).where(eq(sinistre.id, orgA.sinistreId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un sinistreId inexistant", async () => {
+      await expect(contexteOrgA(() => sinistresService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        sinistresService.archive(orgA.sinistreId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

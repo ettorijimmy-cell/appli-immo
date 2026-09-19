@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, evenementCalendrier, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
@@ -26,7 +27,12 @@ interface FixtureOrganisation {
 // (vérifié par grep — seul EvenementsCalendrierController.findOne
 // l'appelle ; findAllPourOrganisation(), utilisée par le flux ICS, est un
 // chemin distinct qui n'appelle jamais findById()).
-describe("EvenementsCalendrierService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreEvenementAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul EvenementsCalendrierController).
+describe("EvenementsCalendrierService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -110,27 +116,87 @@ describe("EvenementsCalendrierService.findById — contrôle d'appartenance à l
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand l'événement appartient à l'organisation appelante", async () => {
-    const evenement = await contexteOrgA(() => evenementsCalendrierService.findById(orgA.evenementId));
-    expect(evenement.id).toBe(orgA.evenementId);
+  describe("findById", () => {
+    it("réussit normalement quand l'événement appartient à l'organisation appelante", async () => {
+      const evenementTrouve = await contexteOrgA(() => evenementsCalendrierService.findById(orgA.evenementId));
+      expect(evenementTrouve.id).toBe(orgA.evenementId);
+    });
+
+    it("404 sur l'evenementId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => evenementsCalendrierService.findById(orgA.evenementId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un evenementId inexistant", async () => {
+      await expect(contexteOrgA(() => evenementsCalendrierService.findById(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const evenementTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        evenementsCalendrierService.findById(orgA.evenementId)
+      );
+      expect(evenementTrouve.id).toBe(orgA.evenementId);
+    });
   });
 
-  it("404 sur l'evenementId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => evenementsCalendrierService.findById(orgA.evenementId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand l'événement appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() =>
+        evenementsCalendrierService.update(orgA.evenementId, { titre: "Modifié" })
+      );
+      expect(misAJour.titre).toBe("Modifié");
+    });
+
+    it("404 sur l'evenementId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => evenementsCalendrierService.update(orgA.evenementId, { titre: "Modifié" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(evenementCalendrier).where(eq(evenementCalendrier.id, orgA.evenementId));
+      expect(inchange?.titre).not.toBe("Modifié");
+    });
+
+    it("404 sur un evenementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => evenementsCalendrierService.update(randomUUID(), { titre: "Modifié" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        evenementsCalendrierService.update(orgA.evenementId, { titre: "Modifié" })
+      );
+      expect(misAJour.titre).toBe("Modifié");
+    });
   });
 
-  it("404 sur un evenementId inexistant", async () => {
-    await expect(contexteOrgA(() => evenementsCalendrierService.findById(randomUUID()))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+  describe("archive", () => {
+    it("réussit normalement quand l'événement appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => evenementsCalendrierService.archive(orgA.evenementId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const evenement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      evenementsCalendrierService.findById(orgA.evenementId)
-    );
-    expect(evenement.id).toBe(orgA.evenementId);
+    it("404 sur l'evenementId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => evenementsCalendrierService.archive(orgA.evenementId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(evenementCalendrier).where(eq(evenementCalendrier.id, orgA.evenementId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un evenementId inexistant", async () => {
+      await expect(contexteOrgA(() => evenementsCalendrierService.archive(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        evenementsCalendrierService.archive(orgA.evenementId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

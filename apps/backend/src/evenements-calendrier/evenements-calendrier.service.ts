@@ -83,17 +83,19 @@ export class EvenementsCalendrierService {
   // aucune différence observable — même principe que B1-B6. Skip si
   // organisationId absent (hors contexte HTTP). N'affecte pas
   // findAllPourOrganisation() ci-dessous (flux ICS, chemin distinct,
-  // n'appelle pas findById()).
+  // n'appelle pas findById()). Réutilise désormais
+  // resoudreEvenementAvecAppartenance() (Priorité 3a, 2026-09-19), partagée
+  // avec update()/archive() ci-dessous.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(evenementCalendrier).where(eq(evenementCalendrier.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Événement introuvable");
-    }
+    const ligne = await this.resoudreEvenementAvecAppartenance(id);
     return this.versDto(ligne);
   }
 
   async update(id: string, dto: UpdateEvenementCalendrierDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreEvenementAvecAppartenance(id);
+
     const { dateDebut, dateFin, ...reste } = dto;
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
@@ -113,6 +115,10 @@ export class EvenementsCalendrierService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreEvenementAvecAppartenance(id);
+
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
       evenementCalendrier,
@@ -124,6 +130,19 @@ export class EvenementsCalendrierService {
       throw new NotFoundException("Événement introuvable");
     }
     return this.versDto(ligne as EvenementRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 3a/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreEvenementAvecAppartenance(id: string): Promise<EvenementRow> {
+    const [ligne] = await this.db.select().from(evenementCalendrier).where(eq(evenementCalendrier.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Événement introuvable");
+    }
+    return ligne;
   }
 
   // Utilisé par CalendrierAbonnementService (flux ICS) : tous les

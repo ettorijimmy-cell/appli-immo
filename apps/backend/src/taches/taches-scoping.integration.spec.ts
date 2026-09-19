@@ -160,24 +160,85 @@ describe("TachesService.findById — contrôle d'appartenance à l'organisation 
     return requestContextService.executerAvecContexte({ utilisateurId: null, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand la tâche appartient à l'organisation appelante", async () => {
-    const tacheDto = await contexteOrgA(() => tachesService.findById(orgA.tacheId));
-    expect(tacheDto.id).toBe(orgA.tacheId);
+  describe("findById", () => {
+    it("réussit normalement quand la tâche appartient à l'organisation appelante", async () => {
+      const tacheDto = await contexteOrgA(() => tachesService.findById(orgA.tacheId));
+      expect(tacheDto.id).toBe(orgA.tacheId);
+    });
+
+    it("404 sur le tacheId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => tachesService.findById(orgA.tacheId))).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un tacheId inexistant", async () => {
+      await expect(contexteOrgA(() => tachesService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const tacheDto = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        tachesService.findById(orgA.tacheId)
+      );
+      expect(tacheDto.id).toBe(orgA.tacheId);
+    });
   });
 
-  it("404 sur le tacheId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => tachesService.findById(orgA.tacheId))).rejects.toThrow(NotFoundException);
-  });
+  // Priorité 3a (chantier scoping multi-organisation, Catégorie C,
+  // 2026-09-19) : marquerFait()/marquerAnnulee() délèguent toutes deux à
+  // changerStatut() (privée), qui refaisait sa propre écriture via
+  // mettreAJourAvecAudit sans jamais vérifier l'organisation — corrigé en
+  // réutilisant resoudreTacheAvecAppartenance(), le même helper que
+  // findById() ci-dessus et appliquerRevision()/envoyerNotification()
+  // (Priorité 1).
+  describe("marquerFait / marquerAnnulee", () => {
+    it("marquerFait réussit normalement quand la tâche appartient à l'organisation appelante", async () => {
+      const tacheDto = await contexteOrgA(() => tachesService.marquerFait(orgA.tacheId));
+      expect(tacheDto.statut).toBe("fait");
+      expect(tacheDto.dateCompletion).not.toBeNull();
+    });
 
-  it("404 sur un tacheId inexistant", async () => {
-    await expect(contexteOrgA(() => tachesService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+    it("marquerFait : 404 sur le tacheId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => tachesService.marquerFait(orgA.tacheId))).rejects.toThrow(NotFoundException);
+      const [inchangee] = await db.select().from(tache).where(eq(tache.id, orgA.tacheId));
+      expect(inchangee?.statut).toBe("a_faire");
+      expect(inchangee?.dateCompletion).toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const tacheDto = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
-      tachesService.findById(orgA.tacheId)
-    );
-    expect(tacheDto.id).toBe(orgA.tacheId);
+    it("marquerFait : 404 sur un tacheId inexistant", async () => {
+      await expect(contexteOrgA(() => tachesService.marquerFait(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("marquerFait : hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const tacheDto = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        tachesService.marquerFait(orgA.tacheId)
+      );
+      expect(tacheDto.statut).toBe("fait");
+    });
+
+    it("marquerAnnulee réussit normalement quand la tâche appartient à l'organisation appelante", async () => {
+      const tacheDto = await contexteOrgA(() => tachesService.marquerAnnulee(orgA.tacheId));
+      expect(tacheDto.statut).toBe("annulee");
+    });
+
+    it("marquerAnnulee : 404 sur le tacheId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => tachesService.marquerAnnulee(orgA.tacheId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchangee] = await db.select().from(tache).where(eq(tache.id, orgA.tacheId));
+      expect(inchangee?.statut).toBe("a_faire");
+    });
+
+    it("marquerAnnulee : 404 sur un tacheId inexistant", async () => {
+      await expect(contexteOrgA(() => tachesService.marquerAnnulee(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("marquerAnnulee : hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const tacheDto = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        tachesService.marquerAnnulee(orgA.tacheId)
+      );
+      expect(tacheDto.statut).toBe("annulee");
+    });
   });
 });
 

@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { contact, createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { CandidatsModule } from "../candidats/candidats.module";
@@ -28,7 +29,12 @@ interface FixtureOrganisation {
 // simple comparaison. Aucun autre appelant interne (vérifié par grep —
 // seul ContactsController.findOne l'appelle ; findAllUnifie() n'appelle
 // jamais findById(), seulement findAll()).
-describe("ContactsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreContactAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul ContactsController).
+describe("ContactsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -115,23 +121,79 @@ describe("ContactsService.findById — contrôle d'appartenance à l'organisatio
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le contact appartient à l'organisation appelante", async () => {
-    const contact = await contexteOrgA(() => contactsService.findById(orgA.contactId));
-    expect(contact.id).toBe(orgA.contactId);
+  describe("findById", () => {
+    it("réussit normalement quand le contact appartient à l'organisation appelante", async () => {
+      const contactTrouve = await contexteOrgA(() => contactsService.findById(orgA.contactId));
+      expect(contactTrouve.id).toBe(orgA.contactId);
+    });
+
+    it("404 sur le contactId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => contactsService.findById(orgA.contactId))).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur un contactId inexistant", async () => {
+      await expect(contexteOrgA(() => contactsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const contactTrouve = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        contactsService.findById(orgA.contactId)
+      );
+      expect(contactTrouve.id).toBe(orgA.contactId);
+    });
   });
 
-  it("404 sur le contactId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => contactsService.findById(orgA.contactId))).rejects.toThrow(NotFoundException);
+  describe("update", () => {
+    it("réussit normalement quand le contact appartient à l'organisation appelante", async () => {
+      const contactMisAJour = await contexteOrgA(() =>
+        contactsService.update(orgA.contactId, { telephone: "0611111111" })
+      );
+      expect(contactMisAJour.telephone).toBe("0611111111");
+    });
+
+    it("404 sur le contactId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => contactsService.update(orgA.contactId, { telephone: "0611111111" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(contact).where(eq(contact.id, orgA.contactId));
+      expect(inchange?.telephone).toBeNull();
+    });
+
+    it("404 sur un contactId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => contactsService.update(randomUUID(), { telephone: "0611111111" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const contactMisAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        contactsService.update(orgA.contactId, { telephone: "0611111111" })
+      );
+      expect(contactMisAJour.telephone).toBe("0611111111");
+    });
   });
 
-  it("404 sur un contactId inexistant", async () => {
-    await expect(contexteOrgA(() => contactsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le contact appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => contactsService.archive(orgA.contactId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const contact = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      contactsService.findById(orgA.contactId)
-    );
-    expect(contact.id).toBe(orgA.contactId);
+    it("404 sur le contactId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => contactsService.archive(orgA.contactId))).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(contact).where(eq(contact.id, orgA.contactId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un contactId inexistant", async () => {
+      await expect(contexteOrgA(() => contactsService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        contactsService.archive(orgA.contactId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

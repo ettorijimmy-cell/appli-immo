@@ -47,7 +47,12 @@ interface FixtureOrganisation {
 // l'organisation de l'appelant. Aucune méthode create() directe (les
 // messages naissent de SmtpEnvoiService/ImapSyncJobService) — insertion
 // directe en base pour la fixture, comme pour taches-scoping.
-describe("MessagesCommunicationService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// archiver()/desarchiver() n'étaient pas protégées par ce sous-commit
+// (Catégorie C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
+// resoudreMessageAvecAppartenance(), le même helper privé que findById()
+// ci-dessus.
+describe("MessagesCommunicationService — contrôle d'appartenance à l'organisation (findById/archiver/desarchiver, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -141,28 +146,87 @@ describe("MessagesCommunicationService.findById — contrôle d'appartenance à 
     return requestContextService.executerAvecContexte({ utilisateurId: null, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le message appartient à l'organisation appelante", async () => {
-    const message = await contexteOrgA(() => messagesCommunicationService.findById(orgA.messageId));
-    expect(message?.id).toBe(orgA.messageId);
+  describe("findById", () => {
+    it("réussit normalement quand le message appartient à l'organisation appelante", async () => {
+      const message = await contexteOrgA(() => messagesCommunicationService.findById(orgA.messageId));
+      expect(message?.id).toBe(orgA.messageId);
+    });
+
+    it("404 sur le messageId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => messagesCommunicationService.findById(orgA.messageId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un messageId inexistant", async () => {
+      await expect(contexteOrgA(() => messagesCommunicationService.findById(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const message = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        messagesCommunicationService.findById(orgA.messageId)
+      );
+      expect(message?.id).toBe(orgA.messageId);
+    });
   });
 
-  it("404 sur le messageId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => messagesCommunicationService.findById(orgA.messageId))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+  describe("archiver / desarchiver", () => {
+    it("archiver réussit normalement quand le message appartient à l'organisation appelante", async () => {
+      const message = await contexteOrgA(() => messagesCommunicationService.archiver(orgA.messageId));
+      expect(message.archivedAt).not.toBeNull();
+    });
 
-  it("404 sur un messageId inexistant", async () => {
-    await expect(contexteOrgA(() => messagesCommunicationService.findById(randomUUID()))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+    it("archiver : 404 sur le messageId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => messagesCommunicationService.archiver(orgA.messageId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(messageCommunication).where(eq(messageCommunication.id, orgA.messageId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const message = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
-      messagesCommunicationService.findById(orgA.messageId)
-    );
-    expect(message?.id).toBe(orgA.messageId);
+    it("archiver : 404 sur un messageId inexistant", async () => {
+      await expect(contexteOrgA(() => messagesCommunicationService.archiver(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("archiver : hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const message = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        messagesCommunicationService.archiver(orgA.messageId)
+      );
+      expect(message.archivedAt).not.toBeNull();
+    });
+
+    it("desarchiver réussit normalement quand le message appartient à l'organisation appelante", async () => {
+      await contexteOrgA(() => messagesCommunicationService.archiver(orgA.messageId));
+      const message = await contexteOrgA(() => messagesCommunicationService.desarchiver(orgA.messageId));
+      expect(message.archivedAt).toBeNull();
+    });
+
+    it("desarchiver : 404 sur le messageId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await contexteOrgA(() => messagesCommunicationService.archiver(orgA.messageId));
+      await expect(contexteOrgB(() => messagesCommunicationService.desarchiver(orgA.messageId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(messageCommunication).where(eq(messageCommunication.id, orgA.messageId));
+      expect(inchange?.archivedAt).not.toBeNull();
+    });
+
+    it("desarchiver : 404 sur un messageId inexistant", async () => {
+      await expect(contexteOrgA(() => messagesCommunicationService.desarchiver(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("desarchiver : hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      await contexteOrgA(() => messagesCommunicationService.archiver(orgA.messageId));
+      const message = await requestContextService.executerAvecContexte({ utilisateurId: null }, () =>
+        messagesCommunicationService.desarchiver(orgA.messageId)
+      );
+      expect(message.archivedAt).toBeNull();
+    });
   });
 });
 
@@ -182,7 +246,12 @@ interface FixtureOrganisationClasser {
 // simple comparaison. documentStorageService.lire doit rester non appelé
 // sur le chemin refusé (aucun déchiffrement), et aucun document ne doit être
 // créé pour l'entité ciblée par l'appelant.
-describe("MessagesCommunicationService.classerDansDocuments — contrôle d'appartenance (intégration Postgres réelle)", () => {
+//
+// obtenirContenuPieceJointe() avait la même lacune (aucun contrôle
+// d'appartenance) — signalée sans être corrigée en Priorité 2, corrigée en
+// Priorité 3a (2026-09-19) puisque le helper existait déjà et que la
+// correction ne demandait qu'un remplacement d'une ligne.
+describe("MessagesCommunicationService.classerDansDocuments / obtenirContenuPieceJointe — contrôle d'appartenance (intégration Postgres réelle)", () => {
   const storageDirTest = path.join(os.tmpdir(), `appli-immo-test-messages-classer-scoping-${randomUUID()}`);
   process.env["DOCUMENTS_STORAGE_DIR"] = storageDirTest;
 
@@ -361,5 +430,39 @@ describe("MessagesCommunicationService.classerDansDocuments — contrôle d'appa
       })
     );
     expect(document.nomFichier).toBe("piece-A.pdf");
+  });
+
+  describe("obtenirContenuPieceJointe", () => {
+    it("déchiffre normalement quand la pièce jointe appartient à l'organisation appelante", async () => {
+      const resultat = await contexteOrgA(() => messagesCommunicationService.obtenirContenuPieceJointe(orgA.pieceJointeId));
+      expect(resultat.contenu.toString("utf8")).toBe("contenu-A");
+    });
+
+    it("404 sur la pièceJointeId d'une autre organisation, sans jamais déchiffrer", async () => {
+      const lireSpy = vi.spyOn(documentStorageService, "lire");
+
+      await expect(
+        contexteOrgB(() => messagesCommunicationService.obtenirContenuPieceJointe(orgA.pieceJointeId))
+      ).rejects.toThrow(NotFoundException);
+
+      expect(lireSpy).not.toHaveBeenCalled();
+    });
+
+    it("404 sur une pièceJointeId inexistante, sans jamais déchiffrer", async () => {
+      const lireSpy = vi.spyOn(documentStorageService, "lire");
+
+      await expect(
+        contexteOrgA(() => messagesCommunicationService.obtenirContenuPieceJointe(randomUUID()))
+      ).rejects.toThrow(NotFoundException);
+
+      expect(lireSpy).not.toHaveBeenCalled();
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const resultat = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        messagesCommunicationService.obtenirContenuPieceJointe(orgA.pieceJointeId)
+      );
+      expect(resultat.contenu.toString("utf8")).toBe("contenu-A");
+    });
   });
 });
