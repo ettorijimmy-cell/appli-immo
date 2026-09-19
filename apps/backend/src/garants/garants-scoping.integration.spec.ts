@@ -24,6 +24,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   garantId: string;
+  bailId: string;
 }
 
 // Sous-commit 5a (chantier scoping multi-organisation, 2026-09-18) :
@@ -38,7 +39,20 @@ interface FixtureOrganisation {
 // C, audit séparé) — corrigées en Priorité 3a (2026-09-19) via
 // resoudreGarantAvecAppartenance(), le même helper privé que findById()
 // (aucun appelant interne, seul GarantsController).
-describe("GarantsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create() (Priorité E1, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.bailId n'était vérifié que pour son existence — jamais
+// pour son appartenance à l'organisation appelante. organisationId du
+// garant est dérivé du bail (jamais de l'utilisateur courant), donc sans
+// ce contrôle un appelant de l'organisation A pouvait injecter directement
+// un garant dans l'organisation B en fournissant un bailId de B, sans
+// jamais posséder de compte B — le cas le plus sévère de tout l'audit
+// Catégorie E. Corrigé en filtrant la jointure bail -> appartement -> bien
+// déjà nécessaire pour résoudre l'organisationId à écrire, plutôt qu'un
+// helper séparé (aucun helper findById()/verifierAppartenanceBail() de
+// GarantsService/BauxService n'était directement réutilisable ici : celui
+// de BauxService est privé et GarantsModule ne dépend pas de BauxModule).
+describe("GarantsService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -100,7 +114,7 @@ describe("GarantsService — contrôle d'appartenance à l'organisation (findByI
       typeGarantie: "personne_physique"
     });
 
-    return { organisationId: organisation.id, userId: user.id, garantId: garant.id };
+    return { organisationId: organisation.id, userId: user.id, garantId: garant.id, bailId: bail.id };
   }
 
   beforeEach(async () => {
@@ -148,6 +162,57 @@ describe("GarantsService — contrôle d'appartenance à l'organisation (findByI
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand le bail appartient à l'organisation appelante", async () => {
+      const garant = await contexteOrgA(() =>
+        garantsService.create({ bailId: orgA.bailId, nom: "Nouveau", prenom: "Garant", typeGarantie: "personne_physique" })
+      );
+      expect(garant.bailId).toBe(orgA.bailId);
+    });
+
+    it("404 sur le bailId d'une autre organisation, sans jamais insérer de ligne garants — ni chez l'appelant ni chez le propriétaire réel du bail", async () => {
+      await expect(
+        contexteOrgB(() =>
+          garantsService.create({ bailId: orgA.bailId, nom: "Etranger", prenom: "Bob", typeGarantie: "personne_physique" })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignesLieesAuBail = await db.select().from(garants).where(eq(garants.bailId, orgA.bailId));
+      // Seul le garant de fixture (créé hors contexte HTTP dans
+      // creerFixtureOrganisation) doit exister pour ce bail — aucune
+      // ligne supplémentaire injectée par la tentative cross-org.
+      expect(lignesLieesAuBail).toHaveLength(1);
+      expect(lignesLieesAuBail[0]?.id).toBe(orgA.garantId);
+
+      const lignesOrgA = await db.select().from(garants).where(eq(garants.organisationId, orgA.organisationId));
+      expect(lignesOrgA.map((l) => l.id)).toEqual([orgA.garantId]);
+      const lignesOrgB = await db.select().from(garants).where(eq(garants.organisationId, orgB.organisationId));
+      expect(lignesOrgB.map((l) => l.id)).toEqual([orgB.garantId]);
+    });
+
+    it("404 sur un bailId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          garantsService.create({ bailId: randomUUID(), nom: "Personne", prenom: "Inconnue", typeGarantie: "personne_physique" })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const garant = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        garantsService.create({ bailId: orgB.bailId, nom: "Sans", prenom: "Contexte", typeGarantie: "personne_physique" })
+      );
+      // organisationId reste dérivé du bail (comportement préexistant,
+      // jamais de l'utilisateur courant) : ici celui d'orgB, puisque
+      // c'est le bail fourni — pas une régression, juste l'absence de
+      // contrôle hors contexte HTTP. versDto() n'expose pas organisationId,
+      // vérifié directement en base.
+      expect(garant.bailId).toBe(orgB.bailId);
+      const [ligneEnBase] = await db.select().from(garants).where(eq(garants.id, garant.id));
+      expect(ligneEnBase?.organisationId).toBe(orgB.organisationId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand le garant appartient à l'organisation appelante", async () => {

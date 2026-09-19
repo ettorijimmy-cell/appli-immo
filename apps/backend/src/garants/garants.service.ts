@@ -15,18 +15,31 @@ export class GarantsService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  // Contrôle d'appartenance sur dto.bailId (Priorité E1, chantier scoping
+  // multi-organisation, Catégorie E, 2026-09-19) : organisationId du
+  // garant est résolu depuis le bail (bail -> appartement -> bien), jamais
+  // depuis l'utilisateur courant — un garant est toujours rattaché à un
+  // bail (bail_id NOT NULL), donc toujours déterminable sans ambiguïté,
+  // même principe que depense.sciId dénormalisé depuis bien.sciId
+  // (DepensesService.create). Sans ce filtre, ce mécanisme même permettait
+  // à un appelant de l'organisation A d'injecter un garant (nom, date de
+  // naissance, lieu de naissance, nationalité) directement dans
+  // l'organisation B en fournissant un bailId de B — le cas le plus grave
+  // de tout l'audit Catégorie E. eq(bien.organisationId, organisationId)
+  // filtre désormais la même jointure déjà nécessaire pour résoudre
+  // l'organisationId à écrire, sans requête supplémentaire. Skip si
+  // organisationId absent (hors contexte HTTP, comportement préexistant
+  // préservé). Même message "Bail introuvable" que pour un id inexistant —
+  // aucune différence observable, même principe que le pattern 404 établi
+  // pour les lectures dans tout ce chantier.
   async create(dto: CreateGarantDto) {
-    // organisationId résolu depuis le bail (bail -> appartement -> bien),
-    // jamais depuis l'utilisateur courant — un garant est toujours
-    // rattaché à un bail (bail_id NOT NULL), donc toujours déterminable
-    // sans ambiguïté, même principe que depense.sciId dénormalisé depuis
-    // bien.sciId (DepensesService.create).
+    const organisationId = this.requestContext.getOrganisationId();
     const [ligne] = await this.db
       .select({ organisationId: bien.organisationId })
       .from(baux)
       .innerJoin(appartements, eq(appartements.id, baux.appartementId))
       .innerJoin(bien, eq(bien.id, appartements.bienId))
-      .where(eq(baux.id, dto.bailId))
+      .where(and(eq(baux.id, dto.bailId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
       .limit(1);
     if (!ligne) {
       throw new NotFoundException("Bail introuvable");
