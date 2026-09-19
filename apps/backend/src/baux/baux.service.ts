@@ -130,6 +130,12 @@ export class BauxService {
   }
 
   async update(id: string, dto: UpdateBailDto) {
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19) :
+    // réutilise verifierAppartenanceBail() (Priorité 2), déjà partagée par
+    // activer()/resilier().
+    await this.verifierAppartenanceBail(id);
+
     // date_debut devient figée dès qu'un bail sort de `brouillon` — même
     // principe que date_activation, jamais modifiable après coup
     // (docs/data-dictionary.md, section baux). Sans cette règle, le job
@@ -537,6 +543,10 @@ export class BauxService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
+    await this.verifierAppartenanceBail(id);
+
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
@@ -563,11 +573,12 @@ export class BauxService {
   // Contrôle d'appartenance (Priorité 2, Catégorie C, chantier scoping
   // multi-organisation, 2026-09-19) : baux n'a pas de colonne organisationId
   // directe (voir findById() plus haut, même jointure appartements -> bien).
-  // Utilisé par activer()/resilier() ci-dessous, avant l'ouverture de leur
-  // transaction respective — même message que "n'existe pas", aucune
-  // différence observable. Skip si organisationId absent (hors contexte
-  // HTTP) : dans ce cas, le `!bail` déjà présent dans activer()/resilier()
-  // continue de couvrir le cas "id inexistant".
+  // Utilisé par activer()/resilier() (avant l'ouverture de leur transaction
+  // respective) et, depuis Priorité 3b, par update()/archive() — même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP) : dans ce cas, le `!bail`
+  // déjà présent dans chaque appelant continue de couvrir le cas "id
+  // inexistant".
   private async verifierAppartenanceBail(id: string): Promise<void> {
     const organisationId = this.requestContext.getOrganisationId();
     if (!organisationId) {

@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, paiements, utilisateurs, versements, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -16,6 +17,8 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { VersementsModule } from "../versements/versements.module";
+import { VersementsService } from "../versements/versements.service";
 import { PaiementsModule } from "./paiements.module";
 import { PaiementsService } from "./paiements.service";
 
@@ -23,6 +26,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   paiementId: string;
+  versementId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -31,7 +35,16 @@ interface FixtureOrganisation {
 // (voir findAll()), le contrôle passe par une triple jointure baux ->
 // appartements -> bien. Aucun autre appelant interne (vérifié par grep —
 // seul PaiementsController.findOne l'appelle).
-describe("PaiementsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3b (2026-09-19) via
+// resoudrePaiementAvecAppartenance(), le même helper privé que findById()
+// (aucun appelant interne, seul PaiementsController). archive() cascade
+// l'archivage des versements actifs du paiement dans la même transaction —
+// le contrôle doit bloquer AVANT l'ouverture de cette transaction, pas
+// seulement avant l'écriture sur `paiements` : la fixture inclut donc un
+// versement réel par organisation pour en apporter la preuve.
+describe("PaiementsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -41,6 +54,7 @@ describe("PaiementsService.findById — contrôle d'appartenance à l'organisati
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
   let paiementsService: PaiementsService;
+  let versementsService: VersementsService;
   let requestContextService: RequestContextService;
 
   let orgA: FixtureOrganisation;
@@ -92,8 +106,14 @@ describe("PaiementsService.findById — contrôle d'appartenance à l'organisati
       montant: "800.00",
       dateEcheance: "2026-01-05"
     });
+    const versement = await versementsService.ajouter({
+      paiementId: paiement.id,
+      montant: "800.00",
+      mode: "virement",
+      dateVersement: "2026-01-05"
+    });
 
-    return { organisationId: organisation.id, userId: user.id, paiementId: paiement.id };
+    return { organisationId: organisation.id, userId: user.id, paiementId: paiement.id, versementId: versement.id };
   }
 
   beforeEach(async () => {
@@ -109,7 +129,8 @@ describe("PaiementsService.findById — contrôle d'appartenance à l'organisati
         BienModule,
         AppartementsModule,
         BauxModule,
-        PaiementsModule
+        PaiementsModule,
+        VersementsModule
       ]
     })
       .overrideProvider(DATABASE_CONNECTION)
@@ -120,6 +141,7 @@ describe("PaiementsService.findById — contrôle d'appartenance à l'organisati
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
     paiementsService = moduleRef.get(PaiementsService);
+    versementsService = moduleRef.get(VersementsService);
     requestContextService = moduleRef.get(RequestContextService);
 
     orgA = await creerFixtureOrganisation("A");
@@ -142,25 +164,87 @@ describe("PaiementsService.findById — contrôle d'appartenance à l'organisati
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {
-    const paiement = await contexteOrgA(() => paiementsService.findById(orgA.paiementId));
-    expect(paiement.id).toBe(orgA.paiementId);
+  describe("findById", () => {
+    it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {
+      const paiement = await contexteOrgA(() => paiementsService.findById(orgA.paiementId));
+      expect(paiement.id).toBe(orgA.paiementId);
+    });
+
+    it("404 sur le paiementId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => paiementsService.findById(orgA.paiementId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un paiementId inexistant", async () => {
+      await expect(contexteOrgA(() => paiementsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const paiement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        paiementsService.findById(orgA.paiementId)
+      );
+      expect(paiement.id).toBe(orgA.paiementId);
+    });
   });
 
-  it("404 sur le paiementId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => paiementsService.findById(orgA.paiementId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() =>
+        paiementsService.update(orgA.paiementId, { dateEcheance: "2026-02-05" })
+      );
+      expect(misAJour.dateEcheance).toBe("2026-02-05");
+    });
+
+    it("404 sur le paiementId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => paiementsService.update(orgA.paiementId, { dateEcheance: "2026-02-05" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(paiements).where(eq(paiements.id, orgA.paiementId));
+      expect(inchange?.dateEcheance).toBe("2026-01-05");
+    });
+
+    it("404 sur un paiementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => paiementsService.update(randomUUID(), { dateEcheance: "2026-02-05" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        paiementsService.update(orgA.paiementId, { dateEcheance: "2026-02-05" })
+      );
+      expect(misAJour.dateEcheance).toBe("2026-02-05");
+    });
   });
 
-  it("404 sur un paiementId inexistant", async () => {
-    await expect(contexteOrgA(() => paiementsService.findById(randomUUID()))).rejects.toThrow(NotFoundException);
-  });
+  describe("archive", () => {
+    it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => paiementsService.archive(orgA.paiementId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const paiement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      paiementsService.findById(orgA.paiementId)
-    );
-    expect(paiement.id).toBe(orgA.paiementId);
+    it("404 sur le paiementId d'une autre organisation, sans jamais archiver la ligne ni sa cascade sur les versements actifs", async () => {
+      await expect(contexteOrgB(() => paiementsService.archive(orgA.paiementId))).rejects.toThrow(
+        NotFoundException
+      );
+
+      const [paiementInchange] = await db.select().from(paiements).where(eq(paiements.id, orgA.paiementId));
+      expect(paiementInchange?.archivedAt).toBeNull();
+
+      const [versementInchange] = await db.select().from(versements).where(eq(versements.id, orgA.versementId));
+      expect(versementInchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un paiementId inexistant", async () => {
+      await expect(contexteOrgA(() => paiementsService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        paiementsService.archive(orgA.paiementId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

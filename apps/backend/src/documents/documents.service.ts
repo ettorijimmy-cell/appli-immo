@@ -365,26 +365,21 @@ export class DocumentsService {
   // (Sous-commit 4c), même principe que telecharger() (commit B4) — jamais
   // une deuxième logique de résolution polymorphe. Même message que
   // "n'existe pas", aucune différence observable. Skip si organisationId
-  // absent (hors contexte HTTP). Aucun appelant interne (vérifié par grep
-  // — seul DocumentsController.findOne l'appelle ; telecharger() et
-  // remplacerDocument() refont chacun leur propre requête brute sur `id`,
-  // sans jamais appeler this.findById()).
+  // absent (hors contexte HTTP). Réutilise désormais
+  // resoudreDocumentAvecAppartenance() (Priorité 3b, 2026-09-19), partagée
+  // avec update()/archiver() ci-dessous. telecharger() et remplacerDocument()
+  // gardent leur propre copie inline (établie séparément aux commits
+  // B4/Priorité 2), non touchées ici.
   async findById(id: string) {
-    const [document] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
-    if (!document) {
-      throw new NotFoundException("Document introuvable");
-    }
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
-      if (!idsValides.includes(document.entiteId)) {
-        throw new NotFoundException("Document introuvable");
-      }
-    }
+    const document = await this.resoudreDocumentAvecAppartenance(id);
     return this.versDto(document);
   }
 
   async update(id: string, dto: UpdateDocumentDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreDocumentAvecAppartenance(id);
+
     const [document] = await mettreAJourAvecAudit(
       this.db,
       documents,
@@ -404,6 +399,10 @@ export class DocumentsService {
   }
 
   async archiver(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreDocumentAvecAppartenance(id);
+
     const [document] = await mettreAJourAvecAudit(
       this.db,
       documents,
@@ -415,6 +414,25 @@ export class DocumentsService {
       throw new NotFoundException("Document introuvable");
     }
     return this.versDto(document as DocumentRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5d pour findById(), étendu
+  // en Priorité 3b/Catégorie C à update()/archiver() — 2026-09-19). Même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreDocumentAvecAppartenance(id: string): Promise<DocumentRow> {
+    const [document] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
+    if (!document) {
+      throw new NotFoundException("Document introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
+      if (!idsValides.includes(document.entiteId)) {
+        throw new NotFoundException("Document introuvable");
+      }
+    }
+    return document;
   }
 
   // Seul point de déchiffrement du contenu d'un document — chaque appel

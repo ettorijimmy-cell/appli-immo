@@ -632,4 +632,98 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
       expect(nouveau.documentPrecedentId).toBe(documentOrgA.id);
     });
   });
+
+  // Priorité 3b (chantier scoping multi-organisation, Catégorie C,
+  // 2026-09-19) : update()/archiver() n'étaient pas protégées par le
+  // Sous-commit 5d (Catégorie C, audit séparé) — corrigées via
+  // resoudreDocumentAvecAppartenance(), extrait de findById() et désormais
+  // partagé par les trois.
+  describe("update — contrôle d'appartenance", () => {
+    it("met à jour normalement quand le document appartient à l'organisation appelante", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const misAJour = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.update(documentOrgA.id, { categorie: "assurance" })
+      );
+      expect(misAJour.categorie).toBe("assurance");
+    });
+
+    it("404 sur le documentId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.update(documentOrgA.id, { categorie: "assurance" })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const [inchange] = await db.select().from(documents).where(eq(documents.id, documentOrgA.id));
+      expect(inchange?.categorie).toBe("photo");
+    });
+
+    it("404 sur un documentId inexistant", async () => {
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.update(randomUUID(), { categorie: "assurance" })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.update(documentOrgA.id, { categorie: "assurance" })
+      );
+      expect(misAJour.categorie).toBe("assurance");
+    });
+  });
+
+  describe("archiver — contrôle d'appartenance", () => {
+    it("archive normalement quand le document appartient à l'organisation appelante", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const archive = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.archiver(documentOrgA.id)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
+
+    it("404 sur le documentId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.archiver(documentOrgA.id)
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const [inchange] = await db.select().from(documents).where(eq(documents.id, documentOrgA.id));
+      expect(inchange?.archivedAt).toBeNull();
+      expect(inchange?.statut).not.toBe("archive");
+    });
+
+    it("404 sur un documentId inexistant", async () => {
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.archiver(randomUUID())
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.archiver(documentOrgA.id)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
+  });
 });

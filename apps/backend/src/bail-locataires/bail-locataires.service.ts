@@ -61,6 +61,12 @@ export class BailLocatairesService {
   // Retire un locataire d'un bail — archive le lien, ne le supprime jamais
   // physiquement (CLAUDE.md).
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : ce service n'a
+    // jamais eu de findById() (aucun endpoint de lecture à l'unité), donc
+    // pas de helper préexistant à réutiliser — extrait ici directement.
+    await this.resoudreLienAvecAppartenance(id);
+
     const [lien] = await mettreAJourAvecAudit(
       this.db,
       bailLocataires,
@@ -72,6 +78,32 @@ export class BailLocatairesService {
       throw new NotFoundException("Rattachement introuvable");
     }
     return this.versDto(lien as BailLocataireRow);
+  }
+
+  // bail_locataires n'a pas de colonne organisationId directe (voir
+  // findAll() plus haut, même triple jointure). Même message que "n'existe
+  // pas", aucune différence observable. Skip si organisationId absent (hors
+  // contexte HTTP).
+  private async resoudreLienAvecAppartenance(id: string): Promise<BailLocataireRow> {
+    const [lien] = await this.db.select().from(bailLocataires).where(eq(bailLocataires.id, id)).limit(1);
+    if (!lien) {
+      throw new NotFoundException("Rattachement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: bailLocataires.id })
+        .from(bailLocataires)
+        .innerJoin(baux, eq(baux.id, bailLocataires.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(bailLocataires.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Rattachement introuvable");
+      }
+    }
+    return lien;
   }
 
   private versDto(lien: BailLocataireRow) {

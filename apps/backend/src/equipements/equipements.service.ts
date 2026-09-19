@@ -62,31 +62,15 @@ export class EquipementsService {
   // "n'existe pas", aucune différence observable. Skip si organisationId
   // absent (hors contexte HTTP).
   async findById(id: string) {
-    const [equipement] = await this.db
-      .select()
-      .from(equipements)
-      .where(eq(equipements.id, id))
-      .limit(1);
-    if (!equipement) {
-      throw new NotFoundException("Équipement introuvable");
-    }
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const [ligne] = await this.db
-        .select({ id: equipements.id })
-        .from(equipements)
-        .innerJoin(appartements, eq(appartements.id, equipements.appartementId))
-        .innerJoin(bien, eq(bien.id, appartements.bienId))
-        .where(and(eq(equipements.id, id), eq(bien.organisationId, organisationId)))
-        .limit(1);
-      if (!ligne) {
-        throw new NotFoundException("Équipement introuvable");
-      }
-    }
+    const equipement = await this.resoudreEquipementAvecAppartenance(id);
     return this.versDto(equipement);
   }
 
   async update(id: string, dto: UpdateEquipementDto) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreEquipementAvecAppartenance(id);
+
     const [equipement] = await mettreAJourAvecAudit(
       this.db,
       equipements,
@@ -103,6 +87,10 @@ export class EquipementsService {
   // Pas de colonne `statut` dédiée (voir docs/data-dictionary.md) :
   // archivedAt seul suffit, pas de cycle de vie à états multiples ici.
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreEquipementAvecAppartenance(id);
+
     const [equipement] = await mettreAJourAvecAudit(
       this.db,
       equipements,
@@ -114,6 +102,31 @@ export class EquipementsService {
       throw new NotFoundException("Équipement introuvable");
     }
     return this.versDto(equipement as EquipementRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5c pour findById(), étendu
+  // en Priorité 3b/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreEquipementAvecAppartenance(id: string): Promise<EquipementRow> {
+    const [equipement] = await this.db.select().from(equipements).where(eq(equipements.id, id)).limit(1);
+    if (!equipement) {
+      throw new NotFoundException("Équipement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: equipements.id })
+        .from(equipements)
+        .innerJoin(appartements, eq(appartements.id, equipements.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(equipements.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Équipement introuvable");
+      }
+    }
+    return equipement;
   }
 
   private versDto(equipement: EquipementRow) {

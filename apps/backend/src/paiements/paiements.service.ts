@@ -74,24 +74,7 @@ export class PaiementsService {
   // que "n'existe pas", aucune différence observable. Skip si
   // organisationId absent (hors contexte HTTP).
   async findById(id: string) {
-    const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
-    if (!paiement) {
-      throw new NotFoundException("Paiement introuvable");
-    }
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const [ligne] = await this.db
-        .select({ id: paiements.id })
-        .from(paiements)
-        .innerJoin(baux, eq(baux.id, paiements.bailId))
-        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
-        .innerJoin(bien, eq(bien.id, appartements.bienId))
-        .where(and(eq(paiements.id, id), eq(bien.organisationId, organisationId)))
-        .limit(1);
-      if (!ligne) {
-        throw new NotFoundException("Paiement introuvable");
-      }
-    }
+    const paiement = await this.resoudrePaiementAvecAppartenance(id);
     return this.versDto(paiement);
   }
 
@@ -99,10 +82,9 @@ export class PaiementsService {
   // `montant` (dû) change, le statut doit être recalculé contre le montant
   // déjà reçu — jamais laissé périmé.
   async update(id: string, dto: UpdatePaiementDto) {
-    const [existant] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
-    if (!existant) {
-      throw new NotFoundException("Paiement introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
+    const existant = await this.resoudrePaiementAvecAppartenance(id);
 
     const nouveauMontant = dto.montant ?? existant.montant;
     const versementsActifs = await this.db
@@ -149,6 +131,12 @@ export class PaiementsService {
   // paiement archivé ne doit jamais laisser des versements "actifs"
   // visibles ailleurs, sans jamais les supprimer physiquement.
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT l'ouverture de la transaction (Priorité
+    // 3b, Catégorie C, chantier scoping multi-organisation, 2026-09-19) :
+    // avant toute lecture, avant la cascade d'archivage des versements
+    // actifs, avant l'archivage du paiement lui-même.
+    await this.resoudrePaiementAvecAppartenance(id);
+
     return this.db.transaction(async (tx) => {
       const utilisateurId = this.requestContext.getUtilisateurId();
 
@@ -271,6 +259,32 @@ export class PaiementsService {
       resultat.set(ligne.bailId, noms);
     }
     return resultat;
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5c pour findById(), étendu
+  // en Priorité 3b/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudrePaiementAvecAppartenance(id: string): Promise<PaiementRow> {
+    const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, id)).limit(1);
+    if (!paiement) {
+      throw new NotFoundException("Paiement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: paiements.id })
+        .from(paiements)
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(paiements.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Paiement introuvable");
+      }
+    }
+    return paiement;
   }
 
   private versDto(paiement: PaiementRow) {

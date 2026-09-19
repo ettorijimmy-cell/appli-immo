@@ -153,6 +153,12 @@ export class RemboursementsService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : réutilise
+    // verifierAppartenanceRemboursement() (Commit B5), déjà partagée avec
+    // telechargerPieceJustificative().
+    await this.verifierAppartenanceRemboursement(id, "Remboursement introuvable");
+
     const [remboursement] = await mettreAJourAvecAudit(
       this.db,
       remboursements,
@@ -176,7 +182,7 @@ export class RemboursementsService {
     if (!remboursement || !remboursement.pieceJustificativeChemin) {
       throw new NotFoundException("Pièce justificative introuvable");
     }
-    await this.verifierAppartenanceRemboursement(remboursement.id);
+    await this.verifierAppartenanceRemboursement(remboursement.id, "Pièce justificative introuvable");
     const contenu = await this.storage.lire(remboursement.pieceJustificativeChemin, { chiffrer: true });
     const utilisateurId = this.requestContext.getUtilisateurId();
     if (utilisateurId) {
@@ -195,10 +201,14 @@ export class RemboursementsService {
 
   // Contrôle d'appartenance (Commit B5, chantier scoping multi-organisation,
   // 2026-09-18) : même chemin de jointure que findAll() (remboursements ->
-  // baux -> appartements -> bien), même message que la pièce justificative
-  // absente ci-dessus — jamais de distinction observable entre "introuvable"
-  // et "d'une autre organisation".
-  private async verifierAppartenanceRemboursement(remboursementId: string): Promise<void> {
+  // baux -> appartements -> bien). `message` paramétré (Priorité 3b,
+  // 2026-09-19) : telechargerPieceJustificative() a besoin de "Pièce
+  // justificative introuvable" (même message que son propre garde sur
+  // pieceJustificativeChemin absent, juste au-dessus), archive() a besoin de
+  // "Remboursement introuvable" (même message que le `!remboursement`
+  // ci-dessous, atteint hors contexte HTTP) — dans les deux cas, jamais de
+  // distinction observable entre "introuvable" et "d'une autre organisation".
+  private async verifierAppartenanceRemboursement(remboursementId: string, message: string): Promise<void> {
     const organisationId = this.requestContext.getOrganisationId();
     if (!organisationId) {
       return;
@@ -212,7 +222,7 @@ export class RemboursementsService {
       .where(and(eq(remboursements.id, remboursementId), eq(bien.organisationId, organisationId)))
       .limit(1);
     if (!ligne) {
-      throw new NotFoundException("Pièce justificative introuvable");
+      throw new NotFoundException(message);
     }
   }
 

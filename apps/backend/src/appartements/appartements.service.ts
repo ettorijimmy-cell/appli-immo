@@ -105,29 +105,15 @@ export class AppartementsService {
   // différence observable. Skip si organisationId absent (hors contexte
   // HTTP).
   async findById(id: string) {
-    const [appartement] = await this.db
-      .select()
-      .from(appartements)
-      .where(eq(appartements.id, id))
-      .limit(1);
-    if (!appartement) {
-      throw new NotFoundException("Appartement introuvable");
-    }
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const [ligne] = await this.db
-        .select({ id: bien.id })
-        .from(bien)
-        .where(and(eq(bien.id, appartement.bienId), eq(bien.organisationId, organisationId)))
-        .limit(1);
-      if (!ligne) {
-        throw new NotFoundException("Appartement introuvable");
-      }
-    }
+    const appartement = await this.resoudreAppartementAvecAppartenance(id);
     return this.versDto(appartement);
   }
 
   async update(id: string, dto: UpdateAppartementDto) {
+    // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreAppartementAvecAppartenance(id);
+
     if (dto.statut === "loue") {
       await this.verifierBailActifOuPreavisExiste(id);
     }
@@ -168,6 +154,10 @@ export class AppartementsService {
   }
 
   async archive(id: string) {
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19).
+    await this.resoudreAppartementAvecAppartenance(id);
+
     const [appartement] = await mettreAJourAvecAudit(
       this.db,
       appartements,
@@ -179,6 +169,29 @@ export class AppartementsService {
       throw new NotFoundException("Appartement introuvable");
     }
     return this.versDto(appartement as AppartementRow);
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5c pour findById(), étendu
+  // en Priorité 3b/Catégorie C à update()/archive() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP).
+  private async resoudreAppartementAvecAppartenance(id: string): Promise<AppartementRow> {
+    const [appartement] = await this.db.select().from(appartements).where(eq(appartements.id, id)).limit(1);
+    if (!appartement) {
+      throw new NotFoundException("Appartement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: bien.id })
+        .from(bien)
+        .where(and(eq(bien.id, appartement.bienId), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+    }
+    return appartement;
   }
 
   private async recupererTypeBien(bienId: string): Promise<TypeBien> {

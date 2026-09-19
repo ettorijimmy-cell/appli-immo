@@ -81,10 +81,13 @@ export class VersementsService {
   // journal_audit n'intervient pas ici, réservé aux accès à une donnée
   // sensible (voir AuditService).
   async annuler(id: string) {
-    const [versement] = await this.db.select().from(versements).where(eq(versements.id, id)).limit(1);
-    if (!versement) {
-      throw new NotFoundException("Versement introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute lecture/écriture, y compris sur le
+    // paiement lié (Priorité 3b, Catégorie C, chantier scoping
+    // multi-organisation, 2026-09-19) : sans lui, un versementId d'une autre
+    // organisation menait à archiver ce versement ET à recalculer/réécrire
+    // le statut du paiement étranger auquel il est rattaché — deux tables
+    // touchées.
+    const versement = await this.resoudreVersementAvecAppartenance(id);
 
     const [versementAnnule] = await mettreAJourAvecAudit(
       this.db,
@@ -103,6 +106,39 @@ export class VersementsService {
     }
 
     return this.versDto(versementAnnule as VersementRow);
+  }
+
+  // Contrôle d'appartenance (Priorité 3b, Catégorie C, chantier scoping
+  // multi-organisation, 2026-09-19) : ce service n'a jamais eu de findById()
+  // (aucun endpoint de lecture à l'unité), donc pas de helper préexistant à
+  // réutiliser — extrait ici directement, utilisé par annuler() ci-dessus.
+  // versements n'a pas de colonne organisationId directe (voir findAll()
+  // plus haut, même chaîne de jointure). Même message que "n'existe pas",
+  // aucune différence observable. Skip si organisationId absent (hors
+  // contexte HTTP). ajouter() a la même lacune (aucun contrôle
+  // d'appartenance sur dto.paiementId) mais reste hors périmètre de cette
+  // Priorité 3b — non demandé, signalé pour arbitrage futur.
+  private async resoudreVersementAvecAppartenance(id: string): Promise<VersementRow> {
+    const [versement] = await this.db.select().from(versements).where(eq(versements.id, id)).limit(1);
+    if (!versement) {
+      throw new NotFoundException("Versement introuvable");
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const [ligne] = await this.db
+        .select({ id: versements.id })
+        .from(versements)
+        .innerJoin(paiements, eq(paiements.id, versements.paiementId))
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(versements.id, id), eq(bien.organisationId, organisationId)))
+        .limit(1);
+      if (!ligne) {
+        throw new NotFoundException("Versement introuvable");
+      }
+    }
+    return versement;
   }
 
   private async recalculerStatutPaiement(paiementId: string, montantDu: string): Promise<void> {

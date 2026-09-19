@@ -186,7 +186,12 @@ interface FixtureOrganisationTransactionnel {
 // Fixture dédiée (distincte de celle de findById() ci-dessus) : un bail
 // encore 'brouillon' prêt à activer, et un bail déjà 'actif' prêt à
 // résilier, chacun avec son propre appartement pour isoler les assertions.
-describe("BauxService.activer / resilier — contrôle d'appartenance (intégration Postgres réelle)", () => {
+//
+// update()/archive() réutilisent le même helper (verifierAppartenanceBail())
+// depuis Priorité 3b (2026-09-19) : update() sur le bail 'actif', archive()
+// sur le bail 'brouillon' (seul statut où archive() est autorisée sans
+// résiliation préalable).
+describe("BauxService.activer / resilier / update / archive — contrôle d'appartenance (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -391,5 +396,62 @@ describe("BauxService.activer / resilier — contrôle d'appartenance (intégrat
       bauxService.resilier(orgA.bailActifId, { dateFin: "2026-12-31" })
     );
     expect(resultat.statut).toBe("resilie");
+  });
+
+  describe("update", () => {
+    it("réussit normalement quand le bail appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() =>
+        bauxService.update(orgA.bailActifId, { travauxRealises: "Peinture" })
+      );
+      expect(misAJour.travauxRealises).toBe("Peinture");
+    });
+
+    it("404 sur le bailId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => bauxService.update(orgA.bailActifId, { travauxRealises: "Peinture" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(baux).where(eq(baux.id, orgA.bailActifId));
+      expect(inchange?.travauxRealises).toBeNull();
+    });
+
+    it("404 sur un bailId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => bauxService.update(randomUUID(), { travauxRealises: "Peinture" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bauxService.update(orgA.bailActifId, { travauxRealises: "Peinture" })
+      );
+      expect(misAJour.travauxRealises).toBe("Peinture");
+    });
+  });
+
+  describe("archive", () => {
+    it("réussit normalement quand le bail appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => bauxService.archive(orgA.bailBrouillonId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
+
+    it("404 sur le bailId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => bauxService.archive(orgA.bailBrouillonId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(baux).where(eq(baux.id, orgA.bailBrouillonId));
+      expect(inchange?.archivedAt).toBeNull();
+      expect(inchange?.statut).toBe("brouillon");
+    });
+
+    it("404 sur un bailId inexistant", async () => {
+      await expect(contexteOrgA(() => bauxService.archive(randomUUID()))).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bauxService.archive(orgA.bailBrouillonId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

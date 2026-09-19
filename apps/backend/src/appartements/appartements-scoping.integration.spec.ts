@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { appartements, createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthModule } from "../auth/auth.module";
 import { BienModule } from "../bien/bien.module";
@@ -27,7 +28,12 @@ interface FixtureOrganisation {
 // organisationId directe (voir findAll()), le contrôle passe par une
 // jointure vers bien. Aucun autre appelant interne (vérifié par grep —
 // seul AppartementsController.findOne l'appelle).
-describe("AppartementsService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// update()/archive() n'étaient pas protégées par ce sous-commit (Catégorie
+// C, audit séparé) — corrigées en Priorité 3b (2026-09-19) via
+// resoudreAppartementAvecAppartenance(), le même helper privé que
+// findById() (aucun appelant interne, seul AppartementsController).
+describe("AppartementsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -125,27 +131,86 @@ describe("AppartementsService.findById — contrôle d'appartenance à l'organis
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
-  it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
-    const appartement = await contexteOrgA(() => appartementsService.findById(orgA.appartementId));
-    expect(appartement.id).toBe(orgA.appartementId);
+  describe("findById", () => {
+    it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
+      const appartement = await contexteOrgA(() => appartementsService.findById(orgA.appartementId));
+      expect(appartement.id).toBe(orgA.appartementId);
+    });
+
+    it("404 sur l'appartementId d'une autre organisation", async () => {
+      await expect(contexteOrgB(() => appartementsService.findById(orgA.appartementId))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(contexteOrgA(() => appartementsService.findById(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const appartement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        appartementsService.findById(orgA.appartementId)
+      );
+      expect(appartement.id).toBe(orgA.appartementId);
+    });
   });
 
-  it("404 sur l'appartementId d'une autre organisation", async () => {
-    await expect(contexteOrgB(() => appartementsService.findById(orgA.appartementId))).rejects.toThrow(
-      NotFoundException
-    );
+  describe("update", () => {
+    it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() => appartementsService.update(orgA.appartementId, { numero: "42" }));
+      expect(misAJour.numero).toBe("42");
+    });
+
+    it("404 sur l'appartementId d'une autre organisation, sans jamais modifier la ligne étrangère", async () => {
+      await expect(
+        contexteOrgB(() => appartementsService.update(orgA.appartementId, { numero: "42" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(appartements).where(eq(appartements.id, orgA.appartementId));
+      expect(inchange?.numero).toBe("A");
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => appartementsService.update(randomUUID(), { numero: "42" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const misAJour = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        appartementsService.update(orgA.appartementId, { numero: "42" })
+      );
+      expect(misAJour.numero).toBe("42");
+    });
   });
 
-  it("404 sur un appartementId inexistant", async () => {
-    await expect(contexteOrgA(() => appartementsService.findById(randomUUID()))).rejects.toThrow(
-      NotFoundException
-    );
-  });
+  describe("archive", () => {
+    it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => appartementsService.archive(orgA.appartementId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
 
-  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const appartement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      appartementsService.findById(orgA.appartementId)
-    );
-    expect(appartement.id).toBe(orgA.appartementId);
+    it("404 sur l'appartementId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => appartementsService.archive(orgA.appartementId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(appartements).where(eq(appartements.id, orgA.appartementId));
+      expect(inchange?.archivedAt).toBeNull();
+      expect(inchange?.statut).not.toBe("archive");
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(contexteOrgA(() => appartementsService.archive(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        appartementsService.archive(orgA.appartementId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });

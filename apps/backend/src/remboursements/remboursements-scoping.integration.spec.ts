@@ -5,7 +5,8 @@ import path from "path";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, remboursements, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -54,6 +55,14 @@ interface FixtureOrganisation {
 // B1/B2/B4. La pièce jointe est chiffrée sur disque (storage.lire avec
 // chiffrer:true) — le spy porte directement sur cette méthode publique,
 // jamais un cast `any` sur du privé.
+//
+// archive() n'était pas protégée par ce commit (Catégorie C, audit séparé)
+// — corrigée en Priorité 3b (2026-09-19) via verifierAppartenanceRemboursement(),
+// le même helper privé que telechargerPieceJustificative() ci-dessus
+// (message paramétré : "Remboursement introuvable" pour archive(), "Pièce
+// justificative introuvable" pour telechargerPieceJustificative() — jamais
+// de différence observable entre "n'existe pas" et "d'une autre
+// organisation" au sein de chaque appelant).
 describe("RemboursementsService — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const storageDirTest = path.join(os.tmpdir(), `appli-immo-test-remboursements-scoping-${randomUUID()}`);
   process.env["DOCUMENTS_STORAGE_DIR"] = storageDirTest;
@@ -264,5 +273,33 @@ describe("RemboursementsService — contrôle d'appartenance à l'organisation (
       remboursementsService.telechargerPieceJustificative(orgA.remboursementId)
     );
     expect(resultat.contenu.toString("utf8")).toContain("devis peinture A");
+  });
+
+  describe("archive", () => {
+    it("réussit normalement quand le remboursement appartient à l'organisation appelante", async () => {
+      const archive = await contexteOrgA(() => remboursementsService.archive(orgA.remboursementId));
+      expect(archive.archivedAt).not.toBeNull();
+    });
+
+    it("404 sur le remboursementId d'une autre organisation, sans jamais archiver la ligne étrangère", async () => {
+      await expect(contexteOrgB(() => remboursementsService.archive(orgA.remboursementId))).rejects.toThrow(
+        NotFoundException
+      );
+      const [inchange] = await db.select().from(remboursements).where(eq(remboursements.id, orgA.remboursementId));
+      expect(inchange?.archivedAt).toBeNull();
+    });
+
+    it("404 sur un remboursementId inexistant", async () => {
+      await expect(contexteOrgA(() => remboursementsService.archive(randomUUID()))).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const archive = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        remboursementsService.archive(orgA.remboursementId)
+      );
+      expect(archive.archivedAt).not.toBeNull();
+    });
   });
 });
