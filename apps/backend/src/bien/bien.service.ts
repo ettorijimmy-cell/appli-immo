@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bien, bienImmeubleDetail, mettreAJourAvecAudit, scis, type Database } from "db";
+import { bien, bienImmeubleDetail, mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -41,6 +41,21 @@ export class BienService {
     }
     if (dto.type === "immeuble" && !dto.nom) {
       throw new BadRequestException("nom est requis pour un bien de type 'immeuble'.");
+    }
+
+    // Contrôle d'appartenance sur dto.sciId (Priorité E2, chantier scoping
+    // multi-organisation, Catégorie E, 2026-09-19) : jusqu'ici inséré sans
+    // aucun contrôle, même pas d'existence. bien.organisationId reste bien
+    // résolu depuis l'utilisateur (voir insert ci-dessous), mais un sciId
+    // d'une autre organisation restait acceptable — sa conséquence
+    // concrète était que resoudreNomBailleur() (voir plus bas, durci dans
+    // ce même commit) injectait le nom de la SCI étrangère comme
+    // "bailleur" dans les documents de bail/quittance générés. Ne peut pas
+    // réutiliser ComptesBancairesSciService.verifierAppartenanceSci (privée,
+    // et BienModule ne dépend pas de ComptesBancairesSciModule) : même
+    // vérification reproduite ici (voir verifierAppartenanceSci ci-dessous).
+    if (dto.sciId) {
+      await this.verifierAppartenanceSci(dto.sciId);
     }
 
     // typeHabitat/regimeJuridique (déplacés sur bien le 2026-08-26, voir
@@ -151,10 +166,29 @@ export class BienService {
    * découvert dans bail-document-docx.service.ts, qui échouait
    * (NotFoundException) pour tout bien proprietaireType='personne_physique'
    * faute d'alternative à sci.nom).
+   *
+   * Défense en profondeur (Priorité E2, chantier scoping multi-organisation,
+   * Catégorie E, 2026-09-19) : la requête sur `scis` est filtrée via
+   * organisation_sci sur l'organisation propriétaire du bien (bien.organisationId,
+   * jamais celle de l'appelant HTTP — cette méthode peut être invoquée hors
+   * contexte HTTP) plutôt qu'un JOIN direct sur scis.id. Ne dépend donc pas
+   * uniquement du contrôle désormais posé à l'écriture (create()/update()
+   * ci-dessous) : protège aussi d'éventuelles données historiques
+   * incohérentes. Si le sciId d'un bien ne correspond pas à son
+   * organisation, la méthode renvoie null plutôt que le nom d'une SCI
+   * étrangère — les deux appelants (bail-document-docx,
+   * quittance-document-docx) traitent déjà un résultat null comme un
+   * "bailleur introuvable" bloquant la génération, pas comme une valeur
+   * vide affichée telle quelle.
    */
   async resoudreNomBailleur(bienId: string): Promise<string | null> {
     const [bienRow] = await this.db
-      .select({ proprietaireType: bien.proprietaireType, sciId: bien.sciId, nomProprietaire: bien.nomProprietaire })
+      .select({
+        proprietaireType: bien.proprietaireType,
+        sciId: bien.sciId,
+        nomProprietaire: bien.nomProprietaire,
+        organisationId: bien.organisationId
+      })
       .from(bien)
       .where(eq(bien.id, bienId))
       .limit(1);
@@ -167,8 +201,33 @@ export class BienService {
     if (!bienRow.sciId) {
       return null;
     }
-    const [sci] = await this.db.select({ nom: scis.nom }).from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
+    const [sci] = await this.db
+      .select({ nom: scis.nom })
+      .from(scis)
+      .innerJoin(organisationSci, eq(organisationSci.sciId, scis.id))
+      .where(and(eq(scis.id, bienRow.sciId), eq(organisationSci.organisationId, bienRow.organisationId)))
+      .limit(1);
     return sci?.nom ?? null;
+  }
+
+  // Reproduit ComptesBancairesSciService.verifierAppartenanceSci (privée,
+  // non réutilisable ici — BienModule ne dépend pas de
+  // ComptesBancairesSciModule). Skip si organisationId absent (hors
+  // contexte HTTP, comportement préexistant préservé). Même message que
+  // "n'existe pas", aucune différence observable.
+  private async verifierAppartenanceSci(sciId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [rattachement] = await this.db
+      .select({ sciId: organisationSci.sciId })
+      .from(organisationSci)
+      .where(and(eq(organisationSci.sciId, sciId), eq(organisationSci.organisationId, organisationId)))
+      .limit(1);
+    if (!rattachement) {
+      throw new NotFoundException("SCI introuvable");
+    }
   }
 
   async update(id: string, dto: UpdateBienDto) {

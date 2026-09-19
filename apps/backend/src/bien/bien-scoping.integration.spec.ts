@@ -9,6 +9,8 @@ import { AuthModule } from "../auth/auth.module";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
+import { ScisModule } from "../scis/scis.module";
+import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { BienModule } from "./bien.module";
@@ -18,6 +20,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   bienId: string;
+  sciId: string;
 }
 
 // Sous-commit 5a (chantier scoping multi-organisation, 2026-09-18) :
@@ -32,13 +35,25 @@ interface FixtureOrganisation {
 // (2026-09-19) via resoudreBienAvecAppartenance(), le même helper privé
 // que findById() ci-dessus (aucun appelant interne pour ces deux méthodes,
 // seul BienController).
-describe("BienService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create() (Priorité E2, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.sciId (quand proprietaireType='sci') n'était vérifié ni
+// pour son existence ni pour son appartenance — corrigé via
+// verifierAppartenanceSci() (reproduit ComptesBancairesSciService, privée
+// et non réutilisable ici). update() n'accepte pas sciId (UpdateBienDto le
+// documente explicitement comme non modifiable après création — vérifié,
+// rien à corriger de ce côté). resoudreNomBailleur() durci en défense en
+// profondeur (voir sa propre doc dans bien.service.ts) — couverture dédiée
+// ci-dessous, avec une incohérence sciId/organisationId simulée en base
+// directement (impossible à produire via le service depuis ce commit).
+describe("BienService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
   let moduleRef: TestingModule;
   let db: Database;
   let bienService: BienService;
+  let scisService: ScisService;
   let requestContextService: RequestContextService;
 
   let orgA: FixtureOrganisation;
@@ -76,7 +91,15 @@ describe("BienService — contrôle d'appartenance à l'organisation (findById/u
       ville: "Paris"
     });
 
-    return { organisationId: organisation.id, userId: user.id, bienId: bien.id };
+    const sci = await scisService.create(user.id, {
+      nom: `SCI Bien Scoping ${suffixe}`,
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+
+    return { organisationId: organisation.id, userId: user.id, bienId: bien.id, sciId: sci.id };
   }
 
   beforeEach(async () => {
@@ -89,6 +112,7 @@ describe("BienService — contrôle d'appartenance à l'organisation (findById/u
         DatabaseModule,
         UsersModule,
         AuthModule,
+        ScisModule,
         BienModule
       ]
     })
@@ -97,6 +121,7 @@ describe("BienService — contrôle d'appartenance à l'organisation (findById/u
       .compile();
 
     bienService = moduleRef.get(BienService);
+    scisService = moduleRef.get(ScisService);
     requestContextService = moduleRef.get(RequestContextService);
 
     orgA = await creerFixtureOrganisation("A");
@@ -118,6 +143,81 @@ describe("BienService — contrôle d'appartenance à l'organisation (findById/u
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand la SCI appartient à l'organisation appelante", async () => {
+      const bienCree = await contexteOrgA(() =>
+        bienService.create(orgA.userId, {
+          type: "immeuble",
+          proprietaireType: "sci",
+          sciId: orgA.sciId,
+          nom: "Nouvel immeuble",
+          adresse: "3 rue de Test",
+          codePostal: "75001",
+          ville: "Paris",
+          typeHabitat: "collectif",
+          regimeJuridique: "copropriete"
+        })
+      );
+      expect(bienCree.sciId).toBe(orgA.sciId);
+    });
+
+    it("404 sur le sciId d'une autre organisation, sans jamais créer de bien avec ce sciId", async () => {
+      await expect(
+        contexteOrgB(() =>
+          bienService.create(orgB.userId, {
+            type: "immeuble",
+            proprietaireType: "sci",
+            sciId: orgA.sciId,
+            nom: "Immeuble étranger",
+            adresse: "3 rue de Test",
+            codePostal: "75001",
+            ville: "Paris",
+            typeHabitat: "collectif",
+            regimeJuridique: "copropriete"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(bien).where(eq(bien.sciId, orgA.sciId));
+      expect(lignes).toHaveLength(0);
+    });
+
+    it("404 sur un sciId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          bienService.create(orgA.userId, {
+            type: "immeuble",
+            proprietaireType: "sci",
+            sciId: randomUUID(),
+            nom: "Immeuble fantôme",
+            adresse: "3 rue de Test",
+            codePostal: "75001",
+            ville: "Paris",
+            typeHabitat: "collectif",
+            regimeJuridique: "copropriete"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const bienCree = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bienService.create(orgA.userId, {
+          type: "immeuble",
+          proprietaireType: "sci",
+          sciId: orgB.sciId,
+          nom: "Immeuble hors contexte",
+          adresse: "3 rue de Test",
+          codePostal: "75001",
+          ville: "Paris",
+          typeHabitat: "collectif",
+          regimeJuridique: "copropriete"
+        })
+      );
+      expect(bienCree.sciId).toBe(orgB.sciId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
@@ -191,6 +291,56 @@ describe("BienService — contrôle d'appartenance à l'organisation (findById/u
         bienService.archive(orgA.bienId)
       );
       expect(bienArchive.archivedAt).not.toBeNull();
+    });
+  });
+
+  describe("resoudreNomBailleur — défense en profondeur", () => {
+    it("renvoie le nom de la SCI quand sciId et organisationId sont cohérents", async () => {
+      const bienCree = await contexteOrgA(() =>
+        bienService.create(orgA.userId, {
+          type: "immeuble",
+          proprietaireType: "sci",
+          sciId: orgA.sciId,
+          nom: "Immeuble cohérent",
+          adresse: "4 rue de Test",
+          codePostal: "75001",
+          ville: "Paris",
+          typeHabitat: "collectif",
+          regimeJuridique: "copropriete"
+        })
+      );
+      const nomBailleur = await bienService.resoudreNomBailleur(bienCree.id);
+      expect(nomBailleur).toBe(`SCI Bien Scoping A`);
+    });
+
+    it("renvoie null (jamais le nom de la SCI étrangère) quand sciId ne correspond pas à l'organisation du bien — incohérence simulée, impossible à produire via create()/update() depuis ce commit", async () => {
+      // Simule une donnée historique incohérente (ou un hypothétique futur
+      // point d'entrée qui contournerait le contrôle de création) : la
+      // seule façon de la produire est désormais un UPDATE SQL direct, plus
+      // via le service.
+      const bienIncoherent = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bienService.create(orgA.userId, {
+          type: "immeuble",
+          proprietaireType: "sci",
+          sciId: orgB.sciId,
+          nom: "Immeuble incohérent",
+          adresse: "4 rue de Test",
+          codePostal: "75001",
+          ville: "Paris",
+          typeHabitat: "collectif",
+          regimeJuridique: "copropriete"
+        })
+      );
+      expect(bienIncoherent.organisationId).toBe(orgA.organisationId);
+      expect(bienIncoherent.sciId).toBe(orgB.sciId);
+
+      const nomBailleur = await bienService.resoudreNomBailleur(bienIncoherent.id);
+      expect(nomBailleur).toBeNull();
+      expect(nomBailleur).not.toBe(`SCI Bien Scoping B`);
+    });
+
+    it("renvoie null pour un bienId inexistant", async () => {
+      expect(await bienService.resoudreNomBailleur(randomUUID())).toBeNull();
     });
   });
 });
