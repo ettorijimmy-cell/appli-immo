@@ -120,6 +120,20 @@ export class DocumentsService {
     if (!ancien) {
       throw new NotFoundException("Document à remplacer introuvable");
     }
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 2, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : réutilise
+    // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
+    // findById()/telecharger() — sans lui, un documentPrecedentId d'une
+    // autre organisation menait à créer une nouvelle version chaînée à un
+    // document étranger et à archiver ce dernier. Même message que
+    // "n'existe pas". Skip si organisationId absent (hors contexte HTTP).
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.resoudreEntiteIdsOrganisation(ancien.entiteType, organisationId);
+      if (!idsValides.includes(ancien.entiteId)) {
+        throw new NotFoundException("Document à remplacer introuvable");
+      }
+    }
     // Garde l'invariant "une seule version courante non chaînée par chaîne"
     // (docs/data-dictionary.md, section documents) : on ne remplace jamais
     // une version déjà archivée, qu'elle le soit via un remplacement

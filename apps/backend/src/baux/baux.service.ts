@@ -180,6 +180,11 @@ export class BauxService {
   // Transactionnel : l'activation du bail et le passage de l'appartement à
   // "loue" doivent réussir ou échouer ensemble (docs/backlog.md, Module 3).
   async activer(id: string) {
+    // Contrôle d'appartenance AVANT l'ouverture de la transaction (Priorité 2,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19) : avant
+    // toute lecture d'appartement, toute création de paiements (caution,
+    // échéance d'entrée), toute modification du statut de l'appartement.
+    await this.verifierAppartenanceBail(id);
     return this.db.transaction(async (tx) => {
       const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1);
       if (!bail) {
@@ -334,6 +339,11 @@ export class BauxService {
   // s'il était bien "loue" (garde contre l'écrasement d'un statut modifié
   // manuellement entre-temps, ex. "travaux").
   async resilier(id: string, dto: ResilierBailDto) {
+    // Contrôle d'appartenance AVANT l'ouverture de la transaction (Priorité 2,
+    // Catégorie C, chantier scoping multi-organisation, 2026-09-19) : avant
+    // toute lecture d'appartement, toute création/modification de paiements
+    // (prorata), toute modification du statut de l'appartement.
+    await this.verifierAppartenanceBail(id);
     return this.db.transaction(async (tx) => {
       const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1);
       if (!bail) {
@@ -548,6 +558,31 @@ export class BauxService {
       throw new NotFoundException("Bail introuvable");
     }
     return this.versDto(bailArchive as BailRow);
+  }
+
+  // Contrôle d'appartenance (Priorité 2, Catégorie C, chantier scoping
+  // multi-organisation, 2026-09-19) : baux n'a pas de colonne organisationId
+  // directe (voir findById() plus haut, même jointure appartements -> bien).
+  // Utilisé par activer()/resilier() ci-dessous, avant l'ouverture de leur
+  // transaction respective — même message que "n'existe pas", aucune
+  // différence observable. Skip si organisationId absent (hors contexte
+  // HTTP) : dans ce cas, le `!bail` déjà présent dans activer()/resilier()
+  // continue de couvrir le cas "id inexistant".
+  private async verifierAppartenanceBail(id: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(baux.id, id), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Bail introuvable");
+    }
   }
 
   private versDto(bail: BailRow) {

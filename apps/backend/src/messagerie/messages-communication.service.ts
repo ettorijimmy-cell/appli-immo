@@ -180,14 +180,15 @@ export class MessagesCommunicationService {
   // cheminStockage entre les deux tables (les deux copies vivent leur vie
   // indépendamment, ex. si le message est un jour purgé).
   async classerDansDocuments(pieceJointeId: string, dto: CreateDocumentDto) {
-    const [piece] = await this.db
-      .select()
-      .from(pieceJointeMessage)
-      .where(eq(pieceJointeMessage.id, pieceJointeId))
-      .limit(1);
-    if (!piece) {
-      throw new NotFoundException("Pièce jointe introuvable");
-    }
+    // Contrôle d'appartenance AVANT tout déchiffrement et avant l'appel à
+    // documentsService.creerDepuisBuffer (Priorité 2, Catégorie C, chantier
+    // scoping multi-organisation, 2026-09-19) : sans lui, une pièceJointeId
+    // d'une autre organisation menait à déchiffrer son contenu et à créer un
+    // vrai document dans le système polymorphe à partir de celui-ci.
+    // dto.entiteType/dto.entiteId ne sont volontairement pas revérifiés ici
+    // (verifierEntiteExiste, appelé par creerDepuisBuffer, ne contrôle pas
+    // l'organisation — Catégorie E, hors périmètre de ce commit).
+    const piece = await this.resoudrePieceJointeAvecAppartenance(pieceJointeId);
     const contenu = await this.documentStorageService.lire(piece.cheminStockage);
     return this.documentsService.creerDepuisBuffer(
       dto,
@@ -196,6 +197,29 @@ export class MessagesCommunicationService {
       piece.typeMime ?? "application/octet-stream",
       contenu.byteLength
     );
+  }
+
+  // Contrôle d'appartenance (Priorité 2, Catégorie C, chantier scoping
+  // multi-organisation, 2026-09-19) : organisationId est une colonne
+  // directe sur pieceJointeMessage (dénormalisée depuis son message parent
+  // à la création, voir packages/db/src/schema/message-communication.ts) —
+  // contrôle par simple comparaison, même principe que Catégorie A. Même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP). Utilisé par
+  // classerDansDocuments() ci-dessus ; obtenirContenuPieceJointe() a la même
+  // lacune (aucun contrôle d'appartenance) mais reste hors périmètre de
+  // cette Priorité 2 — non demandé, signalé pour arbitrage futur.
+  private async resoudrePieceJointeAvecAppartenance(pieceJointeId: string): Promise<PieceJointeMessageRow> {
+    const [piece] = await this.db
+      .select()
+      .from(pieceJointeMessage)
+      .where(eq(pieceJointeMessage.id, pieceJointeId))
+      .limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!piece || (organisationId && piece.organisationId !== organisationId)) {
+      throw new NotFoundException("Pièce jointe introuvable");
+    }
+    return piece;
   }
 
   private versDto(ligne: MessageCommunicationRow) {

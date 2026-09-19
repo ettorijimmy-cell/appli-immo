@@ -5,7 +5,8 @@ import path from "path";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, immeublesLegacy, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, documents, immeublesLegacy, organisations, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -552,6 +553,83 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
         documentsService.findById(documentOrgA.id)
       );
       expect(trouve.id).toBe(documentOrgA.id);
+    });
+  });
+
+  // Priorité 2 (chantier scoping multi-organisation, Catégorie C,
+  // 2026-09-19) : remplacerDocument() créait une nouvelle version chaînée à
+  // documentPrecedentId et archivait l'ancienne sans jamais vérifier
+  // l'organisation appelante — corrigé en réutilisant
+  // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
+  // findById()/telecharger(). storage.enregistrer doit rester non appelé sur
+  // le chemin refusé (aucun blob écrit), et le document original doit rester
+  // inchangé (aucune nouvelle version chaînée, archivedAt/statut intacts).
+  describe("remplacerDocument — contrôle d'appartenance", () => {
+    it("remplace normalement quand le document précédent appartient à l'organisation appelante", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const nouveau = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () =>
+          documentsService.remplacerDocument(
+            documentOrgA.id,
+            { categorie: "photo" },
+            fichierTest("nouveau-contenu-A", "nouveau-A.pdf")
+          )
+      );
+      expect(nouveau.documentPrecedentId).toBe(documentOrgA.id);
+    });
+
+    it("404 sur le documentPrecedentId d'une autre organisation, sans jamais écrire de blob ni créer/modifier de ligne", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () =>
+            documentsService.remplacerDocument(
+              documentOrgA.id,
+              { categorie: "photo" },
+              fichierTest("tentative-cross-org", "cross-org.pdf")
+            )
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+
+      const nouvellesVersions = await db.select().from(documents).where(eq(documents.documentPrecedentId, documentOrgA.id));
+      expect(nouvellesVersions).toHaveLength(0);
+
+      const [ancienInchange] = await db.select().from(documents).where(eq(documents.id, documentOrgA.id));
+      expect(ancienInchange?.archivedAt).toBeNull();
+      expect(ancienInchange?.statut).toBe("valide");
+    });
+
+    it("404 sur un documentPrecedentId inexistant, sans jamais écrire de blob", async () => {
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.remplacerDocument(randomUUID(), { categorie: "photo" }, fichierTest("x", "x.pdf"))
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+
+      const nouveau = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.remplacerDocument(
+          documentOrgA.id,
+          { categorie: "photo" },
+          fichierTest("nouveau-contenu-hors-contexte", "hc.pdf")
+        )
+      );
+      expect(nouveau.documentPrecedentId).toBe(documentOrgA.id);
     });
   });
 });

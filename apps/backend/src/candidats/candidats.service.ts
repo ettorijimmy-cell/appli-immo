@@ -66,16 +66,11 @@ export class CandidatsService {
   // Contrôle d'appartenance (Sous-commit 5a, chantier scoping
   // multi-organisation, 2026-09-18) : même message que "n'existe pas",
   // aucune différence observable — même principe que B1-B6. Skip si
-  // organisationId absent (hors contexte HTTP). N'affecte PAS
-  // convertirEnLocataire() ci-dessous : cette méthode refait sa propre
-  // requête brute sur candidatId, sans jamais appeler this.findById()
-  // (Catégorie C, hors périmètre de ce sous-commit).
+  // organisationId absent (hors contexte HTTP). Réutilise désormais
+  // resoudreCandidatAvecAppartenance() (Priorité 2, Catégorie C,
+  // 2026-09-19), partagée avec convertirEnLocataire() ci-dessous.
   async findById(id: string) {
-    const [ligne] = await this.db.select().from(candidat).where(eq(candidat.id, id)).limit(1);
-    const organisationId = this.requestContext.getOrganisationId();
-    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
-      throw new NotFoundException("Candidat introuvable");
-    }
+    const ligne = await this.resoudreCandidatAvecAppartenance(id);
     return this.versDto(ligne);
   }
 
@@ -130,10 +125,13 @@ export class CandidatsService {
   // dupliquer l'insertion de locataire dans ce service pour partager une
   // transaction — à revoir si ce cas se présente réellement en pratique.
   async convertirEnLocataire(userId: string, candidatId: string) {
-    const [candidatActuel] = await this.db.select().from(candidat).where(eq(candidat.id, candidatId)).limit(1);
-    if (!candidatActuel) {
-      throw new NotFoundException("Candidat introuvable");
-    }
+    // Contrôle d'appartenance AVANT toute lecture/écriture exploitant le
+    // candidat (Priorité 2, Catégorie C, chantier scoping multi-organisation,
+    // 2026-09-19) : sans lui, un candidatId d'une autre organisation menait
+    // à créer un vrai locataire à partir de ses données, et à réattribuer
+    // ses documents (entiteType/entiteId réécrits) — divulgation ET
+    // intégrité combinées.
+    const candidatActuel = await this.resoudreCandidatAvecAppartenance(candidatId);
     if (candidatActuel.statut === "converti") {
       throw new ConflictException("Ce candidat a déjà été converti en locataire.");
     }
@@ -178,6 +176,21 @@ export class CandidatsService {
     }
 
     return { locataire: locataireCree, candidat: this.versDto(candidatMisAJour as CandidatRow) };
+  }
+
+  // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
+  // en Priorité 2/Catégorie C à convertirEnLocataire() — 2026-09-19) : même
+  // message que "n'existe pas", aucune différence observable. Skip si
+  // organisationId absent (hors contexte HTTP). Renvoie la ligne brute (pas
+  // le DTO) : convertirEnLocataire() a besoin des colonnes internes
+  // (nom/prenom/telephone/email/statut), pas de la projection publique.
+  private async resoudreCandidatAvecAppartenance(id: string): Promise<CandidatRow> {
+    const [ligne] = await this.db.select().from(candidat).where(eq(candidat.id, id)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!ligne || (organisationId && ligne.organisationId !== organisationId)) {
+      throw new NotFoundException("Candidat introuvable");
+    }
+    return ligne;
   }
 
   private versDto(ligne: CandidatRow) {
