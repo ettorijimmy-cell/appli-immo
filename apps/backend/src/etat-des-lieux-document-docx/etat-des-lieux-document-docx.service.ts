@@ -26,6 +26,7 @@ import ImageModule from "docxtemplater-image-module-free";
 import PizZip from "pizzip";
 import sharp from "sharp";
 import { AuditService } from "../audit/audit.service";
+import { BienService } from "../bien/bien.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
@@ -164,6 +165,7 @@ export class EtatDesLieuxDocumentDocxService {
     private readonly documentsService: DocumentsService,
     private readonly auditService: AuditService,
     private readonly requestContext: RequestContextService,
+    private readonly bienService: BienService,
     config: ConfigService
   ) {
     this.templatePath =
@@ -203,12 +205,21 @@ export class EtatDesLieuxDocumentDocxService {
     if (!bienRow) {
       throw new NotFoundException("Bien introuvable");
     }
-    if (!bienRow.sciId) {
-      throw new NotFoundException("SCI introuvable");
-    }
-    const [sci] = await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1);
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
+    // Bailleur : sci.nom (bien en SCI) ou bien.nomProprietaire (nom propre)
+    // — résolu via le service partagé BienService.resoudreNomBailleur, même
+    // correctif que bail-document-docx.service.ts/quittance-document-docx.
+    // service.ts (bug découvert au test manuel, 2026-09-22) : ce bloc
+    // exigeait jusqu'ici bienRow.sciId inconditionnellement, alors qu'il
+    // est structurellement NULL pour tout bien en nom propre (contrainte
+    // bien_sci_id_coherent, packages/db/src/schema/bien.ts) — jamais une
+    // incohérence de données, un cas réel et valide resté non géré. `sci`
+    // reste chargé séparément (uniquement quand bienRow.sciId est
+    // renseigné) pour la balise "Adresse de la SCI", sans équivalent pour
+    // un bailleur en nom propre.
+    const sci = bienRow.sciId ? ((await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1))[0] ?? null) : null;
+    const nomBailleur = await this.bienService.resoudreNomBailleur(bienRow.id);
+    if (!nomBailleur) {
+      throw new NotFoundException("Bailleur introuvable (nom de la SCI ou du propriétaire manquant)");
     }
 
     const liensLocataires = await this.db
@@ -436,8 +447,13 @@ export class EtatDesLieuxDocumentDocxService {
     }
 
     const donneesBalises: Record<string, unknown> = {
-      "Nom de la SCI": sci.nom,
-      "Adresse de la SCI": formaterAdresse(sci.adresse, sci.codePostal, sci.ville),
+      // Balise nommée "Nom de la SCI" dans le fichier Word d'origine
+      // (figée depuis le modèle réel) mais porte en réalité le nom du
+      // bailleur quel que soit son mode de détention — même principe que
+      // bail-document-docx.service.ts. "Adresse de la SCI" n'a pas
+      // d'équivalent pour un bailleur en nom propre : VIDE dans ce cas.
+      "Nom de la SCI": nomBailleur,
+      "Adresse de la SCI": sci ? formaterAdresse(sci.adresse, sci.codePostal, sci.ville) : VIDE,
       "Adresse de l’appartement": formaterAdresse(bienRow.adresse, bienRow.codePostal, bienRow.ville),
       "Nom prénom du locataire": formaterListeNoms(locatairesDuBail.map((l) => `${l.prenom} ${l.nom}`)),
 

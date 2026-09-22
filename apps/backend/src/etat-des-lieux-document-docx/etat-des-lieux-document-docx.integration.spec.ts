@@ -181,24 +181,36 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   // Assemble un dossier complet (SCI, immeuble, appartement avec
   // composition connue, locataire(s), bail) — `typeBail`/`avecColocataire`
   // pilotent les variantes couvertes par les différents tests.
+  // `proprietaireType` (défaut 'sci', préserve tous les appels existants) :
+  // 'personne_physique' construit un bien en nom propre (nomProprietaire,
+  // sans sciId ni SCI créée) — reproduit le cas signalé au test manuel
+  // (2026-09-22), non couvert avant ce correctif.
   async function creerDossierComplet(
-    options: { typeBail?: "vide" | "meuble"; avecColocataire?: boolean } = {}
+    options: {
+      typeBail?: "vide" | "meuble";
+      avecColocataire?: boolean;
+      proprietaireType?: "sci" | "personne_physique";
+    } = {}
   ) {
     const typeBail = options.typeBail ?? "vide";
     const avecColocataire = options.avecColocataire ?? false;
+    const proprietaireType = options.proprietaireType ?? "sci";
 
-    const sci = await scisService.create(userId, {
-      nom: "SCI EDL Test",
-      regimeFiscal: "IR",
-      adresse: "1 avenue de la République",
-      codePostal: "75011",
-      ville: "Paris"
-    });
+    const sci =
+      proprietaireType === "sci"
+        ? await scisService.create(userId, {
+            nom: "SCI EDL Test",
+            regimeFiscal: "IR",
+            adresse: "1 avenue de la République",
+            codePostal: "75011",
+            ville: "Paris"
+          })
+        : null;
 
     const bien = await bienService.create(userId, {
       type: "immeuble",
-      proprietaireType: "sci",
-      sciId: sci.id,
+      proprietaireType,
+      ...(proprietaireType === "sci" ? { sciId: sci!.id } : { nomProprietaire: "Paul Durand" }),
       nom: "Immeuble EDL Test",
       adresse: "12 rue des Lilas",
       codePostal: "75011",
@@ -338,7 +350,9 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");
 
     const texte = texteDuDocx(buffer);
-    expect(texte).toContain(sci.nom);
+    // Non-null : ce test utilise le proprietaireType par défaut ('sci'),
+    // creerDossierComplet garantit alors sci non-null.
+    expect(texte).toContain(sci!.nom);
     expect(texte).toContain(`${locataireTitulaire.prenom} ${locataireTitulaire.nom}`);
     expect(texte).toContain("12 rue des Lilas");
     expect(texte).toContain("2026-08-01");
@@ -360,6 +374,41 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     // Bail vide : jamais le bloc inventaire meublé.
     void bail;
 
+    expect(balisesResiduelles(buffer)).toEqual([]);
+  });
+
+  // Correctif (bug signalé au test manuel, 2026-09-22) : la génération
+  // exigeait jusqu'ici bienRow.sciId inconditionnellement (NotFoundException
+  // "SCI introuvable"), alors qu'il est structurellement NULL pour tout
+  // bien en nom propre (contrainte bien_sci_id_coherent) — jamais couvert
+  // par un test avant ce correctif (grep préalable : aucune des deux
+  // fixtures de ce fichier n'utilisait proprietaireType: "personne_physique").
+  it("génère un .docx complet pour un bien en nom propre (proprietaireType: personne_physique), sans exiger de SCI", async () => {
+    const { bien, locataireTitulaire, etatDesLieux } = await creerDossierComplet({
+      typeBail: "vide",
+      proprietaireType: "personne_physique"
+    });
+    expect(bien.sciId).toBeNull();
+    expect(bien.nomProprietaire).toBe("Paul Durand");
+
+    await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
+    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
+    );
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");
+
+    const texte = texteDuDocx(buffer);
+    // "Nom de la SCI" porte en réalité le nom du bailleur quel que soit son
+    // mode de détention (même balise figée que côté bail-document-docx) :
+    // pour un bailleur en nom propre, c'est nomProprietaire qui y apparaît.
+    expect(texte).toContain("Paul Durand");
+    expect(texte).toContain(`${locataireTitulaire.prenom} ${locataireTitulaire.nom}`);
+    // Aucune balise résiduelle : "Adresse de la SCI" (VIDE pour ce cas) est
+    // bien remplacée, jamais laissée en {balise} littérale dans le document.
     expect(balisesResiduelles(buffer)).toEqual([]);
   });
 

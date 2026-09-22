@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BienModule } from "../bien/bien.module";
 import { DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { EtatsDesLieuxModule } from "../etats-des-lieux/etats-des-lieux.module";
@@ -6,7 +7,7 @@ import { EtatDesLieuxDocumentDocxController } from "./etat-des-lieux-document-do
 import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.service";
 
 @Module({
-  imports: [DatabaseModule, DocumentsModule, EtatsDesLieuxModule],
+  imports: [DatabaseModule, DocumentsModule, EtatsDesLieuxModule, BienModule],
   controllers: [EtatDesLieuxDocumentDocxController],
   providers: [EtatDesLieuxDocumentDocxService]
 })
