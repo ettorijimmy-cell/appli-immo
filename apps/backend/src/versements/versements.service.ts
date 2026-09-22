@@ -47,11 +47,32 @@ export class VersementsService {
   // remboursements") — remplace l'ancien PaiementsService.enregistrer(),
   // qui écrasait montant_paye à chaque appel. Recalcule et persiste le
   // statut du paiement après ajout, jamais laissé périmé.
+  //
+  // Contrôle d'appartenance sur dto.paiementId (Priorité E4, chantier
+  // scoping multi-organisation, Catégorie E, 2026-09-19 — signalée en
+  // Priorité 3b, non corrigée à l'époque, hors périmètre Catégorie C) :
+  // n'était vérifié que pour son existence — un paiementId d'une autre
+  // organisation menait à créer un versement dessus PUIS à réécrire son
+  // statut ("payé"/"impayé") via recalculerStatutPaiement() ci-dessous,
+  // effet visible immédiatement dans le tableau de bord de l'organisation
+  // propriétaire réelle. PaiementsService.resoudrePaiementAvecAppartenance()
+  // n'est pas réutilisable (privée, et VersementsModule ne dépend pas de
+  // PaiementsModule) : même jointure reproduite ici sur la requête déjà
+  // exécutée pour récupérer paiement.montant, même pattern qu'E1/E2/E3.
   async ajouter(dto: CreateVersementDto) {
-    const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, dto.paiementId)).limit(1);
-    if (!paiement) {
+    const organisationId = this.requestContext.getOrganisationId();
+    const [ligne] = await this.db
+      .select({ paiement: paiements })
+      .from(paiements)
+      .innerJoin(baux, eq(baux.id, paiements.bailId))
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(paiements.id, dto.paiementId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+      .limit(1);
+    if (!ligne) {
       throw new NotFoundException("Paiement introuvable");
     }
+    const paiement = ligne.paiement;
 
     const [versement] = await this.db
       .insert(versements)
@@ -115,9 +136,9 @@ export class VersementsService {
   // versements n'a pas de colonne organisationId directe (voir findAll()
   // plus haut, même chaîne de jointure). Même message que "n'existe pas",
   // aucune différence observable. Skip si organisationId absent (hors
-  // contexte HTTP). ajouter() a la même lacune (aucun contrôle
-  // d'appartenance sur dto.paiementId) mais reste hors périmètre de cette
-  // Priorité 3b — non demandé, signalé pour arbitrage futur.
+  // contexte HTTP). ajouter() avait la même lacune (aucun contrôle
+  // d'appartenance sur dto.paiementId) — corrigée en Priorité E4
+  // (2026-09-19).
   private async resoudreVersementAvecAppartenance(id: string): Promise<VersementRow> {
     const [versement] = await this.db.select().from(versements).where(eq(versements.id, id)).limit(1);
     if (!versement) {

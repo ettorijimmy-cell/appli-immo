@@ -27,6 +27,7 @@ interface FixtureOrganisation {
   userId: string;
   paiementId: string;
   versementId: string;
+  paiementImpayeId: string;
 }
 
 // Priorité 3b (chantier scoping multi-organisation, Catégorie C, 2026-09-19) :
@@ -36,10 +37,16 @@ interface FixtureOrganisation {
 // endpoint de lecture à l'unité), donc pas de helper préexistant à
 // réutiliser — extrait directement (resoudreVersementAvecAppartenance()),
 // utilisé par annuler() avant toute lecture/écriture, y compris sur
-// `paiements`. ajouter() a la même lacune (aucun contrôle d'appartenance
-// sur dto.paiementId) mais reste hors périmètre de cette Priorité 3b — non
-// demandé, signalé pour arbitrage futur.
-describe("VersementsService.annuler — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+// `paiements`.
+//
+// ajouter() (Priorité E4, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19 — signalée en Priorité 3b, non corrigée à l'époque) : même
+// lacune sur dto.paiementId — corrigée en filtrant la requête déjà
+// exécutée pour récupérer paiement.montant via jointure vers bien, même
+// pattern qu'E1/E2/E3. PaiementsService.resoudrePaiementAvecAppartenance()
+// n'est pas réutilisable (privée, VersementsModule ne dépend pas de
+// PaiementsModule).
+describe("VersementsService.ajouter / annuler — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -108,7 +115,25 @@ describe("VersementsService.annuler — contrôle d'appartenance à l'organisati
       dateVersement: "2026-01-05"
     });
 
-    return { organisationId: organisation.id, userId: user.id, paiementId: paiement.id, versementId: versement.id };
+    // Paiement distinct, volontairement laissé sans versement (statut
+    // "impaye" par défaut) — cible du describe "ajouter" ci-dessous : une
+    // preuve d'absence d'effet de bord y exige un statut encore capable de
+    // basculer vers "paye" si le contrôle d'appartenance échouait à
+    // bloquer.
+    const paiementImpaye = await paiementsService.create({
+      bailId: bail.id,
+      type: "charges",
+      montant: "500.00",
+      dateEcheance: "2026-02-05"
+    });
+
+    return {
+      organisationId: organisation.id,
+      userId: user.id,
+      paiementId: paiement.id,
+      versementId: versement.id,
+      paiementImpayeId: paiementImpaye.id
+    };
   }
 
   beforeEach(async () => {
@@ -158,6 +183,68 @@ describe("VersementsService.annuler — contrôle d'appartenance à l'organisati
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("ajouter", () => {
+    it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {
+      const versement = await contexteOrgA(() =>
+        versementsService.ajouter({
+          paiementId: orgA.paiementImpayeId,
+          montant: "500.00",
+          mode: "virement",
+          dateVersement: "2026-02-05"
+        })
+      );
+      expect(versement.paiementId).toBe(orgA.paiementImpayeId);
+    });
+
+    it("404 sur le paiementId d'une autre organisation, sans jamais créer de versement ni réécrire le statut du paiement étranger", async () => {
+      // montant = 500.00 couvre exactement le montant dû (500.00) : si
+      // ajouter() avait réellement recalculé le statut du paiement
+      // étranger malgré le rejet, il basculerait de "impaye" à "paye" —
+      // la preuve porte donc sur une vraie transition potentielle.
+      await expect(
+        contexteOrgB(() =>
+          versementsService.ajouter({
+            paiementId: orgA.paiementImpayeId,
+            montant: "500.00",
+            mode: "virement",
+            dateVersement: "2026-02-05"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const versementsCrees = await db.select().from(versements).where(eq(versements.paiementId, orgA.paiementImpayeId));
+      expect(versementsCrees).toHaveLength(0);
+
+      const [paiementInchange] = await db.select().from(paiements).where(eq(paiements.id, orgA.paiementImpayeId));
+      expect(paiementInchange?.statut).toBe("impaye");
+    });
+
+    it("404 sur un paiementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          versementsService.ajouter({
+            paiementId: randomUUID(),
+            montant: "500.00",
+            mode: "virement",
+            dateVersement: "2026-02-05"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const versement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        versementsService.ajouter({
+          paiementId: orgB.paiementImpayeId,
+          montant: "500.00",
+          mode: "virement",
+          dateVersement: "2026-02-05"
+        })
+      );
+      expect(versement.paiementId).toBe(orgB.paiementImpayeId);
+    });
+  });
 
   it("réussit normalement quand le versement appartient à l'organisation appelante", async () => {
     const annule = await contexteOrgA(() => versementsService.annuler(orgA.versementId));
