@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { candidat, documents, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bien, candidat, documents, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq, sql } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -23,6 +23,17 @@ export class CandidatsService {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new NotFoundException("Utilisateur introuvable");
+    }
+    // Contrôle d'appartenance sur dto.appartementId (Priorité E6a, chantier
+    // scoping multi-organisation, Catégorie E, 2026-09-19) : candidat.
+    // organisationId reste bien résolu depuis l'utilisateur ci-dessus (le
+    // candidat n'est jamais injecté chez un tiers), mais un appartementId
+    // d'une autre organisation restait acceptable — sa conséquence : toute
+    // vue résolvant ce champ pour l'affichage (adresse, numéro) expose des
+    // données patrimoniales d'une autre organisation. Champ optionnel :
+    // aucune vérification déclenchée si absent.
+    if (dto.appartementId) {
+      await this.verifierAppartenanceAppartement(dto.appartementId);
     }
 
     const [ligne] = await this.db
@@ -78,6 +89,11 @@ export class CandidatsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     await this.resoudreCandidatAvecAppartenance(id);
+    // Contrôle d'appartenance sur dto.appartementId, quand fourni (Priorité
+    // E6a, Catégorie E, 2026-09-19) — même raison que create() ci-dessus.
+    if (dto.appartementId !== undefined) {
+      await this.verifierAppartenanceAppartement(dto.appartementId);
+    }
 
     const [ligne] = await mettreAJourAvecAudit(
       this.db,
@@ -199,6 +215,26 @@ export class CandidatsService {
       throw new NotFoundException("Candidat introuvable");
     }
     return ligne;
+  }
+
+  // Reproduit AppartementsService.resoudreAppartementAvecAppartenance
+  // (privée, non réutilisable ici — CandidatsModule ne dépend pas
+  // d'AppartementsModule), même pattern qu'E1-E5. Skip si organisationId
+  // absent (hors contexte HTTP).
+  private async verifierAppartenanceAppartement(appartementId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: appartements.id })
+      .from(appartements)
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(appartements.id, appartementId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Appartement introuvable");
+    }
   }
 
   private versDto(ligne: CandidatRow) {

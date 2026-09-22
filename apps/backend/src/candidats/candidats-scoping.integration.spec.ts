@@ -14,7 +14,11 @@ import {
 } from "db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AppartementsModule } from "../appartements/appartements.module";
+import { AppartementsService } from "../appartements/appartements.service";
 import { AuthModule } from "../auth/auth.module";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
@@ -28,6 +32,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   candidatId: string;
+  appartementId: string;
 }
 
 // Sous-commit 5a (chantier scoping multi-organisation, 2026-09-18) :
@@ -43,12 +48,24 @@ interface FixtureOrganisation {
 // describe dédié plus bas dans ce fichier pour sa couverture cross-org.
 // update()/archive() avaient la même lacune — corrigées en Priorité 3a
 // (2026-09-19), même helper.
-describe("CandidatsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create()/update() (Priorité E6a, chantier scoping multi-organisation,
+// Catégorie E, 2026-09-19) : dto.appartementId (optionnel) n'était jamais
+// vérifié — organisationId du candidat reste bien résolu depuis
+// l'utilisateur (le candidat n'est jamais injecté chez un tiers), mais un
+// appartementId étranger exposait des données patrimoniales d'une autre
+// organisation dès qu'une vue résolvait ce champ pour l'affichage.
+// Corrigé via verifierAppartenanceAppartement() (reproduit
+// AppartementsService, privée et non réutilisable — CandidatsModule ne
+// dépend pas d'AppartementsModule).
+describe("CandidatsService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
   let moduleRef: TestingModule;
   let db: Database;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
   let candidatsService: CandidatsService;
   let requestContextService: RequestContextService;
 
@@ -78,9 +95,26 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (findB
       throw new Error("Échec de l'insertion de l'utilisateur de test");
     }
 
+    const bien = await bienService.create(user.id, {
+      type: "maison",
+      proprietaireType: "personne_physique",
+      nomProprietaire: `Propriétaire ${suffixe}`,
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: suffixe,
+      type: "T3",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+
     const candidat = await candidatsService.create(user.id, { nom: "Petit", prenom: `Julien${suffixe}` });
 
-    return { organisationId: organisation.id, userId: user.id, candidatId: candidat.id };
+    return { organisationId: organisation.id, userId: user.id, candidatId: candidat.id, appartementId: appartement.id };
   }
 
   beforeEach(async () => {
@@ -93,6 +127,8 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (findB
         DatabaseModule,
         UsersModule,
         AuthModule,
+        BienModule,
+        AppartementsModule,
         LocatairesModule,
         CandidatsModule
       ]
@@ -101,6 +137,8 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (findB
       .useValue(db)
       .compile();
 
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
     candidatsService = moduleRef.get(CandidatsService);
     requestContextService = moduleRef.get(RequestContextService);
 
@@ -123,6 +161,44 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (findB
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement sans appartementId (champ optionnel, aucune vérification déclenchée)", async () => {
+      const candidatCree = await contexteOrgA(() => candidatsService.create(orgA.userId, { nom: "Sans", prenom: "Appartement" }));
+      expect(candidatCree.appartementId).toBeNull();
+    });
+
+    it("réussit normalement quand l'appartementId appartient à l'organisation appelante", async () => {
+      const candidatCree = await contexteOrgA(() =>
+        candidatsService.create(orgA.userId, { nom: "Avec", prenom: "Appartement", appartementId: orgA.appartementId })
+      );
+      expect(candidatCree.appartementId).toBe(orgA.appartementId);
+    });
+
+    it("404 sur l'appartementId d'une autre organisation, sans jamais créer de candidat", async () => {
+      await expect(
+        contexteOrgB(() =>
+          candidatsService.create(orgB.userId, { nom: "Etranger", prenom: "Bob", appartementId: orgA.appartementId })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(candidat).where(eq(candidat.appartementId, orgA.appartementId));
+      expect(lignes).toHaveLength(0);
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => candidatsService.create(orgA.userId, { nom: "Fantôme", prenom: "X", appartementId: randomUUID() }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const candidatCree = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        candidatsService.create(orgA.userId, { nom: "SansContexte", prenom: "X", appartementId: orgB.appartementId })
+      );
+      expect(candidatCree.appartementId).toBe(orgB.appartementId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand le candidat appartient à l'organisation appelante", async () => {
@@ -173,6 +249,27 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (findB
         candidatsService.update(orgA.candidatId, { notes: "modifié" })
       );
       expect(misAJour.notes).toBe("modifié");
+    });
+
+    it("réussit normalement quand le nouvel appartementId appartient à l'organisation appelante", async () => {
+      const misAJour = await contexteOrgA(() =>
+        candidatsService.update(orgA.candidatId, { appartementId: orgA.appartementId })
+      );
+      expect(misAJour.appartementId).toBe(orgA.appartementId);
+    });
+
+    it("404 sur un appartementId d'une autre organisation, sans jamais modifier la ligne", async () => {
+      await expect(
+        contexteOrgA(() => candidatsService.update(orgA.candidatId, { appartementId: orgB.appartementId }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(candidat).where(eq(candidat.id, orgA.candidatId));
+      expect(inchange?.appartementId).toBeNull();
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => candidatsService.update(orgA.candidatId, { appartementId: randomUUID() }))
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
