@@ -307,6 +307,18 @@ describe("CandidatsService — contrôle d'appartenance à l'organisation (creat
 // intégrité combinées le plus sévère de l'audit Catégorie C après ceux de
 // TachesService. Corrigé via resoudreCandidatAvecAppartenance(), le même
 // helper privé que findById() ci-dessus.
+// convertirEnLocataire(userId, candidatId) ne prend pas d'appartementId —
+// contrôle orthogonal à celui de create()/update() (E6a ci-dessus).
+// Interface distincte de FixtureOrganisation (sans appartementId) plutôt
+// que de fabriquer un bien+appartement jamais exploité par ces 4 tests —
+// même pattern que FixtureOrganisationRattachements/FixtureOrganisationEcriture
+// dans les autres fichiers *-scoping.integration.spec.ts de ce chantier.
+interface FixtureOrganisationConversion {
+  organisationId: string;
+  userId: string;
+  candidatId: string;
+}
+
 describe("CandidatsService.convertirEnLocataire — contrôle d'appartenance (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
@@ -316,10 +328,10 @@ describe("CandidatsService.convertirEnLocataire — contrôle d'appartenance (in
   let candidatsService: CandidatsService;
   let requestContextService: RequestContextService;
 
-  let orgA: FixtureOrganisation;
-  let orgB: FixtureOrganisation;
+  let orgA: FixtureOrganisationConversion;
+  let orgB: FixtureOrganisationConversion;
 
-  async function creerFixtureOrganisation(suffixe: string): Promise<FixtureOrganisation> {
+  async function creerFixtureOrganisation(suffixe: string): Promise<FixtureOrganisationConversion> {
     const [organisation] = await db
       .insert(organisations)
       .values({ type: "particulier", nom: `Organisation Candidats Conversion Scoping ${suffixe}` })
