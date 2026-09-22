@@ -32,6 +32,8 @@ import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { SmtpEnvoiService } from "../messagerie/smtp-envoi.service";
+import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
+import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
 import { QuittanceDocumentDocxService } from "../quittance-document-docx/quittance-document-docx.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
@@ -279,6 +281,7 @@ describe("TachesService.appliquerRevision / envoyerNotification — contrôle d'
   let tachesService: TachesService;
   let requestContextService: RequestContextService;
   let quittanceDocumentDocxService: QuittanceDocumentDocxService;
+  let modelesCourrierService: ModelesCourrierService;
   let smtpEnvoiServiceDouble: { envoyerEmail: ReturnType<typeof vi.fn> };
 
   let orgA: FixtureOrganisationEcriture;
@@ -445,6 +448,7 @@ describe("TachesService.appliquerRevision / envoyerNotification — contrôle d'
         BienModule,
         AppartementsModule,
         BauxModule,
+        ModelesCourrierModule,
         TachesModule
       ]
     })
@@ -461,9 +465,26 @@ describe("TachesService.appliquerRevision / envoyerNotification — contrôle d'
     tachesService = moduleRef.get(TachesService);
     requestContextService = moduleRef.get(RequestContextService);
     quittanceDocumentDocxService = moduleRef.get(QuittanceDocumentDocxService);
+    modelesCourrierService = moduleRef.get(ModelesCourrierService);
 
     orgA = await creerFixtureOrganisation("A");
     orgB = await creerFixtureOrganisation("B");
+
+    // Modèle réel upserté directement ici (hermétique, indépendant de
+    // l'exécution préalable de seed-modele-revision-loyer.ts) — même
+    // pattern que taches.integration.spec.ts. findByCode() est un lookup
+    // global (aucun filtre organisationId), une seule ligne suffit pour
+    // les deux organisations de ce describe block.
+    await modelesCourrierService.upsertModeleCourrier({
+      code: "revision_loyer",
+      nom: "Révision annuelle du loyer",
+      canal: "email",
+      objet: "Révision de votre loyer — {{libelleBien}}",
+      corps:
+        "Bonjour {{nomLocataire}}, nouveau loyer pour {{libelleBien}} : {{loyerApres}} € (au lieu de {{loyerAvant}} €) à compter du {{dateEffet}}.",
+      variablesRequises: ["nomLocataire", "libelleBien", "loyerAvant", "loyerApres", "dateEffet"],
+      organisationId: orgA.organisationId
+    });
   });
 
   afterEach(async () => {
