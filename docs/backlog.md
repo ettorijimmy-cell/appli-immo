@@ -1196,6 +1196,15 @@ par le futur module "Révision annuelle" du cahier des charges initial
   PIECES ANNEXEES (formulation reprise du décret n° 2015-587, annexe 1,
   section XI.B). Formulaire d'upload et filtre Documents (desktop) mis à
   jour avec les 3 nouvelles valeurs.
+  **Revu le 2026-09-22** (audit en lecture seule, table `diagnostics`) :
+  décision reconfirmée sans changement — toujours 0 ligne en base de dev,
+  toujours aucun module/UI branché, table réservée en attente d'un premier
+  diagnostic dont le résultat est réellement cité dans le corps du bail.
+  Le Sync Stream PowerSync `diagnostics` (`docs/powersync-sync-streams.yaml`)
+  reste actif malgré la table vide — choix délibéré, pas un oubli :
+  cohérent avec le reste du domaine Documents déjà synchronisé, coût nul
+  tant que la table est vide, et évite d'avoir à rebrancher un Sync Stream
+  le jour où la table sera enfin utilisée.
 - **Attachement effectif de la notice d'information — tranché et
   implémenté (2026-08-24).** Décision : (A) mention textuelle
   inconditionnelle en section PIECES ANNEXEES ("Une notice d'information
