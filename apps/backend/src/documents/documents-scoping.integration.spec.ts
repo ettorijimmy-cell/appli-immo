@@ -278,9 +278,11 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
     await rm(storageDirTest, { recursive: true, force: true });
   });
 
-  // Upload hors contexte HTTP (comme le beforeEach) : verifierEntiteExiste
-  // n'est pas concerné par le scoping (Commit 5, pas ce sous-commit), les
-  // deux organisations peuvent donc uploader librement pendant la
+  // Upload hors contexte HTTP (comme le beforeEach) : verifierEntiteExiste()
+  // vérifie désormais aussi l'organisation (Priorité E5, voir describe
+  // "upload / creerDepuisBuffer" plus bas), mais son contrôle est skip hors
+  // contexte HTTP (comportement préexistant préservé) — les deux
+  // organisations peuvent donc toujours uploader librement pendant la
   // préparation des fixtures.
   async function uploaderPourLesDeuxOrganisations(
     entiteType: DocumentEntiteType,
@@ -409,6 +411,123 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
     expect(idsOrgB).not.toContain(bienOrgA.id);
     expect(idsOrgB).not.toContain(bailOrgA.id);
     expect(idsOrgB).not.toContain(sciOrgA.id);
+  });
+
+  // Priorité E5 (chantier scoping multi-organisation, Catégorie E,
+  // 2026-09-19) : verifierEntiteExiste() (appelée par creerDepuisBuffer(),
+  // donc par upload() ET par
+  // MessagesCommunicationService.classerDansDocuments() en aval) ne
+  // vérifiait jusqu'ici que l'existence de dto.entiteId, jamais son
+  // appartenance à l'organisation appelante — un entiteId étranger menait à
+  // écrire le blob chiffré sur disque PUIS à insérer une ligne documents
+  // rattachée à cette entité étrangère. Corrigé en réutilisant
+  // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
+  // telecharger()/findById() ci-dessous. storage.enregistrer doit rester
+  // non appelé sur le chemin refusé (aucun blob écrit), et aucune ligne
+  // documents insérée. Trois entiteType couverts (mêmes chemins que le
+  // describe findById ci-dessous) : 'sci' (via organisation_sci),
+  // 'appartement' (jointure simple vers bien), 'locataire' (colonne
+  // organisationId directe) — ce correctif ferme aussi, sans aucun
+  // changement dans messages-communication.service.ts, le volet
+  // entiteType/entiteId de classerDansDocuments() resté ouvert depuis la
+  // Priorité 2 (voir messages-communication-scoping.integration.spec.ts
+  // pour la preuve dédiée à ce chemin précis).
+  describe("upload / creerDepuisBuffer — contrôle d'appartenance", () => {
+    it("entiteType='sci' (via organisation_sci) : succès même organisation, 404 cross-org sans écriture", async () => {
+      const document = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () => documentsService.upload({ entiteType: "sci", entiteId: orgA.sciId, categorie: "photo" }, fichierTest("x", "x.pdf"))
+      );
+      expect(document.entiteId).toBe(orgA.sciId);
+
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () => documentsService.upload({ entiteType: "sci", entiteId: orgA.sciId, categorie: "photo" }, fichierTest("x", "x.pdf"))
+        )
+      ).rejects.toThrow(NotFoundException);
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+      const lignes = await db.select().from(documents).where(eq(documents.entiteId, orgA.sciId));
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]?.id).toBe(document.id);
+    });
+
+    it("entiteType='appartement' (jointure simple vers bien) : succès même organisation, 404 cross-org sans écriture", async () => {
+      const document = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () =>
+          documentsService.upload(
+            { entiteType: "appartement", entiteId: orgA.appartementId, categorie: "photo" },
+            fichierTest("x", "x.pdf")
+          )
+      );
+      expect(document.entiteId).toBe(orgA.appartementId);
+
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () =>
+            documentsService.upload(
+              { entiteType: "appartement", entiteId: orgA.appartementId, categorie: "photo" },
+              fichierTest("x", "x.pdf")
+            )
+        )
+      ).rejects.toThrow(NotFoundException);
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+      const lignes = await db.select().from(documents).where(eq(documents.entiteId, orgA.appartementId));
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]?.id).toBe(document.id);
+    });
+
+    it("entiteType='locataire' (colonne organisationId directe) : succès même organisation, 404 cross-org sans écriture", async () => {
+      const document = await requestContextService.executerAvecContexte(
+        { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+        () =>
+          documentsService.upload(
+            { entiteType: "locataire", entiteId: orgA.locataireId, categorie: "photo" },
+            fichierTest("x", "x.pdf")
+          )
+      );
+      expect(document.entiteId).toBe(orgA.locataireId);
+
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+          () =>
+            documentsService.upload(
+              { entiteType: "locataire", entiteId: orgA.locataireId, categorie: "photo" },
+              fichierTest("x", "x.pdf")
+            )
+        )
+      ).rejects.toThrow(NotFoundException);
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+      const lignes = await db.select().from(documents).where(eq(documents.entiteId, orgA.locataireId));
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]?.id).toBe(document.id);
+    });
+
+    it("404 sur un entiteId inexistant, sans jamais écrire de blob", async () => {
+      const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+
+      await expect(
+        requestContextService.executerAvecContexte(
+          { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+          () => documentsService.upload({ entiteType: "bien", entiteId: randomUUID(), categorie: "photo" }, fichierTest("x", "x.pdf"))
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      expect(enregistrerSpy).not.toHaveBeenCalled();
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const document = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        documentsService.upload({ entiteType: "bien", entiteId: orgB.bienId, categorie: "photo" }, fichierTest("x", "x.pdf"))
+      );
+      expect(document.entiteId).toBe(orgB.bienId);
+    });
   });
 
   // Commit B4 (chantier scoping multi-organisation, 2026-09-18) :

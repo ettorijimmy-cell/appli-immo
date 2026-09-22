@@ -524,6 +524,22 @@ export class DocumentsService {
 
   // Le lien polymorphe n'a pas de contrainte de clé étrangère possible
   // (5 tables cibles) : cette vérification applicative en tient lieu.
+  //
+  // Contrôle d'appartenance (Priorité E5, chantier scoping
+  // multi-organisation, Catégorie E, 2026-09-19) : ne vérifiait jusqu'ici
+  // que l'existence — un entiteId d'une autre organisation menait à écrire
+  // le blob chiffré sur disque PUIS à insérer une ligne documents rattachée
+  // à cette entité étrangère (potentiellement une pièce d'identité, un
+  // RIB), visible dans le dossier de l'organisation propriétaire réelle.
+  // Réutilise resoudreEntiteIdsOrganisation() (Sous-commit 4c), même
+  // principe que remplacerDocument() ci-dessus : existence d'abord (pour
+  // conserver le comportement hors-contexte-HTTP existant), puis
+  // appartenance via idsValides.includes(entiteId) si organisationId
+  // présent. Seul appelant interne : creerDepuisBuffer() (donc upload() ET,
+  // par ricochet, MessagesCommunicationService.classerDansDocuments() —
+  // ferme le volet signalé en Priorité 2/3a et jamais corrigé depuis, sans
+  // aucun changement dans messages-communication.service.ts). Même message
+  // que "n'existe pas" dans les deux cas, aucune différence observable.
   private async verifierEntiteExiste(entiteType: DocumentEntiteType, entiteId: string): Promise<void> {
     const [ligne] = await (() => {
       switch (entiteType) {
@@ -583,6 +599,15 @@ export class DocumentsService {
       throw new NotFoundException(
         `Aucune entité de type '${entiteType}' avec l'id fourni : impossible d'y rattacher un document.`
       );
+    }
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.resoudreEntiteIdsOrganisation(entiteType, organisationId);
+      if (!idsValides.includes(entiteId)) {
+        throw new NotFoundException(
+          `Aucune entité de type '${entiteType}' avec l'id fourni : impossible d'y rattacher un document.`
+        );
+      }
     }
   }
 }

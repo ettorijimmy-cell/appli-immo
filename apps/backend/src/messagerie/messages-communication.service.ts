@@ -189,9 +189,11 @@ export class MessagesCommunicationService {
     // scoping multi-organisation, 2026-09-19) : sans lui, une pièceJointeId
     // d'une autre organisation menait à déchiffrer son contenu et à créer un
     // vrai document dans le système polymorphe à partir de celui-ci.
-    // dto.entiteType/dto.entiteId ne sont volontairement pas revérifiés ici
-    // (verifierEntiteExiste, appelé par creerDepuisBuffer, ne contrôle pas
-    // l'organisation — Catégorie E, hors périmètre de ce commit).
+    // dto.entiteType/dto.entiteId : contrôle d'appartenance fermé côté
+    // DocumentsService.verifierEntiteExiste() (Priorité E5, chantier
+    // scoping multi-organisation, Catégorie E, 2026-09-19), appelée par
+    // creerDepuisBuffer() ci-dessous — aucun changement nécessaire ici,
+    // signalé comme hors périmètre à l'époque de ce commit (Priorité 2).
     const piece = await this.resoudrePieceJointeAvecAppartenance(pieceJointeId);
     const contenu = await this.documentStorageService.lire(piece.cheminStockage);
     return this.documentsService.creerDepuisBuffer(

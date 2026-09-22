@@ -386,6 +386,39 @@ describe("MessagesCommunicationService.classerDansDocuments / obtenirContenuPiec
     expect(document.nomFichier).toBe("piece-A.pdf");
   });
 
+  // Priorité E5 (chantier scoping multi-organisation, Catégorie E,
+  // 2026-09-19) : ce cas précis (pieceJointeId propre à l'appelant, mais
+  // entiteId d'une AUTRE organisation) n'était couvert par aucun test
+  // existant — le seul cas cross-org testé jusqu'ici portait sur
+  // pieceJointeId, jamais sur entiteId isolément. Corrigé par
+  // DocumentsService.verifierEntiteExiste() (appelée par
+  // creerDepuisBuffer(), en aval de classerDansDocuments()), sans aucun
+  // changement dans ce fichier de service. Contrairement au cas
+  // pieceJointeId cross-org ci-dessus, le déchiffrement de la pièce jointe
+  // a bien lieu ici (documentStorageService.lire) puisque pieceJointeId
+  // appartient légitimement à l'appelant — la preuve d'absence d'effet de
+  // bord porte donc sur documentStorageService.enregistrer (jamais appelé)
+  // et sur l'absence de toute ligne documents créée pour l'entiteId
+  // étranger.
+  it("404 sur l'entiteId d'une autre organisation (pièce jointe pourtant propre), sans jamais écrire de blob ni créer de document — ferme le volet signalé en Priorité 2", async () => {
+    const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+
+    await expect(
+      contexteOrgA(() =>
+        messagesCommunicationService.classerDansDocuments(orgA.pieceJointeId, {
+          entiteType: "locataire",
+          entiteId: orgB.locataireId,
+          categorie: "courrier"
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+
+    expect(enregistrerSpy).not.toHaveBeenCalled();
+
+    const documentsCrees = await db.select().from(documents).where(eq(documents.entiteId, orgB.locataireId));
+    expect(documentsCrees).toHaveLength(0);
+  });
+
   it("404 sur la pièceJointeId d'une autre organisation, sans jamais déchiffrer ni créer de document", async () => {
     const lireSpy = vi.spyOn(documentStorageService, "lire");
 
