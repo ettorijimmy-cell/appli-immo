@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { evenementCalendrier, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bien, candidat, contact, evenementCalendrier, mettreAJourAvecAudit, sinistre, type Database } from "db";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -28,6 +28,16 @@ export class EvenementsCalendrierService {
     if (!user) {
       throw new NotFoundException("Utilisateur introuvable");
     }
+    // Contrôle d'appartenance sur les 5 rattachements optionnels (Priorité
+    // E6c, chantier scoping multi-organisation, Catégorie E, 2026-09-19) :
+    // evenementCalendrier.organisationId reste bien résolu depuis
+    // l'utilisateur ci-dessus (l'événement n'est jamais injecté chez un
+    // tiers), mais un id étranger sur l'un de ces champs restait acceptable
+    // — sa conséquence dépasse l'app elle-même : CalendrierAbonnementService
+    // republie ces événements via un flux ICS public, accessible sans
+    // authentification à quiconque détient l'URL. Champs optionnels :
+    // aucune vérification déclenchée si absents.
+    await this.verifierAppartenancesEvenement(dto);
 
     const [ligne] = await this.db
       .insert(evenementCalendrier)
@@ -95,6 +105,10 @@ export class EvenementsCalendrierService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     await this.resoudreEvenementAvecAppartenance(id);
+    // Contrôle d'appartenance sur les 5 rattachements optionnels, quand
+    // fournis (Priorité E6c, Catégorie E, 2026-09-19) — même raison que
+    // create() ci-dessus.
+    await this.verifierAppartenancesEvenement(dto);
 
     const { dateDebut, dateFin, ...reste } = dto;
     const [ligne] = await mettreAJourAvecAudit(
@@ -143,6 +157,133 @@ export class EvenementsCalendrierService {
       throw new NotFoundException("Événement introuvable");
     }
     return ligne;
+  }
+
+  // Dispatch des 5 rattachements optionnels vers leur vérification
+  // d'appartenance respective (Priorité E6c, chantier scoping
+  // multi-organisation, Catégorie E, 2026-09-19) — appelé identiquement par
+  // create() et update() ci-dessus. `!== undefined` (et non une simple
+  // troncature) : distingue "champ non transmis" (aucune vérification) de
+  // "champ transmis" y compris pour create(), où la distinction n'a pas
+  // d'incidence pratique (JSON ne transmet jamais explicitement
+  // `undefined`) mais garde le même idiome qu'update() sur les autres
+  // services de ce chantier.
+  private async verifierAppartenancesEvenement(dto: {
+    bienId?: string;
+    appartementId?: string;
+    contactId?: string;
+    candidatId?: string;
+    sinistreId?: string;
+  }): Promise<void> {
+    if (dto.bienId !== undefined) {
+      await this.verifierAppartenanceBien(dto.bienId);
+    }
+    if (dto.appartementId !== undefined) {
+      await this.verifierAppartenanceAppartement(dto.appartementId);
+    }
+    if (dto.contactId !== undefined) {
+      await this.verifierAppartenanceContact(dto.contactId);
+    }
+    if (dto.candidatId !== undefined) {
+      await this.verifierAppartenanceCandidat(dto.candidatId);
+    }
+    if (dto.sinistreId !== undefined) {
+      await this.verifierAppartenanceSinistre(dto.sinistreId);
+    }
+  }
+
+  // Reproduit BienService.resoudreBienAvecAppartenance (privée, non
+  // réutilisable ici — EvenementsCalendrierModule ne dépend pas de
+  // BienModule), même pattern qu'E1-E6b. Skip si organisationId absent
+  // (hors contexte HTTP).
+  private async verifierAppartenanceBien(bienId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: bien.id })
+      .from(bien)
+      .where(and(eq(bien.id, bienId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Bien introuvable");
+    }
+  }
+
+  // Reproduit AppartementsService.resoudreAppartementAvecAppartenance
+  // (privée, non réutilisable ici), même pattern que
+  // CandidatsService.verifierAppartenanceAppartement (E6a) : appartements
+  // n'a pas de colonne organisationId propre, jointure via bien requise.
+  // Skip si organisationId absent (hors contexte HTTP).
+  private async verifierAppartenanceAppartement(appartementId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: appartements.id })
+      .from(appartements)
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(appartements.id, appartementId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Appartement introuvable");
+    }
+  }
+
+  // Reproduit ContactsService.resoudreContactAvecAppartenance (privée, non
+  // réutilisable ici — EvenementsCalendrierModule ne dépend pas de
+  // ContactsModule). Skip si organisationId absent (hors contexte HTTP).
+  private async verifierAppartenanceContact(contactId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: contact.id })
+      .from(contact)
+      .where(and(eq(contact.id, contactId), eq(contact.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Contact introuvable");
+    }
+  }
+
+  // Reproduit CandidatsService.resoudreCandidatAvecAppartenance (privée,
+  // non réutilisable ici — EvenementsCalendrierModule ne dépend pas de
+  // CandidatsModule). Skip si organisationId absent (hors contexte HTTP).
+  private async verifierAppartenanceCandidat(candidatId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: candidat.id })
+      .from(candidat)
+      .where(and(eq(candidat.id, candidatId), eq(candidat.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Candidat introuvable");
+    }
+  }
+
+  // Reproduit SinistresService.resoudreSinistreAvecAppartenance (privée,
+  // non réutilisable ici — EvenementsCalendrierModule ne dépend pas de
+  // SinistresModule). Skip si organisationId absent (hors contexte HTTP).
+  private async verifierAppartenanceSinistre(sinistreId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: sinistre.id })
+      .from(sinistre)
+      .where(and(eq(sinistre.id, sinistreId), eq(sinistre.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Sinistre introuvable");
+    }
   }
 
   // Utilisé par CalendrierAbonnementService (flux ICS) : tous les
