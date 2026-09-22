@@ -1414,14 +1414,29 @@ un document à valeur probante.
 
 ## Gmail (Module Tâches, Étape 3 — intégration OAuth2, 2026-09-01)
 
-**Dormant depuis le Module Messagerie (2026-09-16)** : `TachesService.
-envoyerNotification` envoie désormais via `SmtpEnvoiService` (boîte mail
-dédiée, IMAP/SMTP) — voir section "Messagerie" ci-dessous pour la
-décision technique complète. Tout ce qui suit reste exact
-techniquement et les routes/l'écran Paramètres restent en place, mais
-plus aucun flux applicatif n'appelle `GoogleOAuthService` en usage réel.
-Retrait explicite laissé à une décision future (décision actée avec
-Jimmy), pas fait ici.
+**Désactivé depuis le 2026-09-22** (dormant depuis le Module Messagerie,
+2026-09-16, jusqu'à cette date) : `TachesService.envoyerNotification`
+envoie désormais via `SmtpEnvoiService` (boîte mail dédiée, IMAP/SMTP) —
+voir section "Messagerie" ci-dessous pour la décision technique
+complète. Tout ce qui suit reste exact techniquement — code, schéma
+`connexion_gmail`, variables d'environnement Google (`GOOGLE_CLIENT_ID`/
+`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`) tous intacts, décision
+actée avec Jimmy — mais l'accès est désormais bloqué des deux côtés,
+suppression définitive laissée à une décision future distincte :
+- **Backend** : `GoogleOAuthModule` retiré des imports d'`AppModule`
+  (`apps/backend/src/app.module.ts`) — Nest ne charge plus jamais le
+  module, donc `GoogleOAuthController` n'est jamais instancié et ses 3
+  routes (`/gmail/url-consentement`, `/gmail/statut`, `/gmail/callback`
+  — y compris le callback `@Public()`, non protégé par `JwtAuthGuard`)
+  ne sont jamais enregistrées, quelle que soit la requête.
+  `GoogleOAuthController`/`GoogleOAuthService` restent intacts dans le
+  dépôt. Testé directement (`app.module.spec.ts`) : lecture de la
+  métadonnée `@Module` d'`AppModule`, vérifie l'absence de
+  `GoogleOAuthModule`.
+- **Frontend** : le montage de `ConnexionGmailView` dans
+  `ParametresPage.tsx` (écran Paramètres) est commenté — plus aucun
+  bouton visible. `gmail/ConnexionGmailView.tsx` et `gmail/api.ts`
+  restent intacts.
 
 Clôt le cycle "notification résolue en `metadata` mais jamais réellement
 envoyée" ouvert depuis les étapes précédentes (alertes, révision de loyer,
@@ -1476,17 +1491,24 @@ Cloud Console.
 
 **Incohérence code/configuration qui en résulte** : le code demande
 toujours `openid`/`email` dans l'URL de consentement alors que la Console
-n'autorise que `gmail.send` — si ce flux (aujourd'hui dormant, voir
-ci-dessous) était un jour réactivé sans correction, le consentement
-échouerait sur les scopes non autorisés. Non corrigé à ce jour car
-`GoogleOAuthService` est un module dormant depuis le passage de l'envoi de
-notifications à la boîte mail dédiée (voir section "Messagerie") — aucun
-appel réel ne passe plus par ce flux.
+n'autorise que `gmail.send` — si ce module était un jour réactivé
+(réintroduire `GoogleOAuthModule` dans les imports d'`AppModule`, voir
+ci-dessus) sans corriger ce point, le consentement échouerait sur les
+scopes non autorisés. Non corrigé à ce jour car `GoogleOAuthService` est
+désormais un module désactivé (dormant depuis le passage de l'envoi de
+notifications à la boîte mail dédiée, désactivé depuis le 2026-09-22 —
+voir section "Messagerie") — aucun appel réel ne passe plus par ce flux,
+et plus aucune route ne l'expose.
 
 Côté desktop : canal IPC générique `shell:openExternal` (`apps/desktop/src/
 main/index.ts`, restreint à `http(s)`) ouvre l'URL de consentement dans le
 navigateur système — deuxième précédent après le `setWindowOpenHandler`
 passif déjà en place, mais celui-ci déclenchable depuis le renderer.
+Depuis la désactivation du 2026-09-22 (`ConnexionGmailView` démontée de
+`ParametresPage.tsx`), plus rien n'atteint ce chemin en pratique — le
+canal IPC lui-même reste nécessaire, partagé avec la Messagerie
+(ouverture des liens cliqués dans le corps d'un email reçu, sans rapport
+avec OAuth).
 
 ### envoyerNotification (`TachesService.envoyerNotification`, `PATCH /taches/:id/envoyer-notification`)
 Action générique aux 5 types de tâche, pas spécifique à un type : lit
@@ -1815,10 +1837,12 @@ loyer, relance sinistre) passent désormais par cette boîte dédiée
 que sur ce point précis — signature de `envoyerEmail` volontairement
 identique (`organisationId, destinataire, objet, corps, pieceJointe?`),
 toute la résolution de destinataire/modèle de courrier/génération PDF en
-amont reste inchangée. **`GoogleOAuthService`/`connexion_gmail` restent
-dormants** (routes `/gmail/*` et écran Paramètres inchangés, mais plus
-rien ne les appelle en usage réel) — retrait explicite laissé à une
-décision future, une fois l'unification éprouvée en usage réel.
+amont reste inchangée. **`GoogleOAuthService`/`connexion_gmail` sont
+désormais désactivés** (2026-09-22 — voir section "Gmail" ci-dessus pour
+le détail : `GoogleOAuthModule` retiré des imports d'`AppModule`,
+`ConnexionGmailView` démontée de l'écran Paramètres, code/schéma/
+variables d'environnement intacts) — suppression définitive laissée à
+une décision future distincte.
 
 ### boite_mail_dediee
 

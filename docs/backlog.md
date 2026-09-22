@@ -1831,9 +1831,14 @@ section "Messagerie", pour le détail complet, y compris :
 - **Unification des envois automatiques de Tâches** (quittances, relances,
   révisions de loyer) vers cette boîte dédiée : `TachesService` dépend
   désormais de `SmtpEnvoiService`, plus de `GoogleOAuthService`.
-  `GoogleOAuthService`/`connexion_gmail` restent en place mais **dormants**
-  — retrait explicite prévu dans un commit séparé, une fois l'unification
-  éprouvée en usage réel, pas avant.
+  `GoogleOAuthService`/`connexion_gmail` restent en place mais
+  **désactivés depuis le 2026-09-22** (dormants avant cette date, jamais
+  retirés du graphe de modules jusque-là) : `GoogleOAuthModule` retiré
+  des imports d'`AppModule` (routes `/gmail/*` jamais enregistrées,
+  callback `@Public()` inclus), bouton `ConnexionGmailView` démonté de
+  l'écran Paramètres — code, schéma et variables d'environnement Google
+  intacts. Suppression définitive laissée à une décision future
+  distincte, pas avant.
 - **Classification automatique par correspondance exacte d'adresse email**
   (contact/locataire/candidat) — jamais un choix arbitraire en cas
   d'ambiguïté (plusieurs entités sur la même adresse) ou d'absence de
