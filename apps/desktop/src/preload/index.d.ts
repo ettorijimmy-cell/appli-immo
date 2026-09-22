@@ -8,6 +8,9 @@ export interface DesktopApi {
   shell: {
     openExternal: (url: string) => Promise<void>;
   };
+  documents: {
+    ouvrirTemporaire: (buffer: ArrayBuffer, nomFichier: string) => Promise<void>;
+  };
 }
 
 declare global {

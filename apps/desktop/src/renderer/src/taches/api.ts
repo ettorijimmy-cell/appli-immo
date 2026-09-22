@@ -122,20 +122,13 @@ export function envoyerNotificationTache(id: string): Promise<Tache> {
 
 // Même pattern que genererDocumentBail (locataires/api.ts) : blob streamé,
 // jamais persisté côté serveur (apps/backend/src/quittance-document-docx/
-// quittance-document-docx.service.ts) — un clic déclenche un téléchargement
-// direct, pas une navigation.
+// quittance-document-docx.service.ts), puis ouvert directement avec
+// l'application par défaut du système via le canal IPC
+// documents:ouvrirTemporaire (main/documents-temp.ts) — plus de
+// téléchargement navigateur.
 export async function genererDocumentQuittance(paiementId: string): Promise<void> {
   const { blob, nomFichier } = await authenticatedFetchBlob(`/paiements/${paiementId}/document-quittance-docx`, {
     method: "POST"
   });
-  const url = URL.createObjectURL(blob);
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = nomFichier ?? "quittance.docx";
-  lien.target = "_blank";
-  lien.rel = "noopener noreferrer";
-  document.body.appendChild(lien);
-  lien.click();
-  document.body.removeChild(lien);
-  URL.revokeObjectURL(url);
+  await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "quittance.docx");
 }

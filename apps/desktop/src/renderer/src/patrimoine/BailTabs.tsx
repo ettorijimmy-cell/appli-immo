@@ -436,7 +436,12 @@ function BailActuelDetail({
     try {
       await genererDocumentBail(bail.id);
     } catch (err) {
-      setDocumentError(err instanceof ApiError ? err.message : "Impossible de générer le document");
+      // instanceof Error (pas seulement ApiError) : couvre aussi l'échec du
+      // canal IPC documents:ouvrirTemporaire (ex. aucune application
+      // associée à .docx sur le système) — message clair plutôt qu'un
+      // générique qui masquerait que la génération a réussi mais que
+      // l'ouverture a échoué.
+      setDocumentError(err instanceof Error ? err.message : "Impossible de générer le document");
     } finally {
       setIsGeneratingDocument(false);
     }

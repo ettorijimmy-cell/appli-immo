@@ -234,23 +234,16 @@ export function getCatalogueInventaire(): Promise<ElementInventaireMeuble[]> {
   return authenticatedFetch<ElementInventaireMeuble[]>("/etats-des-lieux/catalogue-inventaire");
 }
 
-// Déclenche le téléchargement du .docx généré côté backend (même méthode
-// que ouvrirDocument, documents/api.ts) — le backend bloque déjà avec un
-// message explicite (champsManquants) si l'entrée n'est pas terminée ou si
-// la composition de l'appartement est incomplète ; l'appelant se contente
-// de relayer ce message (ApiError).
+// Récupère le .docx généré côté backend et l'ouvre directement avec
+// l'application par défaut du système, via le canal IPC
+// documents:ouvrirTemporaire (main/documents-temp.ts) — plus de
+// téléchargement navigateur. Le backend bloque déjà avec un message
+// explicite (champsManquants) si l'entrée n'est pas terminée ou si la
+// composition de l'appartement est incomplète ; l'appelant se contente de
+// relayer ce message (ApiError).
 export async function genererDocumentEtatDesLieux(id: string): Promise<void> {
   const { blob, nomFichier } = await authenticatedFetchBlob(`/etats-des-lieux/${id}/document-docx`, {
     method: "POST"
   });
-  const url = URL.createObjectURL(blob);
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = nomFichier ?? "etat-des-lieux.docx";
-  lien.target = "_blank";
-  lien.rel = "noopener noreferrer";
-  document.body.appendChild(lien);
-  lien.click();
-  document.body.removeChild(lien);
-  URL.revokeObjectURL(url);
+  await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "etat-des-lieux.docx");
 }

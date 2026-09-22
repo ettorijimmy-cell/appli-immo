@@ -521,7 +521,10 @@ function EnTeteEtatDesLieux({
     try {
       await genererDocumentEtatDesLieux(etatDesLieux.id);
     } catch (err) {
-      setGenerationError(err instanceof ApiError ? err.message : "Impossible de générer le document");
+      // instanceof Error (pas seulement ApiError) : couvre aussi l'échec du
+      // canal IPC documents:ouvrirTemporaire (ex. aucune application
+      // associée à .docx) — même raison que BailTabs.handleGenererDocument.
+      setGenerationError(err instanceof Error ? err.message : "Impossible de générer le document");
     } finally {
       setIsGenerating(false);
     }

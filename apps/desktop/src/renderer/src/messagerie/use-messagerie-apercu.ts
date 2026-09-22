@@ -4,6 +4,7 @@ export type ApercuPieceJointe = ApercuFichier;
 
 export function useMessagerieApercu(): {
   apercu: ApercuPieceJointe | null;
+  erreur: string | null;
   ouvrir: (id: string) => Promise<void>;
   fermer: () => void;
 } {

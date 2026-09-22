@@ -216,8 +216,12 @@ function TacheItem({
     setDocumentError(null);
     try {
       await genererDocumentQuittance(tache.paiementId);
-    } catch {
-      setDocumentError("Impossible de générer la quittance");
+    } catch (err) {
+      // instanceof Error : couvre aussi l'échec du canal IPC
+      // documents:ouvrirTemporaire (ex. aucune application associée à
+      // .docx), pas seulement une ApiError de génération — même raison que
+      // BailTabs.handleGenererDocument.
+      setDocumentError(err instanceof Error ? err.message : "Impossible de générer la quittance");
     } finally {
       setIsGeneratingDocument(false);
     }

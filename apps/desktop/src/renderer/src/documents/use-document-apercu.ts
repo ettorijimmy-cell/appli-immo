@@ -10,6 +10,7 @@ export type ApercuDocument = ApercuFichier;
 // réutilisée pour les pièces jointes de messages.
 export function useDocumentApercu(): {
   apercu: ApercuDocument | null;
+  erreur: string | null;
   ouvrir: (id: string) => Promise<void>;
   fermer: () => void;
 } {

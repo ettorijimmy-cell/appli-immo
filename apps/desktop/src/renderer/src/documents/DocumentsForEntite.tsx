@@ -18,7 +18,7 @@ export function DocumentsForEntite({
 }): React.JSX.Element {
   const [documents, setDocuments] = useState<DocumentMetier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { apercu, ouvrir, fermer } = useDocumentApercu();
+  const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -86,6 +86,11 @@ export function DocumentsForEntite({
       )}
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
+      {erreurApercu && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {erreurApercu}
+        </p>
+      )}
     </div>
   );
 }

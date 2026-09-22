@@ -201,25 +201,18 @@ export function archiveBail(id: string): Promise<Bail> {
   return authenticatedFetch<Bail>(`/baux/${id}/archiver`, { method: "PATCH" });
 }
 
-// Déclenche le téléchargement du .docx généré côté backend (même méthode
-// que genererDocumentEtatDesLieux, etats-des-lieux/api.ts) — le backend
-// bloque déjà avec un message explicite (champsManquants) si des données
-// obligatoires manquent ; l'appelant se contente de relayer ce message
-// (ApiError).
+// Récupère le .docx généré côté backend et l'ouvre directement avec
+// l'application par défaut du système (même méthode que
+// genererDocumentEtatDesLieux, etats-des-lieux/api.ts) — plus de
+// téléchargement navigateur (<a download>), voir main/documents-temp.ts et
+// le canal IPC documents:ouvrirTemporaire. Le backend bloque déjà avec un
+// message explicite (champsManquants) si des données obligatoires
+// manquent ; l'appelant se contente de relayer ce message (ApiError).
 export async function genererDocumentBail(id: string): Promise<void> {
   const { blob, nomFichier } = await authenticatedFetchBlob(`/baux/${id}/document-docx`, {
     method: "POST"
   });
-  const url = URL.createObjectURL(blob);
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = nomFichier ?? "bail.docx";
-  lien.target = "_blank";
-  lien.rel = "noopener noreferrer";
-  document.body.appendChild(lien);
-  lien.click();
-  document.body.removeChild(lien);
-  URL.revokeObjectURL(url);
+  await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "bail.docx");
 }
 
 export function listGarants(bailId: string): Promise<Garant[]> {

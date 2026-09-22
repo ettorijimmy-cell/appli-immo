@@ -196,7 +196,7 @@ export function MessagerieView(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsParMessage, setDetailsParMessage] = useState<Map<string, MessageCommunicationDetail>>(new Map());
-  const { apercu, ouvrir: ouvrirApercu, fermer: fermerApercu } = useMessagerieApercu();
+  const { apercu, erreur: erreurApercu, ouvrir: ouvrirApercu, fermer: fermerApercu } = useMessagerieApercu();
   // Toggle global (2026-09-17), même principe que ArchiveToggle dans
   // DocumentsListView : un seul fetch (pas de vue "archivés" séparée par
   // fil), les messages archivés réapparaissent dans leur fil existant.
@@ -473,6 +473,11 @@ export function MessagerieView(): React.JSX.Element {
       </div>
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermerApercu} />}
+      {erreurApercu && (
+        <p role="alert" className="text-sm text-red-600">
+          {erreurApercu}
+        </p>
+      )}
     </div>
   );
 }

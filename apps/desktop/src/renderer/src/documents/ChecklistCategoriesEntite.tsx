@@ -47,7 +47,7 @@ export function ChecklistCategoriesEntite({
 }): React.JSX.Element | null {
   const [completude, setCompletude] = useState<CompletudeCategorie[] | null>(null);
   const applicable = CATEGORIES_PAR_TYPE[entiteType] === true;
-  const { apercu, ouvrir, fermer } = useDocumentApercu();
+  const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
     if (!applicable) {
@@ -89,6 +89,11 @@ export function ChecklistCategoriesEntite({
       </ul>
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
+      {erreurApercu && (
+        <p role="alert" className="text-sm text-red-600">
+          {erreurApercu}
+        </p>
+      )}
     </div>
   );
 }

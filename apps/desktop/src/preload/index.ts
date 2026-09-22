@@ -13,6 +13,10 @@ const api = {
   },
   shell: {
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke("shell:openExternal", url)
+  },
+  documents: {
+    ouvrirTemporaire: (buffer: ArrayBuffer, nomFichier: string): Promise<void> =>
+      ipcRenderer.invoke("documents:ouvrirTemporaire", buffer, nomFichier)
   }
 };
 

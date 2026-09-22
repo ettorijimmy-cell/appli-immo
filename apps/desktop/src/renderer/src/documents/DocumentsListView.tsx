@@ -36,7 +36,7 @@ export function DocumentsListView(): React.JSX.Element {
   const [filtreCategorie, setFiltreCategorie] = useState<DocumentCategorie | "toutes">("toutes");
   const [filtreStatut, setFiltreStatut] = useState<DocumentStatut | "tous">("tous");
   const [recherche, setRecherche] = useState("");
-  const { apercu, ouvrir, fermer } = useDocumentApercu();
+  const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -189,6 +189,11 @@ export function DocumentsListView(): React.JSX.Element {
       )}
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
+      {erreurApercu && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {erreurApercu}
+        </p>
+      )}
     </div>
   );
 }
