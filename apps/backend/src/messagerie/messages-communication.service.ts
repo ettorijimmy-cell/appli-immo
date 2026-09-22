@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { messageCommunication, mettreAJourAvecAudit, pieceJointeMessage, type Database } from "db";
+import { candidat, contact, garants, locataires, messageCommunication, mettreAJourAvecAudit, pieceJointeMessage, type Database } from "db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { CreateDocumentDto } from "../documents/dto/create-document.dto";
 import { DocumentsService } from "../documents/documents.service";
@@ -7,7 +7,7 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentStorageService } from "../storage/document-storage.service";
 import { UsersService } from "../users/users.service";
-import type { ComposerMessageDto } from "./dto/composer-message.dto";
+import type { ClassificationTypeChoisie, ComposerMessageDto } from "./dto/composer-message.dto";
 import { SmtpEnvoiService } from "./smtp-envoi.service";
 
 export interface FindAllMessagesFiltres {
@@ -104,6 +104,19 @@ export class MessagesCommunicationService {
     const utilisateur = await this.usersService.findById(userId);
     if (!utilisateur) {
       throw new NotFoundException("Utilisateur introuvable");
+    }
+    // Contrôle d'appartenance sur dto.classificationType/classificationId
+    // (Priorité E6b, chantier scoping multi-organisation, Catégorie E,
+    // 2026-09-19) : message.organisationId reste bien résolu depuis
+    // l'utilisateur ci-dessus (le message n'est jamais injecté chez un
+    // tiers), mais un classificationId d'une autre organisation restait
+    // acceptable — sa conséquence : toute résolution ultérieure du nom/rôle
+    // du correspondant classé (fils de messagerie, écran desktop) risquait
+    // d'exposer le nom d'une personne d'une autre organisation. Les deux
+    // champs fournis ensemble ou pas du tout (vérifié ci-dessus) : rien à
+    // déclencher si absents.
+    if (dto.classificationType !== undefined && dto.classificationId !== undefined) {
+      await this.verifierAppartenanceClassification(dto.classificationType, dto.classificationId);
     }
     const messageId = await this.smtpEnvoiService.envoyerEmail(
       utilisateur.organisationId,
@@ -238,6 +251,44 @@ export class MessagesCommunicationService {
       throw new NotFoundException("Message introuvable");
     }
     return ligne;
+  }
+
+  // Contrôle d'appartenance sur classificationId (Priorité E6b, chantier
+  // scoping multi-organisation, Catégorie E, 2026-09-19) : les 4 tables
+  // cibles ont toutes une colonne organisationId directe (contact,
+  // locataires, candidat, garants — cette dernière dénormalisée depuis le
+  // bail à la création, voir GarantsService.create) — contrôle par simple
+  // comparaison, sans jointure, pour chacune. Ne réutilise pas les helpers
+  // privés findById() de ContactsService/LocatairesService/CandidatsService/
+  // GarantsService (non exportés, et MessagerieModule ne dépend d'aucun des
+  // quatre modules) : reproduit ici directement, même pattern qu'E1-E6a.
+  // Message par type, aligné sur celui déjà utilisé par le service
+  // propriétaire correspondant (ex. "Garant introuvable" dans
+  // GarantsService) — aucune différence observable entre "n'existe pas" et
+  // "d'une autre organisation". Skip si organisationId absent (hors
+  // contexte HTTP).
+  private async verifierAppartenanceClassification(
+    type: ClassificationTypeChoisie,
+    id: string
+  ): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [table, message] = {
+      contact: [contact, "Contact introuvable"] as const,
+      locataire: [locataires, "Locataire introuvable"] as const,
+      candidat: [candidat, "Candidat introuvable"] as const,
+      garant: [garants, "Garant introuvable"] as const
+    }[type];
+    const [ligne] = await this.db
+      .select({ id: table.id })
+      .from(table)
+      .where(and(eq(table.id, id), eq(table.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException(message);
+    }
   }
 
   private versDto(ligne: MessageCommunicationRow) {

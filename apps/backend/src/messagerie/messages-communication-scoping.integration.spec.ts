@@ -6,9 +6,12 @@ import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
+  candidat,
+  contact,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   documents,
+  locataires,
   messageCommunication,
   organisations,
   pieceJointeMessage,
@@ -17,21 +20,41 @@ import {
 } from "db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AppartementsModule } from "../appartements/appartements.module";
+import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
+import { BauxModule } from "../baux/baux.module";
+import { BauxService } from "../baux/baux.service";
+import { BienModule } from "../bien/bien.module";
+import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
 import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
+import { GarantsModule } from "../garants/garants.module";
+import { GarantsService } from "../garants/garants.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
+import { ScisModule } from "../scis/scis.module";
+import { ScisService } from "../scis/scis.service";
 import { DocumentStorageService } from "../storage/document-storage.service";
 import { StorageModule } from "../storage/storage.module";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { BoiteMailDedieeService } from "./boite-mail-dediee.service";
 import { MessagerieModule } from "./messagerie.module";
 import { MessagesCommunicationService } from "./messages-communication.service";
+
+// nodemailer fait de vrais appels réseau SMTP — jamais dans les tests
+// automatisés (même consigne que messagerie.integration.spec.ts). Mocké au
+// niveau du module ; n'affecte que le describe composer() plus bas, les
+// autres describes de ce fichier n'appellent jamais SmtpEnvoiService.
+const sendMailMock = vi.hoisted(() => vi.fn());
+vi.mock("nodemailer", () => ({
+  default: { createTransport: vi.fn(() => ({ sendMail: sendMailMock })) }
+}));
 
 interface FixtureOrganisation {
   organisationId: string;
@@ -497,5 +520,353 @@ describe("MessagesCommunicationService.classerDansDocuments / obtenirContenuPiec
       );
       expect(resultat.contenu.toString("utf8")).toBe("contenu-A");
     });
+  });
+});
+
+interface FixtureOrganisationComposer {
+  organisationId: string;
+  userId: string;
+  contactId: string;
+  locataireId: string;
+  candidatId: string;
+  garantId: string;
+}
+
+// Priorité E6b (chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : composer() écrivait dto.classificationType/classificationId
+// tels quels dans messageCommunication, sans jamais vérifier que
+// classificationId appartient à l'organisation appelante —
+// message.organisationId reste bien résolu depuis l'utilisateur (le
+// message n'est jamais injecté chez un tiers), mais un classificationId
+// étranger exposait le nom/rôle d'une personne d'une autre organisation
+// dès qu'une vue le résolvait pour l'affichage (fils de messagerie).
+// Corrigé via verifierAppartenanceClassification() : les 4 tables cibles
+// (contact, locataires, candidat, garants) ont toutes une colonne
+// organisationId directe, contrôle par simple comparaison — pas de helper
+// findById() des 4 services propriétaires réutilisable (privés, et
+// MessagerieModule ne dépend d'aucun des 4 modules), reproduit
+// directement, même pattern qu'E1-E6a. Champs optionnels fournis ensemble
+// ou pas du tout (validation déjà en place) : rien à déclencher si
+// absents.
+describe("MessagesCommunicationService.composer — contrôle d'appartenance sur classificationId (intégration Postgres réelle, SMTP mocké)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let db: Database;
+  let boiteMailDedieeService: BoiteMailDedieeService;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let garantsService: GarantsService;
+  let messagesCommunicationService: MessagesCommunicationService;
+  let requestContextService: RequestContextService;
+
+  let orgA: FixtureOrganisationComposer;
+  let orgB: FixtureOrganisationComposer;
+
+  async function creerFixtureOrganisation(suffixe: string): Promise<FixtureOrganisationComposer> {
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: `Organisation Messages Composer Scoping ${suffixe}` })
+      .returning();
+    if (!organisation) {
+      throw new Error("Échec de l'insertion de l'organisation de test");
+    }
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `messages-composer-scoping-${suffixe}-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: `MessagesComposerScoping${suffixe}`,
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) {
+      throw new Error("Échec de l'insertion de l'utilisateur de test");
+    }
+    await boiteMailDedieeService.configurer(user.id, {
+      email: `boite-composer-${suffixe}@example.com`,
+      motDePasseApp: "abcdefghijklmnop"
+    });
+
+    const [contactRow] = await db
+      .insert(contact)
+      .values({ nom: `Contact ${suffixe}`, typeEntite: "personne_physique", role: "autre", organisationId: organisation.id })
+      .returning();
+    if (!contactRow) {
+      throw new Error("Échec de l'insertion du contact de test");
+    }
+    const [locataireRow] = await db
+      .insert(locataires)
+      .values({ nom: "Devos", prenom: `Ilan${suffixe}`, organisationId: organisation.id })
+      .returning();
+    if (!locataireRow) {
+      throw new Error("Échec de l'insertion du locataire de test");
+    }
+    const [candidatRow] = await db
+      .insert(candidat)
+      .values({ nom: `Candidat${suffixe}`, organisationId: organisation.id })
+      .returning();
+    if (!candidatRow) {
+      throw new Error("Échec de l'insertion du candidat de test");
+    }
+
+    // Chaîne minimale SCI -> bien -> appartement -> bail, requise par la
+    // contrainte de clé étrangère garants.bail_id (jamais de garant
+    // orphelin) — même construction que messagerie.integration.spec.ts.
+    const sci = await scisService.create(user.id, {
+      nom: `SCI Messages Composer ${suffixe}`,
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: `Immeuble Messages Composer ${suffixe}`,
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: suffixe,
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const bail = await bauxService.create({ appartementId: appartement.id, typeBail: "vide", dateDebut: "2026-08-01" });
+    const garant = await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: `Claire${suffixe}`,
+      typeGarantie: "personne_physique"
+    });
+
+    return {
+      organisationId: organisation.id,
+      userId: user.id,
+      contactId: contactRow.id,
+      locataireId: locataireRow.id,
+      candidatId: candidatRow.id,
+      garantId: garant.id
+    };
+  }
+
+  beforeEach(async () => {
+    db = await begin();
+    sendMailMock.mockReset();
+    sendMailMock.mockResolvedValue(undefined);
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        EncryptionModule,
+        AuditModule,
+        UsersModule,
+        AuthModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        GarantsModule,
+        MessagerieModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
+
+    boiteMailDedieeService = moduleRef.get(BoiteMailDedieeService);
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    garantsService = moduleRef.get(GarantsService);
+    messagesCommunicationService = moduleRef.get(MessagesCommunicationService);
+    requestContextService = moduleRef.get(RequestContextService);
+
+    orgA = await creerFixtureOrganisation("A");
+    orgB = await creerFixtureOrganisation("B");
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  function contexteOrgA<T>(fn: () => Promise<T>): Promise<T> {
+    return requestContextService.executerAvecContexte({ utilisateurId: orgA.userId, organisationId: orgA.organisationId }, fn);
+  }
+  function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
+    return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
+  }
+
+  it("réussit normalement sans classification (champs optionnels omis, aucune vérification déclenchée)", async () => {
+    const resultat = await contexteOrgA(() =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test"
+      })
+    );
+    expect(resultat?.classificationType).toBe("non_classe");
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("type='contact' : réussit avec un id propre, 404 cross-org sans jamais envoyer ni créer de message", async () => {
+    const resultat = await contexteOrgA(() =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "contact",
+        classificationId: orgA.contactId
+      })
+    );
+    expect(resultat?.classificationId).toBe(orgA.contactId);
+
+    await expect(
+      contexteOrgB(() =>
+        messagesCommunicationService.composer(orgB.userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Etranger",
+          corps: "Message de test",
+          classificationType: "contact",
+          classificationId: orgA.contactId
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const messagesCrees = await db.select().from(messageCommunication).where(eq(messageCommunication.objet, "Etranger"));
+    expect(messagesCrees).toHaveLength(0);
+  });
+
+  it("type='locataire' : réussit avec un id propre, 404 cross-org sans jamais envoyer ni créer de message", async () => {
+    const resultat = await contexteOrgA(() =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "locataire",
+        classificationId: orgA.locataireId
+      })
+    );
+    expect(resultat?.classificationId).toBe(orgA.locataireId);
+
+    await expect(
+      contexteOrgB(() =>
+        messagesCommunicationService.composer(orgB.userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Etranger",
+          corps: "Message de test",
+          classificationType: "locataire",
+          classificationId: orgA.locataireId
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const messagesCrees = await db.select().from(messageCommunication).where(eq(messageCommunication.objet, "Etranger"));
+    expect(messagesCrees).toHaveLength(0);
+  });
+
+  it("type='candidat' : réussit avec un id propre, 404 cross-org sans jamais envoyer ni créer de message", async () => {
+    const resultat = await contexteOrgA(() =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "candidat",
+        classificationId: orgA.candidatId
+      })
+    );
+    expect(resultat?.classificationId).toBe(orgA.candidatId);
+
+    await expect(
+      contexteOrgB(() =>
+        messagesCommunicationService.composer(orgB.userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Etranger",
+          corps: "Message de test",
+          classificationType: "candidat",
+          classificationId: orgA.candidatId
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const messagesCrees = await db.select().from(messageCommunication).where(eq(messageCommunication.objet, "Etranger"));
+    expect(messagesCrees).toHaveLength(0);
+  });
+
+  it("type='garant' : réussit avec un id propre, 404 cross-org sans jamais envoyer ni créer de message", async () => {
+    const resultat = await contexteOrgA(() =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "garant",
+        classificationId: orgA.garantId
+      })
+    );
+    expect(resultat?.classificationId).toBe(orgA.garantId);
+
+    await expect(
+      contexteOrgB(() =>
+        messagesCommunicationService.composer(orgB.userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Etranger",
+          corps: "Message de test",
+          classificationType: "garant",
+          classificationId: orgA.garantId
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const messagesCrees = await db.select().from(messageCommunication).where(eq(messageCommunication.objet, "Etranger"));
+    expect(messagesCrees).toHaveLength(0);
+  });
+
+  it("404 sur un classificationId inexistant, sans jamais envoyer", async () => {
+    await expect(
+      contexteOrgA(() =>
+        messagesCommunicationService.composer(orgA.userId, {
+          destinataire: "quelquun@example.com",
+          objet: "Fantôme",
+          corps: "Message de test",
+          classificationType: "garant",
+          classificationId: randomUUID()
+        })
+      )
+    ).rejects.toThrow(NotFoundException);
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+    const resultat = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+      messagesCommunicationService.composer(orgA.userId, {
+        destinataire: "quelquun@example.com",
+        objet: "Bonjour",
+        corps: "Message de test",
+        classificationType: "garant",
+        classificationId: orgB.garantId
+      })
+    );
+    expect(resultat?.classificationId).toBe(orgB.garantId);
   });
 });
