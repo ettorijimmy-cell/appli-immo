@@ -896,16 +896,22 @@ les trois parcours ci-dessus).
   `elements_inventaire_meuble` (catalogue partagé par design), les jobs
   `@Cron` (itération globale volontaire, déjà corrects).
 
-  **Deux points restent ouverts, notés séparément, hors du périmètre de
-  ce chantier** : `RemboursementsService.create()` ne vérifie pas que
+  Un point restait ouvert, noté séparément, hors du périmètre de ce
+  chantier : `RemboursementsService.create()` ne vérifiait pas que
   `dto.paiementId` appartient au même bail que `dto.bailId` — un paiement
-  d'un autre bail de la **même** organisation reste accepté, faussant
-  potentiellement le calcul du plafond de remboursement (signalé sans
-  être corrigé à la Priorité E3, sujet distinct du scoping
-  multi-organisation) ; et l'absence de viewer Word intégré pour
-  prévisualiser un `.docx` généré (bail/quittance/état des lieux) sans
-  quitter l'application — fonctionnalité souhaitée, jamais dans le
-  périmètre de ce chantier.
+  d'un autre bail de la **même** organisation restait accepté, faussant
+  potentiellement le calcul du plafond de remboursement (signalé sans être
+  corrigé à la Priorité E3, sujet distinct du scoping multi-organisation).
+  **Corrigé le 2026-09-22** : `dto.paiementId`, quand fourni, doit
+  désormais appartenir au bail désigné par `dto.bailId`, sous peine de
+  `BadRequestException` (incohérence de saisie, distincte des 404
+  "introuvable"/"autre organisation") — vérifié avant tout calcul de
+  plafond. Revue `financial-logic-reviewer` passée sans point bloquant.
+
+  Reste ouvert, hors du périmètre de ce chantier : l'absence de viewer
+  Word intégré pour prévisualiser un `.docx` généré (bail/quittance/état
+  des lieux) sans quitter l'application — fonctionnalité souhaitée, jamais
+  dans le périmètre de ce chantier.
 
 ---
 

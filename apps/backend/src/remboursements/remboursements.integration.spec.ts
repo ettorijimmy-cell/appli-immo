@@ -558,4 +558,106 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
     );
     expect(listeOrgAAvecFiltrePropreBail.map((r) => r.id)).toEqual([remboursementOrgA.id]);
   });
+
+  // Correctif (signalé sans être corrigé à la Priorité E3, chantier
+  // scoping multi-organisation, 2026-09-22) : dto.paiementId n'était
+  // vérifié que pour son appartenance à l'organisation appelante, jamais
+  // pour son appartenance au bail désigné par dto.bailId. Un paiementId
+  // d'un autre bail de la MÊME organisation passait la vérification et le
+  // plafond de remboursement (montant réellement reçu) était alors calculé
+  // sur les versements de ce paiement étranger plutôt que sur ceux du bail
+  // réellement remboursé.
+  describe("cohérence bailId/paiementId", () => {
+    it("rejette un paiementId d'un autre bail de la même organisation (BadRequestException, pas NotFoundException), sans créer de remboursement ni calculer de plafond sur ce paiement", async () => {
+      // Second bail de la MÊME organisation, avec son propre paiement de
+      // dépôt de garantie versé à un montant délibérément différent
+      // (2000 €, contre 1000 € pour le premier bail) : si le plafond était
+      // par erreur calculé sur ce paiement étranger, un remboursement de
+      // 1500 € (> 1000 € reçus sur le bon paiement, mais < 2000 € reçus
+      // sur le mauvais) serait accepté à tort. La preuve porte sur le
+      // rejet total de la tentative, pas seulement sur un plafond correct.
+      const bien2 = await bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "personne_physique",
+        nomProprietaire: "Propriétaire Test",
+        nom: "Second Immeuble Remboursements Test",
+        adresse: "3 rue des Remboursements",
+        codePostal: "75001",
+        ville: "Paris",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      });
+      const appartement2 = await appartementsService.create({
+        bienId: bien2.id,
+        numero: "2",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "800.00"
+      });
+      const bail2 = await bauxService.create({
+        appartementId: appartement2.id,
+        typeBail: "vide",
+        dateDebut: "2026-02-01",
+        loyerMensuel: "800.00",
+        depotGarantie: "2000.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail2.id);
+      const paiementsBail2 = await paiementsService.findAll(bail2.id);
+      const depotGarantieBail2 = paiementsBail2.find((p) => p.type === "depot_garantie");
+      if (!depotGarantieBail2) {
+        throw new Error("Paiement dépôt de garantie du second bail introuvable après activation");
+      }
+      await versementsService.ajouter({
+        paiementId: depotGarantieBail2.id,
+        montant: "2000.00",
+        mode: "virement",
+        dateVersement: "2026-02-01"
+      });
+
+      await expect(
+        remboursementsService.create({
+          bailId, // premier bail (dépôt reçu : 1000.00)
+          paiementId: depotGarantieBail2.id, // paiement du second bail (dépôt reçu : 2000.00)
+          type: "depot_garantie",
+          montantOrigine: "1000.00",
+          montantRembourse: "1500.00",
+          dateRemboursement: "2026-07-15",
+          mode: "virement"
+        })
+      ).rejects.toThrow(BadRequestException);
+
+      const tousBail1 = await remboursementsService.findAll(bailId);
+      expect(tousBail1).toHaveLength(0);
+      const tousBail2 = await remboursementsService.findAll(bail2.id);
+      expect(tousBail2).toHaveLength(0);
+    });
+
+    it("cas normal : paiementId omis, réussit sans vérification de cohérence", async () => {
+      const remboursement = await remboursementsService.create({
+        bailId,
+        type: "depot_garantie",
+        montantOrigine: "1000.00",
+        montantRembourse: "1000.00",
+        dateRemboursement: "2026-07-15",
+        mode: "virement"
+      });
+      expect(remboursement.paiementId).toBeNull();
+    });
+
+    it("cas normal : paiementId correspondant bien au bailId, réussit inchangé", async () => {
+      const remboursement = await remboursementsService.create({
+        bailId,
+        paiementId: depotGarantiePaiementId,
+        type: "depot_garantie",
+        montantOrigine: "1000.00",
+        montantRembourse: "1000.00",
+        dateRemboursement: "2026-07-15",
+        mode: "virement"
+      });
+      expect(remboursement.paiementId).toBe(depotGarantiePaiementId);
+    });
+  });
 });

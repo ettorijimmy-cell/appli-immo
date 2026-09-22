@@ -82,17 +82,10 @@ export class RemboursementsService {
     }
 
     if (dto.paiementId) {
-      // Même contrôle d'appartenance que pour dto.bailId ci-dessus,
-      // même raison (Priorité E3). Ne vérifie PAS que ce paiement
-      // appartient au même bail que dto.bailId — incohérence possible non
-      // corrigée ici, hors sujet direct du scoping (signalée à
-      // l'utilisateur dans le compte-rendu de ce commit) : un paiement
-      // d'un autre bail de la MÊME organisation reste accepté aujourd'hui,
-      // et le plafond de remboursement (montantRecu ci-dessous) serait
-      // alors calculé sur les versements de ce paiement étranger plutôt
-      // que sur ceux du bail réellement remboursé.
+      // Même contrôle d'appartenance que pour dto.bailId ci-dessus, même
+      // raison (Priorité E3).
       const [paiement] = await this.db
-        .select({ id: paiements.id })
+        .select({ id: paiements.id, bailId: paiements.bailId })
         .from(paiements)
         .innerJoin(baux, eq(baux.id, paiements.bailId))
         .innerJoin(appartements, eq(appartements.id, baux.appartementId))
@@ -101,6 +94,23 @@ export class RemboursementsService {
         .limit(1);
       if (!paiement) {
         throw new NotFoundException("Paiement introuvable");
+      }
+
+      // Cohérence bailId/paiementId (correctif, chantier scoping
+      // multi-organisation, signalé sans être corrigé à la Priorité E3,
+      // 2026-09-22) : un paiementId d'un autre bail de la MÊME organisation
+      // passait jusqu'ici la vérification d'appartenance ci-dessus (les
+      // deux baux appartiennent bien à organisationId), et le plafond de
+      // remboursement (montantRecu ci-dessous) était alors calculé sur les
+      // versements de ce paiement étranger plutôt que sur ceux du bail
+      // réellement remboursé. Ni "introuvable" ni "d'une autre
+      // organisation" : les deux id sont individuellement valides, c'est
+      // leur combinaison qui est incohérente — BadRequestException, jamais
+      // NotFoundException, avant tout calcul de plafond.
+      if (paiement.bailId !== dto.bailId) {
+        throw new BadRequestException(
+          "Ce paiement n'appartient pas au bail indiqué — vérifiez dto.paiementId et dto.bailId."
+        );
       }
 
       const versementsActifs = await this.db

@@ -69,11 +69,12 @@ interface FixtureOrganisation {
 // create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
 // 2026-09-19) : dto.bailId et dto.paiementId (optionnel) n'étaient vérifiés
 // ni pour leur existence ni pour leur appartenance — corrigé en filtrant
-// les deux requêtes déjà exécutées via jointure vers bien. Ne vérifie PAS
-// que dto.paiementId appartient au même bail que dto.bailId — incohérence
-// possible non corrigée ici (un paiement d'un autre bail de la MÊME
-// organisation resterait accepté), signalée dans le compte-rendu de ce
-// commit plutôt que corrigée en silence : hors sujet direct du scoping.
+// les deux requêtes déjà exécutées via jointure vers bien. La cohérence
+// entre dto.paiementId et dto.bailId (un paiement d'un autre bail de la
+// MÊME organisation) n'était volontairement pas traitée ici — hors sujet
+// direct du scoping, signalée séparément et corrigée par un correctif
+// dédié (voir la couverture dans remboursements.integration.spec.ts,
+// describe "cohérence bailId/paiementId").
 // Aucun appelant interne (vérifié par grep, seul RemboursementsController).
 describe("RemboursementsService — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const storageDirTest = path.join(os.tmpdir(), `appli-immo-test-remboursements-scoping-${randomUUID()}`);
