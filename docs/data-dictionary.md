@@ -129,7 +129,7 @@ non-immeuble.
 | Champ | Type | Description |
 |---|---|---|
 | statut | enum | `actif` \| `ancien` \| `archive` |
-| anonymise_le | timestamp, nullable | Renseigné lors d'une anonymisation RGPD — les champs identifiants sont alors neutralisés, la ligne reste |
+| anonymise_le | timestamp, nullable | Colonne présente depuis la création de la table (2026-07-27) mais **non reliée à aucune logique** — aucun endpoint, job planifié ou code ne la lit ni ne l'écrit. Anonymisation RGPD en attente d'un avis juridique sur ce qu'exige concrètement le droit à l'effacement (délai de conservation, déclencheur) ; aucun engagement de calendrier. Colonne conservée en base dans cette attente — voir docs/backlog.md pour le suivi de cette décision |
 | adresse, code_postal, ville | text, nullable | Identité du LOCATAIRE dans le modèle de bail, renseignables progressivement |
 | date_naissance | date, nullable | Mention du modèle de bail |
 

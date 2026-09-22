@@ -664,13 +664,25 @@ les trois parcours ci-dessus).
   des lieux et Alertes se sont tous déployés et testés sans problème
   similaire jusqu'à la clôture complète du chantier.
 
-- **`locataires.anonymise_le` documenté** (`docs/data-dictionary.md` ligne
-  85, commentaire du schéma Drizzle) **comme mécanisme d'anonymisation
-  RGPD mais jamais implémenté côté code** — aucun endpoint, job planifié,
-  ou logique de neutralisation ne pose ou n'exploite ce champ. Découvert
-  lors de la conception du Sync Stream `locataires`. À trancher : soit
-  implémenter réellement le mécanisme, soit retirer la mention de la
-  documentation si ce n'est plus prévu.
+- **`locataires.anonymise_le` — promesse documentaire retirée, colonne
+  conservée (audit 2026-09-22).** Colonne présente depuis la création de
+  la table (2026-07-27, `feat: Module 3 — Locataires & Baux`), documentée
+  depuis comme mécanisme d'anonymisation RGPD mais jamais implémenté côté
+  code — aucun endpoint, job planifié, ou logique de neutralisation ne
+  pose ou n'exploite ce champ, et aucun déclencheur n'a même jamais été
+  précisé (ni délai automatique, ni action manuelle). Décision : Jimmy
+  n'a pas de réponse juridique sur ce que le RGPD exige concrètement ici
+  (délai de conservation, droit à l'effacement) — plutôt que de laisser
+  cette promesse non tenue trainer indéfiniment dans la documentation,
+  `docs/app-spec.md` et `docs/data-dictionary.md` ne la présentent plus
+  comme un mécanisme prévu. La colonne reste en base (aucune suppression,
+  aucune migration) : elle pourra servir le jour où un avis juridique
+  précisera ce qui doit réellement se passer. Réouverture de ce point
+  conditionnée à cet avis, pas à une prochaine itération du produit.
+  Corrigé au passage : `apps/desktop/src/renderer/src/locataires/api.ts`
+  déclarait `anonymiseLe` dans le type frontend `Locataire` alors que le
+  backend ne l'envoie jamais (`LocatairesService.versDto()`) et qu'aucun
+  composant ne le lit — champ mort retiré du type.
 
 - **Sync Stream `documents` incomplet sur la branche `etat_des_lieux` —
   résolu (2026-08-21).** `documents.entite_id` est une référence

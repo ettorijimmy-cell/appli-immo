@@ -14,7 +14,6 @@ export interface Locataire {
   ville: string | null;
   dateNaissance: string | null;
   statut: LocataireStatut;
-  anonymiseLe: string | null;
 }
 
 export interface CreateLocataireInput {

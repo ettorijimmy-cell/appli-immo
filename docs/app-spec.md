@@ -144,8 +144,11 @@ connexion Gmail OAuth2 → envoi automatique de quittances → relances impayés
   d'auth tiers en MVP
 - Electron durci : `contextIsolation: true`, `nodeIntegration: false`,
   aucune interaction avec du contenu web distant
-- RGPD : mécanisme d'archivage + anonymisation distincts pour concilier le
-  principe "jamais de suppression" avec le droit à l'effacement
+- RGPD : mécanisme d'archivage en place (`statut`/`archivedAt`, jamais de
+  suppression physique). Anonymisation en attente d'un avis juridique sur
+  ce que le droit à l'effacement exige concrètement ici (délai de
+  conservation, déclencheur) — aucun engagement de calendrier, voir
+  docs/data-dictionary.md (`locataires.anonymise_le`) et docs/backlog.md
 
 ## 7. Décisions volontairement différées
 
