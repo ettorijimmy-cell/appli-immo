@@ -845,21 +845,67 @@ les trois parcours ci-dessus).
   résulte).
 
 - **Scoping multi-organisation incomplet — chantier de mise en conformité
-  démarré le 2026-09-18.** Audit préalable en lecture seule (aucune
-  modification) : la quasi-totalité des `findAll()` backend ne filtrait
-  pas par organisation, et tous les `findById()` étaient lisibles par id
-  connu sans vérification d'appartenance — risque nul aujourd'hui (une
-  seule organisation réelle en usage), mais bloquant avant tout SaaS
-  multi-utilisateur. Chantier découpé en commits successifs, chacun
-  soumis à Jimmy avant le suivant (voir docs/data-dictionary.md, section
-  Authentification, pour le détail du Commit 1 — `organisationId` dans le
-  JWT). Hors périmètre, explicitement : `alertes` (aucune colonne ni FK
-  vers organisation — la seule voie serait une résolution polymorphe via
+  démarré le 2026-09-18, clôturé le 2026-09-22.** Audit préalable en
+  lecture seule (aucune modification) : la quasi-totalité des `findAll()`
+  backend ne filtrait pas par organisation, tous les `findById()` étaient
+  lisibles par id connu sans vérification d'appartenance, et la chaîne
+  complète des écritures (update/archive/create) acceptait des id
+  étrangers sans contrôle — risque nul en usage réel (une seule
+  organisation), mais bloquant avant tout SaaS multi-utilisateur. Traité
+  en commits successifs, chacun soumis à Jimmy avant le suivant :
+  - **Commits 1-3** : `organisationId` dans le JWT, mécanisme centralisé
+    d'accès (`RequestContextService.getOrganisationId()`, sans lookup DB),
+    migration des services déjà partiellement scopés + garde-fou rejetant
+    un JWT authentifié sans `organisationId` (voir docs/data-dictionary.md,
+    section Authentification, pour le détail du Commit 1).
+  - **Commit 4** : tous les `findAll()` non filtrés scopés (chaîne
+    patrimoniale, finances — priorité à `rapprocherCsv` qui pouvait
+    proposer une ligne de relevé contre l'échéance impayée d'une autre
+    organisation —, `DocumentsService.findAll` polymorphe à 11
+    `entiteType`, les 7 méthodes de `TableauDeBordService`).
+  - **Catégorie A/B** : tous les `findById()` et toutes les divulgations
+    de contenu sensible par id corrigés — cas le plus sévère,
+    `ComptesBancairesSciService.findBySciIdDecrypted` déchiffrait IBAN/BIC
+    réels pour n'importe quel `sciId` ; puis génération/téléchargement de
+    documents (bail, quittance, pièce justificative) et l'ensemble des
+    `findById()` restants (colonne directe, jointures vers `bien`,
+    `DocumentsService` polymorphe).
+  - **Catégorie C** : toutes les écritures par id (update/archive/effets
+    de bord) protégées — `TachesService.appliquerRevision`/
+    `envoyerNotification` en premier (réécriture de loyer avec historique
+    falsifié, envoi d'email avec pièce jointe financière étrangère), puis
+    l'ensemble des update/archive simples ou à jointure et
+    `EtatsDesLieuxService` (updateHeader + 11 submitX, documents à valeur
+    légale).
+  - **Catégorie E** : toutes les vérifications d'existence à l'écriture
+    corrigées pour les id étrangers optionnels ou obligatoires (13
+    priorités E1-E6d) — deux risques distincts traités : injection d'une
+    donnée directement dans le dossier d'une autre organisation
+    (`GarantsService.create`, `BienService.create`, cinq autres `create()`,
+    `VersementsService.ajouter`, `DocumentsService.verifierEntiteExiste`)
+    et fuite nominative via un champ optionnel non vérifié bien que la
+    donnée elle-même reste correctement scopée (Candidats, Messagerie,
+    EvenementsCalendrier — aggravé par la republication via le flux ICS
+    public —, Sinistres).
+
+  Hors périmètre, explicitement : `alertes` (aucune colonne ni FK vers
+  organisation — la seule voie serait une résolution polymorphe via
   `entiteId`/`type`, 5 cas, jamais construite dans ce chantier ; 2 lignes
   en base au moment de l'audit), `parametres_alertes` (config globale
   volontaire, 4 lignes), `indices_irl` (donnée publique INSEE),
   `elements_inventaire_meuble` (catalogue partagé par design), les jobs
   `@Cron` (itération globale volontaire, déjà corrects).
+
+  **Deux points restent ouverts, notés séparément, hors du périmètre de
+  ce chantier** : `RemboursementsService.create()` ne vérifie pas que
+  `dto.paiementId` appartient au même bail que `dto.bailId` — un paiement
+  d'un autre bail de la **même** organisation reste accepté, faussant
+  potentiellement le calcul du plafond de remboursement (signalé sans
+  être corrigé à la Priorité E3, sujet distinct du scoping
+  multi-organisation) ; et l'absence de viewer Word intégré pour
+  prévisualiser un `.docx` généré (bail/quittance/état des lieux) sans
+  quitter l'application — fonctionnalité souhaitée, jamais dans le
+  périmètre de ce chantier.
 
 ---
 
