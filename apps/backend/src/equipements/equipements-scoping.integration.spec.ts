@@ -22,6 +22,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   equipementId: string;
+  appartementId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -35,7 +36,13 @@ interface FixtureOrganisation {
 // C, audit séparé) — corrigées en Priorité 3b (2026-09-19) via
 // resoudreEquipementAvecAppartenance(), le même helper privé que
 // findById() (aucun appelant interne, seul EquipementsController).
-describe("EquipementsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.appartementId n'était vérifié ni pour son existence ni
+// pour son appartenance — corrigé via verifierAppartenanceAppartement(),
+// même chaîne de jointure que findAll(). Aucun appelant interne (vérifié
+// par grep, seul EquipementsController).
+describe("EquipementsService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -90,7 +97,7 @@ describe("EquipementsService — contrôle d'appartenance à l'organisation (fin
     });
     const equipement = await equipementsService.create({ appartementId: appartement.id, type: "chaudiere" });
 
-    return { organisationId: organisation.id, userId: user.id, equipementId: equipement.id };
+    return { organisationId: organisation.id, userId: user.id, equipementId: equipement.id, appartementId: appartement.id };
   }
 
   beforeEach(async () => {
@@ -136,6 +143,37 @@ describe("EquipementsService — contrôle d'appartenance à l'organisation (fin
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
+      const equipement = await contexteOrgA(() =>
+        equipementsService.create({ appartementId: orgA.appartementId, type: "ballon_eau_chaude" })
+      );
+      expect(equipement.appartementId).toBe(orgA.appartementId);
+    });
+
+    it("404 sur l'appartementId d'une autre organisation, sans jamais créer d'équipement avec cet appartementId", async () => {
+      await expect(
+        contexteOrgB(() => equipementsService.create({ appartementId: orgA.appartementId, type: "ballon_eau_chaude" }))
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(equipements).where(eq(equipements.appartementId, orgA.appartementId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.equipementId]);
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => equipementsService.create({ appartementId: randomUUID(), type: "ballon_eau_chaude" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const equipement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        equipementsService.create({ appartementId: orgB.appartementId, type: "ballon_eau_chaude" })
+      );
+      expect(equipement.appartementId).toBe(orgB.appartementId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand l'équipement appartient à l'organisation appelante", async () => {

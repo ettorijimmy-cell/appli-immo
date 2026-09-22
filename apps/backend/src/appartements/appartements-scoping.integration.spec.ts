@@ -20,6 +20,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   appartementId: string;
+  bienId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -33,7 +34,13 @@ interface FixtureOrganisation {
 // C, audit séparé) — corrigées en Priorité 3b (2026-09-19) via
 // resoudreAppartementAvecAppartenance(), le même helper privé que
 // findById() (aucun appelant interne, seul AppartementsController).
-describe("AppartementsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.bienId n'était vérifié que pour son existence
+// (recupererTypeBien) — corrigé en filtrant cette même requête sur
+// bien.organisationId. Aucun appelant interne (vérifié par grep, seul
+// AppartementsController).
+describe("AppartementsService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -86,7 +93,7 @@ describe("AppartementsService — contrôle d'appartenance à l'organisation (fi
       modeEauChaude: "individuel"
     });
 
-    return { organisationId: organisation.id, userId: user.id, appartementId: appartement.id };
+    return { organisationId: organisation.id, userId: user.id, appartementId: appartement.id, bienId: bien.id };
   }
 
   beforeEach(async () => {
@@ -130,6 +137,69 @@ describe("AppartementsService — contrôle d'appartenance à l'organisation (fi
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand le bien appartient à l'organisation appelante", async () => {
+      const appartement = await contexteOrgA(() =>
+        appartementsService.create({
+          bienId: orgA.bienId,
+          numero: "Nouveau",
+          type: "T2",
+          nombrePiecesPrincipales: 2,
+          modeChauffage: "individuel",
+          modeEauChaude: "individuel"
+        })
+      );
+      expect(appartement.bienId).toBe(orgA.bienId);
+    });
+
+    it("404 sur le bienId d'une autre organisation, sans jamais créer d'appartement avec ce bienId", async () => {
+      await expect(
+        contexteOrgB(() =>
+          appartementsService.create({
+            bienId: orgA.bienId,
+            numero: "Etranger",
+            type: "T2",
+            nombrePiecesPrincipales: 2,
+            modeChauffage: "individuel",
+            modeEauChaude: "individuel"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(appartements).where(eq(appartements.bienId, orgA.bienId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.appartementId]);
+    });
+
+    it("404 sur un bienId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          appartementsService.create({
+            bienId: randomUUID(),
+            numero: "Fantôme",
+            type: "T2",
+            nombrePiecesPrincipales: 2,
+            modeChauffage: "individuel",
+            modeEauChaude: "individuel"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const appartement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        appartementsService.create({
+          bienId: orgB.bienId,
+          numero: "SansContexte",
+          type: "T2",
+          nombrePiecesPrincipales: 2,
+          modeChauffage: "individuel",
+          modeEauChaude: "individuel"
+        })
+      );
+      expect(appartement.bienId).toBe(orgB.bienId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {

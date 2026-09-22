@@ -59,13 +59,46 @@ export class RemboursementsService {
     // un bailId invalide laissait storage.enregistrer() écrire un blob
     // chiffré orphelin avant que l'insert échoue sur la contrainte FK
     // (financial-logic-reviewer, 2026-08-24).
-    const [bail] = await this.db.select({ id: baux.id }).from(baux).where(eq(baux.id, dto.bailId)).limit(1);
+    //
+    // Contrôle d'appartenance sur dto.bailId (Priorité E3, chantier scoping
+    // multi-organisation, Catégorie E, 2026-09-19) : n'était vérifié que
+    // pour son existence — sans colonne organisationId propre sur
+    // remboursements, un bailId d'une autre organisation faisait apparaître
+    // le remboursement créé directement dans le dossier de l'organisation
+    // propriétaire réelle du bail. Même chaîne de jointure que findAll()
+    // ci-dessus. Skip si organisationId absent (hors contexte HTTP). Même
+    // message "Bail introuvable" pour id inexistant et id d'une autre
+    // organisation.
+    const organisationId = this.requestContext.getOrganisationId();
+    const [bail] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(baux.id, dto.bailId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+      .limit(1);
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
     }
 
     if (dto.paiementId) {
-      const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, dto.paiementId)).limit(1);
+      // Même contrôle d'appartenance que pour dto.bailId ci-dessus,
+      // même raison (Priorité E3). Ne vérifie PAS que ce paiement
+      // appartient au même bail que dto.bailId — incohérence possible non
+      // corrigée ici, hors sujet direct du scoping (signalée à
+      // l'utilisateur dans le compte-rendu de ce commit) : un paiement
+      // d'un autre bail de la MÊME organisation reste accepté aujourd'hui,
+      // et le plafond de remboursement (montantRecu ci-dessous) serait
+      // alors calculé sur les versements de ce paiement étranger plutôt
+      // que sur ceux du bail réellement remboursé.
+      const [paiement] = await this.db
+        .select({ id: paiements.id })
+        .from(paiements)
+        .innerJoin(baux, eq(baux.id, paiements.bailId))
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(paiements.id, dto.paiementId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+        .limit(1);
       if (!paiement) {
         throw new NotFoundException("Paiement introuvable");
       }

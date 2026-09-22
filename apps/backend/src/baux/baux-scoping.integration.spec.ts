@@ -31,6 +31,7 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   bailId: string;
+  appartementId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -45,7 +46,13 @@ interface FixtureOrganisation {
 // en Priorité 2 (2026-09-19) via verifierAppartenanceBail(), appelé avant
 // l'ouverture de leur transaction respective : voir le describe dédié plus
 // bas dans ce fichier pour leur couverture cross-org.
-describe("BauxService.findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
+//
+// create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.appartementId n'était vérifié que pour son existence —
+// corrigé en filtrant la même requête (déjà exécutée pour loyerReference)
+// via jointure vers bien. Aucun appelant interne (vérifié par grep, seul
+// BauxController).
+describe("BauxService.create / findById — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -100,7 +107,7 @@ describe("BauxService.findById — contrôle d'appartenance à l'organisation (i
     });
     const bail = await bauxService.create({ appartementId: appartement.id, typeBail: "vide", dateDebut: "2026-01-01" });
 
-    return { organisationId: organisation.id, userId: user.id, bailId: bail.id };
+    return { organisationId: organisation.id, userId: user.id, bailId: bail.id, appartementId: appartement.id };
   }
 
   beforeEach(async () => {
@@ -146,6 +153,39 @@ describe("BauxService.findById — contrôle d'appartenance à l'organisation (i
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand l'appartement appartient à l'organisation appelante", async () => {
+      const bail = await contexteOrgA(() =>
+        bauxService.create({ appartementId: orgA.appartementId, typeBail: "vide", dateDebut: "2026-02-01" })
+      );
+      expect(bail.appartementId).toBe(orgA.appartementId);
+    });
+
+    it("404 sur l'appartementId d'une autre organisation, sans jamais créer de bail avec cet appartementId", async () => {
+      await expect(
+        contexteOrgB(() =>
+          bauxService.create({ appartementId: orgA.appartementId, typeBail: "vide", dateDebut: "2026-02-01" })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(baux).where(eq(baux.appartementId, orgA.appartementId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.bailId]);
+    });
+
+    it("404 sur un appartementId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => bauxService.create({ appartementId: randomUUID(), typeBail: "vide", dateDebut: "2026-02-01" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const bail = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        bauxService.create({ appartementId: orgB.appartementId, typeBail: "vide", dateDebut: "2026-02-01" })
+      );
+      expect(bail.appartementId).toBe(orgB.appartementId);
+    });
+  });
 
   it("réussit normalement quand le bail appartient à l'organisation appelante", async () => {
     const bail = await contexteOrgA(() => bauxService.findById(orgA.bailId));

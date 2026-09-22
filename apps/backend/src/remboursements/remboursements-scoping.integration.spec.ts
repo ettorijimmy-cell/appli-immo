@@ -47,6 +47,8 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   remboursementId: string;
+  bailId: string;
+  paiementId: string;
 }
 
 // Commit B5 (chantier scoping multi-organisation, 2026-09-18) :
@@ -63,6 +65,16 @@ interface FixtureOrganisation {
 // justificative introuvable" pour telechargerPieceJustificative() — jamais
 // de différence observable entre "n'existe pas" et "d'une autre
 // organisation" au sein de chaque appelant).
+//
+// create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.bailId et dto.paiementId (optionnel) n'étaient vérifiés
+// ni pour leur existence ni pour leur appartenance — corrigé en filtrant
+// les deux requêtes déjà exécutées via jointure vers bien. Ne vérifie PAS
+// que dto.paiementId appartient au même bail que dto.bailId — incohérence
+// possible non corrigée ici (un paiement d'un autre bail de la MÊME
+// organisation resterait accepté), signalée dans le compte-rendu de ce
+// commit plutôt que corrigée en silence : hors sujet direct du scoping.
+// Aucun appelant interne (vérifié par grep, seul RemboursementsController).
 describe("RemboursementsService — contrôle d'appartenance à l'organisation (intégration Postgres réelle)", () => {
   const storageDirTest = path.join(os.tmpdir(), `appli-immo-test-remboursements-scoping-${randomUUID()}`);
   process.env["DOCUMENTS_STORAGE_DIR"] = storageDirTest;
@@ -177,7 +189,13 @@ describe("RemboursementsService — contrôle d'appartenance à l'organisation (
       fichierTest(`devis peinture ${suffixe}`, `devis-${suffixe}.pdf`)
     );
 
-    return { organisationId: organisation.id, userId, remboursementId: remboursement.id };
+    return {
+      organisationId: organisation.id,
+      userId,
+      remboursementId: remboursement.id,
+      bailId: bail.id,
+      paiementId: depotGarantiePaiement.id
+    };
   }
 
   beforeEach(async () => {
@@ -238,6 +256,111 @@ describe("RemboursementsService — contrôle d'appartenance à l'organisation (
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand le bail (et le paiement, si fourni) appartiennent à l'organisation appelante", async () => {
+      // 400.00 : la fixture a déjà consommé 600.00 des 1000.00 reçus sur ce
+      // paiement (remboursement initial) — reste exactement 400.00 de marge
+      // avant ConflictException (D3/D4), sans rapport avec ce commit.
+      const remboursement = await contexteOrgA(() =>
+        remboursementsService.create({
+          bailId: orgA.bailId,
+          paiementId: orgA.paiementId,
+          type: "depot_garantie",
+          montantOrigine: "400.00",
+          montantRembourse: "400.00",
+          dateRemboursement: "2026-08-01",
+          mode: "virement"
+        })
+      );
+      expect(remboursement.bailId).toBe(orgA.bailId);
+    });
+
+    it("404 sur le bailId d'une autre organisation, sans jamais créer de remboursement avec ce bailId", async () => {
+      await expect(
+        contexteOrgB(() =>
+          remboursementsService.create({
+            bailId: orgA.bailId,
+            type: "depot_garantie",
+            montantOrigine: "1000.00",
+            montantRembourse: "1000.00",
+            dateRemboursement: "2026-08-01",
+            mode: "virement"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(remboursements).where(eq(remboursements.bailId, orgA.bailId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.remboursementId]);
+    });
+
+    it("404 sur un bailId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          remboursementsService.create({
+            bailId: randomUUID(),
+            type: "depot_garantie",
+            montantOrigine: "1000.00",
+            montantRembourse: "1000.00",
+            dateRemboursement: "2026-08-01",
+            mode: "virement"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("404 sur le paiementId d'une autre organisation (bailId pourtant valide), sans jamais créer de remboursement", async () => {
+      await expect(
+        contexteOrgA(() =>
+          remboursementsService.create({
+            bailId: orgA.bailId,
+            paiementId: orgB.paiementId,
+            type: "depot_garantie",
+            montantOrigine: "1000.00",
+            montantRembourse: "1000.00",
+            dateRemboursement: "2026-08-01",
+            mode: "virement"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(remboursements).where(eq(remboursements.bailId, orgA.bailId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.remboursementId]);
+    });
+
+    it("404 sur un paiementId inexistant (bailId pourtant valide)", async () => {
+      await expect(
+        contexteOrgA(() =>
+          remboursementsService.create({
+            bailId: orgA.bailId,
+            paiementId: randomUUID(),
+            type: "depot_garantie",
+            montantOrigine: "1000.00",
+            montantRembourse: "1000.00",
+            dateRemboursement: "2026-08-01",
+            mode: "virement"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      // Même marge de 400.00 que le test "réussit normalement" ci-dessus,
+      // appliquée ici au paiement d'orgB.
+      const remboursement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        remboursementsService.create({
+          bailId: orgB.bailId,
+          paiementId: orgB.paiementId,
+          type: "depot_garantie",
+          montantOrigine: "400.00",
+          montantRembourse: "400.00",
+          dateRemboursement: "2026-08-01",
+          mode: "virement"
+        })
+      );
+      expect(remboursement.bailId).toBe(orgB.bailId);
+    });
+  });
 
   it("télécharge normalement la pièce justificative quand le remboursement appartient à l'organisation appelante", async () => {
     const resultat = await contexteOrgA(() =>

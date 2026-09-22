@@ -27,6 +27,7 @@ interface FixtureOrganisation {
   userId: string;
   paiementId: string;
   versementId: string;
+  bailId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -44,7 +45,13 @@ interface FixtureOrganisation {
 // le contrôle doit bloquer AVANT l'ouverture de cette transaction, pas
 // seulement avant l'écriture sur `paiements` : la fixture inclut donc un
 // versement réel par organisation pour en apporter la preuve.
-describe("PaiementsService — contrôle d'appartenance à l'organisation (findById/update/archive, intégration Postgres réelle)", () => {
+//
+// create() (Priorité E3, chantier scoping multi-organisation, Catégorie E,
+// 2026-09-19) : dto.bailId n'était vérifié ni pour son existence ni pour
+// son appartenance — corrigé via verifierAppartenanceBail(), même chaîne
+// de jointure que findAll() ci-dessous. Aucun appelant interne (vérifié
+// par grep, seul PaiementsController).
+describe("PaiementsService — contrôle d'appartenance à l'organisation (create/findById/update/archive, intégration Postgres réelle)", () => {
   const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
   const { begin, rollback } = createTransactionalTestHooks(rootDb);
 
@@ -113,7 +120,13 @@ describe("PaiementsService — contrôle d'appartenance à l'organisation (findB
       dateVersement: "2026-01-05"
     });
 
-    return { organisationId: organisation.id, userId: user.id, paiementId: paiement.id, versementId: versement.id };
+    return {
+      organisationId: organisation.id,
+      userId: user.id,
+      paiementId: paiement.id,
+      versementId: versement.id,
+      bailId: bail.id
+    };
   }
 
   beforeEach(async () => {
@@ -163,6 +176,41 @@ describe("PaiementsService — contrôle d'appartenance à l'organisation (findB
   function contexteOrgB<T>(fn: () => Promise<T>): Promise<T> {
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
+
+  describe("create", () => {
+    it("réussit normalement quand le bail appartient à l'organisation appelante", async () => {
+      const paiement = await contexteOrgA(() =>
+        paiementsService.create({ bailId: orgA.bailId, type: "charges", montant: "50.00", dateEcheance: "2026-02-05" })
+      );
+      expect(paiement.bailId).toBe(orgA.bailId);
+    });
+
+    it("404 sur le bailId d'une autre organisation, sans jamais créer de paiement avec ce bailId", async () => {
+      await expect(
+        contexteOrgB(() =>
+          paiementsService.create({ bailId: orgA.bailId, type: "charges", montant: "50.00", dateEcheance: "2026-02-05" })
+        )
+      ).rejects.toThrow(NotFoundException);
+
+      const lignes = await db.select().from(paiements).where(eq(paiements.bailId, orgA.bailId));
+      expect(lignes.map((l) => l.id)).toEqual([orgA.paiementId]);
+    });
+
+    it("404 sur un bailId inexistant", async () => {
+      await expect(
+        contexteOrgA(() =>
+          paiementsService.create({ bailId: randomUUID(), type: "charges", montant: "50.00", dateEcheance: "2026-02-05" })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
+      const paiement = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+        paiementsService.create({ bailId: orgB.bailId, type: "charges", montant: "50.00", dateEcheance: "2026-02-05" })
+      );
+      expect(paiement.bailId).toBe(orgB.bailId);
+    });
+  });
 
   describe("findById", () => {
     it("réussit normalement quand le paiement appartient à l'organisation appelante", async () => {

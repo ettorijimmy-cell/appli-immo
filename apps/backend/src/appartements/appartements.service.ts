@@ -194,8 +194,22 @@ export class AppartementsService {
     return appartement;
   }
 
+  // Contrôle d'appartenance sur bienId (Priorité E3, chantier scoping
+  // multi-organisation, Catégorie E, 2026-09-19) : appelée depuis create()
+  // avec dto.bienId (fourni par l'appelant, jamais vérifié jusqu'ici) et
+  // depuis update() avec appartementExistant.bienId (déjà implicitement
+  // sûr — l'appartement a été résolu via resoudreAppartementAvecAppartenance
+  // juste avant, donc son bienId appartient déjà à l'organisation
+  // appelante ; le filtre ici est donc redondant mais sans effet pour ce
+  // second appel). Skip si organisationId absent (hors contexte HTTP).
+  // Même message "Bien introuvable" que pour un id inexistant.
   private async recupererTypeBien(bienId: string): Promise<TypeBien> {
-    const [bienParent] = await this.db.select({ type: bien.type }).from(bien).where(eq(bien.id, bienId)).limit(1);
+    const organisationId = this.requestContext.getOrganisationId();
+    const [bienParent] = await this.db
+      .select({ type: bien.type })
+      .from(bien)
+      .where(and(eq(bien.id, bienId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+      .limit(1);
     if (!bienParent) {
       throw new NotFoundException("Bien introuvable");
     }

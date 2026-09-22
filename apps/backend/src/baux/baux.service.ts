@@ -45,15 +45,26 @@ export class BauxService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  // Contrôle d'appartenance sur dto.appartementId (Priorité E3, chantier
+  // scoping multi-organisation, Catégorie E, 2026-09-19) : n'était vérifié
+  // que pour son existence — sans colonne organisationId propre sur baux,
+  // un appartementId d'une autre organisation faisait apparaître le bail
+  // créé (loyer, dates, dépôt de garantie) directement dans le dossier de
+  // l'organisation propriétaire de l'appartement. Filtre ajouté à la même
+  // requête déjà exécutée pour récupérer loyerReference, plutôt qu'une
+  // requête séparée.
   async create(dto: CreateBailDto) {
-    const [appartement] = await this.db
-      .select()
+    const organisationId = this.requestContext.getOrganisationId();
+    const [ligne] = await this.db
+      .select({ appartement: appartements })
       .from(appartements)
-      .where(eq(appartements.id, dto.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(appartements.id, dto.appartementId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
       .limit(1);
-    if (!appartement) {
+    if (!ligne) {
       throw new NotFoundException("Appartement introuvable");
     }
+    const appartement = ligne.appartement;
 
     const loyerMensuel = preremplirLoyerBail(dto.loyerMensuel, appartement.loyerReference);
 

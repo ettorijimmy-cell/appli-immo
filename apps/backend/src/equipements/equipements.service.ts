@@ -16,6 +16,8 @@ export class EquipementsService {
   ) {}
 
   async create(dto: CreateEquipementDto) {
+    await this.verifierAppartenanceAppartement(dto.appartementId);
+
     const [equipement] = await this.db
       .insert(equipements)
       .values({
@@ -29,6 +31,31 @@ export class EquipementsService {
       throw new Error("Échec de la création de l'équipement");
     }
     return this.versDto(equipement);
+  }
+
+  // Contrôle d'appartenance sur dto.appartementId (Priorité E3, chantier
+  // scoping multi-organisation, Catégorie E, 2026-09-19) : create() ne
+  // vérifiait jusqu'ici ni l'existence ni l'appartenance — un appartementId
+  // d'une autre organisation faisait apparaître l'équipement créé (et ses
+  // alertes d'entretien, Module 6) directement dans le dossier de
+  // l'organisation propriétaire réelle. Même chaîne de jointure que
+  // findAll() ci-dessus. Skip si organisationId absent (hors contexte
+  // HTTP). Même message "Appartement introuvable" pour id inexistant et
+  // id d'une autre organisation.
+  private async verifierAppartenanceAppartement(appartementId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: appartements.id })
+      .from(appartements)
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(appartements.id, appartementId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Appartement introuvable");
+    }
   }
 
   // equipements n'a pas de colonne organisationId directe : le scoping

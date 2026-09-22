@@ -27,6 +27,8 @@ export class PaiementsService {
   ) {}
 
   async create(dto: CreatePaiementDto) {
+    await this.verifierAppartenanceBail(dto.bailId);
+
     const [paiement] = await this.db
       .insert(paiements)
       .values({
@@ -40,6 +42,32 @@ export class PaiementsService {
       throw new Error("Échec de la création du paiement");
     }
     return this.versDto(paiement);
+  }
+
+  // Contrôle d'appartenance sur dto.bailId (Priorité E3, chantier scoping
+  // multi-organisation, Catégorie E, 2026-09-19) : create() ne vérifiait
+  // jusqu'ici ni l'existence ni l'appartenance — sans colonne
+  // organisationId propre sur paiements, un bailId d'une autre organisation
+  // faisait apparaître le paiement créé (montant, échéance) directement
+  // dans les finances de l'organisation propriétaire réelle du bail. Même
+  // chaîne de jointure que findAll() ci-dessous. Skip si organisationId
+  // absent (hors contexte HTTP). Même message "Bail introuvable" pour id
+  // inexistant et id d'une autre organisation.
+  private async verifierAppartenanceBail(bailId: string): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const [ligne] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(baux.id, bailId), eq(bien.organisationId, organisationId)))
+      .limit(1);
+    if (!ligne) {
+      throw new NotFoundException("Bail introuvable");
+    }
   }
 
   // paiements n'a pas de colonne organisationId directe : le scoping passe
