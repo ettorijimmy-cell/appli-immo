@@ -22,6 +22,24 @@ asarUnpack:
   - "**/powersync_*.dll"
   - "**/powersync_*.so"
   - "**/powersync_*.dylib"
+# npmRebuild par défaut (true chez electron-builder) invoque
+# @electron/rebuild, qui tente inconditionnellement de recompiler depuis
+# les sources tout module détecté comme natif (présence d'un
+# binding.gyp) — provoque "Could not find any Python installation to
+# use" sur une machine sans toolchain node-gyp, alors qu'aucune
+# compilation n'est réellement nécessaire ici. Vérifié directement dans
+# node_modules : les deux dépendances natives du projet sont déjà
+# entièrement précompilées pour Windows —
+# better-sqlite3-multiple-ciphers embarque un binaire N-API prêt à
+# l'emploi par plateforme (prebuilds/win32-x64.node, jamais recompilé
+# non plus par pnpm install — aucun script install/postinstall), et
+# @powersync/node n'est même pas enregistré comme module node-gyp
+# (aucun binding.gyp/gypfile) — ses .dll sont chargées par un mécanisme
+# entièrement différent. @electron/rebuild ne vérifie pas qu'un binaire
+# compatible existe déjà avant de recompiler ; le désactiver ici évite
+# une compilation native inutile plutôt que de la rendre possible en
+# installant Python/Visual Studio Build Tools pour rien.
+npmRebuild: false
 win:
   target: nsis
   icon: build/icon.ico
