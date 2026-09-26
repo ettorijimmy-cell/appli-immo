@@ -44,6 +44,16 @@ win:
   target: nsis
   icon: build/icon.ico
   executableName: Briky
+  # Décision actée : pas de signature de code pour ce premier packaging
+  # (avertissement SmartScreen "éditeur inconnu" accepté). Rend ce choix
+  # explicite au niveau de la config plutôt que dépendant de ce qui
+  # pourrait traîner dans l'environnement de build — electron-builder
+  # signe automatiquement dès qu'une variable CSC_LINK/WIN_CSC_LINK est
+  # présente (reliquat d'un projet précédent, profil shell, variable
+  # système), sans rapport avec ce projet. signExecutable: false
+  # garantit qu'aucune signature n'a lieu quoi qu'il arrive, tout en
+  # gardant l'édition des métadonnées/icône (resedit) active.
+  signExecutable: false
 nsis:
   # Assistant d'installation classique (pas un installeur one-click
   # silencieux) : Jimmy voit l'assistant, peut choisir le dossier
