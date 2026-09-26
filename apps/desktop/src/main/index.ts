@@ -6,6 +6,20 @@ import { connectPowerSync, disconnectPowerSync, setEncryptionKey } from "./power
 import type { StoredPowerSyncCredentials } from "./powersync/credentials-store";
 import { initializePowerSyncEncryption } from "./powersync/encryption-key";
 
+// Fixe explicitement le nom applicatif utilisé par Electron pour dériver
+// app.getPath("userData") (%APPDATA%\Briky sous Windows), plutôt que de
+// dépendre de la résolution implicite entre le champ "name" du
+// package.json ("desktop") et "productName" côté packaging
+// (electron-builder.yml, "Briky") — ambiguïté documentée côté
+// electron-builder selon la configuration. Sans cet appel, le chemin
+// userData réel du build packagé serait incertain, avec un risque de
+// changer silencieusement d'un futur ajustement de configuration —
+// impact concret : nouvelle clé de chiffrement PowerSync générée
+// (initializePowerSyncEncryption, ci-dessous), resynchronisation complète
+// depuis le serveur plutôt qu'une simple utilisation de la base locale
+// existante. Appelé avant tout accès à app.getPath (avant app.whenReady).
+app.setName("Briky");
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -120,7 +134,7 @@ void app.whenReady().then(async () => {
     console.error("Échec du nettoyage du dossier temporaire de documents :", error);
   }
 
-  electronApp.setAppUserModelId("com.appli-immo.desktop");
+  electronApp.setAppUserModelId("com.briky.desktop");
 
   app.on("browser-window-created", (_, window) => {
     optimizer.watchWindowShortcuts(window);

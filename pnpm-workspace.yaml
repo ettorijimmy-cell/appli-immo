@@ -9,4 +9,9 @@ allowBuilds:
   # dans database.worker.ts (chiffrement local, voir docs/backlog.md).
   better-sqlite3: false
   better-sqlite3-multiple-ciphers: true
+  # Dépendance d'electron-builder pour la cible Squirrel.Windows —
+  # jamais utilisée ici, target Windows configuré exclusivement en NSIS
+  # (apps/desktop/electron-builder.yml). Script d'installation natif non
+  # nécessaire pour ce chemin de packaging.
+  electron-winstaller: false
   esbuild: true

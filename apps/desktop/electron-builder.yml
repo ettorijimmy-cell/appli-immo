@@ -1,0 +1,37 @@
+# Packaging Windows (NSIS) — premier déploiement réel, manuel (pas de
+# CI/CD packaging pour l'instant). Convention electron-vite/electron-toolkit :
+# ce fichier vit à la racine d'apps/desktop, buildResources par défaut =
+# "build" (icône attendue en build/icon.ico pour la cible Windows).
+appId: com.briky.desktop
+productName: Briky
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+# Fichiers natifs (.node, binaire PowerSync) : ne peuvent pas être chargés
+# depuis l'intérieur d'un asar (dlopen échoue sur une archive) — extraits
+# à côté plutôt qu'empaquetés. better-sqlite3-multiple-ciphers (SQLite
+# chiffré local) et @powersync/node (binaire natif, voir commentaire
+# "powersync_x64.dll" dans electron.vite.config.ts) sont les deux
+# concernés.
+asarUnpack:
+  - "**/*.node"
+  - "**/powersync_*.dll"
+  - "**/powersync_*.so"
+  - "**/powersync_*.dylib"
+win:
+  target: nsis
+  icon: build/icon.ico
+  executableName: Briky
+nsis:
+  # Assistant d'installation classique (pas un installeur one-click
+  # silencieux) : Jimmy voit l'assistant, peut choisir le dossier
+  # d'installation — décision actée.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Briky

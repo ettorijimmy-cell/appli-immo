@@ -5,9 +5,21 @@ build/
 .turbo/
 *.tsbuildinfo
 
+# Icône source du packaging desktop (apps/desktop/build/, convention
+# electron-builder) — même pattern que tmp/ ci-dessous : "build/" reste
+# ignoré partout (sorties de build), sauf ce fichier précis, qui est un
+# asset source versionné, pas un artefact généré.
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/icon.ico
+
 .env
 .env.*
 !.env.example
+# VITE_API_URL production (URL Scaleway du backend) n'est pas un secret —
+# committé pour que le build de packaging desktop (electron-builder,
+# apps/desktop) l'utilise automatiquement, sans ressaisie manuelle.
+!.env.production
 
 *.sqlite
 *.sqlite-journal
