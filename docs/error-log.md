@@ -33,6 +33,72 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-09-27] Connexion en production systématiquement rejetée ("Identifiants invalides") — cause réelle : 500 masqué, pas un problème d'identifiants
+
+**Symptôme** : l'app installée (build electron-builder) affichait
+"Identifiants invalides" à chaque tentative de connexion contre le backend
+de production, y compris avec des identifiants confirmés corrects (ligne
+`utilisateurs` vérifiée en base, mot de passe réinitialisé et recontrôlé).
+Un appel direct `curl` sur `POST /auth/login` révélait la vraie nature du
+problème : `500 Internal server error`, jamais un `401` — le message
+"Identifiants invalides" affiché par le renderer est générique pour toute
+réponse non-2xx (voir `apps/desktop/src/renderer/src/auth/api.ts`), donc
+un 500 s'affichait identiquement à un vrai rejet d'identifiants. `GET
+/health` répondait normalement (`200`), ce qui a permis d'isoler le
+problème à tout endpoint touchant la base — `/health` ne fait aucune
+requête Postgres par construction.
+
+**Contexte** : premier déploiement réel du backend sur Scaleway Serverless
+Containers (tâche liée à l'hébergement backend), après plusieurs semaines
+où seule la base de dev locale avait servi aux tests de connexion. Aucune
+requête `/auth/login` n'apparaissait non plus dans les logs applicatifs —
+red herring initial, écarté après avoir confirmé que ce backend n'a aucun
+middleware de logging d'accès HTTP et que NestJS ne journalise jamais par
+défaut une exception "attendue" (4xx) — seulement les 5xx/non gérées.
+
+**Cause** : la restriction des IPs autorisées sur l'instance Postgres de
+production (voir entrée du 2026-08-12 ci-dessous, `0.0.0.0/0` → 6 IP
+précises : les 5 IP PowerSync Cloud EU + l'IP personnelle du propriétaire
+pour l'administration manuelle) avait été posée **avant** le déploiement
+du Serverless Container backend. L'IP sortante de ce conteneur n'a donc
+jamais figuré dans cette liste. Toute requête touchant la base — dont
+`/auth/login` via `UsersService.findByEmail()` — se heurtait au firewall
+réseau de l'instance Postgres, levait une exception de connexion non
+interceptée, et NestJS renvoyait son 500 générique par défaut. Le code
+d'authentification lui-même (`AuthService.validateUser()`, argon2, JWT)
+était intact et non concerné — confirmé par reproduction réussie en dev
+local (base différente, pas soumise à cette restriction) et par relecture
+de l'historique git complet du fichier depuis l'introduction d'
+`organisationId` dans le payload JWT.
+
+**Solution** : rattachement de l'instance Postgres de production et du
+Serverless Container backend à un Réseau Privé (VPC) Scaleway dédié.
+`DATABASE_URL` du conteneur pointe désormais vers l'IP privée de la base
+(`172.16.8.2:5432`) plutôt que son IP publique — le trafic applicatif du
+backend vers Postgres passe par l'interface privée, hors du champ de la
+liste d'IP publiques. Confirmé par bascule `500` → `401` d'un appel
+`/auth/login` avec un mot de passe volontairement faux (preuve de
+connectivité base sans avoir besoin de tester avec un vrai mot de passe),
+puis par une connexion réussie de bout en bout depuis l'app installée.
+
+**Fichiers concernés** : aucun changement de code — configuration
+infrastructure uniquement (Réseau Privé Scaleway + variable d'environnement
+`DATABASE_URL` du Serverless Container).
+
+**À surveiller** : la liste des 6 IP publiques autorisées sur Postgres
+(PowerSync Cloud EU + IP personnelle du propriétaire) reste inchangée et
+nécessaire — ces deux usages continuent de passer par l'endpoint public,
+indépendamment du Réseau Privé. Si le Serverless Container est un jour
+redéployé depuis un autre projet/région Scaleway ou remplacé par un autre
+type de compute, vérifier que le nouveau rattachement au Réseau Privé
+suit — rien dans le code n'empêcherait la même régression de se reproduire
+silencieusement (toujours masquée en 500 générique, jamais un message
+clair). Deux limites structurelles ont rendu ce diagnostic plus long que
+nécessaire, consignées comme dette technique séparée (voir
+docs/backlog.md, section Dette technique) : absence de logging des
+requêtes HTTP, et message "Identifiants invalides" générique côté
+frontend pour toute erreur non-2xx.
+
 ### [2026-09-07] ImportCsvDepensesView proposait les lignes de crédit comme candidates de dépense
 
 **Symptôme** : confirmé par test manuel Electron — dans l'écran d'import

@@ -289,6 +289,31 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
+- **Absence totale de logging des requêtes HTTP côté backend — non
+  résolu.** Constaté 2026-09-27 pendant le diagnostic d'un rejet réseau
+  Postgres masqué en 500 générique (voir docs/error-log.md, entrée du
+  même jour) : `main.ts` ne configure aucun middleware d'accès HTTP, et le
+  filtre d'exception par défaut de NestJS ne journalise jamais une
+  exception "attendue" (4xx) — seulement les 5xx/non gérées. Résultat :
+  aucune trace exploitable pour distinguer, après coup, une tentative de
+  connexion échouée par mauvais mot de passe d'une requête qui n'a jamais
+  atteint l'application, ni même pour confirmer qu'une requête a bien été
+  reçue. Pas urgent en usage personnel actuel, mais deviendrait vite
+  gênant pour du support à distance ou une ouverture multi-utilisateur —
+  un logging d'accès minimal (méthode, route, statut, durée, sans corps ni
+  en-têtes sensibles) réglerait ça simplement.
+
+- **Message "Identifiants invalides" générique côté frontend pour toute
+  réponse non-2xx — non résolu.** Constaté 2026-09-27, même diagnostic
+  (`apps/desktop/src/renderer/src/auth/api.ts`) : le client de connexion
+  affiche ce message pour n'importe quel statut HTTP différent de 2xx, pas
+  seulement un vrai 401 — un 500 (panne serveur, comme l'incident du
+  2026-09-27) s'affiche donc de façon identique à un vrai rejet
+  d'identifiants, ce qui a significativement rallongé ce diagnostic
+  précis. Distinguer au moins les 5xx ("Erreur serveur, réessayer plus
+  tard") des 401 ("Identifiants invalides") éviterait de rejouer cette
+  confusion.
+
 - **Aucune vérification que `bienId`/`sciId` transmis par le client appartiennent
   bien à l'organisation de l'utilisateur authentifié — non résolu.** Constaté
   2026-09-07 (revue financial-logic-reviewer, Module Charges et fiscalité
