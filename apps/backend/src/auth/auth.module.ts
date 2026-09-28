@@ -7,6 +7,27 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 
+const DUREE_JWT_PAR_DEFAUT_SECONDES = 3600;
+
+// ConfigService.get<number>(...) ne convertit jamais réellement la valeur —
+// <number> n'est qu'une annotation TypeScript sans effet à l'exécution
+// (ConfigService.getFromProcessEnv fait un simple lodash.get(process.env,
+// clé), toujours une chaîne dès que la variable est définie). Transmettre
+// cette chaîne telle quelle à signOptions.expiresIn change de branche dans
+// jsonwebtoken (timespan.js) : une valeur numérique est traitée comme des
+// SECONDES, une chaîne est traitée comme une durée `ms` — et `ms("3600")`
+// (sans unité) vaut 3600 MILLISECONDES, soit environ 3 secondes une fois
+// arrondi. Incident réel du 2026-09-28 : déconnexion ~3 secondes après
+// chaque connexion en production, alors que
+// la console Scaleway affichait "3600" en toutes lettres — aucune faute de
+// frappe nécessaire, uniquement ce défaut de type. Number(...) impose la
+// branche numérique quoi qu'il arrive ; repli sur la valeur par défaut si
+// la variable est absente, vide, ou ne représente pas un nombre positif.
+export function resoudreExpirationJwtSecondes(valeurBrute: string | undefined): number {
+  const nombre = Number(valeurBrute);
+  return valeurBrute && Number.isFinite(nombre) && nombre > 0 ? nombre : DUREE_JWT_PAR_DEFAUT_SECONDES;
+}
+
 // Instance capturée pour pouvoir être ré-exportée : exporter JwtAuthGuard
 // seul n'exporte pas transitivement sa propre dépendance JwtService. Sans
 // ce ré-export, Nest ne peut pas (re)construire JwtAuthGuard pour un
@@ -26,7 +47,7 @@ const jwtModule = JwtModule.registerAsync({
 
     return {
       secret: secret ?? "dev-only-insecure-secret-change-me",
-      signOptions: { expiresIn: config.get<number>("JWT_EXPIRES_IN_SECONDS", 3600) }
+      signOptions: { expiresIn: resoudreExpirationJwtSecondes(config.get<string>("JWT_EXPIRES_IN_SECONDS")) }
     };
   }
 });
