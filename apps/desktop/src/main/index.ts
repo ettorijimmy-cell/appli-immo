@@ -138,21 +138,6 @@ void app.whenReady().then(async () => {
 
   app.on("browser-window-created", (_, window) => {
     optimizer.watchWindowShortcuts(window);
-
-    // TEMPORAIRE — diagnostic déconnexion post-login (2026-09-28), à
-    // retirer une fois la cause identifiée. watchWindowShortcuts ci-dessus
-    // bloque explicitement les DevTools hors dev (is.dev, voir
-    // @electron-toolkit/utils) — F12 les rouvre malgré tout, seul moyen
-    // d'observer l'onglet Network sur le build installé chez Jimmy.
-    window.webContents.on("before-input-event", (_event, input) => {
-      if (input.type === "keyDown" && input.code === "F12") {
-        if (window.webContents.isDevToolsOpened()) {
-          window.webContents.closeDevTools();
-        } else {
-          window.webContents.openDevTools({ mode: "detach" });
-        }
-      }
-    });
   });
 
   createWindow();
