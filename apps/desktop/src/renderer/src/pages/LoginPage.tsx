@@ -14,8 +14,13 @@ export function LoginPage(): React.JSX.Element {
     setIsSubmitting(true);
     try {
       await login(email, password);
-    } catch {
-      setError("Identifiants invalides");
+    } catch (error) {
+      // Message porté par l'erreur elle-même (voir auth/api.ts,
+      // loginRequest) — jamais un texte générique fixe : un 401, une panne
+      // serveur (500) et une absence totale de réponse (réseau) sont trois
+      // causes différentes, à ne plus jamais confondre à l'affichage (voir
+      // docs/error-log.md, [2026-09-27]).
+      setError(error instanceof Error ? error.message : "Identifiants invalides");
     } finally {
       setIsSubmitting(false);
     }
