@@ -79,3 +79,32 @@ export function sauvegarderSaisieManuelleAnnexe1(
     body: JSON.stringify(dto)
   });
 }
+
+// Formulaire 2044 (revenus fonciers, régime réel) — biens détenus en nom
+// propre. Périmètre resserré à 4 lignes automatiques (221/223/224/227) et
+// au résultat (211-215, 261/263) — voir packages/core/src/fiscalite/
+// calculer-2044.ts pour le détail des lignes exclues et pourquoi. Aucune
+// saisie manuelle pour l'instant, contrairement à l'Annexe 1 (2072-S).
+export interface Formulaire2044Calcule {
+  ligne211: string;
+  ligne212: string;
+  ligne213: string;
+  ligne215: string;
+  ligne221: string;
+  ligne223: string;
+  ligne224: string;
+  ligne227: string;
+  ligne240: string;
+  ligne261: string;
+  ligne263: string;
+}
+
+export interface Formulaire2044Resultat {
+  bienId: string;
+  annee: number;
+  lignes: Formulaire2044Calcule;
+}
+
+export function getFormulaire2044(bienId: string, annee: number): Promise<Formulaire2044Resultat> {
+  return authenticatedFetch<Formulaire2044Resultat>(`/fiscalite/2044?bienId=${bienId}&annee=${annee}`);
+}

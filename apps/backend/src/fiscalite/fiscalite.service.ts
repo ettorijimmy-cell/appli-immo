@@ -1,13 +1,15 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   calculerAnnexe1,
+  calculerFormulaire2044,
   LIGNE_ANNEXE1_PAR_CATEGORIE_DEPENSE,
   montantEnCentimes,
   centimesVersMontant,
   repartirCentimesEgalement,
   type Annexe1Calculee,
   type Annexe1LignesAutomatiques,
-  type Annexe1SaisieManuelle
+  type Annexe1SaisieManuelle,
+  type Formulaire2044LignesAutomatiques
 } from "core";
 import { annexe1SaisieManuelle, appartements, bien, depense, mettreAJourAvecAudit, scis, type Database } from "db";
 import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
@@ -222,6 +224,70 @@ export class FiscaliteService {
       annee,
       biens: resultatsBiens,
       totalSci: centimesVersMontant(totalSciCentimes)
+    };
+  }
+
+  // Formulaire 2044 (revenus fonciers, régime réel) — biens détenus en nom
+  // propre (bien.proprietaireType = 'personne_physique'), périmètre
+  // resserré à 4 lignes de frais automatiques (voir packages/core/src/
+  // fiscalite/mapping-categorie-2044.ts pour le détail des lignes exclues
+  // et pourquoi, décisions actées avec Jimmy le 2026-09-30). Symétrique de
+  // calculerAnnexe1PourSci, mais point d'entrée par bienId (pas sciId) : un
+  // bien en nom propre n'appartient à aucun groupement, donc aucun prorata
+  // inter-biens à reproduire ici (depense.sciId est toujours NULL pour ces
+  // biens, dénormalisé depuis bien.sciId lui-même NULL).
+  async calculerRevenus2044PourBien(userId: string, bienId: string, annee: number) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("Utilisateur introuvable");
+    }
+
+    const [bienConcerne] = await this.db.select().from(bien).where(eq(bien.id, bienId)).limit(1);
+    if (!bienConcerne || bienConcerne.organisationId !== user.organisationId) {
+      throw new NotFoundException("Bien introuvable");
+    }
+    if (bienConcerne.proprietaireType !== "personne_physique") {
+      throw new BadRequestException(
+        "Le formulaire 2044 ne s'applique qu'aux biens détenus en nom propre — ce bien est détenu par une SCI, hors périmètre de cette étape (voir l'Annexe 1, 2072-S)."
+      );
+    }
+
+    const periodeDebut = `${annee}-01-01`;
+    const periodeFin = `${annee}-12-31`;
+
+    const [depensesBien, revenus] = await Promise.all([
+      this.db
+        .select()
+        .from(depense)
+        .where(
+          and(
+            eq(depense.bienId, bienId),
+            isNull(depense.archivedAt),
+            gte(depense.dateDepense, periodeDebut),
+            lte(depense.dateDepense, periodeFin)
+          )
+        ),
+      this.tableauDeBordService.getRevenusLocatifs(periodeDebut, periodeFin, { bienId })
+    ]);
+
+    const sommeParCategorie = new Map<string, number>();
+    for (const d of depensesBien) {
+      sommeParCategorie.set(d.categorie, (sommeParCategorie.get(d.categorie) ?? 0) + montantEnCentimes(d.montant));
+    }
+    const getSomme = (categorie: string) => centimesVersMontant(sommeParCategorie.get(categorie) ?? 0);
+
+    const automatiques: Formulaire2044LignesAutomatiques = {
+      ligne211: revenus.totalLoyerNet,
+      ligne221: getSomme("frais_gestion"),
+      ligne223: getSomme("assurance"),
+      ligne224: getSomme("reparation_entretien"),
+      ligne227: getSomme("impots_taxes")
+    };
+
+    return {
+      bienId,
+      annee,
+      lignes: calculerFormulaire2044(automatiques)
     };
   }
 

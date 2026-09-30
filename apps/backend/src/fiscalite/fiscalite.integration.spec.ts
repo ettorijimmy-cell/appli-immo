@@ -336,4 +336,109 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
     expect(efface.ligne2).toBeNull();
     expect(efface.ligne3).toBe("100.00");
   });
+
+  // Extension fiscale 2044 (biens en nom propre), décisions actées avec
+  // Jimmy le 2026-09-30 : périmètre resserré à 4 lignes automatiques
+  // (221/223/224/227), voir packages/core/src/fiscalite/
+  // mapping-categorie-2044.ts.
+  describe("calculerRevenus2044PourBien (biens en nom propre)", () => {
+    async function creerBienNomPropre(nomProprietaire: string) {
+      return bienService.create(userId, {
+        type: "maison",
+        proprietaireType: "personne_physique",
+        nomProprietaire,
+        adresse: "10 rue de la Maison",
+        codePostal: "75002",
+        ville: "Paris"
+      });
+    }
+
+    it("rejette un bien détenu par une SCI — hors périmètre du formulaire 2044", async () => {
+      const sci = await scisService.create(userId, {
+        nom: "SCI 2044 Rejet Test",
+        regimeFiscal: "IR",
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris"
+      });
+      const bienSci = await creerBienAvecLots(sci.id, "Immeuble SCI", 1);
+
+      await expect(fiscaliteService.calculerRevenus2044PourBien(userId, bienSci.id, 2026)).rejects.toThrow(
+        /nom propre/
+      );
+    });
+
+    it("agrège les 4 catégories automatiques sur 240, ignore charges_copropriete/interets_emprunt, et calcule 261/263", async () => {
+      const bienNomPropre = await creerBienNomPropre("Jean Dupont");
+
+      await depensesService.create(userId, {
+        categorie: "frais_gestion",
+        montant: "100.00",
+        dateDepense: "2026-03-01",
+        libelle: "Frais de gestion",
+        bienId: bienNomPropre.id
+      });
+      await depensesService.create(userId, {
+        categorie: "assurance",
+        montant: "200.00",
+        dateDepense: "2026-04-01",
+        libelle: "Assurance PNO",
+        bienId: bienNomPropre.id
+      });
+      await depensesService.create(userId, {
+        categorie: "reparation_entretien",
+        montant: "300.00",
+        dateDepense: "2026-05-01",
+        libelle: "Réparation toiture",
+        bienId: bienNomPropre.id
+      });
+      await depensesService.create(userId, {
+        categorie: "impots_taxes",
+        montant: "400.00",
+        dateDepense: "2026-06-01",
+        libelle: "Taxe foncière",
+        bienId: bienNomPropre.id
+      });
+      // Hors périmètre de cette tranche (voir mapping-categorie-2044.ts) —
+      // ne doit apparaître nulle part dans le résultat.
+      await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "999.00",
+        dateDepense: "2026-07-01",
+        libelle: "Charges de copropriété",
+        bienId: bienNomPropre.id
+      });
+      await depensesService.create(userId, {
+        categorie: "interets_emprunt",
+        montant: "999.00",
+        dateDepense: "2026-08-01",
+        libelle: "Intérêts d'emprunt",
+        bienId: bienNomPropre.id
+      });
+      // Hors année civile 2026 — ne doit pas être compté.
+      await depensesService.create(userId, {
+        categorie: "frais_gestion",
+        montant: "999.00",
+        dateDepense: "2025-12-31",
+        libelle: "Frais de gestion année précédente",
+        bienId: bienNomPropre.id
+      });
+
+      const resultat = await fiscaliteService.calculerRevenus2044PourBien(userId, bienNomPropre.id, 2026);
+
+      expect(resultat.bienId).toBe(bienNomPropre.id);
+      expect(resultat.lignes.ligne211).toBe("0.00");
+      expect(resultat.lignes.ligne215).toBe("0.00");
+      expect(resultat.lignes.ligne221).toBe("100.00");
+      expect(resultat.lignes.ligne223).toBe("200.00");
+      expect(resultat.lignes.ligne224).toBe("300.00");
+      expect(resultat.lignes.ligne227).toBe("400.00");
+      // 240 = 100+200+300+400 = 1000.00 (charges_copropriete/interets_emprunt
+      // volontairement absents de cette somme).
+      expect(resultat.lignes.ligne240).toBe("1000.00");
+      // 261 = 215-240 = 0-1000
+      expect(resultat.lignes.ligne261).toBe("-1000.00");
+      expect(resultat.lignes.ligne263).toBe("-1000.00");
+    });
+  });
 });

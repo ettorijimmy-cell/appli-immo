@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { Annexe1QueryDto } from "./dto/annexe1-query.dto";
+import { Formulaire2044QueryDto } from "./dto/formulaire-2044-query.dto";
 import { SaisieManuelleAnnexe1Dto } from "./dto/saisie-manuelle-annexe1.dto";
 import { FiscaliteService } from "./fiscalite.service";
 
@@ -11,6 +12,11 @@ export class FiscaliteController {
   @Get("annexe1")
   calculerAnnexe1(@Req() req: Request, @Query() query: Annexe1QueryDto) {
     return this.fiscaliteService.calculerAnnexe1PourSci(req.user!.sub, query.sciId, query.annee);
+  }
+
+  @Get("2044")
+  calculerFormulaire2044(@Req() req: Request, @Query() query: Formulaire2044QueryDto) {
+    return this.fiscaliteService.calculerRevenus2044PourBien(req.user!.sub, query.bienId, query.annee);
   }
 
   @Patch("annexe1/:bienId/:annee")
