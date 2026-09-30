@@ -28,13 +28,13 @@ export const navItems: NavItem[] = [
   { path: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { path: "/patrimoine", label: "Patrimoine", icon: Building2 },
   { path: "/locataires", label: "Locataires", icon: Users },
-  { path: "/contacts", label: "Carnet de contacts", icon: BookUser },
   { path: "/candidats", label: "Candidats", icon: UserSearch },
-  { path: "/calendrier", label: "Calendrier", icon: CalendarDays },
   { path: "/finances", label: "Finances", icon: Wallet },
   { path: "/documents", label: "Documents", icon: FileText },
+  { path: "/contacts", label: "Carnet de contacts", icon: BookUser },
+  { path: "/calendrier", label: "Calendrier", icon: CalendarDays },
   { path: "/taches", label: "Tâches", icon: ListTodo },
-  { path: "/sinistres", label: "Sinistres", icon: ShieldAlert },
   { path: "/messagerie", label: "Messagerie", icon: Mail },
+  { path: "/sinistres", label: "Sinistres", icon: ShieldAlert },
   { path: "/parametres", label: "Paramètres", icon: Settings }
 ];

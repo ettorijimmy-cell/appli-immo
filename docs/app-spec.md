@@ -77,9 +77,11 @@ construire ni colonne de statut à ajouter au schéma.
 
 ## 3bis. Navigation
 
-Sidebar, dans cet ordre :
+Sidebar, dans cet ordre (mis à jour le 2026-09-29, thème de marque Briky) :
 `Tableau de bord` · `Patrimoine` (SCI/Immeubles/Appartements réunis) ·
-`Locataires` · `Finances` · `Documents` · `Tâches` · `Paramètres`.
+`Locataires` · `Candidats` · `Finances` · `Documents` ·
+`Carnet de contacts` · `Calendrier` · `Tâches` · `Messagerie` ·
+`Sinistres` · `Paramètres`.
 
 **Limite de 6 entrées levée explicitement par Jimmy (2026-09-05)**, après
 consultation d'une capture réelle de l'application : la sidebar a
