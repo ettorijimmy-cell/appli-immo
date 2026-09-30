@@ -1,0 +1,35 @@
+# Contexte de build Docker (voir apps/backend/Dockerfile) — exclut tout ce
+# qui n'est pas nécessaire pour builder le backend, et surtout tout ce qui
+# est sensible (secrets, données chiffrées locales réelles).
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+out/
+**/out/
+build/
+**/build/
+.turbo/
+**/.turbo/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.sqlite
+*.sqlite-journal
+
+backups/
+storage/
+tmp/
+
+.git/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Note : apps/desktop et apps/mobile-web restent dans le contexte malgré
+# leur non-pertinence pour cette image — `turbo prune backend` a besoin de
+# voir TOUS les package.json du monorepo pour reconstruire le graphe de
+# dépendances correctement, même les workspaces non utilisés par backend.
