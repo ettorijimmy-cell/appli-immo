@@ -1747,9 +1747,24 @@ de création de tâche. Retourne toujours le bilan calculé, que la tâche ait
 
 **Idempotence** : index unique partiel
 `tache_bail_periode_regularisation_active_unique` (`bail_id`,
-`periode_recurrence`) scopé `type='regularisation_charges'` — même
-mécanique double (vérification applicative avant écriture + contrainte SQL
-en filet de sécurité) que `tache_bail_periode_revision_active_unique`.
+`periode_recurrence`) — même mécanique double (vérification applicative
+avant écriture + contrainte SQL en filet de sécurité) que
+`tache_bail_periode_revision_active_unique`. Le prédicat scope sur
+`type <> 'revision_loyer' AND periode_recurrence IS NOT NULL` plutôt que
+`type = 'regularisation_charges'` directement — **volontaire, pas une
+simplification à faire** : sur une base neuve, cette migration s'exécute
+dans la même transaction que tout l'historique (`drizzle-kit migrate`
+regroupe toutes les migrations en attente), et Postgres interdit toute
+comparaison typée enum avec une valeur ajoutée via `ALTER TYPE ... ADD
+VALUE` n'importe où dans cette même transaction — y compris
+`regularisation_charges` lui-même et `sinistre_stagnation`, ajouté
+plusieurs migrations plus tôt (CI #36911645813, 2026-10-01, reproduit
+uniquement sur base neuve). Seules les valeurs présentes dès le `CREATE
+TYPE` initial de `tache_type` restent sûres à référencer ; `revision_loyer`
+en fait partie, et c'est aujourd'hui le seul autre type qui renseigne
+`periode_recurrence` (tous les autres, y compris `sinistre_stagnation`, le
+laissent toujours `NULL`) — la combinaison des deux conditions équivaut
+donc exactement à `type = 'regularisation_charges'`.
 Différence volontaire avec `revision_loyer` : `periode_recurrence` porte ici
 la **période exacte** (`"periodeDebut_periodeFin"`), pas une année civile —
 une régularisation n'est jamais forcément alignée sur l'année civile

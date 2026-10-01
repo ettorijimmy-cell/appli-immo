@@ -1,5 +1,5 @@
 {
-  "id": "0d9b3f06-68bd-4a49-8296-1918d9877f8f",
+  "id": "2774a745-9c92-4b04-88ec-ca23f4d23b20",
   "prevId": "ce5c34a0-31cf-42c1-9ced-b4c2971040b4",
   "version": "7",
   "dialect": "postgresql",
@@ -5451,7 +5451,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"tache\".\"type\" = 'regularisation_charges' AND \"tache\".\"statut\" IN ('a_faire', 'en_cours') AND \"tache\".\"bail_id\" IS NOT NULL AND \"tache\".\"periode_recurrence\" IS NOT NULL",
+          "where": "\"tache\".\"type\" <> 'revision_loyer' AND \"tache\".\"periode_recurrence\" IS NOT NULL AND \"tache\".\"statut\" IN ('a_faire', 'en_cours') AND \"tache\".\"bail_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

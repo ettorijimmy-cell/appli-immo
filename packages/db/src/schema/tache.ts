@@ -123,10 +123,28 @@ export const tache = pgTable(
     // civile (déclenchement manuel possible à tout moment, ex. départ d'un
     // locataire) — voir TachesJobService.genererTachesRegularisationCharges
     // et RegularisationChargesController.
+    // AUCUNE comparaison directe à 'regularisation_charges' ni à
+    // 'sinistre_stagnation' ici — volontaire, pas une maladresse à
+    // "simplifier" plus tard. Sur une base neuve, cette migration s'exécute
+    // dans la MÊME transaction que TOUTE la suite de migrations
+    // (drizzle-kit migrate regroupe tout l'historique en attente dans une
+    // seule transaction) — Postgres interdit toute comparaison typée enum
+    // avec une valeur ajoutée via ALTER TYPE ADD VALUE n'importe où dans
+    // cette même transaction, pas seulement la plus récente ("unsafe use of
+    // new value", CI #36911645813, 2026-10-01 — déclenché même par
+    // 'sinistre_stagnation', ajouté plusieurs migrations plus tôt). Seules
+    // les valeurs présentes au moment du CREATE TYPE initial de tache_type
+    // restent sûres à référencer. Équivalent construit à partir de deux
+    // faits déjà vrais aujourd'hui : seuls revision_loyer et
+    // regularisation_charges renseignent periode_recurrence (tous les
+    // autres types, y compris sinistre_stagnation, la laissent toujours
+    // NULL — voir tache_bail_periode_revision_active_unique et
+    // genererTacheRegularisationSiNecessaire) ; 'revision_loyer' fait
+    // partie des valeurs d'origine de l'enum, donc sûr à référencer ici.
     uniqueIndex("tache_bail_periode_regularisation_active_unique")
       .on(table.bailId, table.periodeRecurrence)
       .where(
-        sql`${table.type} = 'regularisation_charges' AND ${table.statut} IN ('a_faire', 'en_cours') AND ${table.bailId} IS NOT NULL AND ${table.periodeRecurrence} IS NOT NULL`
+        sql`${table.type} <> 'revision_loyer' AND ${table.periodeRecurrence} IS NOT NULL AND ${table.statut} IN ('a_faire', 'en_cours') AND ${table.bailId} IS NOT NULL`
       )
   ]
 );

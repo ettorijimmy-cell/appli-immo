@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "tache_bail_periode_regularisation_active_unique" ON "tache" USING btree ("bail_id","periode_recurrence") WHERE "tache"."type" <> 'revision_loyer' AND "tache"."periode_recurrence" IS NOT NULL AND "tache"."statut" IN ('a_faire', 'en_cours') AND "tache"."bail_id" IS NOT NULL;
