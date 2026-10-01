@@ -414,6 +414,13 @@
       "when": 1790805105283,
       "tag": "0058_easy_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1790856085728,
+      "tag": "0059_majestic_captain_cross",
+      "breakpoints": true
     }
   ]
 }

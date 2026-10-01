@@ -213,6 +213,10 @@ export function AppartementDetailView({
               <dd>{appartement.surface ? `${appartement.surface} m²` : "—"}</dd>
             </div>
             <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Tantièmes de copropriété</dt>
+              <dd>{appartement.tantieme ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Loyer de référence</dt>
               <dd>{appartement.loyerReference ? `${appartement.loyerReference} €` : "—"}</dd>
             </div>
@@ -481,6 +485,7 @@ function EditAppartementForm({
   const [numero, setNumero] = useState(appartement.numero);
   const [type, setType] = useState<AppartementType | "">(appartement.type ?? "");
   const [surface, setSurface] = useState(appartement.surface ?? "");
+  const [tantieme, setTantieme] = useState(appartement.tantieme ?? "");
   const [loyerReference, setLoyerReference] = useState(appartement.loyerReference ?? "");
   const [equipementCuisine, setEquipementCuisine] = useState(appartement.equipementCuisine ?? "");
   const [dependancesAnnexes, setDependancesAnnexes] = useState(appartement.dependancesAnnexes ?? "");
@@ -516,6 +521,7 @@ function EditAppartementForm({
         statut,
         ...(estResidentiel && type && { type }),
         ...(surface && { surface }),
+        ...(tantieme && { tantieme }),
         ...(loyerReference && { loyerReference }),
         ...(equipementCuisine && { equipementCuisine }),
         ...(dependancesAnnexes && { dependancesAnnexes }),
@@ -589,6 +595,18 @@ function EditAppartementForm({
             id="appartement-edit-surface"
             value={surface}
             onChange={(event) => setSurface(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-tantieme" className="text-sm font-medium text-slate-700">
+            Tantièmes de copropriété (optionnel)
+          </label>
+          <input
+            id="appartement-edit-tantieme"
+            value={tantieme}
+            onChange={(event) => setTantieme(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

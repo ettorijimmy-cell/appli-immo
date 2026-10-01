@@ -27,6 +27,14 @@ export class CreateAppartementDto {
   @IsNumberString()
   surface?: string;
 
+  // Module Régularisation des charges, Sous-commit B — clé de répartition
+  // des charges communes, surface en repli si absent. Pure saisie à ce
+  // stade, aucun calcul de répartition (voir packages/db/src/schema/
+  // appartements.ts).
+  @IsOptional()
+  @IsNumberString()
+  tantieme?: string;
+
   @IsOptional()
   @IsNumberString()
   loyerReference?: string;

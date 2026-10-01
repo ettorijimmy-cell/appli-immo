@@ -1,0 +1,1 @@
+ALTER TABLE "appartements" ADD COLUMN "tantieme" numeric(8, 2);

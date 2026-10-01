@@ -22,6 +22,12 @@ export class UpdateAppartementDto {
   @IsNumberString()
   surface?: string;
 
+  // Module Régularisation des charges, Sous-commit B — voir
+  // CreateAppartementDto.tantieme.
+  @IsOptional()
+  @IsNumberString()
+  tantieme?: string;
+
   @IsOptional()
   @IsNumberString()
   loyerReference?: string;

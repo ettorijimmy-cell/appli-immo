@@ -51,6 +51,19 @@ export const appartements = pgTable("appartements", {
   // au niveau du schéma (voir packages/core, estTypeResidentiel).
   type: appartementTypeEnum("type"),
   surface: decimal("surface", { precision: 6, scale: 2 }),
+  // Module Régularisation des charges, Sous-commit B (2026-10-01) : clé de
+  // répartition des charges communes d'immeuble, avec surface en repli
+  // automatique si absent (décision actée avec Jimmy, voir docs/backlog.md).
+  // Décimale (pas entier) : les tantièmes/millièmes sont le plus souvent
+  // des nombres entiers (ex. "125/1000e"), mais un règlement de copropriété
+  // peut en attribuer avec une décimale issue d'un calcul précis de
+  // géomètre-expert (ex. "125,50/1000e") — un entier tronquerait cette
+  // valeur réelle sans avertissement, jamais acceptable pour une donnée
+  // dont dépendra un calcul de répartition financière. Même scale que
+  // `surface` ci-dessus (2 décimales) ; precision 8 (6 chiffres entiers)
+  // pour couvrir large la base la plus fine couramment utilisée
+  // (dix-millièmes, total "10000").
+  tantieme: decimal("tantieme", { precision: 8, scale: 2 }),
   loyerReference: decimal("loyer_reference", { precision: 10, scale: 2 }),
   // Mentions du contrat-type non couvertes par les champs ci-dessus :
   // `type` (T1-T6) reste une catégorie commerciale, distincte du décompte

@@ -113,6 +113,11 @@ export interface Appartement {
   numero: string;
   type: AppartementType | null;
   surface: string | null;
+  // Module Régularisation des charges, Sous-commit B — clé de répartition
+  // des charges communes d'immeuble, surface en repli automatique si
+  // absent (décision actée avec Jimmy). Pure saisie à ce stade, aucun
+  // calcul de répartition.
+  tantieme: string | null;
   loyerReference: string | null;
   equipementCuisine: string | null;
   dependancesAnnexes: string | null;
@@ -139,6 +144,7 @@ export interface CreateAppartementInput {
   // pas dupliqué ici.
   type?: AppartementType;
   surface?: string;
+  tantieme?: string;
   loyerReference?: string;
   nombrePiecesPrincipales?: number;
   modeChauffage?: AppartementModeProduction;
@@ -152,6 +158,7 @@ export interface UpdateAppartementInput {
   numero?: string;
   type?: AppartementType;
   surface?: string;
+  tantieme?: string;
   loyerReference?: string;
   equipementCuisine?: string;
   dependancesAnnexes?: string;

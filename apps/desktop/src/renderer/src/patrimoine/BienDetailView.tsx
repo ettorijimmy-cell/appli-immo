@@ -267,6 +267,7 @@ function NewAppartementForm({
   const [numero, setNumero] = useState("");
   const [type, setType] = useState<AppartementType>("T2");
   const [surface, setSurface] = useState("");
+  const [tantieme, setTantieme] = useState("");
   const [loyerReference, setLoyerReference] = useState("");
   const [nombrePiecesPrincipales, setNombrePiecesPrincipales] = useState(
     deduireNombrePiecesDepuisType("T2")?.toString() ?? ""
@@ -302,10 +303,12 @@ function NewAppartementForm({
           modeEauChaude
         }),
         ...(surface && { surface }),
+        ...(tantieme && { tantieme }),
         ...(loyerReference && { loyerReference })
       });
       setNumero("");
       setSurface("");
+      setTantieme("");
       setLoyerReference("");
       setNombrePiecesPrincipales(deduireNombrePiecesDepuisType(type)?.toString() ?? "");
       setNombrePiecesModifieManuellement(false);
@@ -366,6 +369,18 @@ function NewAppartementForm({
             id="appartement-surface"
             value={surface}
             onChange={(event) => setSurface(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-tantieme" className="text-sm font-medium text-slate-700">
+            Tantièmes de copropriété (optionnel)
+          </label>
+          <input
+            id="appartement-tantieme"
+            value={tantieme}
+            onChange={(event) => setTantieme(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
