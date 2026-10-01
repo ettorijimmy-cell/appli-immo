@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 import { bien } from "./bien";
 import { organisations } from "./organisations";
@@ -36,6 +37,18 @@ export const depense = pgTable(
     // sans bien identifiable (frais de gestion, comptable) — jamais les
     // deux, jamais aucun des deux (voir depense_rattachement_requis).
     bienId: uuid("bien_id").references(() => bien.id),
+    // Module Régularisation des charges, Sous-commit A (2026-09-30) :
+    // granularité optionnelle SOUS bienId — une dépense imputable à un
+    // logement précis (ex. réparation dans l'appartement 3B), par
+    // opposition à une charge commune d'immeuble à répartir manuellement
+    // entre plusieurs lots (appartementId absent, bienId seul renseigné).
+    // NULL = comportement inchangé (dépense de niveau bien/immeuble ou
+    // SCI, comme avant l'introduction de cette colonne). Toujours
+    // accompagné d'un bienId cohérent (DepensesService.create dérive
+    // bienId depuis appartements.bien_id quand seul appartementId est
+    // transmis, et rejette toute incohérence si les deux sont fournis et
+    // désignent des biens différents) — voir docs/data-dictionary.md.
+    appartementId: uuid("appartement_id").references(() => appartements.id),
     // Dénormalisé depuis bien.sciId à la création quand bienId est
     // renseigné (jamais résolu à la lecture) : même principe que
     // bien.organisationId, qui n'est pas non plus dérivé à la volée à

@@ -27,6 +27,7 @@ export class DepensesController {
     @Query("categorie") categorie?: FindAllDepensesFiltres["categorie"],
     @Query("bienId") bienId?: string,
     @Query("sciId") sciId?: string,
+    @Query("appartementId") appartementId?: string,
     @Query("dateDebut") dateDebut?: string,
     @Query("dateFin") dateFin?: string
   ) {
@@ -34,6 +35,7 @@ export class DepensesController {
       ...(categorie !== undefined && { categorie }),
       ...(bienId !== undefined && { bienId }),
       ...(sciId !== undefined && { sciId }),
+      ...(appartementId !== undefined && { appartementId }),
       ...(dateDebut !== undefined && { dateDebut }),
       ...(dateFin !== undefined && { dateFin })
     };

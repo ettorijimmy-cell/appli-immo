@@ -29,9 +29,12 @@ export class CreateDepenseDto {
   @MinLength(1)
   libelle!: string;
 
-  // bienId et/ou sciId — au moins l'un des deux requis (contrainte
-  // depense_rattachement_requis en base), vérifié dans DepensesService
-  // .create pour un message clair avant la contrainte SQL.
+  // bienId, sciId et/ou appartementId — au moins l'un des trois requis
+  // (voir DepensesService.create, qui reproduit la contrainte
+  // depense_rattachement_requis en base pour un message clair avant la
+  // contrainte SQL — celle-ci ne porte que sur bienId/sciId, jamais
+  // violée par appartementId seul car DepensesService.create dérive
+  // toujours bienId depuis appartements.bien_id dans ce cas).
   @IsOptional()
   @IsUUID()
   bienId?: string;
@@ -44,4 +47,16 @@ export class CreateDepenseDto {
   @IsOptional()
   @IsUUID()
   sciId?: string;
+
+  // Module Régularisation des charges, Sous-commit A — granularité
+  // optionnelle sous bienId : une dépense imputable à un logement précis
+  // (réparation dans l'appartement 3B), par opposition à une charge
+  // commune d'immeuble (appartementId absent, bienId seul). Si bienId est
+  // également transmis, DepensesService.create rejette toute incohérence
+  // (appartement n'appartenant pas au bien désigné) plutôt que de la
+  // laisser passer silencieusement ; si bienId est absent, il est dérivé
+  // depuis appartements.bien_id.
+  @IsOptional()
+  @IsUUID()
+  appartementId?: string;
 }

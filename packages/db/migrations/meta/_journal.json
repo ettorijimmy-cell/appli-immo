@@ -407,6 +407,13 @@
       "when": 1789581196645,
       "tag": "0057_chunky_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790805105283,
+      "tag": "0058_easy_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

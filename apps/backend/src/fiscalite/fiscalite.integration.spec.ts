@@ -208,6 +208,54 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
     expect(ligneBien!.lignes.ligne9).toBe("0.00");
   });
 
+  // Module Régularisation des charges, Sous-commit A (2026-09-30) :
+  // une dépense rattachée à un appartement précis (granularité plus fine
+  // que bienId seul) doit continuer à être comptée exactement comme avant
+  // dans l'Annexe 1 — une dépense reste une dépense du bien quel que soit
+  // son niveau de granularité, aucun changement de comportement attendu
+  // côté FiscaliteService.
+  it("compte toujours une dépense rattachée à un appartement précis dans l'Annexe 1 du bien", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Appartement Précis Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bienCree = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Appartement Précis",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bienCree.id,
+      numero: "3B",
+      type: "T2",
+      nombrePiecesPrincipales: 2,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+
+    await depensesService.create(userId, {
+      categorie: "reparation_entretien",
+      montant: "75.00",
+      dateDepense: "2026-06-01",
+      libelle: "Robinetterie appartement 3B",
+      appartementId: appartement.id
+    });
+
+    const resultat = await fiscaliteService.calculerAnnexe1PourSci(userId, sci.id, 2026);
+    const [ligneBien] = resultat.biens;
+
+    expect(ligneBien!.lignes.ligne9).toBe("75.00");
+  });
+
   // Revue financial-logic-reviewer, 2026-09-12 : un bien archivé APRÈS
   // avoir généré une dépense sur l'année ne doit pas disparaître de
   // l'Annexe 1 de cette année-là — même principe que getSynthese
@@ -366,6 +414,35 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
       await expect(fiscaliteService.calculerRevenus2044PourBien(userId, bienSci.id, 2026)).rejects.toThrow(
         /nom propre/
       );
+    });
+
+    // Module Régularisation des charges, Sous-commit A (2026-09-30) : même
+    // vérification que côté Annexe 1 — une dépense rattachée à un
+    // appartement précis reste comptée normalement dans le formulaire 2044
+    // du bien, aucun changement de comportement.
+    it("compte toujours une dépense rattachée à un appartement précis dans le formulaire 2044 du bien", async () => {
+      const bienNomPropre = await creerBienNomPropre("Marie Martin");
+      const appartement = await appartementsService.create({
+        bienId: bienNomPropre.id,
+        numero: "unique",
+        type: "T3",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
+
+      await depensesService.create(userId, {
+        categorie: "reparation_entretien",
+        montant: "55.00",
+        dateDepense: "2026-06-01",
+        libelle: "Réparation logement unique",
+        appartementId: appartement.id
+      });
+
+      const resultat = await fiscaliteService.calculerRevenus2044PourBien(userId, bienNomPropre.id, 2026);
+
+      expect(resultat.lignes.ligne224).toBe("55.00");
+      expect(resultat.lignes.ligne240).toBe("55.00");
     });
 
     it("agrège les 4 catégories automatiques sur 240, ignore charges_copropriete/interets_emprunt, et calcule 261/263", async () => {

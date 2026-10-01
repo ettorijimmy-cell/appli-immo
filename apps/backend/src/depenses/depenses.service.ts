@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { parserReleveCsv, suggererCategorie, type LigneReleveCsvAvecId } from "core";
-import { bien, depense, type Database } from "db";
+import { appartements, bien, depense, type Database } from "db";
 import { and, eq, gte, isNull, lte } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -13,6 +13,7 @@ export interface FindAllDepensesFiltres {
   categorie?: CreateDepenseDto["categorie"];
   bienId?: string;
   sciId?: string;
+  appartementId?: string;
   dateDebut?: string;
   dateFin?: string;
 }
@@ -40,18 +41,44 @@ export class DepensesService {
     if (!user) {
       throw new NotFoundException("Utilisateur introuvable");
     }
-    if (!dto.bienId && !dto.sciId) {
-      throw new BadRequestException("bienId ou sciId est requis (au moins l'un des deux).");
+    if (!dto.bienId && !dto.sciId && !dto.appartementId) {
+      throw new BadRequestException("bienId, sciId ou appartementId est requis (au moins l'un des trois).");
     }
 
-    // sciId dénormalisé depuis bien.sciId quand bienId est fourni — jamais
-    // la valeur transmise par le client (bien.sciId est immuable après
-    // création, voir UpdateBienDto, donc aucun risque d'incohérence future
-    // à figer la valeur ici). Mirroring bien.organisationId (packages/db/
-    // src/schema/bien.ts), même principe de dénormalisation.
+    // appartementId implique toujours un bien précis (appartements.bien_id
+    // est NOT NULL) — résolu AVANT bienId/sciId pour pouvoir dériver
+    // bienId quand seul appartementId est fourni (même principe de
+    // dénormalisation que sciId depuis bien.sciId ci-dessous), et pour
+    // détecter une incohérence si bienId est également fourni mais désigne
+    // un bien différent de celui de l'appartement — jamais laissé passer
+    // silencieusement (Module Régularisation des charges, Sous-commit A).
+    let bienIdEffectif = dto.bienId ?? null;
+    if (dto.appartementId) {
+      const [appartementRattache] = await this.db
+        .select()
+        .from(appartements)
+        .where(eq(appartements.id, dto.appartementId))
+        .limit(1);
+      if (!appartementRattache) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+      if (dto.bienId && appartementRattache.bienId !== dto.bienId) {
+        throw new BadRequestException(
+          "appartementId n'appartient pas au bien désigné par bienId — incohérence entre les deux valeurs transmises."
+        );
+      }
+      bienIdEffectif = appartementRattache.bienId;
+    }
+
+    // sciId dénormalisé depuis bien.sciId quand un bien est identifié (via
+    // bienId ou appartementId) — jamais la valeur transmise par le client
+    // (bien.sciId est immuable après création, voir UpdateBienDto, donc
+    // aucun risque d'incohérence future à figer la valeur ici). Mirroring
+    // bien.organisationId (packages/db/src/schema/bien.ts), même principe
+    // de dénormalisation.
     let sciId: string | null = dto.sciId ?? null;
-    if (dto.bienId) {
-      const [bienRattache] = await this.db.select().from(bien).where(eq(bien.id, dto.bienId)).limit(1);
+    if (bienIdEffectif) {
+      const [bienRattache] = await this.db.select().from(bien).where(eq(bien.id, bienIdEffectif)).limit(1);
       if (!bienRattache) {
         throw new NotFoundException("Bien introuvable");
       }
@@ -65,7 +92,8 @@ export class DepensesService {
         montant: dto.montant,
         dateDepense: dto.dateDepense,
         libelle: dto.libelle,
-        bienId: dto.bienId ?? null,
+        bienId: bienIdEffectif,
+        appartementId: dto.appartementId ?? null,
         sciId,
         organisationId: user.organisationId
       })
@@ -128,6 +156,9 @@ export class DepensesService {
     if (filtres.sciId) {
       conditions.push(eq(depense.sciId, filtres.sciId));
     }
+    if (filtres.appartementId) {
+      conditions.push(eq(depense.appartementId, filtres.appartementId));
+    }
     if (filtres.dateDebut) {
       conditions.push(gte(depense.dateDepense, filtres.dateDebut));
     }
@@ -149,6 +180,7 @@ export class DepensesService {
       dateDepense: ligne.dateDepense,
       libelle: ligne.libelle,
       bienId: ligne.bienId,
+      appartementId: ligne.appartementId,
       sciId: ligne.sciId,
       organisationId: ligne.organisationId,
       createdAt: ligne.createdAt,

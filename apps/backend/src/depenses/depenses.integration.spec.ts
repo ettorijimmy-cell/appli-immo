@@ -3,6 +3,8 @@ import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AppartementsModule } from "../appartements/appartements.module";
+import { AppartementsService } from "../appartements/appartements.service";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
@@ -31,6 +33,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
   let depensesService: DepensesService;
   let scisService: ScisService;
   let bienService: BienService;
+  let appartementsService: AppartementsService;
   let reglesCategorisationService: ReglesCategorisationService;
   let db: Database;
   let userId: string;
@@ -47,6 +50,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
         UsersModule,
         ScisModule,
         BienModule,
+        AppartementsModule,
         ReglesCategorisationModule,
         DepensesModule
       ]
@@ -58,6 +62,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
     depensesService = moduleRef.get(DepensesService);
     scisService = moduleRef.get(ScisService);
     bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
     reglesCategorisationService = moduleRef.get(ReglesCategorisationService);
 
     const [organisation] = await db
@@ -159,7 +164,7 @@ describe("DepensesService (intégration Postgres réelle)", () => {
         dateDepense: "2026-09-02",
         libelle: "Dépense orpheline"
       })
-    ).rejects.toThrow(/bienId ou sciId est requis/);
+    ).rejects.toThrow(/bienId, sciId ou appartementId est requis/);
   });
 
   it("ignore le sciId transmis par le client quand bienId est fourni (dérive toujours depuis bien.sciId)", async () => {
@@ -293,6 +298,127 @@ describe("DepensesService (intégration Postgres réelle)", () => {
       const [ligne] = await depensesService.parserCsv(userId, csv);
 
       expect(ligne?.categorieSuggeree).toBeNull();
+    });
+  });
+
+  // Module Régularisation des charges, Sous-commit A (2026-09-30) :
+  // rattachement optionnel d'une dépense à un appartement précis, sous
+  // bienId — une dépense imputable à un logement (par opposition à une
+  // charge commune d'immeuble à répartir manuellement).
+  describe("rattachement appartementId", () => {
+    async function creerBienEtAppartement(suffixe: string) {
+      const sci = await scisService.create(userId, {
+        nom: `SCI Dépenses Appartement ${suffixe}`,
+        regimeFiscal: "IR",
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris"
+      });
+      const bienCree = await bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "sci",
+        sciId: sci.id,
+        nom: `Immeuble Dépenses Appartement ${suffixe}`,
+        adresse: "5 rue de Test",
+        codePostal: "75001",
+        ville: "Paris",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      });
+      const appartement = await appartementsService.create({
+        bienId: bienCree.id,
+        numero: `L-${suffixe}`,
+        type: "T2",
+        surface: "45.50",
+        nombrePiecesPrincipales: 2,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
+      return { sci, bien: bienCree, appartement };
+    }
+
+    it("dérive bienId (et sciId) depuis l'appartement quand seul appartementId est transmis", async () => {
+      const { sci, bien, appartement } = await creerBienEtAppartement("A");
+
+      const depense = await depensesService.create(userId, {
+        categorie: "reparation_entretien",
+        montant: "90.00",
+        dateDepense: "2026-09-10",
+        libelle: "Remplacement robinetterie",
+        appartementId: appartement.id
+      });
+
+      expect(depense.appartementId).toBe(appartement.id);
+      expect(depense.bienId).toBe(bien.id);
+      expect(depense.sciId).toBe(sci.id);
+    });
+
+    it("accepte appartementId + bienId cohérents entre eux", async () => {
+      const { bien, appartement } = await creerBienEtAppartement("B");
+
+      const depense = await depensesService.create(userId, {
+        categorie: "assurance",
+        montant: "30.00",
+        dateDepense: "2026-09-11",
+        libelle: "Assurance dégât des eaux",
+        bienId: bien.id,
+        appartementId: appartement.id
+      });
+
+      expect(depense.bienId).toBe(bien.id);
+      expect(depense.appartementId).toBe(appartement.id);
+    });
+
+    it("rejette un appartementId qui n'appartient pas au bienId transmis — incohérence jamais silencieuse", async () => {
+      const { appartement } = await creerBienEtAppartement("C");
+      const { bien: autreBien } = await creerBienEtAppartement("D");
+
+      await expect(
+        depensesService.create(userId, {
+          categorie: "reparation_entretien",
+          montant: "60.00",
+          dateDepense: "2026-09-12",
+          libelle: "Dépense incohérente",
+          bienId: autreBien.id,
+          appartementId: appartement.id
+        })
+      ).rejects.toThrow(/n'appartient pas au bien/);
+    });
+
+    it("rejette un appartementId inexistant", async () => {
+      await expect(
+        depensesService.create(userId, {
+          categorie: "autre",
+          montant: "10.00",
+          dateDepense: "2026-09-13",
+          libelle: "Appartement fantôme",
+          appartementId: randomUUID()
+        })
+      ).rejects.toThrow(/Appartement introuvable/);
+    });
+
+    it("findAll filtre par appartementId", async () => {
+      const { bien, appartement } = await creerBienEtAppartement("E");
+      await depensesService.create(userId, {
+        categorie: "reparation_entretien",
+        montant: "70.00",
+        dateDepense: "2026-09-14",
+        libelle: "Dépense du logement",
+        appartementId: appartement.id
+      });
+      await depensesService.create(userId, {
+        categorie: "frais_gestion",
+        montant: "25.00",
+        dateDepense: "2026-09-14",
+        libelle: "Dépense de l'immeuble entier",
+        bienId: bien.id
+      });
+
+      const parAppartement = await depensesService.findAll({ appartementId: appartement.id });
+      expect(parAppartement.map((d) => d.libelle)).toEqual(["Dépense du logement"]);
+
+      const parBien = await depensesService.findAll({ bienId: bien.id });
+      expect(parBien).toHaveLength(2);
     });
   });
 });

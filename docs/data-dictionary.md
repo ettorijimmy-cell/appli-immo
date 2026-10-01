@@ -522,14 +522,28 @@ plutôt que d'édition a posteriori.
 | montant | decimal | **Toujours positif** — `CreateDepenseDto` rejette explicitement un signe négatif (`@Matches`, revue financial-logic-reviewer, 2026-09-07). Attention : `parserReleveCsv` (packages/core) renvoie une ligne de débit en montant **négatif** (convention du rapprochement bancaire, `paiements`/`versements`) — domaine différent, jamais la même convention de signe. `ImportCsvDepensesView` applique `valeurAbsolueMontant` (packages/core) avant tout appel `POST /depenses` pour cette raison |
 | date_depense | date | |
 | libelle | text | |
-| bien_id | uuid, nullable | Rattachement à un bien précis |
+| bien_id | uuid, nullable | Rattachement à un bien précis. **Dénormalisé depuis `appartements.bien_id`** quand `appartement_id` est fourni sans `bien_id` explicite (voir ci-dessous) — jamais laissé incohérent avec l'appartement réel |
 | sci_id | uuid, nullable | **Dénormalisé** depuis `bien.sci_id` quand `bien_id` est fourni (jamais la valeur transmise par le client — `DepensesService.create` la recalcule systématiquement), sûr car `bien.sci_id` est immuable après création (`UpdateBienDto` l'exclut). Renseignable seul, sans `bien_id`, pour une dépense de niveau SCI sans bien précis (frais de gestion, comptable). Même précédent que `bien.organisation_id` |
+| appartement_id | uuid, nullable | **Module Régularisation des charges, Sous-commit A (2026-09-30).** Granularité optionnelle SOUS `bien_id` : une dépense imputable à un logement précis (ex. réparation dans l'appartement 3B), par opposition à une charge commune d'immeuble à répartir manuellement entre plusieurs lots (`appartement_id` absent, `bien_id` seul renseigné). `DepensesService.create` résout l'appartement AVANT `bien_id`/`sci_id` : si `appartement_id` est fourni sans `bien_id`, `bien_id` est dérivé depuis `appartements.bien_id` (même principe de dénormalisation que `sci_id` depuis `bien.sci_id`) ; si les deux sont fournis et désignent des biens différents, `BadRequestException` explicite — jamais laissé passer silencieusement. Aucune contrainte SQL cross-table possible (CHECK Postgres ne porte que sur la même ligne) — la cohérence est donc uniquement applicative, comme `BienService.create` `.verifierAppartenanceSci` |
 | organisation_id | uuid | Résolu côté serveur depuis l'utilisateur authentifié, jamais transmis par le client (même mécanisme que `BienService.create`) |
 
 CHECK `depense_rattachement_requis` : `bien_id IS NOT NULL OR sci_id IS NOT NULL`
 — une dépense orpheline (ni bien ni SCI) est rejetée en base, en plus de la
 vérification applicative dans `DepensesService.create` (message d'erreur
-clair avant d'atteindre la contrainte SQL).
+clair avant d'atteindre la contrainte SQL). **Non modifiée** par l'ajout de
+`appartement_id` : `bien_id` est toujours résolu et stocké dès que
+`appartement_id` est fourni (voir ci-dessus), donc cette contrainte reste
+automatiquement satisfaite sans qu'il soit nécessaire de l'assouplir.
+
+**Impact fiscal (2072-S/2044) : aucun.** `FiscaliteService` (Annexe 1 et
+formulaire 2044) groupe toujours les dépenses par `bien_id` — une dépense
+portant `appartement_id` reste comptée exactement comme avant dans les
+lignes automatiques du bien parent, puisque `bien_id` y est systématiquement
+renseigné en cohérence. Prouvé par un test dédié dans chacune des deux
+suites d'intégration (`fiscalite.integration.spec.ts`). `appartement_id`
+sert uniquement à préparer le futur calcul de régularisation par bail
+(bilan provisions perçues vs charges réelles imputables au logement), pas
+encore construit à ce stade.
 
 **Pièce jointe** : `document_entite_type` étendu avec la valeur `depense`
 (demandé explicitement pour cette étape), permettant en théorie de
