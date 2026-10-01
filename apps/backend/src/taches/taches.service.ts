@@ -33,6 +33,7 @@ export interface FindAllTachesFiltres {
     | "quittance_mensuelle"
     | "revision_loyer"
     | "sinistre_stagnation"
+    | "regularisation_charges"
     | "autre";
   bailId?: string;
   appartementId?: string;

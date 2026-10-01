@@ -25,6 +25,12 @@ export const tacheTypeEnum = pgEnum("tache_type", [
   // Module Suivi sinistre et assurance (2026-09-16) : relance de l'assureur
   // sur un dossier qui stagne — voir alertes.ts, type 'sinistre_stagnation'.
   "sinistre_stagnation",
+  // Module Régularisation des charges, Sous-commit C (2026-10-01) : rappel
+  // de réclamation du complément dû par le locataire (bilan en faveur du
+  // propriétaire uniquement — voir RegularisationChargesService). Jamais
+  // généré si le solde est en faveur du locataire ou à l'équilibre
+  // (affichage seul dans ce cas, décision produit explicite).
+  "regularisation_charges",
   "autre"
 ]);
 
@@ -108,6 +114,19 @@ export const tache = pgTable(
     // par paiement — voir TachesJobService.genererTachesQuittanceMensuelle.
     uniqueIndex("tache_paiement_active_unique")
       .on(table.paiementId)
-      .where(sql`${table.statut} IN ('a_faire', 'en_cours') AND ${table.paiementId} IS NOT NULL`)
+      .where(sql`${table.statut} IN ('a_faire', 'en_cours') AND ${table.paiementId} IS NOT NULL`),
+    // Même principe, pour les tâches de régularisation de charges (origine=
+    // 'planifiee', pas d'alerte source) : au plus une tâche a_faire/en_cours
+    // par (bail, période). periodeRecurrence porte ici la période exacte
+    // ("periodeDebut_periodeFin"), pas une année civile comme
+    // revision_loyer — une régularisation n'est jamais alignée sur l'année
+    // civile (déclenchement manuel possible à tout moment, ex. départ d'un
+    // locataire) — voir TachesJobService.genererTachesRegularisationCharges
+    // et RegularisationChargesController.
+    uniqueIndex("tache_bail_periode_regularisation_active_unique")
+      .on(table.bailId, table.periodeRecurrence)
+      .where(
+        sql`${table.type} = 'regularisation_charges' AND ${table.statut} IN ('a_faire', 'en_cours') AND ${table.bailId} IS NOT NULL AND ${table.periodeRecurrence} IS NOT NULL`
+      )
   ]
 );

@@ -3,7 +3,9 @@ import { IndicesIrlModule } from "../indices-irl/indices-irl.module";
 import { MessagerieModule } from "../messagerie/messagerie.module";
 import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
 import { QuittanceDocumentDocxModule } from "../quittance-document-docx/quittance-document-docx.module";
+import { RegularisationChargesModule } from "../regularisation-charges/regularisation-charges.module";
 import { UsersModule } from "../users/users.module";
+import { BauxRegularisationChargesController } from "./baux-regularisation-charges.controller";
 import { TachesController } from "./taches.controller";
 import { TachesJobService } from "./taches-job.service";
 import { TachesService } from "./taches.service";
@@ -15,8 +17,15 @@ import { TachesService } from "./taches.service";
 // (routes et écran Paramètres inchangés) — retirés explicitement dans un
 // commit séparé une fois l'unification éprouvée en usage réel, pas ici.
 @Module({
-  imports: [IndicesIrlModule, ModelesCourrierModule, UsersModule, MessagerieModule, QuittanceDocumentDocxModule],
-  controllers: [TachesController],
+  imports: [
+    IndicesIrlModule,
+    ModelesCourrierModule,
+    UsersModule,
+    MessagerieModule,
+    QuittanceDocumentDocxModule,
+    RegularisationChargesModule
+  ],
+  controllers: [TachesController, BauxRegularisationChargesController],
   providers: [TachesJobService, TachesService],
   exports: [TachesJobService, TachesService]
 })

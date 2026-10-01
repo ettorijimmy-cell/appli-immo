@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { calculerRevisionLoyer, decomposerDate, libelleMoisDepuisDate, resoudreModeleCourrier } from "core";
 import {
@@ -20,6 +20,7 @@ import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { IndicesIrlService } from "../indices-irl/indices-irl.service";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
+import { RegularisationChargesService, type BilanRegularisationBail } from "../regularisation-charges/regularisation-charges.service";
 
 const LIBELLES_TYPE_EQUIPEMENT: Record<string, string> = {
   chaudiere: "chaudière",
@@ -35,6 +36,29 @@ interface CibleResolue {
   appartementId: string | null;
   bienId: string | null;
   organisationId: string;
+}
+
+// Filet de sécurité derrière la vérification applicative (SELECT avant
+// INSERT dans genererTacheRegularisationSiNecessaire) : deux appels
+// concurrents pour le même (bailId, periodeRecurrence) peuvent tous les
+// deux passer le pre-check et se disputer l'INSERT — même risque de
+// double-clic que n'importe quel endpoint non protégé côté client. Même
+// pattern que estViolationIndexBauxActifUnique (baux.service.ts) : 23505 =
+// unique_violation, nom de contrainte vérifié pour ne jamais absorber par
+// erreur la violation d'un autre index unique.
+export function estViolationIndexRegularisationActiveUnique(erreur: unknown): boolean {
+  return (
+    erreur instanceof Error &&
+    "code" in erreur &&
+    (erreur as { code?: unknown }).code === "23505" &&
+    "constraint_name" in erreur &&
+    (erreur as { constraint_name?: unknown }).constraint_name === "tache_bail_periode_regularisation_active_unique"
+  );
+}
+
+export interface ResultatDeclenchementRegularisation extends BilanRegularisationBail {
+  tacheCreee: boolean;
+  tacheId: string | null;
 }
 
 /**
@@ -60,7 +84,8 @@ export class TachesJobService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly indicesIrlService: IndicesIrlService,
-    private readonly modelesCourrierService: ModelesCourrierService
+    private readonly modelesCourrierService: ModelesCourrierService,
+    private readonly regularisationChargesService: RegularisationChargesService
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
@@ -69,8 +94,9 @@ export class TachesJobService {
     const nombreCreeesAlertes = await this.genererTachesDepuisAlertes();
     const nombreCreeesRevision = await this.genererTachesRevisionLoyer(dateReference);
     const nombreCreeesQuittance = await this.genererTachesQuittanceMensuelle();
+    const nombreCreeesRegularisation = await this.genererTachesRegularisationCharges(dateReference);
     this.logger.log(
-      `Job tâches exécuté : ${nombreCreeesAlertes} tâche(s) depuis alertes, ${nombreCreeesRevision} révision(s) de loyer, ${nombreCreeesQuittance} quittance(s) mensuelle(s).`
+      `Job tâches exécuté : ${nombreCreeesAlertes} tâche(s) depuis alertes, ${nombreCreeesRevision} révision(s) de loyer, ${nombreCreeesQuittance} quittance(s) mensuelle(s), ${nombreCreeesRegularisation} régularisation(s) de charges.`
     );
   }
 
@@ -277,6 +303,198 @@ export class TachesJobService {
       nombreCreees += 1;
     }
     return nombreCreees;
+  }
+
+  /**
+   * Dérive une tâche de rappel de régularisation des charges pour chaque
+   * bail actif dont c'est aujourd'hui l'anniversaire de `dateDebut` (Module
+   * Régularisation des charges, Sous-commit C, docs/backlog.md) — même
+   * pattern "date anniversaire" que `genererTachesRevisionLoyer`, mais sans
+   * sa clause optionnelle (`trimestreReferenceRevision`) : tout bail actif
+   * est candidat. Période couverte : anniversaire précédent (il y a un an,
+   * jour pour jour) → aujourd'hui. Délègue le calcul + la création
+   * idempotente à `genererTacheRegularisationSiNecessaire`, partagée avec
+   * le déclenchement manuel (`RegularisationChargesController`).
+   */
+  async genererTachesRegularisationCharges(dateReference: string): Promise<number> {
+    const { annee: anneeActuelle, mois: moisReference, jour: jourReference } = decomposerDate(dateReference);
+
+    const bauxActifs = await this.db.select().from(baux).where(eq(baux.statut, "actif"));
+
+    let nombreCreees = 0;
+    for (const bail of bauxActifs) {
+      const { mois: moisDebut, jour: jourDebut } = decomposerDate(bail.dateDebut);
+      if (moisDebut !== moisReference || jourDebut !== jourReference) {
+        continue;
+      }
+
+      // 29 février : anneeActuelle est bissextile (sinon jourReference ne
+      // vaudrait jamais 29 pour moisReference=2), donc anneeActuelle - 1 ne
+      // l'est jamais (deux années bissextiles consécutives n'existent pas)
+      // — "anneeActuelle - 1, même jour" n'est alors jamais une date
+      // calendaire valide. Même borne que baux.jourEcheance (borné à 28
+      // pour rester valide sur tous les mois, voir packages/db/src/schema/
+      // baux.ts) : repli sur le 28 pour periodeDebut uniquement.
+      const jourPeriodeDebut = moisReference === 2 && jourReference === 29 ? 28 : jourReference;
+      const periodeDebut = `${anneeActuelle - 1}-${String(moisReference).padStart(2, "0")}-${String(jourPeriodeDebut).padStart(2, "0")}`;
+
+      try {
+        const resultat = await this.genererTacheRegularisationSiNecessaire(bail.id, periodeDebut, dateReference, dateReference);
+        if (resultat.tacheCreee) {
+          nombreCreees += 1;
+        }
+      } catch (err) {
+        // Un bail en échec (ex. violation de contrainte concurrente) ne
+        // doit jamais interrompre le traitement des autres baux du job —
+        // même discipline que construireMetadataNotification/
+        // construireMetadataQuittance.
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Échec de génération de la régularisation de charges pour le bail ${bail.id} : ${message}`);
+      }
+    }
+    return nombreCreees;
+  }
+
+  /**
+   * Calcule le bilan de régularisation d'un bail sur une période donnée et,
+   * si `sens='faveur_proprietaire'`, crée la tâche de rappel correspondante
+   * — jamais si `faveur_locataire`/`equilibre` (affichage seul, décision
+   * produit explicite). Partagée par le déclenchement automatique
+   * (`genererTachesRegularisationCharges`) et le déclenchement manuel
+   * (`RegularisationChargesController`), pour ne jamais dupliquer la
+   * logique d'idempotence. `periodeRecurrence` porte la période exacte
+   * (`"periodeDebut_periodeFin"`), pas une année civile comme
+   * `revision_loyer` — voir `tache_bail_periode_regularisation_active_unique`,
+   * docs/data-dictionary.md.
+   */
+  async genererTacheRegularisationSiNecessaire(
+    bailId: string,
+    periodeDebut: string,
+    periodeFin: string,
+    dateEcheance: string
+  ): Promise<ResultatDeclenchementRegularisation> {
+    const bilan = await this.regularisationChargesService.calculerBilanPourBail(bailId, periodeDebut, periodeFin);
+    if (bilan.sens !== "faveur_proprietaire") {
+      return { ...bilan, tacheCreee: false, tacheId: null };
+    }
+
+    const periodeRecurrence = `${periodeDebut}_${periodeFin}`;
+    const [tacheExistante] = await this.db
+      .select({ id: tache.id })
+      .from(tache)
+      .where(
+        and(
+          eq(tache.bailId, bailId),
+          eq(tache.periodeRecurrence, periodeRecurrence),
+          eq(tache.type, "regularisation_charges"),
+          inArray(tache.statut, ["a_faire", "en_cours"])
+        )
+      )
+      .limit(1);
+    if (tacheExistante) {
+      return { ...bilan, tacheCreee: false, tacheId: tacheExistante.id };
+    }
+
+    const cible = await this.resoudreDepuisBail(bailId);
+    if (!cible) {
+      throw new NotFoundException("Bail introuvable");
+    }
+    const titulaire = await this.resoudreTitulaire(bailId);
+    const metadata = await this.construireMetadataRegularisation(cible, titulaire, bilan);
+
+    try {
+      const [creee] = await this.db
+        .insert(tache)
+        .values({
+          type: "regularisation_charges",
+          statut: "a_faire",
+          origine: "planifiee",
+          bailId,
+          appartementId: cible.appartementId,
+          locataireId: titulaire?.id ?? null,
+          dateEcheance,
+          periodeRecurrence,
+          organisationId: cible.organisationId,
+          metadata
+        })
+        .returning({ id: tache.id });
+
+      return { ...bilan, tacheCreee: true, tacheId: creee!.id };
+    } catch (err) {
+      if (!estViolationIndexRegularisationActiveUnique(err)) {
+        throw err;
+      }
+      // Un autre appel concurrent a créé la tâche entre le pre-check et cet
+      // INSERT (ex. double-clic sur le déclenchement manuel) — jamais une
+      // deuxième tâche, retourne celle qui vient d'être créée par l'autre
+      // appel plutôt que de laisser l'erreur remonter.
+      const [tacheConcurrente] = await this.db
+        .select({ id: tache.id })
+        .from(tache)
+        .where(
+          and(
+            eq(tache.bailId, bailId),
+            eq(tache.periodeRecurrence, periodeRecurrence),
+            eq(tache.type, "regularisation_charges"),
+            inArray(tache.statut, ["a_faire", "en_cours"])
+          )
+        )
+        .limit(1);
+      return { ...bilan, tacheCreee: false, tacheId: tacheConcurrente?.id ?? null };
+    }
+  }
+
+  /**
+   * Résout la notification de rappel de régularisation — même discipline
+   * "jamais silencieux" que `construireMetadataQuittance` : résolue au
+   * moment de la génération de la tâche (pas d'étape d'application
+   * séparée, contrairement à `revision_loyer`).
+   */
+  private async construireMetadataRegularisation(
+    cible: CibleResolue,
+    titulaire: { id: string; nom: string; prenom: string } | null,
+    bilan: BilanRegularisationBail
+  ): Promise<Record<string, unknown>> {
+    // Les montants du bilan sont toujours posés sur la tâche, même si la
+    // notification ne peut pas être résolue (titulaire/bien/modèle
+    // manquant) — seul le texte de notification est conditionnel, jamais
+    // la donnée financière elle-même.
+    const donneesBilan = {
+      provisionsRecues: bilan.provisionsRecues,
+      chargesReelles: bilan.chargesReelles,
+      solde: bilan.solde
+    };
+    if (!titulaire) {
+      return { ...donneesBilan, ...this.signalNotificationIndisponible("aucun titulaire actif sur le bail") };
+    }
+    if (!cible.appartementId) {
+      return { ...donneesBilan, ...this.signalNotificationIndisponible("appartement introuvable") };
+    }
+    try {
+      const libelleBien = await this.resoudreLibelleBien(cible.appartementId);
+      if (!libelleBien) {
+        return { ...donneesBilan, ...this.signalNotificationIndisponible("bien introuvable") };
+      }
+      const modele = await this.modelesCourrierService.findByCode("regularisation_charges");
+      if (!modele) {
+        return { ...donneesBilan, ...this.signalNotificationIndisponible("modèle de courrier 'regularisation_charges' introuvable") };
+      }
+      const variables = {
+        nomLocataire: `${titulaire.prenom} ${titulaire.nom}`,
+        libelleBien,
+        montant: bilan.solde,
+        periodeDebut: bilan.periodeDebut,
+        periodeFin: bilan.periodeFin
+      };
+      const { objet, corps } = resoudreModeleCourrier({ objet: modele.objet, corps: modele.corps }, variables);
+      return { ...donneesBilan, notificationObjet: objet, notificationCorps: corps };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Échec de résolution de la notification de régularisation pour le bail ${bilan.bailId} : ${message}`
+      );
+      return { ...donneesBilan, ...this.signalNotificationIndisponible(`erreur de résolution : ${message}`) };
+    }
   }
 
   // alertes n'a pas de colonne entiteType générique (contrairement à

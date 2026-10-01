@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tache_type" ADD VALUE 'regularisation_charges' BEFORE 'autre';

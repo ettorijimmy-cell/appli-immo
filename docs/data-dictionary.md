@@ -1329,7 +1329,7 @@ réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
 
 | Champ | Type | Description |
 |---|---|---|
-| type | enum | `impaye` \| `entretien_equipement` \| `document_expire` \| `quittance_mensuelle` \| `revision_loyer` \| `sinistre_stagnation` \| `autre` — `quittance_mensuelle`/`revision_loyer`/`autre` sont posées dès cette étape pour éviter une migration de plus, mais aucune logique ne les produit encore (étapes futures). `sinistre_stagnation` ajouté le 2026-09-16 (Module Suivi sinistre et assurance, voir section `sinistre` ci-dessous) |
+| type | enum | `impaye` \| `entretien_equipement` \| `document_expire` \| `quittance_mensuelle` \| `revision_loyer` \| `sinistre_stagnation` \| `regularisation_charges` \| `autre` — `quittance_mensuelle`/`revision_loyer`/`autre` sont posées dès cette étape pour éviter une migration de plus, mais aucune logique ne les produit encore (étapes futures). `sinistre_stagnation` ajouté le 2026-09-16 (Module Suivi sinistre et assurance, voir section `sinistre` ci-dessous). `regularisation_charges` ajouté le 2026-10-01 (voir section "Régularisation des charges" ci-dessous) |
 | statut | enum | `a_faire` \| `en_cours` \| `fait` \| `annulee` |
 | origine | enum | `alerte` \| `planifiee` \| `manuelle` — seule `alerte` est produite dans cette étape (par `TachesJobService`) |
 | alerte_source_id | uuid, FK `alertes` | Alerte à l'origine de la tâche, uniquement pour `origine='alerte'`. Sert de clé d'idempotence (voir index unique ci-dessous) |
@@ -1341,7 +1341,7 @@ réutilisation de la state machine `synchroniserAlerte`/`calculerActionAlerte`.
 | sinistre_id | uuid, FK `sinistre`, nullable | **Module Suivi sinistre et assurance, 2026-09-16.** Sinistre à l'origine d'une tâche `type='sinistre_stagnation'`, jamais renseigné pour les autres types. Simple référence, pas une clé d'idempotence dédiée : cette tâche reste `origine='alerte'`, déjà couverte par `tache_alerte_source_active_unique` (`alerte_source_id`) — contrairement à `quittance_mensuelle` (`origine='planifiee'`, sans alerte source, d'où son index dédié sur `paiement_id`) |
 | date_echeance | date | |
 | date_completion | timestamptz | Posée automatiquement par `TachesService.marquerFait()`, jamais par un `update()` générique |
-| periode_recurrence | text | Ex. `'2026-09'` — inutilisé dans cette étape, réservé aux tâches récurrentes futures (quittances mensuelles, révision de loyer) |
+| periode_recurrence | text | `revision_loyer` : année civile en texte (ex. `'2026'`). `regularisation_charges` (2026-10-01) : période exacte `"periodeDebut_periodeFin"` (ex. `'2025-03-15_2026-03-15'`) — jamais une année civile, une régularisation n'étant pas forcément alignée sur l'année civile (voir section "Régularisation des charges" ci-dessous) |
 | notes | text | |
 | metadata | jsonb | |
 | organisation_id | uuid, FK `organisations`, NOT NULL | Scoping multi-tenant direct, même principe que `bien.organisationId` — résolu côté serveur depuis le bien concerné, jamais transmis par le client |
@@ -1378,7 +1378,10 @@ plus d'une tâche `a_faire`/`en_cours` à la fois pour une même
 `alerte_source_id` — le job quotidien vérifie son existence avant toute
 création plutôt que de s'appuyer sur une violation de contrainte. Même
 principe pour `paiement_id` (index `tache_paiement_active_unique`, voir
-section "Quittance mensuelle" ci-dessous).
+section "Quittance mensuelle" ci-dessous), et pour `(bail_id,
+periode_recurrence)` scopé par type (`tache_bail_periode_revision_active_unique`,
+`tache_bail_periode_regularisation_active_unique` — voir sections "Révision
+de loyer" et "Régularisation des charges" ci-dessous).
 
 ## Quittance mensuelle (Module Tâches, Étape 4, 2026-08-31)
 `TachesJobService.genererTachesQuittanceMensuelle()` (job quotidien) crée
@@ -1683,6 +1686,85 @@ Jamais de `update()` prévu sur cette table : une révision appliquée est un
 fait historique, pas modifiable après coup (cohérent avec la règle CLAUDE.md
 "jamais de suppression physique" — ici, jamais de correction physique non
 plus).
+
+## Régularisation des charges, Sous-commit C — calcul + déclenchement (2026-10-01)
+Compare, pour un bail et une période données, les provisions pour charges
+perçues aux charges réelles imputables au logement. Pas encore la
+répartition des charges communes d'immeuble (tantième/surface posé au
+Sous-commit B, `appartements.tantieme`) — sous-commit séparé à venir.
+
+**`packages/core/src/charges/calculerBilanRegularisation(provisionsRecues,
+chargesReelles)`** : calcul en centimes (`montantEnCentimes`/
+`centimesVersMontant`), retourne `{ solde, sens }`. `solde` est **toujours
+positif** (ou `"0.00"`) — jamais signé, même convention que le trop-perçu de
+`BauxService.resilier()` — c'est `sens` (`faveur_locataire` |
+`faveur_proprietaire` | `equilibre`) qui porte la direction.
+
+**`RegularisationChargesService.calculerBilanPourBail(bailId, periodeDebut,
+periodeFin)`** (`apps/backend/src/regularisation-charges`) — service séparé
+plutôt qu'ajouté à `TachesService` : ce calcul doit rester appelable en
+lecture seule (affichage sans aucune écriture quand `faveur_locataire`),
+même séparation calcul/action que `FiscaliteService`/`TableauDeBordService`.
+Scoping par appartenance organisationnelle, même mécanique à double
+jointure que `BauxService.findById` (skip si hors contexte HTTP, ex. appelé
+depuis le job planifié).
+- **Provisions perçues** : jamais ré-estimées depuis `baux.loyerMensuel`/
+  `provisionsCharges` courants (contrairement à
+  `TableauDeBordService.getRevenusLocatifs`, qui reste une ESTIMATION sur
+  valeurs actuelles). Deux sources sommées sur les versements réellement
+  encaissés dans la période (`versements.dateVersement`, non archivés) :
+  `paiements.type='loyer'` → part provisions calculée via
+  `calculerProvisionsRecuesEcheance` appliqué aux valeurs **figées** de
+  l'échéance (`paiements.loyerHorsCharges`/`paiements.charges`, posées à la
+  génération — jamais au bail courant) ; `paiements.type='charges'`
+  (échéance autonome dédiée) → montant plein du versement, aucune part à
+  exclure. `paiements.type='depot_garantie'` hors périmètre. Un versement
+  sur une échéance `loyer` sans décomposition figée (échéances antérieures
+  au 2026-08-31) est **exclu et journalisé** (`logger.warn`), jamais
+  ré-estimé en silence.
+- **Charges réelles** : somme de `depense.montant` où `appartementId`
+  correspond à l'appartement du bail et `dateDepense` dans la période
+  (non archivées).
+
+**Déclenchement automatique annuel —
+`TachesJobService.genererTachesRegularisationCharges(dateReference)`** :
+même pattern "date anniversaire" que `genererTachesRevisionLoyer` (mois/jour
+de `baux.dateDebut` comparé à `dateReference`, bail `actif` uniquement).
+Calcule le bilan sur la période écoulée (anniversaire précédent →
+anniversaire du jour) ; crée une tâche `type='regularisation_charges'`,
+`origine='planifiee'` **uniquement si `sens='faveur_proprietaire'`** — rien
+n'est créé si `faveur_locataire`/`equilibre` (affichage seul, décision
+produit explicite). Résout la notification au moment de la génération (même
+pattern que `construireMetadataQuittance`, jamais un second temps "appliquer"
+contrairement à `revision_loyer`).
+
+**Déclenchement manuel — `POST /baux/:id/regularisation-charges`**
+(`RegularisationChargesController`, `periodeDebut`/`periodeFin` explicites
+dans le corps, jamais calculés implicitement depuis la date du jour) :
+calcule le bilan à la demande via le même service, applique la même règle
+de création de tâche. Retourne toujours le bilan calculé, que la tâche ait
+été créée ou non.
+
+**Idempotence** : index unique partiel
+`tache_bail_periode_regularisation_active_unique` (`bail_id`,
+`periode_recurrence`) scopé `type='regularisation_charges'` — même
+mécanique double (vérification applicative avant écriture + contrainte SQL
+en filet de sécurité) que `tache_bail_periode_revision_active_unique`.
+Différence volontaire avec `revision_loyer` : `periode_recurrence` porte ici
+la **période exacte** (`"periodeDebut_periodeFin"`), pas une année civile —
+une régularisation n'est jamais forcément alignée sur l'année civile
+(déclenchement manuel possible à tout moment, ex. départ d'un locataire
+avant la première année). Le déclenchement automatique et un déclenchement
+manuel portant sur exactement la même période sont donc traités comme la
+même régularisation (pas de doublon) ; deux périodes différentes, même
+proches, génèrent chacune leur propre tâche.
+
+Modèle de courrier `regularisation_charges` seedé — même pattern que
+`revision_loyer`/`quittance_mensuelle` (voir section `modele_courrier`),
+variables montant du complément et bail/locataire/bien.
+
+Pas d'écran dans ce sous-commit — calcul, migration, modèle de courrier et
+les deux déclencheurs uniquement. L'écran viendra dans un sous-commit séparé.
 
 ## parametres_alertes
 Une ligne par type d'alerte configurable, créée avec une valeur par défaut

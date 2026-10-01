@@ -43,6 +43,7 @@ export class TachesController {
     // déclenchement manuel doit exécuter exactement le même code que le
     // cron quotidien (commentaire ci-dessus), pas un sous-ensemble.
     await this.tachesJobService.genererTachesQuittanceMensuelle();
+    await this.tachesJobService.genererTachesRegularisationCharges(dateReference);
     return this.tachesService.findAll({});
   }
 

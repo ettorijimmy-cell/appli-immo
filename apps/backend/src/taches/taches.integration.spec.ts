@@ -9,6 +9,7 @@ import {
   contact,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
+  depense,
   documents,
   equipements,
   indicesIrl,
@@ -19,6 +20,7 @@ import {
   sinistre,
   tache,
   utilisateurs,
+  versements,
   type Database
 } from "db";
 import { and, eq } from "drizzle-orm";
@@ -45,6 +47,7 @@ import { IndicesIrlModule } from "../indices-irl/indices-irl.module";
 import { ModelesCourrierModule } from "../modeles-courrier/modeles-courrier.module";
 import { ModelesCourrierService } from "../modeles-courrier/modeles-courrier.service";
 import { PaiementsModule } from "../paiements/paiements.module";
+import { RegularisationChargesService } from "../regularisation-charges/regularisation-charges.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
@@ -1857,5 +1860,371 @@ describe("Tâches — envoyerNotification (intégration Postgres réelle)", () =
 
     await expect(tachesService.envoyerNotification(id)).rejects.toThrow(BadRequestException);
     expect(smtpEnvoiServiceDouble.envoyerEmail).not.toHaveBeenCalled();
+  });
+});
+
+// Vérifie le périmètre exact du Module Régularisation des charges,
+// Sous-commit C (docs/backlog.md, docs/data-dictionary.md section
+// "Régularisation des charges") : calcul du bilan à partir des montants
+// figés (jamais ré-estimé depuis le bail courant), déclenchement
+// automatique à la date anniversaire (faveur_proprietaire uniquement) et
+// déclenchement manuel partageant la même protection anti-doublon
+// (periode_recurrence = période exacte, pas une année civile).
+describe("Tâches — régularisation des charges (intégration Postgres réelle)", () => {
+  const rootDb = createDbClient(process.env["DATABASE_URL"] ?? DEFAULT_DEV_DATABASE_URL);
+  const { begin, rollback } = createTransactionalTestHooks(rootDb);
+
+  let moduleRef: TestingModule;
+  let scisService: ScisService;
+  let bienService: BienService;
+  let appartementsService: AppartementsService;
+  let bauxService: BauxService;
+  let tachesJobService: TachesJobService;
+  let tachesService: TachesService;
+  let regularisationChargesService: RegularisationChargesService;
+  let modelesCourrierService: ModelesCourrierService;
+  let db: Database;
+  let organisationId: string;
+  let bienId: string;
+  let appartementId: string;
+
+  beforeEach(async () => {
+    db = await begin();
+
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        CommonModule,
+        DatabaseModule,
+        EncryptionModule,
+        AuditModule,
+        UsersModule,
+        AuthModule,
+        ScisModule,
+        BienModule,
+        AppartementsModule,
+        BauxModule,
+        PaiementsModule,
+        ModelesCourrierModule,
+        TachesModule
+      ]
+    })
+      .overrideProvider(DATABASE_CONNECTION)
+      .useValue(db)
+      .compile();
+
+    scisService = moduleRef.get(ScisService);
+    bienService = moduleRef.get(BienService);
+    appartementsService = moduleRef.get(AppartementsService);
+    bauxService = moduleRef.get(BauxService);
+    tachesJobService = moduleRef.get(TachesJobService);
+    tachesService = moduleRef.get(TachesService);
+    regularisationChargesService = moduleRef.get(RegularisationChargesService);
+    modelesCourrierService = moduleRef.get(ModelesCourrierService);
+
+    const [organisation] = await db
+      .insert(organisations)
+      .values({ type: "particulier", nom: "Organisation Régularisation Charges Intégration" })
+      .returning();
+    if (!organisation) throw new Error("Échec de l'insertion de l'organisation de test");
+    organisationId = organisation.id;
+    const [user] = await db
+      .insert(utilisateurs)
+      .values({
+        organisationId: organisation.id,
+        email: `regularisation-charges-integration-${randomUUID()}@example.com`,
+        nom: "Test",
+        prenom: "Régularisation",
+        motDePasseHash: "peu-importe-pour-ce-test",
+        statut: "actif"
+      })
+      .returning();
+    if (!user) throw new Error("Échec de l'insertion de l'utilisateur de test");
+
+    const sci = await scisService.create(user.id, {
+      nom: "SCI Régularisation Charges Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(user.id, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Régularisation Charges Test",
+      adresse: "1 rue de la Régularisation",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    bienId = bien.id;
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    appartementId = appartement.id;
+
+    await modelesCourrierService.upsertModeleCourrier({
+      code: "regularisation_charges",
+      nom: "Régularisation des charges",
+      canal: "email",
+      objet: "Régularisation des charges — {{libelleBien}}",
+      corps: "Bonjour {{nomLocataire}}, solde de {{montant}} € pour {{libelleBien}} sur la période {{periodeDebut}} à {{periodeFin}}.",
+      variablesRequises: ["nomLocataire", "libelleBien", "montant", "periodeDebut", "periodeFin"],
+      organisationId
+    });
+  });
+
+  afterEach(async () => {
+    await moduleRef?.close();
+    await rollback();
+  });
+
+  afterAll(async () => {
+    await rootDb.$client.end();
+  });
+
+  async function creerBailActif(dateDebut: string) {
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut,
+      loyerMensuel: "700.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bail.id);
+    return bail;
+  }
+
+  // Provisions figées (780.00 reçu, loyerHorsCharges=700.00/charges=80.00 figés
+  // à l'échéance) + 50.00 reçu sur une échéance type='charges' autonome = 130.00
+  // de provisions. Charges réelles 100.00 + 80.00 = 180.00. Bilan :
+  // 130 - 180 = -50 => faveur_proprietaire, solde "50.00".
+  async function creerMouvementsFaveurProprietaire(bailId: string, periodeDebut: string, periodeFin: string) {
+    const dateMilieu1 = decaleDeJours(periodeDebut, 60);
+    const dateMilieu2 = decaleDeJours(periodeDebut, 180);
+
+    const [paiementLoyer] = await db
+      .insert(paiements)
+      .values({
+        bailId,
+        type: "loyer",
+        statut: "paye",
+        montant: "780.00",
+        dateEcheance: dateMilieu1,
+        loyerHorsCharges: "700.00",
+        charges: "80.00"
+      })
+      .returning();
+    if (!paiementLoyer) throw new Error("Échec de l'insertion du paiement de test");
+    await db.insert(versements).values({ paiementId: paiementLoyer.id, montant: "780.00", dateVersement: dateMilieu1, mode: "virement" });
+
+    const [paiementCharges] = await db
+      .insert(paiements)
+      .values({ bailId, type: "charges", statut: "paye", montant: "50.00", dateEcheance: dateMilieu2 })
+      .returning();
+    if (!paiementCharges) throw new Error("Échec de l'insertion du paiement de test");
+    await db.insert(versements).values({ paiementId: paiementCharges.id, montant: "50.00", dateVersement: dateMilieu2, mode: "virement" });
+
+    await db.insert(depense).values({
+      categorie: "charges_copropriete",
+      montant: "100.00",
+      dateDepense: dateMilieu1,
+      libelle: "Charges copropriété test",
+      appartementId,
+      bienId,
+      organisationId
+    });
+    await db.insert(depense).values({
+      categorie: "reparation_entretien",
+      montant: "80.00",
+      dateDepense: dateMilieu2,
+      libelle: "Réparation test",
+      appartementId,
+      bienId,
+      organisationId
+    });
+
+    void periodeFin;
+  }
+
+  function decaleDeJours(date: string, jours: number): string {
+    const [annee, mois, jour] = date.split("-").map(Number);
+    const resultat = new Date(Date.UTC(annee!, mois! - 1, jour! + jours));
+    return resultat.toISOString().slice(0, 10);
+  }
+
+  describe("RegularisationChargesService.calculerBilanPourBail", () => {
+    it("ne ré-estime jamais les provisions depuis le loyer courant du bail — utilise les montants figés à l'échéance", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const bilanAvant = await regularisationChargesService.calculerBilanPourBail(bail.id, "2025-03-15", "2026-03-15");
+      expect(bilanAvant.provisionsRecues).toBe("130.00");
+      expect(bilanAvant.chargesReelles).toBe("180.00");
+      expect(bilanAvant.sens).toBe("faveur_proprietaire");
+      expect(bilanAvant.solde).toBe("50.00");
+
+      // Le bail est révisé APRÈS les versements : si le calcul se basait sur
+      // le loyer courant plutôt que sur paiements.loyerHorsCharges/charges
+      // figés, le résultat changerait ici — il ne doit pas bouger.
+      await bauxService.update(bail.id, { loyerMensuel: "1200.00" });
+      const bilanApres = await regularisationChargesService.calculerBilanPourBail(bail.id, "2025-03-15", "2026-03-15");
+      expect(bilanApres.provisionsRecues).toBe("130.00");
+      expect(bilanApres.solde).toBe("50.00");
+    });
+
+    it("exclut les versements hors période", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const bilan = await regularisationChargesService.calculerBilanPourBail(bail.id, "2025-03-15", "2025-04-01");
+      expect(bilan.provisionsRecues).toBe("0.00");
+      expect(bilan.chargesReelles).toBe("0.00");
+      expect(bilan.sens).toBe("equilibre");
+    });
+
+    it("rejette une période dont la fin précède le début", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await expect(regularisationChargesService.calculerBilanPourBail(bail.id, "2026-03-15", "2025-03-15")).rejects.toThrow();
+    });
+  });
+
+  describe("TachesJobService.genererTachesRegularisationCharges (déclenchement automatique)", () => {
+    it("crée une tâche de rappel à la date anniversaire quand le solde est en faveur du propriétaire", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
+
+      expect(nombreCreees).toBe(1);
+      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges" });
+      expect(tacheCreee).toBeDefined();
+      expect(tacheCreee?.origine).toBe("planifiee");
+      expect(tacheCreee?.statut).toBe("a_faire");
+      expect(tacheCreee?.bailId).toBe(bail.id);
+      expect(tacheCreee?.periodeRecurrence).toBe("2025-03-15_2026-03-15");
+      const metadata = tacheCreee?.metadata as Record<string, unknown>;
+      expect(metadata.solde).toBe("50.00");
+      expect(metadata.provisionsRecues).toBe("130.00");
+      expect(metadata.chargesReelles).toBe("180.00");
+    });
+
+    it("ne crée rien en dehors de la date anniversaire", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2026-03-16");
+
+      expect(nombreCreees).toBe(0);
+    });
+
+    it("ne crée aucune tâche quand le solde est en faveur du locataire (affichage seul)", async () => {
+      await creerBailActif("2024-03-15");
+      // Aucun mouvement : provisions 0, charges 0 => équilibre, jamais faveur_proprietaire.
+      const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
+
+      expect(nombreCreees).toBe(0);
+      expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(0);
+    });
+
+    it("est idempotent : un second passage à la même date ne crée jamais de deuxième tâche", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
+      const secondPassage = await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
+
+      expect(secondPassage).toBe(0);
+      expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(1);
+    });
+
+    // Régression : anneeActuelle - 1 n'est jamais bissextile quand
+    // anneeActuelle l'est (deux années bissextiles consécutives n'existent
+    // pas) — "<anneeActuelle - 1>-02-29" n'est alors jamais une date
+    // calendaire valide. Doit se replier sur le 28 pour periodeDebut, sans
+    // jamais planter ni interrompre le traitement des autres baux du job.
+    it("bail avec anniversaire le 29 février : periodeDebut se replie sur le 28, ne plante jamais", async () => {
+      const bail = await creerBailActif("2024-02-29");
+      await creerMouvementsFaveurProprietaire(bail.id, "2027-02-28", "2028-02-29");
+
+      const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2028-02-29");
+
+      expect(nombreCreees).toBe(1);
+      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges" });
+      expect(tacheCreee?.periodeRecurrence).toBe("2027-02-28_2028-02-29");
+    });
+  });
+
+  describe("TachesJobService.genererTacheRegularisationSiNecessaire (déclenchement manuel)", () => {
+    it("crée une tâche quand le solde est en faveur du propriétaire et retourne le bilan", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const resultat = await tachesJobService.genererTacheRegularisationSiNecessaire(
+        bail.id,
+        "2025-03-15",
+        "2026-03-15",
+        "2026-04-01"
+      );
+
+      expect(resultat.sens).toBe("faveur_proprietaire");
+      expect(resultat.solde).toBe("50.00");
+      expect(resultat.tacheCreee).toBe(true);
+      expect(resultat.tacheId).not.toBeNull();
+      expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(1);
+    });
+
+    it("ne crée rien et retourne le bilan quand le solde est en faveur du locataire", async () => {
+      const bail = await creerBailActif("2024-03-15");
+
+      const resultat = await tachesJobService.genererTacheRegularisationSiNecessaire(
+        bail.id,
+        "2025-03-15",
+        "2026-03-15",
+        "2026-04-01"
+      );
+
+      expect(resultat.sens).toBe("equilibre");
+      expect(resultat.tacheCreee).toBe(false);
+      expect(resultat.tacheId).toBeNull();
+    });
+
+    it("est idempotent pour la même période exacte : ne crée pas de deuxième tâche, retourne l'id existant", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const premier = await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2025-03-15", "2026-03-15", "2026-04-01");
+      const second = await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2025-03-15", "2026-03-15", "2026-04-01");
+
+      expect(second.tacheCreee).toBe(false);
+      expect(second.tacheId).toBe(premier.tacheId);
+      expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(1);
+    });
+
+    it("une période différente génère une tâche distincte (pas de collision avec le déclenchement automatique)", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
+      // Déclenchement manuel pour un départ anticipé, période différente de
+      // l'automatique (anniversaire précédent -> aujourd'hui) même si elle
+      // recouvre partiellement la même fenêtre de mouvements.
+      const manuel = await tachesJobService.genererTacheRegularisationSiNecessaire(
+        bail.id,
+        "2025-03-15",
+        "2025-12-01",
+        "2025-12-01"
+      );
+
+      expect(manuel.tacheCreee).toBe(true);
+      expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(2);
+    });
   });
 });
