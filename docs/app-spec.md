@@ -77,9 +77,10 @@ construire ni colonne de statut à ajouter au schéma.
 
 ## 3bis. Navigation
 
-Sidebar, dans cet ordre (mis à jour le 2026-09-29, thème de marque Briky) :
+Sidebar, dans cet ordre (mis à jour le 2026-10-05, Module Régularisation
+des charges, Sous-commit F) :
 `Tableau de bord` · `Patrimoine` (SCI/Immeubles/Appartements réunis) ·
-`Locataires` · `Candidats` · `Finances` · `Documents` ·
+`Locataires` · `Candidats` · `Finances` · `Charges` · `Documents` ·
 `Carnet de contacts` · `Calendrier` · `Tâches` · `Messagerie` ·
 `Sinistres` · `Paramètres`.
 

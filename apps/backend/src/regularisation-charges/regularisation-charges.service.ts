@@ -6,8 +6,8 @@ import {
   montantEnCentimes,
   type BilanRegularisation
 } from "core";
-import { appartements, baux, bien, depense, paiements, versements, type Database } from "db";
-import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { appartements, baux, bien, bilanRegularisationCharges, depense, paiements, versements, type Database } from "db";
+import { and, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 
@@ -17,6 +17,16 @@ export interface BilanRegularisationBail extends BilanRegularisation {
   periodeFin: string;
   provisionsRecues: string;
   chargesReelles: string;
+}
+
+// Module Régularisation des charges, Sous-commit F (2026-10-05) — forme
+// persistée d'un bilan déjà calculé (bilan_regularisation_charges), par
+// opposition à BilanRegularisationBail qui est le résultat d'un calcul à
+// la demande, jamais écrit en base par ce service.
+export interface BilanRegularisationPersiste extends BilanRegularisationBail {
+  id: string;
+  tacheId: string | null;
+  createdAt: Date;
 }
 
 /**
@@ -123,6 +133,41 @@ export class RegularisationChargesService {
     const bilan = calculerBilanRegularisation(provisionsRecues, chargesReelles);
 
     return { bailId, periodeDebut, periodeFin, provisionsRecues, chargesReelles, ...bilan };
+  }
+
+  /**
+   * Module Régularisation des charges, Sous-commit F (2026-10-05) —
+   * lecture seule, ne déclenche jamais aucun calcul ni création de tâche
+   * (contrairement à TachesJobService.genererTacheRegularisationSiNecessaire,
+   * qui calcule ET persiste). Retourne les bilans déjà calculés pour ce
+   * bail (manuellement ou automatiquement), triés du plus récent au plus
+   * ancien. Tri par periodeFin puis createdAt en départage : « le plus
+   * récent » doit refléter la période la plus proche d'aujourd'hui, pas
+   * forcément le dernier calcul effectué dans le temps (un recalcul
+   * manuel d'une période passée reste possible et ne doit pas remonter
+   * artificiellement en tête).
+   */
+  async obtenirHistoriquePourBail(bailId: string): Promise<BilanRegularisationPersiste[]> {
+    await this.resoudreBailAvecAppartenance(bailId);
+
+    const lignes = await this.db
+      .select()
+      .from(bilanRegularisationCharges)
+      .where(eq(bilanRegularisationCharges.bailId, bailId))
+      .orderBy(desc(bilanRegularisationCharges.periodeFin), desc(bilanRegularisationCharges.createdAt));
+
+    return lignes.map((ligne) => ({
+      id: ligne.id,
+      bailId: ligne.bailId,
+      periodeDebut: ligne.periodeDebut,
+      periodeFin: ligne.periodeFin,
+      provisionsRecues: ligne.provisionsRecues,
+      chargesReelles: ligne.chargesReelles,
+      solde: ligne.solde,
+      sens: ligne.sens,
+      tacheId: ligne.tacheId,
+      createdAt: ligne.createdAt
+    }));
   }
 
   // Même principe que BauxService.findById : baux n'a pas de colonne

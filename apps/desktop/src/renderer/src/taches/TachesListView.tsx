@@ -24,6 +24,13 @@ const TYPE_LABELS: Record<TacheType, string> = {
   quittance_mensuelle: "Quittance mensuelle",
   revision_loyer: "Révision de loyer",
   sinistre_stagnation: "Relance sinistre",
+  // Module Régularisation des charges, Sous-commit C (2026-10-01) — oubliée
+  // à l'introduction du type côté backend : TacheType (ci-dessus) ne
+  // l'incluait pas non plus, donc TYPE_LABELS[tache.type] rendait undefined
+  // (aucun badge, pas d'erreur) pour ce type précis — repéré par Jimmy en
+  // testant l'écran Charges (Sous-commit F). Corrigé ici en même temps que
+  // TacheType, pas une 2ème cause distincte.
+  regularisation_charges: "Régularisation de charges",
   autre: "Autre"
 };
 

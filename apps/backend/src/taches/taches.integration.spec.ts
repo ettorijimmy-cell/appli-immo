@@ -6,6 +6,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   bailLocataires,
   baux,
+  bilanRegularisationCharges,
   contact,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
@@ -2260,6 +2261,109 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
 
       expect(manuel.tacheCreee).toBe(true);
       expect(await tachesService.findAll({ type: "regularisation_charges" })).toHaveLength(2);
+    });
+
+    // Module Régularisation des charges, Sous-commit F (2026-10-05) :
+    // comble le trou où un bilan faveur_locataire/equilibre ne laissait
+    // auparavant aucune trace — persisté désormais quel que soit le sens,
+    // retrouvable ensuite via RegularisationChargesService.
+    // obtenirHistoriquePourBail, pas seulement ceux en faveur du
+    // propriétaire (qui bénéficiaient déjà d'une trace via la tâche).
+    it("persiste le bilan même quand le solde est en faveur du locataire (tacheId null)", async () => {
+      const bail = await creerBailActif("2024-03-15");
+
+      const resultat = await tachesJobService.genererTacheRegularisationSiNecessaire(
+        bail.id,
+        "2025-03-15",
+        "2026-03-15",
+        "2026-04-01"
+      );
+
+      const [bilanPersiste] = await db.select().from(bilanRegularisationCharges).where(eq(bilanRegularisationCharges.bailId, bail.id));
+      expect(bilanPersiste?.sens).toBe(resultat.sens);
+      expect(bilanPersiste?.solde).toBe(resultat.solde);
+      expect(bilanPersiste?.tacheId).toBeNull();
+    });
+
+    it("persiste le bilan quand le solde est en faveur du propriétaire, avec le tacheId de la tâche créée", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const resultat = await tachesJobService.genererTacheRegularisationSiNecessaire(
+        bail.id,
+        "2025-03-15",
+        "2026-03-15",
+        "2026-04-01"
+      );
+
+      const [bilanPersiste] = await db.select().from(bilanRegularisationCharges).where(eq(bilanRegularisationCharges.bailId, bail.id));
+      expect(bilanPersiste?.sens).toBe("faveur_proprietaire");
+      expect(bilanPersiste?.tacheId).toBe(resultat.tacheId);
+    });
+
+    it("un second déclenchement pour la même période persiste un deuxième bilan, sans dupliquer la tâche", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      const premier = await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2025-03-15", "2026-03-15", "2026-04-01");
+      const second = await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2025-03-15", "2026-03-15", "2026-04-01");
+
+      const bilansPersistes = await db.select().from(bilanRegularisationCharges).where(eq(bilanRegularisationCharges.bailId, bail.id));
+      expect(bilansPersistes).toHaveLength(2);
+      expect(bilansPersistes.every((b) => b.tacheId === premier.tacheId)).toBe(true);
+      expect(second.tacheCreee).toBe(false);
+    });
+  });
+
+  describe("RegularisationChargesService.obtenirHistoriquePourBail", () => {
+    it("retourne un tableau vide pour un bail sans aucun bilan calculé", async () => {
+      const bail = await creerBailActif("2024-03-15");
+
+      expect(await regularisationChargesService.obtenirHistoriquePourBail(bail.id)).toEqual([]);
+    });
+
+    it("retrouve un bilan en équilibre, un en faveur du locataire et un en faveur du propriétaire, triés du plus récent au plus ancien par periodeFin", async () => {
+      const bail = await creerBailActif("2020-03-15");
+      await creerMouvementsFaveurProprietaire(bail.id, "2025-03-15", "2026-03-15");
+
+      // Équilibre (aucun mouvement sur cette période antérieure).
+      await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2021-03-15", "2022-03-15", "2022-03-15");
+      // Faveur propriétaire (mouvements créés ci-dessus).
+      await tachesJobService.genererTacheRegularisationSiNecessaire(bail.id, "2025-03-15", "2026-03-15", "2026-03-15");
+
+      const historique = await regularisationChargesService.obtenirHistoriquePourBail(bail.id);
+
+      expect(historique).toHaveLength(2);
+      // Le plus récent par periodeFin (2026-03-15) en tête, pas le dernier
+      // calculé dans le temps (les deux appels ci-dessus sont dans l'ordre
+      // chronologique inverse de leur periodeFin, pour vérifier le tri).
+      expect(historique[0]?.periodeFin).toBe("2026-03-15");
+      expect(historique[0]?.sens).toBe("faveur_proprietaire");
+      expect(historique[0]?.tacheId).not.toBeNull();
+      expect(historique[1]?.periodeFin).toBe("2022-03-15");
+      expect(historique[1]?.sens).toBe("equilibre");
+      expect(historique[1]?.tacheId).toBeNull();
+    });
+
+    it("ne retourne jamais les bilans d'un autre bail", async () => {
+      const bailA = await creerBailActif("2024-03-15");
+      // bailB ne peut pas être activé sur le même appartement (un seul bail
+      // actif à la fois) — un brouillon suffit, seul bailA.id doit scoper
+      // obtenirHistoriquePourBail.
+      const bailB = await bauxService.create({
+        appartementId,
+        typeBail: "vide",
+        dateDebut: "2024-03-15",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      await tachesJobService.genererTacheRegularisationSiNecessaire(bailA.id, "2025-03-15", "2026-03-15", "2026-03-15");
+
+      expect(await regularisationChargesService.obtenirHistoriquePourBail(bailB.id)).toEqual([]);
+    });
+
+    it("rejette un bail introuvable", async () => {
+      await expect(regularisationChargesService.obtenirHistoriquePourBail(randomUUID())).rejects.toThrow();
     });
   });
 });

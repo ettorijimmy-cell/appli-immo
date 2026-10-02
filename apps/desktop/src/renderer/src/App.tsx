@@ -4,6 +4,7 @@ import { AppLayout } from "./layout/AppLayout";
 import { CalendrierPage } from "./pages/CalendrierPage";
 import { CandidatsPage } from "./pages/CandidatsPage";
 import { CarnetContactsPage } from "./pages/CarnetContactsPage";
+import { ChargesPage } from "./pages/ChargesPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { FinancesPage } from "./pages/FinancesPage";
 import { LocatairesPage } from "./pages/LocatairesPage";
@@ -32,6 +33,7 @@ function AuthenticatedApp(): React.JSX.Element {
         <Route path="candidats" element={<CandidatsPage />} />
         <Route path="calendrier" element={<CalendrierPage />} />
         <Route path="finances" element={<FinancesPage />} />
+        <Route path="charges" element={<ChargesPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="taches" element={<TachesPage />} />
         <Route path="sinistres" element={<SinistresPage />} />

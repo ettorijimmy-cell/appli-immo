@@ -1874,7 +1874,124 @@ Modèle de courrier `regularisation_charges` seedé — même pattern que
 variables montant du complément et bail/locataire/bien.
 
 Pas d'écran dans ce sous-commit — calcul, migration, modèle de courrier et
-les deux déclencheurs uniquement. L'écran viendra dans un sous-commit séparé.
+les deux déclencheurs uniquement. Écran et persistance du bilan lui-même :
+voir section suivante, Sous-commit F.
+
+## Écran Charges et persistance du bilan, Sous-commit F (2026-10-05)
+
+Jusqu'ici, `calculerBilanPourBail` était un calcul pur, jamais écrit en
+base : seule la tâche de rappel (`type='regularisation_charges'`) laissait
+une trace, et uniquement quand `sens='faveur_proprietaire'`. Un bilan
+`faveur_locataire`/`equilibre` était calculé, retourné une fois dans la
+réponse HTTP, puis perdu — aucun moyen de retrouver « le bilan le plus
+récent » d'un bail sans le recalculer à l'identique. Comblé ici, décision
+actée avec Jimmy après audit explicite (persister plutôt que recalculer à
+la volée, pour un historique réel couvrant tous les sens, pas seulement
+ceux qui déclenchent une tâche).
+
+**Table `bilan_regularisation_charges`** (`packages/db/src/schema/
+bilan-regularisation-charges.ts`) : une ligne par calcul effectué (manuel
+ou automatique), **quel que soit `sens`** — jamais réécrite ensuite, même
+principe que `revision_loyer` (un calcul effectué est un fait historique,
+pas de `update()` prévu). Colonnes : `bail_id` (FK, requis),
+`periode_debut`/`periode_fin`, `provisions_recues`/`charges_reelles`/
+`solde` (copie du résultat du calcul), `sens` (enum dédié
+`sens_bilan_regularisation`, miroir de `SensBilanRegularisation` —
+`packages/db` ne dépend jamais de `packages/core`, voir CLAUDE.md, donc
+dupliqué plutôt qu'importé), `tache_id` (FK nullable — renseigné
+UNIQUEMENT quand `sens='faveur_proprietaire'` et qu'une tâche existe pour
+cette période, créée à l'instant ou déjà active ; jamais pour les deux
+autres sens), `organisation_id`.
+
+**`TachesJobService.genererTacheRegularisationSiNecessaire`** modifié :
+persiste désormais TOUJOURS une ligne `bilan_regularisation_charges` en
+fin d'exécution, après avoir résolu `tacheId` selon la logique inchangée
+(création conditionnelle à `sens='faveur_proprietaire'`, idempotence par
+période inchangée). Effet de bord : `resoudreDepuisBail` (résolution de
+`organisationId`) est désormais appelé dans tous les cas, pas seulement
+quand `sens='faveur_proprietaire'` — un bail non résolvable (appartement/
+bien introuvable) est donc rejeté de façon uniforme quel que soit le sens,
+là où il pouvait auparavant retourner silencieusement un résultat sans
+tâche pour `faveur_locataire`/`equilibre`. Un second déclenchement manuel
+sur la même période persiste une **deuxième** ligne de bilan (le calcul a
+réellement été refait) sans jamais dupliquer la tâche.
+
+**Limite connue, non bloquante (revue financial-logic-reviewer,
+2026-10-05)** : l'INSERT de la tâche et l'INSERT du bilan ne sont PAS
+enveloppés dans une transaction commune. Un `this.db.transaction(...)`
+naïf casserait la récupération déjà en place sur l'INSERT concurrent
+(`estViolationIndexRegularisationActiveUnique`) : Postgres passe toute la
+transaction en état "aborted" après une violation de contrainte, ce qui
+ferait aussi échouer le SELECT de récupération et l'INSERT du bilan qui
+suivent — il faudrait un SAVEPOINT (transaction imbriquée), un pattern
+sans aucun précédent ailleurs dans ce projet. Risque accepté en l'état :
+fenêtre très courte entre les deux `await`, pas de changement de session
+SQL entre eux — un crash exactement entre les deux laisserait une tâche
+de rappel sans bilan persisté correspondant pour cette occurrence précise,
+récupérable manuellement si constaté (relancer le calcul recrée le bilan
+manquant, sans dupliquer la tâche).
+
+**`RegularisationChargesService.obtenirHistoriquePourBail(bailId)`** —
+lecture seule, ne déclenche jamais aucun calcul ni création de tâche
+(contrairement à la méthode ci-dessus). Trié par `periode_fin` puis
+`created_at` décroissants : « le plus récent » reflète la période la plus
+proche d'aujourd'hui, pas forcément le dernier calcul effectué dans le
+temps (un recalcul manuel d'une période passée reste possible sans
+remonter artificiellement en tête de liste).
+
+**`GET /baux/:id/regularisation-charges/historique`**
+(`BauxRegularisationChargesController.historique`, même contrôleur que
+`POST /baux/:id/regularisation-charges`, `TachesModule`) — retourne le
+tableau de `obtenirHistoriquePourBail`. Distinct de la route `POST` :
+aucun effet de bord, sert l'écran Charges pour l'affichage initial.
+
+**Écran Charges** (`apps/desktop/src/renderer/src/charges/ChargesView.tsx`,
+nouvel onglet de navigation en position 6 — voir section 3bis,
+docs/app-spec.md) :
+- Sélecteur de bail : liste simple (pas de composant de sélection de bail
+  réutilisable existant dans le projet — même pattern ad hoc que
+  `FinancesListView`/`TransactionsView`), limitée aux statuts `actif`,
+  `preavis` et `resilie` (jamais `brouillon`, sans mouvement possible ; ni
+  `archive`, déjà définitivement traité) — `resilie` reste inclus
+  volontairement : un départ anticipé de locataire déclenche justement le
+  calcul final APRÈS la résiliation. Libellés construits via
+  `chargerContexteBail`/`creerCachesContexteBail` (réutilisés depuis
+  `finances/contexte-bail.ts`, aucune modification de ce fichier).
+- Affiche le bilan le plus récent (premier élément de l'historique) ou un
+  état vide explicite si aucun bilan n'existe encore pour ce bail.
+- Deux champs date (`periodeDebut`/`periodeFin`) **modifiables**,
+  pré-remplis par une période par défaut mais jamais imposés — corrige un
+  trou de la première version de cet écran, qui envoyait toujours la
+  période par défaut sans possibilité de l'ajuster. Bouton « Calculer le
+  bilan maintenant » → `POST /baux/:id/regularisation-charges` avec les
+  valeurs courantes de ces deux champs (telles qu'éditées, pas forcément
+  les valeurs par défaut).
+  - `periodeDebut` par défaut : fin de la dernière période déjà couverte
+    par un bilan (quel que soit son sens — une période en équilibre a
+    quand même été réellement couverte), ou le début du bail si aucun
+    bilan n'existe encore. Reprendre exactement où le dernier calcul s'est
+    arrêté évite tout angle mort (mois jamais couverts) et tout double
+    comptage (période recouvrante).
+  - `periodeFin` par défaut : `bail.dateFin` si le bail a été résilié
+    (posée une seule fois par `BauxService.resilier()`), sinon la date du
+    jour. **Jamais "aujourd'hui" sans condition** : `calculerBilanPourBail`
+    filtre les charges par `appartementId`, pas par `bailId` — si un
+    nouveau locataire occupe déjà le même logement, couvrir jusqu'à
+    aujourd'hui inclurait à tort ses propres charges dans la régularisation
+    du bail parti. Les deux champs restent modifiables ensuite : un départ
+    anticipé peut nécessiter une période qui ne correspond à aucune des
+    deux bornes par défaut (ex. régularisation partielle demandée par le
+    locataire avant même la résiliation effective).
+- Si le bilan affiché est `faveur_proprietaire` et porte un `tacheId`,
+  affiche une simple référence textuelle (lien vers l'onglet Tâches,
+  sans filtre — `TachesListView` n'expose aucun mécanisme de deep-link
+  par id de tâche, volontairement non ajouté ici, hors périmètre de ce
+  sous-commit) plutôt que de dupliquer les montants déjà affichés.
+- L'action « Répartir entre les lots » (Sous-commit D) reste exclusivement
+  sur `DepensesListView` — décision actée avec Jimmy : c'est une action
+  sur une dépense de niveau bien/immeuble (peut couvrir plusieurs baux à
+  la fois), sans ancrage naturel dans un écran bail-centrique comme
+  Charges.
 
 ## parametres_alertes
 Une ligne par type d'alerte configurable, créée avec une valeur par défaut

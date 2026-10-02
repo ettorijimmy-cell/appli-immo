@@ -7,6 +7,7 @@ export type TacheType =
   | "quittance_mensuelle"
   | "revision_loyer"
   | "sinistre_stagnation"
+  | "regularisation_charges"
   | "autre";
 export type TacheStatut = "a_faire" | "en_cours" | "fait" | "annulee";
 export type TacheOrigine = "alerte" | "planifiee" | "manuelle";

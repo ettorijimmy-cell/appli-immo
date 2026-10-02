@@ -42,3 +42,4 @@ export * from "./calendrier-abonnement";
 export * from "./sinistre";
 export * from "./boite-mail-dediee";
 export * from "./message-communication";
+export * from "./bilan-regularisation-charges";

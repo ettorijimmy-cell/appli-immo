@@ -7,6 +7,7 @@ import {
   bailLocataires,
   baux,
   bien,
+  bilanRegularisationCharges,
   contact,
   documents,
   equipements,
@@ -356,16 +357,27 @@ export class TachesJobService {
   }
 
   /**
-   * Calcule le bilan de régularisation d'un bail sur une période donnée et,
-   * si `sens='faveur_proprietaire'`, crée la tâche de rappel correspondante
-   * — jamais si `faveur_locataire`/`equilibre` (affichage seul, décision
-   * produit explicite). Partagée par le déclenchement automatique
-   * (`genererTachesRegularisationCharges`) et le déclenchement manuel
-   * (`RegularisationChargesController`), pour ne jamais dupliquer la
-   * logique d'idempotence. `periodeRecurrence` porte la période exacte
-   * (`"periodeDebut_periodeFin"`), pas une année civile comme
-   * `revision_loyer` — voir `tache_bail_periode_regularisation_active_unique`,
-   * docs/data-dictionary.md.
+   * Calcule le bilan de régularisation d'un bail sur une période donnée,
+   * le persiste TOUJOURS (`bilan_regularisation_charges`, Sous-commit F,
+   * 2026-10-05 — comble le trou où un bilan faveur_locataire/equilibre ne
+   * laissait auparavant aucune trace), et, si `sens='faveur_proprietaire'`,
+   * crée en plus la tâche de rappel correspondante — jamais si
+   * `faveur_locataire`/`equilibre` (affichage seul, décision produit
+   * explicite) : la persistance du bilan est désormais inconditionnelle,
+   * la création de tâche reste conditionnelle. Partagée par le
+   * déclenchement automatique (`genererTachesRegularisationCharges`) et le
+   * déclenchement manuel (`RegularisationChargesController`), pour ne
+   * jamais dupliquer la logique d'idempotence. `periodeRecurrence` porte
+   * la période exacte (`"periodeDebut_periodeFin"`), pas une année civile
+   * comme `revision_loyer` — voir
+   * `tache_bail_periode_regularisation_active_unique`, docs/data-dictionary.md.
+   *
+   * `resoudreDepuisBail` est désormais appelé dans tous les cas (avant,
+   * seulement si faveur_proprietaire) : organisationId est nécessaire pour
+   * persister le bilan quel que soit le sens — effet de bord positif, un
+   * bail non résolvable (appartement/bien introuvable) est désormais
+   * rejeté de façon uniforme plutôt que de retourner silencieusement un
+   * résultat sans tâche quand le sens n'était pas faveur_proprietaire.
    */
   async genererTacheRegularisationSiNecessaire(
     bailId: string,
@@ -374,74 +386,75 @@ export class TachesJobService {
     dateEcheance: string
   ): Promise<ResultatDeclenchementRegularisation> {
     const bilan = await this.regularisationChargesService.calculerBilanPourBail(bailId, periodeDebut, periodeFin);
-    if (bilan.sens !== "faveur_proprietaire") {
-      return { ...bilan, tacheCreee: false, tacheId: null };
-    }
-
-    const periodeRecurrence = `${periodeDebut}_${periodeFin}`;
-    const [tacheExistante] = await this.db
-      .select({ id: tache.id })
-      .from(tache)
-      .where(
-        and(
-          eq(tache.bailId, bailId),
-          eq(tache.periodeRecurrence, periodeRecurrence),
-          eq(tache.type, "regularisation_charges"),
-          inArray(tache.statut, ["a_faire", "en_cours"])
-        )
-      )
-      .limit(1);
-    if (tacheExistante) {
-      return { ...bilan, tacheCreee: false, tacheId: tacheExistante.id };
-    }
-
     const cible = await this.resoudreDepuisBail(bailId);
     if (!cible) {
       throw new NotFoundException("Bail introuvable");
     }
-    const titulaire = await this.resoudreTitulaire(bailId);
-    const metadata = await this.construireMetadataRegularisation(cible, titulaire, bilan);
 
-    try {
-      const [creee] = await this.db
-        .insert(tache)
-        .values({
-          type: "regularisation_charges",
-          statut: "a_faire",
-          origine: "planifiee",
-          bailId,
-          appartementId: cible.appartementId,
-          locataireId: titulaire?.id ?? null,
-          dateEcheance,
-          periodeRecurrence,
-          organisationId: cible.organisationId,
-          metadata
-        })
-        .returning({ id: tache.id });
+    let tacheCreee = false;
+    let tacheId: string | null = null;
 
-      return { ...bilan, tacheCreee: true, tacheId: creee!.id };
-    } catch (err) {
-      if (!estViolationIndexRegularisationActiveUnique(err)) {
-        throw err;
+    if (bilan.sens === "faveur_proprietaire") {
+      const periodeRecurrence = `${periodeDebut}_${periodeFin}`;
+      const conditionTacheActive = and(
+        eq(tache.bailId, bailId),
+        eq(tache.periodeRecurrence, periodeRecurrence),
+        eq(tache.type, "regularisation_charges"),
+        inArray(tache.statut, ["a_faire", "en_cours"])
+      );
+      const [tacheExistante] = await this.db.select({ id: tache.id }).from(tache).where(conditionTacheActive).limit(1);
+
+      if (tacheExistante) {
+        tacheId = tacheExistante.id;
+      } else {
+        const titulaire = await this.resoudreTitulaire(bailId);
+        const metadata = await this.construireMetadataRegularisation(cible, titulaire, bilan);
+
+        try {
+          const [creee] = await this.db
+            .insert(tache)
+            .values({
+              type: "regularisation_charges",
+              statut: "a_faire",
+              origine: "planifiee",
+              bailId,
+              appartementId: cible.appartementId,
+              locataireId: titulaire?.id ?? null,
+              dateEcheance,
+              periodeRecurrence,
+              organisationId: cible.organisationId,
+              metadata
+            })
+            .returning({ id: tache.id });
+          tacheCreee = true;
+          tacheId = creee!.id;
+        } catch (err) {
+          if (!estViolationIndexRegularisationActiveUnique(err)) {
+            throw err;
+          }
+          // Un autre appel concurrent a créé la tâche entre le pre-check et
+          // cet INSERT (ex. double-clic sur le déclenchement manuel) —
+          // jamais une deuxième tâche, retourne celle qui vient d'être
+          // créée par l'autre appel plutôt que de laisser l'erreur remonter.
+          const [tacheConcurrente] = await this.db.select({ id: tache.id }).from(tache).where(conditionTacheActive).limit(1);
+          tacheId = tacheConcurrente?.id ?? null;
+        }
       }
-      // Un autre appel concurrent a créé la tâche entre le pre-check et cet
-      // INSERT (ex. double-clic sur le déclenchement manuel) — jamais une
-      // deuxième tâche, retourne celle qui vient d'être créée par l'autre
-      // appel plutôt que de laisser l'erreur remonter.
-      const [tacheConcurrente] = await this.db
-        .select({ id: tache.id })
-        .from(tache)
-        .where(
-          and(
-            eq(tache.bailId, bailId),
-            eq(tache.periodeRecurrence, periodeRecurrence),
-            eq(tache.type, "regularisation_charges"),
-            inArray(tache.statut, ["a_faire", "en_cours"])
-          )
-        )
-        .limit(1);
-      return { ...bilan, tacheCreee: false, tacheId: tacheConcurrente?.id ?? null };
     }
+
+    await this.db.insert(bilanRegularisationCharges).values({
+      bailId,
+      periodeDebut,
+      periodeFin,
+      provisionsRecues: bilan.provisionsRecues,
+      chargesReelles: bilan.chargesReelles,
+      solde: bilan.solde,
+      sens: bilan.sens,
+      tacheId,
+      organisationId: cible.organisationId
+    });
+
+    return { ...bilan, tacheCreee, tacheId };
   }
 
   /**
