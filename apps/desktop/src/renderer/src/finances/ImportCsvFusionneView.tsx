@@ -41,6 +41,7 @@ export function ImportCsvFusionneView(): React.JSX.Element {
   const [scis, setScis] = useState<Sci[]>([]);
   const [categorieParLigne, setCategorieParLigne] = useState<Map<string, DepenseCategorie>>(new Map());
   const [rattachementParLigne, setRattachementParLigne] = useState<Map<string, string>>(new Map());
+  const [recuperableParLigne, setRecuperableParLigne] = useState<Map<string, boolean>>(new Map());
   const [confirmeesParLigne, setConfirmeesParLigne] = useState<Set<string>>(new Set());
   const [confirmationEnCours, setConfirmationEnCours] = useState<string | null>(null);
 
@@ -143,6 +144,7 @@ export function ImportCsvFusionneView(): React.JSX.Element {
         montant: valeurAbsolueMontant(ligne.montant),
         dateDepense: ligne.date,
         libelle: ligne.libelle,
+        recuperable: recuperableParLigne.get(ligne.id) ?? false,
         ...(type === "bien" ? { bienId: id } : { sciId: id })
       });
       setConfirmeesParLigne((precedent) => new Set(precedent).add(ligne.id));
@@ -273,6 +275,7 @@ export function ImportCsvFusionneView(): React.JSX.Element {
             const estDebit = estMontantNegatif(ligne.montant);
             const categorie = categorieParLigne.get(ligne.id) ?? "";
             const rattachement = rattachementParLigne.get(ligne.id) ?? "";
+            const recuperable = recuperableParLigne.get(ligne.id) ?? false;
 
             return (
               <div key={ligne.id} className="rounded-lg border border-slate-200 p-4">
@@ -340,6 +343,26 @@ export function ImportCsvFusionneView(): React.JSX.Element {
                     >
                       {confirmationEnCours === ligne.id ? "Création…" : "Créer cette dépense"}
                     </button>
+                  </div>
+                )}
+
+                {!confirmee && estDebit && (
+                  <div className="mt-2 space-y-1">
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={recuperable}
+                        onChange={(e) =>
+                          setRecuperableParLigne((precedent) => new Map(precedent).set(ligne.id, e.target.checked))
+                        }
+                        className="rounded border-slate-300"
+                      />
+                      Récupérable auprès du locataire
+                    </label>
+                    <p className="text-xs text-slate-500" title="Décret n° 87-713 du 26 août 1987">
+                      La récupérabilité dépend de la nature précise de la dépense, jamais de sa catégorie — à cocher
+                      au cas par cas.
+                    </p>
                   </div>
                 )}
               </div>

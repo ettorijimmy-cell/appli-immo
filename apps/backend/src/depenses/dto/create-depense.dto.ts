@@ -1,5 +1,15 @@
 import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsOptional, IsString, IsUUID, Matches, MinLength } from "class-validator";
+import {
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsNumberString,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MinLength
+} from "class-validator";
 import { normaliserMontant } from "core";
 import { DEPENSE_CATEGORIES, type DepenseCategorie } from "../depense-categories";
 
@@ -28,6 +38,18 @@ export class CreateDepenseDto {
   @IsString()
   @MinLength(1)
   libelle!: string;
+
+  // Module Régularisation des charges, Sous-commit E (2026-10-03) :
+  // récupérable auprès du locataire au sens du décret n° 87-713 du
+  // 26 août 1987 — dépend de la nature précise de la dépense, jamais de
+  // `categorie` (voir packages/db/src/schema/depense.ts). Optionnel ici,
+  // mais DepensesService.create pose explicitement `false` si absent —
+  // jamais un défaut implicite côté base seule, pour que ce choix reste
+  // visible au niveau service (décision actée : une dépense non cochée
+  // n'est jamais récupérable par défaut).
+  @IsOptional()
+  @IsBoolean()
+  recuperable?: boolean;
 
   // bienId, sciId et/ou appartementId — au moins l'un des trois requis
   // (voir DepensesService.create, qui reproduit la contrainte

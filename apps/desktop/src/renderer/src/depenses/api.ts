@@ -47,6 +47,12 @@ export interface Depense {
   depenseSourceId: string | null;
   sciId: string | null;
   organisationId: string;
+  // Module Régularisation des charges, Sous-commit E — récupérable auprès
+  // du locataire (décret n° 87-713) : dépend de la nature précise de la
+  // dépense, jamais de sa catégorie. Alimente exclusivement le calcul du
+  // bilan de régularisation (RegularisationChargesService), sans aucun
+  // impact sur la déductibilité fiscale (Annexe 1 / 2044).
+  recuperable: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +64,7 @@ export interface CreateDepenseInput {
   libelle: string;
   bienId?: string;
   sciId?: string;
+  recuperable?: boolean;
 }
 
 export interface FindAllDepensesFiltres {

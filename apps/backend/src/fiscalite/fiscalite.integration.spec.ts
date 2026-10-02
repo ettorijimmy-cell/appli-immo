@@ -319,6 +319,37 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
     expect(apres.totalSci).toBe(avant.totalSci);
   });
 
+  // Module Régularisation des charges, Sous-commit E (2026-10-03) : la
+  // déductibilité fiscale d'une charge ne dépend pas de sa récupérabilité
+  // locative — une charge récupérable mais pas encore recouvrée auprès du
+  // locataire reste intégralement déductible l'année où elle est payée.
+  // `recuperable` n'alimente que RegularisationChargesService, jamais
+  // FiscaliteService : aucun changement de comportement attendu ici, qu'une
+  // dépense soit cochée récupérable ou non.
+  it("compte intégralement une dépense non récupérable dans l'Annexe 1 — la déductibilité fiscale ne dépend jamais de recuperable", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Récupérabilité Fiscalité Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bienCree = await creerBienAvecLots(sci.id, "Immeuble Récupérabilité Fiscalité", 1);
+
+    await depensesService.create(userId, {
+      categorie: "reparation_entretien",
+      montant: "500.00",
+      dateDepense: "2026-06-01",
+      libelle: "Grosse réparation non récupérable",
+      bienId: bienCree.id,
+      recuperable: false
+    });
+
+    const resultat = await fiscaliteService.calculerAnnexe1PourSci(userId, sci.id, 2026);
+    const [ligneBien] = resultat.biens;
+    expect(ligneBien!.lignes.ligne9).toBe("500.00");
+  });
+
   // Revue financial-logic-reviewer, 2026-09-12 : un bien archivé APRÈS
   // avoir généré une dépense sur l'année ne doit pas disparaître de
   // l'Annexe 1 de cette année-là — même principe que getSynthese

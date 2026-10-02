@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, decimal, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, check, date, decimal, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 import { bien } from "./bien";
@@ -33,6 +33,20 @@ export const depense = pgTable(
     // quel si la dépense vient d'un import CSV (aucune reformulation
     // automatique) — jamais recalculé après création.
     libelle: text("libelle").notNull(),
+    // Module Régularisation des charges, Sous-commit E (2026-10-03) :
+    // récupérable auprès du locataire ou non, au sens du décret n° 87-713
+    // du 26 août 1987 — dépend de la nature précise de la dépense, jamais
+    // de sa catégorie comptable (`categorie` ci-dessus) : une même
+    // catégorie PCG peut contenir aussi bien une charge récupérable qu'une
+    // non récupérable (ex. reparation_entretien : une réparation courante
+    // récupérable, une grosse réparation non récupérable). Aucun mapping
+    // automatique fiscalement fiable catégorie -> récupérable n'existe,
+    // d'où cet indicateur saisi dépense par dépense. Défaut à `false`
+    // (décision actée avec Jimmy) : une dépense non cochée n'est jamais
+    // comptée dans le bilan de régularisation (RegularisationChargesService
+    // .calculerBilanPourBail, Sous-commit C, corrigé ici) tant qu'elle n'a
+    // pas été explicitement marquée récupérable.
+    recuperable: boolean("recuperable").notNull().default(false),
     // Une dépense se rattache à un bien précis, ou directement à une SCI
     // sans bien identifiable (frais de gestion, comptable) — jamais les
     // deux, jamais aucun des deux (voir depense_rattachement_requis).

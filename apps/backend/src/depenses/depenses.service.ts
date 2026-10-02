@@ -99,6 +99,7 @@ export class DepensesService {
         montant: dto.montant,
         dateDepense: dto.dateDepense,
         libelle: dto.libelle,
+        recuperable: dto.recuperable ?? false,
         bienId: bienIdEffectif,
         appartementId: dto.appartementId ?? null,
         sciId,
@@ -254,7 +255,12 @@ export class DepensesService {
             appartementId: part.id,
             sciId: depenseSource.sciId,
             depenseSourceId: depenseSource.id,
-            organisationId: depenseSource.organisationId
+            organisationId: depenseSource.organisationId,
+            // Module Régularisation des charges, Sous-commit E : une charge
+            // commune d'immeuble garde sa nature récupérable ou non une fois
+            // ventilée par lot — la répartition ne change pas ce que décrit
+            // le décret n° 87-713, seulement le montant par appartement.
+            recuperable: depenseSource.recuperable
           })
           .returning();
         if (!enfant) {
@@ -411,6 +417,7 @@ export class DepensesService {
       montant: ligne.montant,
       dateDepense: ligne.dateDepense,
       libelle: ligne.libelle,
+      recuperable: ligne.recuperable,
       bienId: ligne.bienId,
       appartementId: ligne.appartementId,
       depenseSourceId: ligne.depenseSourceId,

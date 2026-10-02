@@ -523,6 +523,7 @@ plutôt que d'édition a posteriori.
 | montant | decimal | **Toujours positif** — `CreateDepenseDto` rejette explicitement un signe négatif (`@Matches`, revue financial-logic-reviewer, 2026-09-07). Attention : `parserReleveCsv` (packages/core) renvoie une ligne de débit en montant **négatif** (convention du rapprochement bancaire, `paiements`/`versements`) — domaine différent, jamais la même convention de signe. `ImportCsvDepensesView` applique `valeurAbsolueMontant` (packages/core) avant tout appel `POST /depenses` pour cette raison |
 | date_depense | date | |
 | libelle | text | |
+| recuperable | boolean, NOT NULL, défaut `false` | **Module Régularisation des charges, Sous-commit E (2026-10-03).** Récupérable auprès du locataire au sens du décret n° 87-713 du 26 août 1987 — dépend de la **nature précise** de la dépense, jamais de `categorie` : une même catégorie PCG peut contenir une charge récupérable et une non récupérable (ex. `reparation_entretien` : réparation courante récupérable vs grosse réparation non récupérable). Aucun mapping automatique catégorie → récupérable n'est fiscalement fiable, d'où cet indicateur saisi dépense par dépense, jamais déduit. Défaut à `false` (décision actée) : une dépense non cochée explicitement n'entre jamais dans le bilan de régularisation. **Aucun impact sur la déductibilité fiscale** (Annexe 1/2044) — une charge reste déductible l'année de son paiement quelle que soit sa récupérabilité locative, `FiscaliteService` ne filtre jamais sur ce champ (voir section "Répartition des charges..." plus bas pour la preuve par test) |
 | bien_id | uuid, nullable | Rattachement à un bien précis. **Dénormalisé depuis `appartements.bien_id`** quand `appartement_id` est fourni sans `bien_id` explicite (voir ci-dessous) — jamais laissé incohérent avec l'appartement réel |
 | sci_id | uuid, nullable | **Dénormalisé** depuis `bien.sci_id` quand `bien_id` est fourni (jamais la valeur transmise par le client — `DepensesService.create` la recalcule systématiquement), sûr car `bien.sci_id` est immuable après création (`UpdateBienDto` l'exclut). Renseignable seul, sans `bien_id`, pour une dépense de niveau SCI sans bien précis (frais de gestion, comptable). Même précédent que `bien.organisation_id` |
 | appartement_id | uuid, nullable | **Module Régularisation des charges, Sous-commit A (2026-09-30).** Granularité optionnelle SOUS `bien_id` : une dépense imputable à un logement précis (ex. réparation dans l'appartement 3B), par opposition à une charge commune d'immeuble à répartir manuellement entre plusieurs lots (`appartement_id` absent, `bien_id` seul renseigné). `DepensesService.create` résout l'appartement AVANT `bien_id`/`sci_id` : si `appartement_id` est fourni sans `bien_id`, `bien_id` est dérivé depuis `appartements.bien_id` (même principe de dénormalisation que `sci_id` depuis `bien.sci_id`) ; si les deux sont fournis et désignent des biens différents, `BadRequestException` explicite — jamais laissé passer silencieusement. Aucune contrainte SQL cross-table possible (CHECK Postgres ne porte que sur la même ligne) — la cohérence est donc uniquement applicative, comme `BienService.create` `.verifierAppartenanceSci` |
@@ -585,6 +586,12 @@ distribués aux plus grands restes fractionnaires, déterministe par l'ordre
 du tableau d'entrée en cas d'égalité). Fonction générique, sans dépendance
 à `depense`/`appartements` — testée indépendamment (tombe juste, reste à
 distribuer, un seul lot, poids à zéro, somme des poids nulle).
+
+**Héritage de `recuperable`** (Module Régularisation des charges,
+Sous-commit E, 2026-10-03) : chaque dépense enfant créée reprend
+exactement la valeur `recuperable` de la dépense source — la répartition
+ventile un montant entre lots, elle ne change jamais la nature
+(récupérable ou non au sens du décret n° 87-713) de la charge.
 
 **Neutralisation de la source** : `montant` mis à `"0.00"`, `libelle`
 complété avec le montant d'origine et la date de l'opération (ex.
@@ -1806,7 +1813,13 @@ depuis le job planifié).
   ré-estimé en silence.
 - **Charges réelles** : somme de `depense.montant` où `appartementId`
   correspond à l'appartement du bail, `dateDepense` dans la période, non
-  archivées.
+  archivées, **ET `recuperable = true`** (Module Régularisation des
+  charges, Sous-commit E, 2026-10-03 — correction du Sous-commit C :
+  seule une charge récupérable auprès du locataire au sens du décret
+  n° 87-713 du 26 août 1987 entre dans ce bilan, voir section `depense`
+  plus haut). Un seul point de calcul (`calculerBilanPourBail`), consommé
+  à la fois par le déclenchement automatique et par l'endpoint manuel —
+  corriger ce filtre à cet unique endroit couvre les deux chemins.
 
 **Déclenchement automatique annuel —
 `TachesJobService.genererTachesRegularisationCharges(dateReference)`** :

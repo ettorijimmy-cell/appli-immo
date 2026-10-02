@@ -2039,7 +2039,8 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
       libelle: "Charges copropriété test",
       appartementId,
       bienId,
-      organisationId
+      organisationId,
+      recuperable: true
     });
     await db.insert(depense).values({
       categorie: "reparation_entretien",
@@ -2048,7 +2049,8 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
       libelle: "Réparation test",
       appartementId,
       bienId,
-      organisationId
+      organisationId,
+      recuperable: true
     });
 
     void periodeFin;
@@ -2093,6 +2095,39 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
     it("rejette une période dont la fin précède le début", async () => {
       const bail = await creerBailActif("2024-03-15");
       await expect(regularisationChargesService.calculerBilanPourBail(bail.id, "2026-03-15", "2025-03-15")).rejects.toThrow();
+    });
+
+    // Module Régularisation des charges, Sous-commit E (2026-10-03) : la
+    // récupérabilité dépend de la nature précise de la dépense (décret
+    // n° 87-713), jamais de sa catégorie comptable — une dépense non cochée
+    // "récupérable" (défaut) ne doit jamais alimenter le bilan de
+    // régularisation, même si sa catégorie est habituellement récupérable.
+    it("exclut une dépense non récupérable du calcul des charges réelles", async () => {
+      const bail = await creerBailActif("2024-03-15");
+      const dateMilieu = decaleDeJours("2025-03-15", 60);
+      await db.insert(depense).values({
+        categorie: "charges_copropriete",
+        montant: "100.00",
+        dateDepense: dateMilieu,
+        libelle: "Charge récupérable test",
+        appartementId,
+        bienId,
+        organisationId,
+        recuperable: true
+      });
+      await db.insert(depense).values({
+        categorie: "reparation_entretien",
+        montant: "500.00",
+        dateDepense: dateMilieu,
+        libelle: "Grosse réparation non récupérable test",
+        appartementId,
+        bienId,
+        organisationId,
+        recuperable: false
+      });
+
+      const bilan = await regularisationChargesService.calculerBilanPourBail(bail.id, "2025-03-15", "2026-03-15");
+      expect(bilan.chargesReelles).toBe("100.00");
     });
   });
 

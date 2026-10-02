@@ -1,0 +1,1 @@
+ALTER TABLE "depense" ADD COLUMN "recuperable" boolean DEFAULT false NOT NULL;

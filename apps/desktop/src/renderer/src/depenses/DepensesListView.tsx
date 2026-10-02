@@ -328,6 +328,7 @@ function NewDepenseForm({
   const [montant, setMontant] = useState("");
   const [dateDepense, setDateDepense] = useState("");
   const [libelle, setLibelle] = useState("");
+  const [recuperable, setRecuperable] = useState(false);
   // Rattachement : soit un bien précis, soit une SCI seule (dépense de
   // niveau SCI, sans bien précis — frais de gestion, comptable). Encodé en
   // une seule valeur de select ("bien:<id>" / "sci:<id>") pour n'avoir
@@ -355,12 +356,14 @@ function NewDepenseForm({
         montant,
         dateDepense,
         libelle,
+        recuperable,
         ...(type === "bien" ? { bienId: id } : { sciId: id })
       });
       setMontant("");
       setDateDepense("");
       setLibelle("");
       setRattachement("");
+      setRecuperable(false);
       onCreated();
     } catch {
       setError("Impossible de créer la dépense");
@@ -460,6 +463,22 @@ function NewDepenseForm({
             className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
         </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={recuperable}
+            onChange={(e) => setRecuperable(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          Récupérable auprès du locataire
+        </label>
+        <p className="text-xs text-slate-500" title="Décret n° 87-713 du 26 août 1987">
+          La récupérabilité dépend de la nature précise de la dépense, jamais de sa catégorie — à cocher au cas par
+          cas.
+        </p>
       </div>
 
       {error && (

@@ -36,3 +36,32 @@ describe("CreateDepenseDto — montant", () => {
     expect(erreurs.some((e) => e.property === "montant")).toBe(false);
   });
 });
+
+// Module Régularisation des charges, Sous-commit E (2026-10-03) :
+// récupérable auprès du locataire, optionnel au niveau du DTO (défaut
+// explicite posé dans DepensesService.create, pas ici).
+describe("CreateDepenseDto — recuperable", () => {
+  it("optionnel : absent ne déclenche aucune erreur", async () => {
+    const dto = plainToInstance(CreateDepenseDto, { ...CHAMPS_VALIDES, montant: "100" });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "recuperable")).toBe(false);
+  });
+
+  it("accepte true", async () => {
+    const dto = plainToInstance(CreateDepenseDto, { ...CHAMPS_VALIDES, montant: "100", recuperable: true });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "recuperable")).toBe(false);
+  });
+
+  it("accepte false", async () => {
+    const dto = plainToInstance(CreateDepenseDto, { ...CHAMPS_VALIDES, montant: "100", recuperable: false });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "recuperable")).toBe(false);
+  });
+
+  it("rejette une valeur non booléenne", async () => {
+    const dto = plainToInstance(CreateDepenseDto, { ...CHAMPS_VALIDES, montant: "100", recuperable: "oui" });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "recuperable")).toBe(true);
+  });
+});

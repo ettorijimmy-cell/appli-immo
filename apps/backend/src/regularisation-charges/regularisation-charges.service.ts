@@ -47,8 +47,14 @@ export class RegularisationChargesService {
    * échéances type='charges' autonomes (aucune part loyer à exclure sur
    * ce type). depot_garantie est hors périmètre (pas une provision pour
    * charges). Charges réelles : depense.appartementId + dateDepense dans la
-   * période (pas encore la quote-part de charges communes d'immeuble —
-   * sous-commit séparé, voir docs/backlog.md).
+   * période, **recuperable = true uniquement** (Module Régularisation des
+   * charges, Sous-commit E, correction du Sous-commit C — décret n° 87-713
+   * du 26 août 1987 : seule une charge récupérable auprès du locataire
+   * entre dans ce bilan, jamais une charge que le propriétaire supporte
+   * seul). Un seul point d'entrée vers ce calcul (TachesJobService.
+   * genererTacheRegularisationSiNecessaire, lui-même utilisé par le
+   * déclenchement automatique ET le endpoint manuel) : corriger ce filtre
+   * ici suffit à couvrir les deux chemins.
    */
   async calculerBilanPourBail(bailId: string, periodeDebut: string, periodeFin: string): Promise<BilanRegularisationBail> {
     if (periodeFin < periodeDebut) {
@@ -104,6 +110,7 @@ export class RegularisationChargesService {
       .where(
         and(
           eq(depense.appartementId, bail.appartementId),
+          eq(depense.recuperable, true),
           gte(depense.dateDepense, periodeDebut),
           lte(depense.dateDepense, periodeFin),
           isNull(depense.archivedAt)

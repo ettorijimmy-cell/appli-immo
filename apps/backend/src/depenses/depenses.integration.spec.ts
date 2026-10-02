@@ -133,6 +133,9 @@ describe("DepensesService (intégration Postgres réelle)", () => {
     expect(depense.organisationId).toBe(organisationId);
     expect(depense.categorie).toBe("reparation_entretien");
     expect(depense.montant).toBe("450.00");
+    // Module Régularisation des charges, Sous-commit E — défaut false
+    // quand non transmis (décision actée : non récupérable par défaut).
+    expect(depense.recuperable).toBe(false);
   });
 
   it("crée une dépense rattachée directement à une SCI, sans bien précis", async () => {
@@ -490,6 +493,29 @@ describe("DepensesService (intégration Postgres réelle)", () => {
       expect(resultat.enfants.every((e) => e.depenseSourceId === depenseSource.id)).toBe(true);
       expect(resultat.enfants.every((e) => e.categorie === "charges_copropriete")).toBe(true);
       expect(resultat.enfants.every((e) => e.dateDepense === "2026-06-01")).toBe(true);
+    });
+
+    // Module Régularisation des charges, Sous-commit E (2026-10-03) : la
+    // répartition ventile le montant, pas la nature de la charge — chaque
+    // enfant doit hériter exactement de la valeur recuperable de la source.
+    it("hérite de la valeur recuperable de la dépense source sur chaque enfant créé", async () => {
+      const { bien } = await creerImmeubleAvecLots("Recuperable", [
+        { numero: "A", tantieme: "600.00" },
+        { numero: "B", tantieme: "400.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-01",
+        libelle: "Charges copropriété récupérables",
+        bienId: bien.id,
+        recuperable: true
+      });
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      expect(resultat.enfants).toHaveLength(2);
+      expect(resultat.enfants.every((e) => e.recuperable === true)).toBe(true);
     });
 
     it("bascule sur la surface pour TOUS les lots dès qu'un seul lot éligible n'a pas de tantième — jamais de mélange", async () => {
