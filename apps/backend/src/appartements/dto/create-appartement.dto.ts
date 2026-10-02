@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Min, MinLength } from "class-validator";
+import { IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
 
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
@@ -23,16 +23,23 @@ export class CreateAppartementDto {
   @IsIn(APPARTEMENT_TYPES)
   type?: (typeof APPARTEMENT_TYPES)[number];
 
+  // @Matches rejette explicitement un signe négatif — même garde-fou que
+  // CreateDepenseDto.montant (revue financial-logic-reviewer, 2026-10-02) :
+  // utilisée comme poids de répartition proportionnelle (Sous-commit D,
+  // DepensesService.repartirDepenseEntreLots), une valeur négative
+  // fausserait silencieusement le calcul des parts de tous les lots.
   @IsOptional()
   @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "surface doit être un nombre positif" })
   surface?: string;
 
   // Module Régularisation des charges, Sous-commit B — clé de répartition
   // des charges communes, surface en repli si absent. Pure saisie à ce
   // stade, aucun calcul de répartition (voir packages/db/src/schema/
-  // appartements.ts).
+  // appartements.ts). Même garde-fou de signe que surface ci-dessus.
   @IsOptional()
   @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "tantieme doit être un nombre positif" })
   tantieme?: string;
 
   @IsOptional()

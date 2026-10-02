@@ -39,6 +39,12 @@ export interface Depense {
   dateDepense: string;
   libelle: string;
   bienId: string | null;
+  appartementId: string | null;
+  // Module Régularisation des charges, Sous-commit D — renseigné
+  // uniquement sur une dépense enfant créée par une répartition (voir
+  // repartirEntreLots ci-dessous). Sert côté frontend à ne jamais proposer
+  // de répartir une dépense déjà issue d'une répartition précédente.
+  depenseSourceId: string | null;
   sciId: string | null;
   organisationId: string;
   createdAt: string;
@@ -133,4 +139,34 @@ export function createRegleCategorisation(input: CreateRegleCategorisationInput)
 
 export function archiveRegleCategorisation(id: string): Promise<RegleCategorisation> {
   return authenticatedFetch<RegleCategorisation>(`/regles-categorisation/${id}/archiver`, { method: "PATCH" });
+}
+
+export interface ApercuPartRepartition {
+  appartementId: string;
+  numero: string;
+  montant: string;
+}
+
+export interface ApercuRepartition {
+  cle: "tantieme" | "surface";
+  montantTotal: string;
+  parts: ApercuPartRepartition[];
+}
+
+export interface ResultatRepartition {
+  cle: "tantieme" | "surface";
+  source: Depense;
+  enfants: Depense[];
+}
+
+// Module Régularisation des charges, Sous-commit D — lecture seule,
+// n'écrit jamais rien (voir DepensesService.previsualiserRepartition) :
+// le frontend doit pouvoir montrer la base utilisée et la part de chaque
+// lot avant toute confirmation (opération irréversible ensuite).
+export function previsualiserRepartition(depenseId: string): Promise<ApercuRepartition> {
+  return authenticatedFetch<ApercuRepartition>(`/depenses/${depenseId}/apercu-repartition`);
+}
+
+export function repartirEntreLots(depenseId: string): Promise<ResultatRepartition> {
+  return authenticatedFetch<ResultatRepartition>(`/depenses/${depenseId}/repartir-entre-lots`, { method: "POST" });
 }

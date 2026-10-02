@@ -256,6 +256,69 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
     expect(ligneBien!.lignes.ligne9).toBe("75.00");
   });
 
+  // Module Régularisation des charges, Sous-commit D (2026-10-02) :
+  // vérifie que DepensesService.repartirDepenseEntreLots ne change jamais
+  // le total fiscal d'un bien — la dépense source passe à 0.00 (son
+  // libellé conserve le montant d'origine) pendant que les N dépenses
+  // enfants créées portent exactement ce même total réparti entre les
+  // lots. Avant/après doivent donc être rigoureusement identiques.
+  it("ne change pas le total de l'Annexe 1 après répartition d'une charge commune entre les lots", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Répartition Fiscalité Test",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bienCree = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Répartition Fiscalité",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    await appartementsService.create({
+      bienId: bienCree.id,
+      numero: "A",
+      type: "T2",
+      tantieme: "600.00",
+      nombrePiecesPrincipales: 2,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    await appartementsService.create({
+      bienId: bienCree.id,
+      numero: "B",
+      type: "T2",
+      tantieme: "400.00",
+      nombrePiecesPrincipales: 2,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    const depenseSource = await depensesService.create(userId, {
+      categorie: "charges_copropriete",
+      montant: "1000.00",
+      dateDepense: "2026-06-01",
+      libelle: "Ravalement façade",
+      bienId: bienCree.id
+    });
+
+    const avant = await fiscaliteService.calculerAnnexe1PourSci(userId, sci.id, 2026);
+    const [ligneBienAvant] = avant.biens;
+    expect(ligneBienAvant!.lignes.ligne13).toBe("1000.00");
+
+    await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+    const apres = await fiscaliteService.calculerAnnexe1PourSci(userId, sci.id, 2026);
+    const [ligneBienApres] = apres.biens;
+    expect(ligneBienApres!.lignes.ligne13).toBe("1000.00");
+    expect(apres.totalSci).toBe(avant.totalSci);
+  });
+
   // Revue financial-logic-reviewer, 2026-09-12 : un bien archivé APRÈS
   // avoir généré une dépense sur l'année ne doit pas disparaître de
   // l'Annexe 1 de cette année-là — même principe que getSynthese

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { DepensesService, type FindAllDepensesFiltres } from "./depenses.service";
 import { CreateDepenseDto } from "./dto/create-depense.dto";
@@ -40,5 +40,19 @@ export class DepensesController {
       ...(dateFin !== undefined && { dateFin })
     };
     return this.depensesService.findAll(filtres);
+  }
+
+  // Lecture seule — l'aperçu doit être consultable avant toute décision de
+  // confirmer (opération irréversible, jamais d'exécution silencieuse côté
+  // frontend, voir DepensesListView). Même calcul exact que l'exécution
+  // réelle ci-dessous (DepensesService.calculerRepartition, factorisé).
+  @Get(":id/apercu-repartition")
+  previsualiserRepartition(@Req() req: Request, @Param("id") id: string) {
+    return this.depensesService.previsualiserRepartition(id, req.user!.sub);
+  }
+
+  @Post(":id/repartir-entre-lots")
+  repartirEntreLots(@Req() req: Request, @Param("id") id: string) {
+    return this.depensesService.repartirDepenseEntreLots(id, req.user!.sub);
   }
 }

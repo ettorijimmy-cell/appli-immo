@@ -527,6 +527,7 @@ plutôt que d'édition a posteriori.
 | sci_id | uuid, nullable | **Dénormalisé** depuis `bien.sci_id` quand `bien_id` est fourni (jamais la valeur transmise par le client — `DepensesService.create` la recalcule systématiquement), sûr car `bien.sci_id` est immuable après création (`UpdateBienDto` l'exclut). Renseignable seul, sans `bien_id`, pour une dépense de niveau SCI sans bien précis (frais de gestion, comptable). Même précédent que `bien.organisation_id` |
 | appartement_id | uuid, nullable | **Module Régularisation des charges, Sous-commit A (2026-09-30).** Granularité optionnelle SOUS `bien_id` : une dépense imputable à un logement précis (ex. réparation dans l'appartement 3B), par opposition à une charge commune d'immeuble à répartir manuellement entre plusieurs lots (`appartement_id` absent, `bien_id` seul renseigné). `DepensesService.create` résout l'appartement AVANT `bien_id`/`sci_id` : si `appartement_id` est fourni sans `bien_id`, `bien_id` est dérivé depuis `appartements.bien_id` (même principe de dénormalisation que `sci_id` depuis `bien.sci_id`) ; si les deux sont fournis et désignent des biens différents, `BadRequestException` explicite — jamais laissé passer silencieusement. Aucune contrainte SQL cross-table possible (CHECK Postgres ne porte que sur la même ligne) — la cohérence est donc uniquement applicative, comme `BienService.create` `.verifierAppartenanceSci` |
 | organisation_id | uuid | Résolu côté serveur depuis l'utilisateur authentifié, jamais transmis par le client (même mécanisme que `BienService.create`) |
+| depense_source_id | uuid, nullable, FK `depense.id` (auto-référentielle) | **Module Régularisation des charges, Sous-commit D (2026-10-02).** Renseigné UNIQUEMENT sur une dépense enfant créée par `DepensesService.repartirDepenseEntreLots` — pointe vers la dépense de niveau bien d'origine. Double rôle : trace de provenance, et garde-fou anti-double-répartition (voir ci-dessous) |
 
 CHECK `depense_rattachement_requis` : `bien_id IS NOT NULL OR sci_id IS NOT NULL`
 — une dépense orpheline (ni bien ni SCI) est rejetée en base, en plus de la
@@ -536,15 +537,96 @@ clair avant d'atteindre la contrainte SQL). **Non modifiée** par l'ajout de
 `appartement_id` est fourni (voir ci-dessus), donc cette contrainte reste
 automatiquement satisfaite sans qu'il soit nécessaire de l'assouplir.
 
-**Impact fiscal (2072-S/2044) : aucun.** `FiscaliteService` (Annexe 1 et
-formulaire 2044) groupe toujours les dépenses par `bien_id` — une dépense
-portant `appartement_id` reste comptée exactement comme avant dans les
-lignes automatiques du bien parent, puisque `bien_id` y est systématiquement
-renseigné en cohérence. Prouvé par un test dédié dans chacune des deux
-suites d'intégration (`fiscalite.integration.spec.ts`). `appartement_id`
-sert uniquement à préparer le futur calcul de régularisation par bail
-(bilan provisions perçues vs charges réelles imputables au logement), pas
-encore construit à ce stade.
+**Impact fiscal (2072-S/2044) : aucun, y compris après une répartition
+(Sous-commit D).** `FiscaliteService` (Annexe 1 et formulaire 2044) groupe
+toujours les dépenses par `bien_id` — une dépense portant `appartement_id`
+reste comptée exactement comme avant dans les lignes automatiques du bien
+parent, puisque `bien_id` y est systématiquement renseigné en cohérence.
+Pour une dépense répartie : la source passe à `montant = "0.00"` au moment
+de la répartition (son montant d'origine n'est conservé que dans son
+libellé, en texte) tandis que les N dépenses enfants créées portent
+exactement ce total réparti sur le même `bien_id` — la somme groupée par
+bien reste donc rigoureusement identique avant/après, sans double comptage
+ni perte. Prouvé par un test dédié dans chacune des trois suites
+d'intégration concernées (`fiscalite.integration.spec.ts`,
+`depenses.integration.spec.ts`). `appartement_id` sert aussi à alimenter le
+bilan de régularisation par bail construit au Sous-commit C
+(`RegularisationChargesService.calculerBilanPourBail`).
+
+## Répartition des charges communes d'immeuble, Sous-commit D (2026-10-02)
+
+`DepensesService.repartirDepenseEntreLots(depenseId, userId)` — répartit
+une dépense de niveau bien (`bien_id` renseigné, `appartement_id` NULL)
+entre tous les appartements éligibles d'un immeuble, crée une dépense par
+lot et neutralise la source. Opération manuelle (déclenchée par
+l'utilisateur, jamais automatique), irréversible, toute entière dans une
+transaction.
+
+**Base de répartition** : tous les appartements du bien avec
+`statut <> 'archive'` ET `archived_at IS NULL` — **lots vacants inclus**
+(le tantième est une clé de copropriété attachée à la propriété du lot, pas
+à son occupation ; les exclure fausserait la part de tous les autres lots).
+Décision actée avec l'utilisateur après audit (pas un choix par défaut
+implicite).
+
+**Clé de répartition** : tantième si **tous** les lots éligibles en ont un
+renseigné, sinon surface pour **tous** les lots — jamais de mélange des
+deux unités dans un même calcul (si un seul lot a un tantième mais pas les
+autres, le tantième de ce lot est ignoré et la surface est utilisée pour
+tous, y compris lui). Si un lot éligible n'a ni l'un ni l'autre,
+`BadRequestException` explicite listant les lots concernés — jamais une
+valeur devinée.
+
+**Calcul** : `packages/core/src/charges/repartir-proportionnellement.ts`,
+`repartirProportionnellement(totalCentimes, poids)` — répartition
+proportionnelle en centimes entiers par la méthode du plus grand reste
+(troncature à l'entier inférieur puis distribution des centimes non
+distribués aux plus grands restes fractionnaires, déterministe par l'ordre
+du tableau d'entrée en cas d'égalité). Fonction générique, sans dépendance
+à `depense`/`appartements` — testée indépendamment (tombe juste, reste à
+distribuer, un seul lot, poids à zéro, somme des poids nulle).
+
+**Neutralisation de la source** : `montant` mis à `"0.00"`, `libelle`
+complété avec le montant d'origine et la date de l'opération (ex.
+`"<libellé> — réparti entre les lots le AAAA-MM-JJ, montant original :
+X,XX €"`) — jamais supprimée ni archivée, le montant original reste lisible
+en texte. C'est cette neutralisation (pas une suppression) qui évite le
+double comptage fiscal décrit ci-dessus.
+
+**Garde-fou anti-double-répartition** : `depense_source_id` sert à la fois
+de trace et de verrou. Rejetée si la dépense a `appartement_id` renseigné,
+si elle a elle-même un `depense_source_id` (c'est déjà un enfant), ou si
+une autre dépense porte déjà `depense_source_id` pointant vers elle (déjà
+répartie) — jamais une double répartition silencieuse. Verrouillage
+`SELECT ... FOR UPDATE` sur la dépense source (revue
+financial-logic-reviewer, 2026-10-02) en complément de la vérification
+applicative : sans lui, deux appels concurrents sur la même dépense
+pouvaient tous les deux passer la vérification avant qu'aucun n'ait
+committé ses écritures — même classe de race que celle déjà corrigée au
+Sous-commit C (`tache_bail_periode_regularisation_active_unique`), mais
+sans contrainte SQL possible ici (plusieurs enfants partagent légitimement
+le même `depense_source_id`, un index unique ne peut donc pas jouer ce
+rôle) — le verrou de ligne est le mécanisme retenu à la place. Jamais
+appliqué sur `previsualiserRepartition` (lecture seule, hors transaction
+explicite).
+
+**Aperçu avant confirmation** : `DepensesService.previsualiserRepartition`
+— même calcul exact (factorisé), mais lecture seule, aucune écriture.
+Le frontend (`DepensesListView.tsx`, bouton "Répartir entre les lots",
+visible uniquement pour une dépense de niveau bien d'un immeuble à
+plusieurs lots éligibles, pas déjà répartie) affiche systématiquement cet
+aperçu (base utilisée + part de chaque lot) avant toute confirmation —
+jamais d'exécution silencieuse sur une opération irréversible.
+
+`POST /depenses/:id/repartir-entre-lots` (exécution) et
+`GET /depenses/:id/apercu-repartition` (aperçu) — les deux routes vivent
+sur `DepensesController`/`DepensesService` (pas
+`RegularisationChargesService`, posé au Sous-commit C) : cette opération
+crée/modifie des `depense`, elle ne calcule aucun bilan de régularisation —
+les dépenses enfants qu'elle produit sont simplement de futures lignes
+imputables au logement, consommées plus tard par
+`RegularisationChargesService.calculerBilanPourBail` exactement comme
+n'importe quelle autre dépense `appartement_id` renseigné.
 
 **Pièce jointe** : `document_entite_type` étendu avec la valeur `depense`
 (demandé explicitement pour cette étape), permettant en théorie de
@@ -1723,8 +1805,8 @@ depuis le job planifié).
   au 2026-08-31) est **exclu et journalisé** (`logger.warn`), jamais
   ré-estimé en silence.
 - **Charges réelles** : somme de `depense.montant` où `appartementId`
-  correspond à l'appartement du bail et `dateDepense` dans la période
-  (non archivées).
+  correspond à l'appartement du bail, `dateDepense` dans la période, non
+  archivées.
 
 **Déclenchement automatique annuel —
 `TachesJobService.genererTachesRegularisationCharges(dateReference)`** :

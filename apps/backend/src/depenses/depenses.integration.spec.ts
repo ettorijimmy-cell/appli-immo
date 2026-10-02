@@ -421,4 +421,270 @@ describe("DepensesService (intégration Postgres réelle)", () => {
       expect(parBien).toHaveLength(2);
     });
   });
+
+  // Module Régularisation des charges, Sous-commit D (2026-10-02) :
+  // répartition d'une charge commune d'immeuble entre tous les lots
+  // éligibles, par tantième si tous en ont un, sinon par surface pour
+  // tous — jamais de mélange des deux unités.
+  describe("repartirDepenseEntreLots", () => {
+    async function creerImmeubleAvecLots(
+      suffixe: string,
+      lots: Array<{ numero: string; tantieme?: string; surface?: string }>
+    ) {
+      const sci = await scisService.create(userId, {
+        nom: `SCI Répartition ${suffixe}`,
+        regimeFiscal: "IR",
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris"
+      });
+      const bienCree = await bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "sci",
+        sciId: sci.id,
+        nom: `Immeuble Répartition ${suffixe}`,
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      });
+      const appartementsCrees = [];
+      for (const lot of lots) {
+        const appartement = await appartementsService.create({
+          bienId: bienCree.id,
+          numero: lot.numero,
+          type: "T2",
+          nombrePiecesPrincipales: 2,
+          modeChauffage: "individuel",
+          modeEauChaude: "individuel",
+          ...(lot.tantieme !== undefined && { tantieme: lot.tantieme }),
+          ...(lot.surface !== undefined && { surface: lot.surface })
+        });
+        appartementsCrees.push(appartement);
+      }
+      return { sci, bien: bienCree, appartements: appartementsCrees };
+    }
+
+    it("répartit par tantième quand tous les lots éligibles en ont un renseigné", async () => {
+      const { bien, appartements } = await creerImmeubleAvecLots("Tantieme", [
+        { numero: "A", tantieme: "600.00" },
+        { numero: "B", tantieme: "400.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-01",
+        libelle: "Ravalement façade",
+        bienId: bien.id
+      });
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      expect(resultat.cle).toBe("tantieme");
+      expect(resultat.source.montant).toBe("0.00");
+      expect(resultat.source.libelle).toContain("montant original : 1000.00 €");
+      const parLot = new Map(resultat.enfants.map((e) => [e.appartementId, e.montant]));
+      expect(parLot.get(appartements[0]!.id)).toBe("600.00");
+      expect(parLot.get(appartements[1]!.id)).toBe("400.00");
+      expect(resultat.enfants.every((e) => e.depenseSourceId === depenseSource.id)).toBe(true);
+      expect(resultat.enfants.every((e) => e.categorie === "charges_copropriete")).toBe(true);
+      expect(resultat.enfants.every((e) => e.dateDepense === "2026-06-01")).toBe(true);
+    });
+
+    it("bascule sur la surface pour TOUS les lots dès qu'un seul lot éligible n'a pas de tantième — jamais de mélange", async () => {
+      const { bien, appartements } = await creerImmeubleAvecLots("Surface", [
+        { numero: "A", tantieme: "600.00", surface: "60.00" },
+        { numero: "B", surface: "40.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-02",
+        libelle: "Entretien ascenseur",
+        bienId: bien.id
+      });
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      expect(resultat.cle).toBe("surface");
+      const parLot = new Map(resultat.enfants.map((e) => [e.appartementId, e.montant]));
+      // Proportionnel à 60/40, PAS à 600/400 (tantième du lot A ignoré).
+      expect(parLot.get(appartements[0]!.id)).toBe("600.00");
+      expect(parLot.get(appartements[1]!.id)).toBe("400.00");
+    });
+
+    it("rejette la répartition si un lot éligible n'a ni tantième ni surface, en le nommant dans le message", async () => {
+      const { bien } = await creerImmeubleAvecLots("Incomplet", [
+        { numero: "A", tantieme: "600.00", surface: "60.00" },
+        { numero: "B" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-03",
+        libelle: "Charge sans clé possible",
+        bienId: bien.id
+      });
+
+      await expect(depensesService.repartirDepenseEntreLots(depenseSource.id, userId)).rejects.toThrow(
+        /lot\(s\) sans surface renseignée : B/
+      );
+    });
+
+    // Revue financial-logic-reviewer, 2026-10-02 : cas composite où AUCUN
+    // lot ne manque les deux valeurs à la fois (chacun a l'une des deux),
+    // mais la bascule surface échoue tout de même puisque B n'a pas de
+    // surface — le message doit nommer B, jamais rester vide (régression :
+    // l'ancien filtre "ni l'un ni l'autre" ne trouvait aucun lot ici).
+    it("nomme correctement le lot en cause quand aucun lot ne manque les deux valeurs à la fois", async () => {
+      const { bien } = await creerImmeubleAvecLots("Composite", [
+        { numero: "A", tantieme: "600.00" },
+        { numero: "B", surface: "40.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-03",
+        libelle: "Charge avec clés disjointes entre lots",
+        bienId: bien.id
+      });
+
+      await expect(depensesService.repartirDepenseEntreLots(depenseSource.id, userId)).rejects.toThrow(
+        /lot\(s\) sans surface renseignée : A/
+      );
+    });
+
+    it("inclut les lots vacants (aucun bail actif) dans la base de répartition", async () => {
+      const { bien, appartements } = await creerImmeubleAvecLots("Vacant", [
+        { numero: "A", tantieme: "500.00" },
+        { numero: "B", tantieme: "500.00" }
+      ]);
+      expect(appartements.every((a) => a.statut === "vacant")).toBe(true);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "200.00",
+        dateDepense: "2026-06-04",
+        libelle: "Charge immeuble entièrement vacant",
+        bienId: bien.id
+      });
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      expect(resultat.enfants).toHaveLength(2);
+      expect(resultat.enfants.map((e) => e.montant).sort()).toEqual(["100.00", "100.00"]);
+    });
+
+    it("exclut les lots archivés de la base de répartition", async () => {
+      const { bien, appartements } = await creerImmeubleAvecLots("Archive", [
+        { numero: "A", tantieme: "500.00" },
+        { numero: "B", tantieme: "500.00" },
+        { numero: "C", tantieme: "500.00" }
+      ]);
+      await appartementsService.archive(appartements[2]!.id);
+
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "900.00",
+        dateDepense: "2026-06-05",
+        libelle: "Charge avec un lot archivé",
+        bienId: bien.id
+      });
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      expect(resultat.enfants).toHaveLength(2);
+      const idsRepartis = resultat.enfants.map((e) => e.appartementId);
+      expect(idsRepartis).not.toContain(appartements[2]!.id);
+      expect(resultat.enfants.map((e) => e.montant).sort()).toEqual(["450.00", "450.00"]);
+    });
+
+    it("rejette une seconde répartition de la même dépense source — jamais de double répartition silencieuse", async () => {
+      const { bien } = await creerImmeubleAvecLots("DoubleSource", [
+        { numero: "A", tantieme: "500.00" },
+        { numero: "B", tantieme: "500.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "300.00",
+        dateDepense: "2026-06-06",
+        libelle: "Charge à ne répartir qu'une fois",
+        bienId: bien.id
+      });
+
+      await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+
+      await expect(depensesService.repartirDepenseEntreLots(depenseSource.id, userId)).rejects.toThrow(
+        /déjà été répartie/
+      );
+    });
+
+    it("rejette la répartition d'une dépense qui est elle-même une dépense enfant", async () => {
+      const { bien } = await creerImmeubleAvecLots("DoubleEnfant", [
+        { numero: "A", tantieme: "500.00" },
+        { numero: "B", tantieme: "500.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "300.00",
+        dateDepense: "2026-06-07",
+        libelle: "Charge mère",
+        bienId: bien.id
+      });
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+      const enfant = resultat.enfants[0]!;
+
+      await expect(depensesService.repartirDepenseEntreLots(enfant.id, userId)).rejects.toThrow();
+    });
+
+    it("rejette une dépense sans bienId (niveau SCI seul)", async () => {
+      const sci = await scisService.create(userId, {
+        nom: "SCI Répartition Sans Bien",
+        regimeFiscal: "IR",
+        adresse: "1 rue de Test",
+        codePostal: "75001",
+        ville: "Paris"
+      });
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "frais_gestion",
+        montant: "100.00",
+        dateDepense: "2026-06-08",
+        libelle: "Honoraires comptable SCI",
+        sciId: sci.id
+      });
+
+      await expect(depensesService.repartirDepenseEntreLots(depenseSource.id, userId)).rejects.toThrow(
+        /rattachée à un bien/
+      );
+    });
+
+    it("previsualiserRepartition calcule exactement les mêmes parts que l'exécution réelle, sans rien écrire", async () => {
+      const { bien, appartements } = await creerImmeubleAvecLots("Apercu", [
+        { numero: "A", tantieme: "700.00" },
+        { numero: "B", tantieme: "300.00" }
+      ]);
+      const depenseSource = await depensesService.create(userId, {
+        categorie: "charges_copropriete",
+        montant: "1000.00",
+        dateDepense: "2026-06-09",
+        libelle: "Charge avec aperçu",
+        bienId: bien.id
+      });
+
+      const apercu = await depensesService.previsualiserRepartition(depenseSource.id, userId);
+      expect(apercu.cle).toBe("tantieme");
+      const apercuParLot = new Map(apercu.parts.map((p) => [p.appartementId, p.montant]));
+      expect(apercuParLot.get(appartements[0]!.id)).toBe("700.00");
+      expect(apercuParLot.get(appartements[1]!.id)).toBe("300.00");
+
+      // L'aperçu n'a rien écrit : la dépense source est toujours intacte,
+      // aucun enfant n'existe encore.
+      const [sourceInchangee] = await depensesService.findAll({ bienId: bien.id });
+      expect(sourceInchangee?.montant).toBe("1000.00");
+
+      const resultat = await depensesService.repartirDepenseEntreLots(depenseSource.id, userId);
+      const resultatParLot = new Map(resultat.enfants.map((e) => [e.appartementId, e.montant]));
+      expect(resultatParLot).toEqual(apercuParLot);
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNumberString, IsOptional, IsString, Max, Min, MinLength } from "class-validator";
+import { IsIn, IsInt, IsNumberString, IsOptional, IsString, Matches, Max, Min, MinLength } from "class-validator";
 
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
@@ -18,14 +18,18 @@ export class UpdateAppartementDto {
   @IsIn(APPARTEMENT_TYPES)
   type?: (typeof APPARTEMENT_TYPES)[number];
 
+  // Même garde-fou de signe que CreateAppartementDto (revue
+  // financial-logic-reviewer, 2026-10-02).
   @IsOptional()
   @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "surface doit être un nombre positif" })
   surface?: string;
 
   // Module Régularisation des charges, Sous-commit B — voir
   // CreateAppartementDto.tantieme.
   @IsOptional()
   @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "tantieme doit être un nombre positif" })
   tantieme?: string;
 
   @IsOptional()

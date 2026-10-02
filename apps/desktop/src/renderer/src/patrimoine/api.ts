@@ -134,6 +134,12 @@ export interface Appartement {
   autrePiece1: string | null;
   autrePiece2: string | null;
   statut: AppartementStatut;
+  // Toujours posé en même temps que statut='archive' (AppartementsService
+  // .archive()), jamais l'un sans l'autre — exposé séparément pour les
+  // écrans qui, comme la répartition des charges communes (Module
+  // Régularisation des charges, Sous-commit D), doivent vérifier
+  // l'éligibilité d'un lot sans dépendre uniquement de `statut`.
+  archivedAt: string | null;
 }
 
 export interface CreateAppartementInput {

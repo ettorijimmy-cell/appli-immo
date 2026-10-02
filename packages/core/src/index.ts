@@ -42,3 +42,4 @@ export * from "./calendrier/generer-ics";
 export * from "./candidats/calculer-taux-effort";
 export * from "./messagerie/resoudre-classification-email";
 export * from "./charges/calculer-bilan-regularisation";
+export * from "./charges/repartir-proportionnellement";

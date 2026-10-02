@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { libelleBien, listBiens, type Bien } from "../patrimoine/api";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import { listScis, type Sci } from "../scis/api";
 import {
   createDepense,
   listDepenses,
+  previsualiserRepartition,
+  repartirEntreLots,
   DEPENSE_CATEGORIES,
   DEPENSE_CATEGORIE_LABELS,
+  type ApercuRepartition,
   type Depense,
   type DepenseCategorie
 } from "./api";
@@ -14,18 +17,26 @@ export function DepensesListView(): React.JSX.Element {
   const [depenses, setDepenses] = useState<Depense[]>([]);
   const [biens, setBiens] = useState<Bien[]>([]);
   const [scis, setScis] = useState<Sci[]>([]);
+  const [appartements, setAppartements] = useState<Appartement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filtreCategorie, setFiltreCategorie] = useState<DepenseCategorie | "toutes">("toutes");
+  const [depenseARepartir, setDepenseARepartir] = useState<Depense | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [depensesBrutes, biensBruts, scisBrutes] = await Promise.all([listDepenses(), listBiens(), listScis()]);
+      const [depensesBrutes, biensBruts, scisBrutes, appartementsBruts] = await Promise.all([
+        listDepenses(),
+        listBiens(),
+        listScis(),
+        listAppartements()
+      ]);
       setDepenses(depensesBrutes);
       setBiens(biensBruts);
       setScis(scisBrutes);
+      setAppartements(appartementsBruts);
       setError(null);
     } catch {
       setError("Impossible de charger les dépenses");
@@ -51,6 +62,45 @@ export function DepensesListView(): React.JSX.Element {
       return sci ? sci.nom : "SCI inconnue";
     }
     return "—";
+  }
+
+  // Module Régularisation des charges, Sous-commit D : une dépense peut
+  // être répartie entre les lots uniquement si elle est de niveau bien
+  // (jamais déjà rattachée à un appartement précis), que ce bien est un
+  // immeuble à plusieurs lots éligibles (non archivés), et qu'elle n'a pas
+  // déjà été répartie (ni elle-même un enfant d'une répartition, ni déjà
+  // dotée d'enfants). Calculé une fois pour tout l'écran plutôt que
+  // recalculé à chaque rendu de ligne.
+  const idsDejaRepartis = useMemo(
+    () => new Set(depenses.map((d) => d.depenseSourceId).filter((id): id is string => id !== null)),
+    [depenses]
+  );
+  const nombreLotsEligiblesParBien = useMemo(() => {
+    const compte = new Map<string, number>();
+    for (const appartement of appartements) {
+      // Les deux conditions reflètent exactement le filtre backend
+      // (statut <> 'archive' ET archivedAt IS NULL) — revue
+      // financial-logic-reviewer 2026-10-02, les deux champs sont
+      // toujours posés ensemble en pratique mais ne pas s'appuyer
+      // uniquement sur statut reste plus sûr si ça change un jour.
+      if (appartement.statut === "archive" || appartement.archivedAt !== null) continue;
+      compte.set(appartement.bienId, (compte.get(appartement.bienId) ?? 0) + 1);
+    }
+    return compte;
+  }, [appartements]);
+
+  function peutEtreRepartie(depense: Depense): boolean {
+    if (!depense.bienId || depense.appartementId || depense.depenseSourceId) {
+      return false;
+    }
+    if (idsDejaRepartis.has(depense.id)) {
+      return false;
+    }
+    const bien = bienParId.get(depense.bienId);
+    if (!bien || bien.type !== "immeuble") {
+      return false;
+    }
+    return (nombreLotsEligiblesParBien.get(depense.bienId) ?? 0) >= 2;
   }
 
   const visibles = depenses.filter((d) => (filtreCategorie === "toutes" ? true : d.categorie === filtreCategorie));
@@ -116,13 +166,151 @@ export function DepensesListView(): React.JSX.Element {
               <span>
                 {depense.dateDepense} — {depense.montant} € — {depense.libelle}
               </span>
-              <span className="text-slate-500">
-                {DEPENSE_CATEGORIE_LABELS[depense.categorie]} · {libelleRattachement(depense)}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-slate-500">
+                  {DEPENSE_CATEGORIE_LABELS[depense.categorie]} · {libelleRattachement(depense)}
+                </span>
+                {peutEtreRepartie(depense) && (
+                  <button
+                    type="button"
+                    onClick={() => setDepenseARepartir(depense)}
+                    className="rounded-md border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                  >
+                    Répartir entre les lots
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      {depenseARepartir && (
+        <RepartitionModal
+          depense={depenseARepartir}
+          onClose={() => setDepenseARepartir(null)}
+          onRepartie={() => {
+            setDepenseARepartir(null);
+            void refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Opération irréversible (la dépense source passe à 0.00, son montant
+// original n'est plus conservé qu'en texte dans le libellé) — jamais
+// d'exécution silencieuse : l'aperçu (base utilisée + part de chaque lot)
+// est systématiquement affiché avant toute confirmation.
+function RepartitionModal({
+  depense,
+  onClose,
+  onRepartie
+}: {
+  depense: Depense;
+  onClose: () => void;
+  onRepartie: () => void;
+}): React.JSX.Element {
+  const [apercu, setApercu] = useState<ApercuRepartition | null>(null);
+  const [isLoadingApercu, setIsLoadingApercu] = useState(true);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let annule = false;
+    setIsLoadingApercu(true);
+    setError(null);
+    previsualiserRepartition(depense.id)
+      .then((resultat) => {
+        if (!annule) setApercu(resultat);
+      })
+      .catch(() => {
+        if (!annule) setError("Impossible de calculer l'aperçu de la répartition.");
+      })
+      .finally(() => {
+        if (!annule) setIsLoadingApercu(false);
+      });
+    return () => {
+      annule = true;
+    };
+  }, [depense.id]);
+
+  async function confirmer(): Promise<void> {
+    setIsConfirming(true);
+    setError(null);
+    try {
+      await repartirEntreLots(depense.id);
+      onRepartie();
+    } catch {
+      setError("Impossible de répartir cette dépense entre les lots.");
+      setIsConfirming(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-lg">
+        <h2 className="text-base font-semibold">Répartir entre les lots</h2>
+        <p className="text-sm text-slate-600">
+          {depense.libelle} — {depense.montant} €
+        </p>
+
+        {isLoadingApercu ? (
+          <p className="text-sm text-slate-500">Calcul de l'aperçu…</p>
+        ) : error ? (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        ) : apercu ? (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-700">
+              Clé de répartition : <strong>{apercu.cle === "tantieme" ? "tantième" : "surface"}</strong>
+            </p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="pb-1">Lot</th>
+                  <th className="pb-1 text-right">Part</th>
+                </tr>
+              </thead>
+              <tbody>
+                {apercu.parts.map((part) => (
+                  <tr key={part.appartementId}>
+                    <td>{part.numero}</td>
+                    <td className="text-right">{part.montant} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-slate-500">
+              Cette opération est irréversible : la dépense d'origine sera mise à 0,00 € (montant conservé dans son
+              libellé) et une dépense sera créée pour chaque lot ci-dessus.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isConfirming}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void confirmer();
+            }}
+            disabled={isLoadingApercu || isConfirming || !apercu}
+            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {isConfirming ? "Répartition…" : "Confirmer la répartition"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

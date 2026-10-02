@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { check, date, decimal, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 import { bien } from "./bien";
@@ -49,6 +49,18 @@ export const depense = pgTable(
     // transmis, et rejette toute incohérence si les deux sont fournis et
     // désignent des biens différents) — voir docs/data-dictionary.md.
     appartementId: uuid("appartement_id").references(() => appartements.id),
+    // Module Régularisation des charges, Sous-commit D (2026-10-02) :
+    // renseigné UNIQUEMENT sur une dépense enfant créée par la répartition
+    // d'une charge commune d'immeuble (DepensesService.
+    // repartirDepenseEntreLots) — pointe vers la dépense de niveau bien
+    // d'origine. Double rôle : trace (quelle dépense source a produit
+    // celle-ci) et garde-fou anti-double-répartition (la présence d'au
+    // moins un enfant pour une dépense source donnée bloque toute nouvelle
+    // tentative de répartition sur cette même source). FK auto-référentielle
+    // sur depense.id : le callback différé est nécessaire ici car `depense`
+    // n'est pas encore assigné au moment où ce littéral est construit,
+    // seulement au moment où Drizzle invoque le callback.
+    depenseSourceId: uuid("depense_source_id").references((): AnyPgColumn => depense.id),
     // Dénormalisé depuis bien.sciId à la création quand bienId est
     // renseigné (jamais résolu à la lecture) : même principe que
     // bien.organisationId, qui n'est pas non plus dérivé à la volée à
