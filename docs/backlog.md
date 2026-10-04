@@ -925,10 +925,15 @@ les trois parcours ci-dessus).
     EvenementsCalendrier — aggravé par la republication via le flux ICS
     public —, Sinistres).
 
-  Hors périmètre, explicitement : `alertes` (aucune colonne ni FK vers
-  organisation — la seule voie serait une résolution polymorphe via
-  `entiteId`/`type`, 5 cas, jamais construite dans ce chantier ; 2 lignes
-  en base au moment de l'audit), `parametres_alertes` (config globale
+  `alertes` (aucune colonne ni FK vers organisation) : traité après coup
+  (audit puis implémentation, 2026-10-03) — résolution polymorphe via
+  `entiteId`/`type` (5 cas) extraite dans `OrganisationResolutionService`
+  (partagé avec `DocumentsService`, qui l'exposait jusque-là en privé) ;
+  `AlertesService.findAll` scopée en lecture, `traiter`/`ignorer` protégées
+  en écriture (même principe que la Catégorie C), `AlertesJobService`
+  non affecté (itération globale volontaire, déjà correct).
+
+  Hors périmètre, explicitement : `parametres_alertes` (config globale
   volontaire, 4 lignes), `indices_irl` (donnée publique INSEE),
   `elements_inventaire_meuble` (catalogue partagé par design), les jobs
   `@Cron` (itération globale volontaire, déjà corrects).

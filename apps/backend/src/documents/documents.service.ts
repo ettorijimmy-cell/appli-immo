@@ -12,7 +12,6 @@ import {
   immeublesLegacy,
   locataires,
   mettreAJourAvecAudit,
-  organisationSci,
   scis,
   sinistre,
   type Database
@@ -22,6 +21,7 @@ import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import {
   DOCUMENT_ENTITE_TYPES,
   type CreateDocumentDto,
@@ -52,7 +52,8 @@ export class DocumentsService {
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly storage: DocumentStorageService,
     private readonly auditService: AuditService,
-    private readonly requestContext: RequestContextService
+    private readonly requestContext: RequestContextService,
+    private readonly organisationResolution: OrganisationResolutionService
   ) {}
 
   async upload(dto: CreateDocumentDto, fichier: Express.Multer.File) {
@@ -129,7 +130,7 @@ export class DocumentsService {
     // "n'existe pas". Skip si organisationId absent (hors contexte HTTP).
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId) {
-      const idsValides = await this.resoudreEntiteIdsOrganisation(ancien.entiteType, organisationId);
+      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(ancien.entiteType, organisationId);
       if (!idsValides.includes(ancien.entiteId)) {
         throw new NotFoundException("Document à remplacer introuvable");
       }
@@ -223,7 +224,7 @@ export class DocumentsService {
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId) {
       if (filtres.entiteType) {
-        const idsValides = await this.resoudreEntiteIdsOrganisation(filtres.entiteType, organisationId);
+        const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(filtres.entiteType, organisationId);
         if (idsValides.length === 0) {
           return [];
         }
@@ -231,7 +232,7 @@ export class DocumentsService {
       } else {
         const branchesParType = await Promise.all(
           DOCUMENT_ENTITE_TYPES.map(async (type) => {
-            const idsValides = await this.resoudreEntiteIdsOrganisation(type, organisationId);
+            const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(type, organisationId);
             return idsValides.length > 0
               ? and(eq(documents.entiteType, type), inArray(documents.entiteId, idsValides))
               : undefined;
@@ -257,108 +258,11 @@ export class DocumentsService {
     return enrichis;
   }
 
-  // Une méthode par entiteType, jamais un chemin de jointure généralisé :
-  // 6 des 11 cas ont une colonne organisationId propre (locataire, garant,
-  // bien, depense, candidat, sinistre), les 5 autres nécessitent une
-  // chaîne de jointure jusqu'à bien.organisationId — deux via
-  // organisation_sci (sci, immeuble, qui n'ont ni l'un ni l'autre de
-  // colonne/FK directe vers une organisation), trois via bien directement
-  // (appartement : 1 jointure ; bail : 2 ; etat_des_lieux : 3). Résolution
-  // en deux temps (ids valides d'abord, puis IN) comme dans
-  // ScisService/ImmeublesService.findAll() (Commit 4a) — jamais problématique
-  // à l'échelle réelle de l'application (~20 logements, vérifié en base de
-  // dev : 4 lignes au maximum dans n'importe laquelle des tables cibles).
-  private async resoudreEntiteIdsOrganisation(
-    entiteType: DocumentEntiteType,
-    organisationId: string
-  ): Promise<string[]> {
-    switch (entiteType) {
-      case "sci": {
-        const lignes = await this.db
-          .select({ id: organisationSci.sciId })
-          .from(organisationSci)
-          .where(eq(organisationSci.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "immeuble": {
-        const sciIds = await this.resoudreEntiteIdsOrganisation("sci", organisationId);
-        if (sciIds.length === 0) {
-          return [];
-        }
-        const lignes = await this.db
-          .select({ id: immeublesLegacy.id })
-          .from(immeublesLegacy)
-          .where(inArray(immeublesLegacy.sciId, sciIds));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "appartement": {
-        const lignes = await this.db
-          .select({ id: appartements.id })
-          .from(appartements)
-          .innerJoin(bien, eq(bien.id, appartements.bienId))
-          .where(eq(bien.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "locataire": {
-        const lignes = await this.db
-          .select({ id: locataires.id })
-          .from(locataires)
-          .where(eq(locataires.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "bail": {
-        const lignes = await this.db
-          .select({ id: baux.id })
-          .from(baux)
-          .innerJoin(appartements, eq(appartements.id, baux.appartementId))
-          .innerJoin(bien, eq(bien.id, appartements.bienId))
-          .where(eq(bien.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "etat_des_lieux": {
-        const lignes = await this.db
-          .select({ id: etatsDesLieux.id })
-          .from(etatsDesLieux)
-          .innerJoin(baux, eq(baux.id, etatsDesLieux.bailId))
-          .innerJoin(appartements, eq(appartements.id, baux.appartementId))
-          .innerJoin(bien, eq(bien.id, appartements.bienId))
-          .where(eq(bien.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "garant": {
-        const lignes = await this.db
-          .select({ id: garants.id })
-          .from(garants)
-          .where(eq(garants.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "bien": {
-        const lignes = await this.db.select({ id: bien.id }).from(bien).where(eq(bien.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "depense": {
-        const lignes = await this.db
-          .select({ id: depense.id })
-          .from(depense)
-          .where(eq(depense.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "candidat": {
-        const lignes = await this.db
-          .select({ id: candidat.id })
-          .from(candidat)
-          .where(eq(candidat.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-      case "sinistre": {
-        const lignes = await this.db
-          .select({ id: sinistre.id })
-          .from(sinistre)
-          .where(eq(sinistre.organisationId, organisationId));
-        return lignes.map((ligne) => ligne.id);
-      }
-    }
-  }
+  // Extrait vers OrganisationResolutionService (audit scoping alertes,
+  // 2026-10-03) — partagé avec AlertesService, qui a besoin des mêmes
+  // chemins de résolution pour 2 de ses 5 types d'alerte (bail, sinistre).
+  // Tous les appels ci-dessous passent désormais par ce service injecté,
+  // comportement inchangé.
 
   // Contrôle d'appartenance (Sous-commit 5d, chantier scoping
   // multi-organisation, 2026-09-18) : réutilise resoudreEntiteIdsOrganisation
@@ -427,7 +331,7 @@ export class DocumentsService {
     }
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId) {
-      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
+      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
       if (!idsValides.includes(document.entiteId)) {
         throw new NotFoundException("Document introuvable");
       }
@@ -449,7 +353,7 @@ export class DocumentsService {
     // que le document inexistant ci-dessus, avant tout déchiffrement.
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId) {
-      const idsValides = await this.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
+      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(document.entiteType, organisationId);
       if (!idsValides.includes(document.entiteId)) {
         throw new NotFoundException("Document introuvable");
       }
@@ -602,7 +506,7 @@ export class DocumentsService {
     }
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId) {
-      const idsValides = await this.resoudreEntiteIdsOrganisation(entiteType, organisationId);
+      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(entiteType, organisationId);
       if (!idsValides.includes(entiteId)) {
         throw new NotFoundException(
           `Aucune entité de type '${entiteType}' avec l'id fourni : impossible d'y rattacher un document.`
