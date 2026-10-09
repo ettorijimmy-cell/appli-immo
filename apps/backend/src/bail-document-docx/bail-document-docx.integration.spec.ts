@@ -897,7 +897,13 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     it.each([["vide"], ["meuble"]] as const)(
       "bail %s : insère les vraies valeurs quand classe DPE/dépenses/année sont renseignées",
       async (typeBail) => {
-        const { bail, appartement } = await creerDossierComplet({ typeBail, avecIrl: typeBail === "vide" });
+        // avecIrl toujours true, quel que soit typeBail : validerCompletudeGenerationBail
+        // exige l'IRL inconditionnellement (vide ou meublé) — bug CI corrigé le
+        // 2026-10-09 (voir run 37980581646) : le défaut avecIrl=false pour "meuble"
+        // passait en local par accident (donnée IRL réelle déjà présente dans la
+        // base de dev partagée), jamais en CI (Postgres éphémère vide, chaque test
+        // dans sa propre transaction isolée).
+        const { bail, appartement } = await creerDossierComplet({ typeBail });
         await appartementsService.update(appartement.id, {
           classeDpe: "C",
           depensesEnergieMin: "150.00",
@@ -927,7 +933,8 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     it.each([["vide"], ["meuble"]] as const)(
       "bail %s : insère une marque '[À COMPLÉTER]' par champ manquant, jamais un blanc, et signale les champs manquants",
       async (typeBail) => {
-        const { bail } = await creerDossierComplet({ typeBail, avecIrl: typeBail === "vide" });
+        // avecIrl toujours true (voir commentaire du test précédent).
+        const { bail } = await creerDossierComplet({ typeBail });
         // classeDpe/depensesEnergieMin/Max/anneeReferencePrixEnergie
         // volontairement non renseignés (aucun update).
 
