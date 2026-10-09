@@ -9,6 +9,7 @@ import {
   updateBien,
   BIEN_TYPE_LABELS,
   type Appartement,
+  type AppartementClasseDpe,
   type AppartementModeProduction,
   type AppartementType,
   type Bien,
@@ -22,6 +23,7 @@ import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
 const TYPES_HABITAT: BienTypeHabitat[] = ["collectif", "individuel"];
 const REGIMES_JURIDIQUES: BienRegimeJuridique[] = ["mono_propriete", "copropriete"];
+const CLASSES_DPE: AppartementClasseDpe[] = ["A", "B", "C", "D", "E", "F", "G"];
 
 // Généralisé depuis ImmeubleDetailView le 2026-08-26 (migration bien,
 // Étape 5) : un immeuble a N appartements ; tout autre type en a
@@ -278,6 +280,10 @@ function NewAppartementForm({
   const [nombrePiecesModifieManuellement, setNombrePiecesModifieManuellement] = useState(false);
   const [modeChauffage, setModeChauffage] = useState<AppartementModeProduction>("individuel");
   const [modeEauChaude, setModeEauChaude] = useState<AppartementModeProduction>("individuel");
+  const [classeDpe, setClasseDpe] = useState<AppartementClasseDpe | "">("");
+  const [depensesEnergieMin, setDepensesEnergieMin] = useState("");
+  const [depensesEnergieMax, setDepensesEnergieMax] = useState("");
+  const [anneeReferencePrixEnergie, setAnneeReferencePrixEnergie] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -304,12 +310,20 @@ function NewAppartementForm({
         }),
         ...(surface && { surface }),
         ...(tantieme && { tantieme }),
-        ...(loyerReference && { loyerReference })
+        ...(loyerReference && { loyerReference }),
+        ...(classeDpe && { classeDpe }),
+        ...(depensesEnergieMin && { depensesEnergieMin }),
+        ...(depensesEnergieMax && { depensesEnergieMax }),
+        ...(anneeReferencePrixEnergie && { anneeReferencePrixEnergie: Number(anneeReferencePrixEnergie) })
       });
       setNumero("");
       setSurface("");
       setTantieme("");
       setLoyerReference("");
+      setClasseDpe("");
+      setDepensesEnergieMin("");
+      setDepensesEnergieMax("");
+      setAnneeReferencePrixEnergie("");
       setNombrePiecesPrincipales(deduireNombrePiecesDepuisType(type)?.toString() ?? "");
       setNombrePiecesModifieManuellement(false);
       onCreated();
@@ -393,6 +407,62 @@ function NewAppartementForm({
             id="appartement-loyer"
             value={loyerReference}
             onChange={(event) => setLoyerReference(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-classe-dpe" className="text-sm font-medium text-slate-700">
+            Classe DPE (optionnel)
+          </label>
+          <select
+            id="appartement-classe-dpe"
+            value={classeDpe}
+            onChange={(event) => setClasseDpe(event.target.value as AppartementClasseDpe | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseignée</option>
+            {CLASSES_DPE.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-depenses-energie-min" className="text-sm font-medium text-slate-700">
+            Dépenses énergétiques annuelles estimées — min (€, optionnel)
+          </label>
+          <input
+            id="appartement-depenses-energie-min"
+            value={depensesEnergieMin}
+            onChange={(event) => setDepensesEnergieMin(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-depenses-energie-max" className="text-sm font-medium text-slate-700">
+            Dépenses énergétiques annuelles estimées — max (€, identique au min si montant unique)
+          </label>
+          <input
+            id="appartement-depenses-energie-max"
+            value={depensesEnergieMax}
+            onChange={(event) => setDepensesEnergieMax(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-annee-reference-energie" className="text-sm font-medium text-slate-700">
+            Année de référence des prix de l'énergie (optionnel)
+          </label>
+          <input
+            id="appartement-annee-reference-energie"
+            type="number"
+            value={anneeReferencePrixEnergie}
+            onChange={(event) => setAnneeReferencePrixEnergie(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

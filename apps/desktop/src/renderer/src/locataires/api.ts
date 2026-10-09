@@ -200,6 +200,16 @@ export function archiveBail(id: string): Promise<Bail> {
   return authenticatedFetch<Bail>(`/baux/${id}/archiver`, { method: "PATCH" });
 }
 
+// Libellés des champs de performance énergétique (mentions du contrat-type,
+// décret n° 2015-587) pouvant revenir dans l'en-tête X-Champs-Energie-
+// Manquants — clés alignées sur CHAMP_ENERGIE_MANQUANT côté backend
+// (bail-document-docx.service.ts).
+const LIBELLES_CHAMPS_ENERGIE: Record<string, string> = {
+  classeDpe: "classe DPE",
+  depensesEnergie: "dépenses énergétiques",
+  anneeReferencePrixEnergie: "année de référence des prix énergétiques"
+};
+
 // Récupère le .docx généré côté backend et l'ouvre directement avec
 // l'application par défaut du système (même méthode que
 // genererDocumentEtatDesLieux, etats-des-lieux/api.ts) — plus de
@@ -207,10 +217,37 @@ export function archiveBail(id: string): Promise<Bail> {
 // le canal IPC documents:ouvrirTemporaire. Le backend bloque déjà avec un
 // message explicite (champsManquants) si des données obligatoires
 // manquent ; l'appelant se contente de relayer ce message (ApiError).
+//
+// Mentions de performance énergétique (décret n° 2015-587) : jamais
+// bloquantes (décision Jimmy, 2026-10-04) — le backend génère quand même
+// le document avec des mentions "[À COMPLÉTER]" et signale les champs
+// concernés via l'en-tête X-Champs-Energie-Manquants (voir exposedHeaders,
+// main.ts). Avertissement APRÈS la génération, pas avant : le document est
+// déjà intégralement produit côté backend et déjà téléchargé en entier
+// (await blob.arrayBuffer() ci-dessous) au moment où cet en-tête est lu —
+// la confirmation ne gage que l'ouverture locale du fichier, jamais le
+// travail de génération lui-même ni le transfert réseau, qui ont déjà eu
+// lieu. Une vérification réellement préalable à la génération demanderait
+// un endpoint de contrôle séparé (dupliquant le calcul déjà fait côté
+// service pour construire le document) — non construit ici.
 export async function genererDocumentBail(id: string): Promise<void> {
-  const { blob, nomFichier } = await authenticatedFetchBlob(`/baux/${id}/document-docx`, {
+  const { blob, nomFichier, headers } = await authenticatedFetchBlob(`/baux/${id}/document-docx`, {
     method: "POST"
   });
+  const champsManquants = headers.get("X-Champs-Energie-Manquants");
+  if (champsManquants) {
+    const libelles = champsManquants
+      .split(",")
+      .map((cle) => LIBELLES_CHAMPS_ENERGIE[cle] ?? cle)
+      .join(", ");
+    const continuer = window.confirm(
+      `Mentions de performance énergétique incomplètes sur cet appartement : ${libelles}.\n` +
+        `Le document sera généré avec des mentions "[À COMPLÉTER]" à la place. Continuer ?`
+    );
+    if (!continuer) {
+      return;
+    }
+  }
   await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "bail.docx");
 }
 

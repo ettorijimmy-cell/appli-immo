@@ -100,6 +100,7 @@ export type AppartementType = "T1" | "T2" | "T3" | "T4" | "T5" | "T6";
 export type AppartementStatut = "vacant" | "loue" | "travaux" | "archive";
 export type AppartementModeProduction = "individuel" | "collectif";
 export type AppartementTypeEnergie = "electrique" | "gaz" | "les_deux";
+export type AppartementClasseDpe = "A" | "B" | "C" | "D" | "E" | "F" | "G";
 
 // type/nombrePiecesPrincipales/modeChauffage/modeEauChaude/typeEnergie :
 // mentions du contrat-type résidentiel (décret n° 2015-587), null pour un
@@ -133,6 +134,13 @@ export interface Appartement {
   nombreWc: number | null;
   autrePiece1: string | null;
   autrePiece2: string | null;
+  // Mentions de performance énergétique (contrat-type, décret n°
+  // 2015-587, annexes 1/2) — saisie manuelle, jamais déduite de la table
+  // diagnostics (inutilisée, voir docs/data-dictionary.md).
+  classeDpe: AppartementClasseDpe | null;
+  depensesEnergieMin: string | null;
+  depensesEnergieMax: string | null;
+  anneeReferencePrixEnergie: number | null;
   statut: AppartementStatut;
   // Toujours posé en même temps que statut='archive' (AppartementsService
   // .archive()), jamais l'un sans l'autre — exposé séparément pour les
@@ -156,6 +164,10 @@ export interface CreateAppartementInput {
   modeChauffage?: AppartementModeProduction;
   modeEauChaude?: AppartementModeProduction;
   typeEnergie?: AppartementTypeEnergie;
+  classeDpe?: AppartementClasseDpe;
+  depensesEnergieMin?: string;
+  depensesEnergieMax?: string;
+  anneeReferencePrixEnergie?: number;
 }
 
 export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
@@ -177,6 +189,10 @@ export interface UpdateAppartementInput {
   nombreWc?: number;
   autrePiece1?: string;
   autrePiece2?: string;
+  classeDpe?: AppartementClasseDpe;
+  depensesEnergieMin?: string;
+  depensesEnergieMax?: string;
+  anneeReferencePrixEnergie?: number;
   statut?: AppartementStatutModifiable;
 }
 

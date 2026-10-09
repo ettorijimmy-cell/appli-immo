@@ -1,8 +1,9 @@
-import { IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Matches, Min, MinLength } from "class-validator";
+import { IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Matches, Max, Min, MinLength } from "class-validator";
 
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
 const TYPES_ENERGIE = ["electrique", "gaz", "les_deux"] as const;
+const CLASSES_DPE = ["A", "B", "C", "D", "E", "F", "G"] as const;
 
 export class CreateAppartementDto {
   @IsUUID()
@@ -62,4 +63,29 @@ export class CreateAppartementDto {
   @IsOptional()
   @IsIn(TYPES_ENERGIE)
   typeEnergie?: (typeof TYPES_ENERGIE)[number];
+
+  // Mentions de performance énergétique du contrat-type (décret n°
+  // 2015-587, annexes 1/2) — saisies ici, jamais dans `diagnostics`
+  // (table inutilisée, voir docs/data-dictionary.md). min <= max vérifié
+  // dans AppartementsService (cohérence avec dateFin >= dateDebut sur les
+  // baux, jamais au niveau du DTO).
+  @IsOptional()
+  @IsIn(CLASSES_DPE)
+  classeDpe?: (typeof CLASSES_DPE)[number];
+
+  @IsOptional()
+  @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMin doit être un nombre positif" })
+  depensesEnergieMin?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMax doit être un nombre positif" })
+  depensesEnergieMax?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1900)
+  @Max(2100)
+  anneeReferencePrixEnergie?: number;
 }

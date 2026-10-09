@@ -9,6 +9,7 @@ import {
   calculerLoyerPrecedentLocataire,
   calculerMontantEcheanceLoyer,
   determinerRegimeClauseResolutoire,
+  formaterFourchetteDepensesEnergie,
   irlEstPerime,
   libelleMoisDepuisDate,
   regimesDureeApplicables,
@@ -44,6 +45,19 @@ import type { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-doc
 const VIDE = "";
 const NEANT = "Néant";
 
+// Mentions de performance énergétique (décret n° 2015-587) — décision
+// Jimmy (2026-10-04) : jamais de blocage de la génération pour ces champs
+// (contrairement à validerCompletudeGenerationBail), mais jamais un blanc
+// silencieux non plus — une marque explicite à la place, sur le même
+// principe que les autres mentions à compléter du modèle. Clés alignées
+// sur l'en-tête HTTP X-Champs-Energie-Manquants (voir plus bas et
+// locataires/api.ts côté desktop, qui porte la correspondance clé -> libellé).
+const CHAMP_ENERGIE_MANQUANT = {
+  classeDpe: "[À COMPLÉTER : classe DPE]",
+  depensesEnergie: "[À COMPLÉTER : dépenses énergétiques]",
+  anneeReferencePrixEnergie: "[À COMPLÉTER : année de référence des prix énergétiques]"
+} as const;
+
 @Injectable()
 export class BailDocumentDocxService {
   private readonly templatePath: string;
@@ -60,7 +74,10 @@ export class BailDocumentDocxService {
       path.join(process.cwd(), "..", "..", "tmp", "Modèle bail.docx");
   }
 
-  async genererDocumentBailDocx(bailId: string, dto: GenererDocumentBailDocxDto): Promise<Buffer> {
+  async genererDocumentBailDocx(
+    bailId: string,
+    dto: GenererDocumentBailDocxDto
+  ): Promise<{ buffer: Buffer; champsManquantsEnergie: string[] }> {
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, bailId)).limit(1);
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
@@ -289,6 +306,19 @@ export class BailDocumentDocxService {
     const colocataire = locatairesDuBail[1] ?? null;
     const caution = garantsDuBail[0] ?? null;
 
+    // Mentions de performance énergétique (décret n° 2015-587, annexes 1/2
+    // — texte identique vide/meublé, voir rendreDocument) : générées quand
+    // même si absentes (décision Jimmy), jamais de blocage ici.
+    const depensesEnergieFormatees = formaterFourchetteDepensesEnergie(
+      appartement.depensesEnergieMin,
+      appartement.depensesEnergieMax
+    );
+    const champsManquantsEnergie: string[] = [
+      ...(appartement.classeDpe === null ? (["classeDpe"] as const) : []),
+      ...(depensesEnergieFormatees === null ? (["depensesEnergie"] as const) : []),
+      ...(appartement.anneeReferencePrixEnergie === null ? (["anneeReferencePrixEnergie"] as const) : [])
+    ];
+
     const donneesBalises: Record<string, string> = {
       "Nom de l’appartement": `${appartement.type} - ${appartement.numero}`,
 
@@ -375,7 +405,12 @@ export class BailDocumentDocxService {
       "date de début du bail": dateReference,
 
       "montant loyer précédent locataire": montantLoyerPrecedent ?? VIDE,
-      "date de versement loyer précédent locataire": dateVersementLoyerPrecedent ?? VIDE
+      "date de versement loyer précédent locataire": dateVersementLoyerPrecedent ?? VIDE,
+
+      "classe DPE": appartement.classeDpe ?? CHAMP_ENERGIE_MANQUANT.classeDpe,
+      "dépenses énergétiques": depensesEnergieFormatees ?? CHAMP_ENERGIE_MANQUANT.depensesEnergie,
+      "année de référence des prix énergétiques":
+        appartement.anneeReferencePrixEnergie?.toString() ?? CHAMP_ENERGIE_MANQUANT.anneeReferencePrixEnergie
     };
 
     const buffer = this.rendreDocument(donneesBalises, {
@@ -435,7 +470,7 @@ export class BailDocumentDocxService {
       });
     }
 
-    return buffer;
+    return { buffer, champsManquantsEnergie };
   }
 
   private rendreDocument(

@@ -3,6 +3,7 @@ import { IsIn, IsInt, IsNumberString, IsOptional, IsString, Matches, Max, Min, M
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
 const TYPES_ENERGIE = ["electrique", "gaz", "les_deux"] as const;
+const CLASSES_DPE = ["A", "B", "C", "D", "E", "F", "G"] as const;
 // "archive" en est exclu : l'archivage passe exclusivement par l'endpoint
 // dédié /appartements/:id/archiver, qui pose aussi archivedAt — un statut
 // "archive" posé ici casserait l'invariant archive <=> archivedAt renseigné.
@@ -101,6 +102,28 @@ export class UpdateAppartementDto {
   @IsOptional()
   @IsString()
   autrePiece2?: string;
+
+  // Mentions de performance énergétique (contrat-type, décret n°
+  // 2015-587) — voir CreateAppartementDto.
+  @IsOptional()
+  @IsIn(CLASSES_DPE)
+  classeDpe?: (typeof CLASSES_DPE)[number];
+
+  @IsOptional()
+  @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMin doit être un nombre positif" })
+  depensesEnergieMin?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMax doit être un nombre positif" })
+  depensesEnergieMax?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1900)
+  @Max(2100)
+  anneeReferencePrixEnergie?: number;
 
   // Passage manuel vacant / loue / travaux — l'automatisation vacant <-> loue
   // via la création/résiliation de bail arrive au Module 3 ; le réglage

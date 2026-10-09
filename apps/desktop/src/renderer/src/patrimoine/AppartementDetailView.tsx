@@ -9,6 +9,7 @@ import {
   updateAppartement,
   updateEquipement,
   type Appartement,
+  type AppartementClasseDpe,
   type AppartementModeProduction,
   type AppartementStatutModifiable,
   type AppartementType,
@@ -27,6 +28,7 @@ const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"
 const MODES_PRODUCTION: AppartementModeProduction[] = ["individuel", "collectif"];
 // "archive" en est exclu : l'archivage a son propre bouton dédié.
 const APPARTEMENT_STATUTS_MODIFIABLES: AppartementStatutModifiable[] = ["vacant", "loue", "travaux"];
+const CLASSES_DPE: AppartementClasseDpe[] = ["A", "B", "C", "D", "E", "F", "G"];
 
 export type Tab = "infos" | "equipements" | "bail" | "historique" | "documents";
 
@@ -259,6 +261,24 @@ export function AppartementDetailView({
             <div className="flex justify-between border-b border-slate-100 py-1">
               <dt className="text-slate-500">Autre pièce 2</dt>
               <dd>{appartement.autrePiece2 ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Classe DPE</dt>
+              <dd>{appartement.classeDpe ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Dépenses énergétiques annuelles estimées</dt>
+              <dd>
+                {appartement.depensesEnergieMin && appartement.depensesEnergieMax
+                  ? appartement.depensesEnergieMin === appartement.depensesEnergieMax
+                    ? `${appartement.depensesEnergieMin} €`
+                    : `${appartement.depensesEnergieMin} € – ${appartement.depensesEnergieMax} €`
+                  : "—"}
+              </dd>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Année de référence des prix de l'énergie</dt>
+              <dd>{appartement.anneeReferencePrixEnergie ?? "—"}</dd>
             </div>
           </dl>
         )
@@ -505,6 +525,12 @@ function EditAppartementForm({
   const [nombreWc, setNombreWc] = useState(appartement.nombreWc?.toString() ?? "");
   const [autrePiece1, setAutrePiece1] = useState(appartement.autrePiece1 ?? "");
   const [autrePiece2, setAutrePiece2] = useState(appartement.autrePiece2 ?? "");
+  const [classeDpe, setClasseDpe] = useState<AppartementClasseDpe | "">(appartement.classeDpe ?? "");
+  const [depensesEnergieMin, setDepensesEnergieMin] = useState(appartement.depensesEnergieMin ?? "");
+  const [depensesEnergieMax, setDepensesEnergieMax] = useState(appartement.depensesEnergieMax ?? "");
+  const [anneeReferencePrixEnergie, setAnneeReferencePrixEnergie] = useState(
+    appartement.anneeReferencePrixEnergie?.toString() ?? ""
+  );
   const [statut, setStatut] = useState<AppartementStatutModifiable>(
     appartement.statut === "archive" ? "vacant" : appartement.statut
   );
@@ -535,7 +561,11 @@ function EditAppartementForm({
         ...(nombreSallesDeBain !== "" && { nombreSallesDeBain: Number(nombreSallesDeBain) }),
         ...(nombreWc !== "" && { nombreWc: Number(nombreWc) }),
         ...(autrePiece1 && { autrePiece1 }),
-        ...(autrePiece2 && { autrePiece2 })
+        ...(autrePiece2 && { autrePiece2 }),
+        ...(classeDpe && { classeDpe }),
+        ...(depensesEnergieMin && { depensesEnergieMin }),
+        ...(depensesEnergieMax && { depensesEnergieMax }),
+        ...(anneeReferencePrixEnergie && { anneeReferencePrixEnergie: Number(anneeReferencePrixEnergie) })
       });
       onSaved();
     } catch {
@@ -768,6 +798,62 @@ function EditAppartementForm({
             id="appartement-edit-autre-piece-2"
             value={autrePiece2}
             onChange={(event) => setAutrePiece2(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-classe-dpe" className="text-sm font-medium text-slate-700">
+            Classe DPE
+          </label>
+          <select
+            id="appartement-edit-classe-dpe"
+            value={classeDpe}
+            onChange={(event) => setClasseDpe(event.target.value as AppartementClasseDpe | "")}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseignée</option>
+            {CLASSES_DPE.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-depenses-energie-min" className="text-sm font-medium text-slate-700">
+            Dépenses énergétiques annuelles estimées — min (€)
+          </label>
+          <input
+            id="appartement-edit-depenses-energie-min"
+            value={depensesEnergieMin}
+            onChange={(event) => setDepensesEnergieMin(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-depenses-energie-max" className="text-sm font-medium text-slate-700">
+            Dépenses énergétiques annuelles estimées — max (€, identique au min si montant unique)
+          </label>
+          <input
+            id="appartement-edit-depenses-energie-max"
+            value={depensesEnergieMax}
+            onChange={(event) => setDepensesEnergieMax(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-edit-annee-reference-energie" className="text-sm font-medium text-slate-700">
+            Année de référence des prix de l'énergie
+          </label>
+          <input
+            id="appartement-edit-annee-reference-energie"
+            type="number"
+            value={anneeReferencePrixEnergie}
+            onChange={(event) => setAnneeReferencePrixEnergie(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

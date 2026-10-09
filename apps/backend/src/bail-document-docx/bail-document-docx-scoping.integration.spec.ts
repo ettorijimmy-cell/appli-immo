@@ -216,7 +216,7 @@ describe("BailDocumentDocxService — contrôle d'appartenance à l'organisation
   }
 
   it("génère normalement le docx quand le bail appartient à l'organisation appelante", async () => {
-    const buffer = await contexteOrgA(() => bailDocumentDocxService.genererDocumentBailDocx(orgA.bailId, {}));
+    const { buffer } = await contexteOrgA(() => bailDocumentDocxService.genererDocumentBailDocx(orgA.bailId, {}));
     expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");
   });
 
@@ -249,7 +249,7 @@ describe("BailDocumentDocxService — contrôle d'appartenance à l'organisation
   });
 
   it("hors contexte HTTP (organisationId absent), le contrôle est ignoré — comportement préexistant préservé", async () => {
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(orgA.bailId, {})
     );
     expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");

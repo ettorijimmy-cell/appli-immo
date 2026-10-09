@@ -32,6 +32,20 @@ export const appartementTypeEnergieEnum = pgEnum("appartement_type_energie", [
   "gaz",
   "les_deux"
 ]);
+// Mentions de performance énergétique du contrat-type (décret n° 2015-587,
+// annexes 1 et 2) — saisie manuelle sur la fiche appartement (décision
+// actée avec Jimmy, 2026-10-04) : la table `diagnostics` existe dans le
+// schéma mais n'est reliée à aucun module/UI, volontairement laissée
+// inutilisée pour cet usage (voir docs/data-dictionary.md).
+export const appartementClasseDpeEnum = pgEnum("appartement_classe_dpe", [
+  "A",
+  "B",
+  "C",
+  "D",
+  "E",
+  "F",
+  "G"
+]);
 
 export const appartements = pgTable("appartements", {
   ...auditColumns,
@@ -101,6 +115,16 @@ export const appartements = pgTable("appartements", {
   // 1 ou 2 autres pièces) — jamais requis par validerCompletudeEtatDesLieux.
   autrePiece1: text("autre_piece_1"),
   autrePiece2: text("autre_piece_2"),
+  // Mentions de performance énergétique (contrat-type, décret n° 2015-587,
+  // annexes 1/2) — toutes nullables, aucun bien existant n'est affecté.
+  // depensesEnergieMin/Max : un montant unique inscrit au DPE se saisit
+  // dans les deux champs (min = max), jamais un champ "montant unique"
+  // séparé — un seul champ de stockage pour les deux présentations
+  // possibles de la mention (fourchette ou valeur unique).
+  classeDpe: appartementClasseDpeEnum("classe_dpe"),
+  depensesEnergieMin: decimal("depenses_energie_min", { precision: 10, scale: 2 }),
+  depensesEnergieMax: decimal("depenses_energie_max", { precision: 10, scale: 2 }),
+  anneeReferencePrixEnergie: integer("annee_reference_prix_energie"),
   // 'vacant' par défaut : un appartement nouvellement créé n'a pas encore
   // de bail actif (règle de transition automatique vacant -> loue au
   // Module 3).

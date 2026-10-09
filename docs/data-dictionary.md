@@ -118,6 +118,17 @@ non-immeuble.
 | nombre_salles_de_bain | integer, nullable | 0 à 2, même principe que `nombre_chambres` |
 | nombre_wc | integer, nullable | 0 à 2, même principe que `nombre_chambres` |
 | autre_piece_1, autre_piece_2 | text, nullable | Libellés fixes des 2 emplacements libres du modèle réel ("Autres pièces : ……") — **jamais saisis à la volée** depuis l'état des lieux (desktop ou mobile), contrairement aux chambres/SdB/WC : la vue de relecture et le parcours mobile lisent ces deux champs pour proposer les "autres pièces" à capturer. Si la disposition réelle change (mur abattu, pièce ajoutée), le propriétaire corrige la fiche appartement — aucun mécanisme de renommage rétroactif : chaque `etat_des_lieux_pieces_autre.libelle` garde la valeur telle que capturée au moment de la visite. Nullable, légitimement absents (0, 1 ou 2 autres pièces) — jamais requis par `validerCompletudeEtatDesLieux` |
+| classe_dpe | enum, nullable | `A` à `G` — mentions de performance énergétique du contrat-type (décret n° 2015-587, annexes 1/2). **Saisie manuelle sur la fiche appartement** (`CreateAppartementDto`/`UpdateAppartementDto`, `AppartementDetailView.tsx`/`BienDetailView.tsx`), décision actée avec Jimmy le 2026-10-04 — **jamais déduite de la table `diagnostics`**, qui reste inutilisée à ce jour (voir note ci-dessous) |
+| depenses_energie_min, depenses_energie_max | decimal(10,2), nullable (les deux) | Dépenses énergétiques annuelles estimées inscrites au DPE, pour la mention "dépenses énergétiques (pour information)" du contrat-type. Un montant unique (plutôt qu'une fourchette) se saisit en renseignant la **même valeur dans les deux champs** — il n'existe volontairement pas de champ "montant unique" séparé. `depenses_energie_min` doit être `<=` `depenses_energie_max` (vérifié dans `AppartementsService`, jamais au niveau du DTO — même principe que `dateFin >= dateDebut` sur les baux) |
+| annee_reference_prix_energie | integer, nullable | Année de référence des prix de l'énergie utilisée pour l'estimation ci-dessus — mention exigée par le contrat-type aux côtés du montant/de la fourchette |
+
+**`diagnostics` reste une table inutilisée** (voir plus haut, section
+`bien_immeuble_detail`, pour sa structure 1:1 avec `documents`) : les
+mentions de performance énergétique du bail (`classe_dpe`,
+`depenses_energie_min/max`, `annee_reference_prix_energie` ci-dessus) sont
+saisies directement sur `appartements`, en champs simples, jamais via cette
+table ni reliées à un quelconque résultat de diagnostic structuré. Aucun
+module/UI ne lit ni n'écrit `diagnostics` à ce jour.
 
 ## equipements
 | Champ | Type | Description |

@@ -69,9 +69,9 @@ export async function authenticatedFetch<T>(path: string, init: RequestInit = {}
 export async function authenticatedFetchBlob(
   path: string,
   init: RequestInit = {}
-): Promise<{ blob: Blob; nomFichier: string | null }> {
+): Promise<{ blob: Blob; nomFichier: string | null; headers: Headers }> {
   const response = await requeteAuthentifiee(path, init);
   const disposition = response.headers.get("Content-Disposition");
   const nomFichier = disposition ? decodeURIComponent(/filename="(.+)"/.exec(disposition)?.[1] ?? "") : null;
-  return { blob: await response.blob(), nomFichier: nomFichier || null };
+  return { blob: await response.blob(), nomFichier: nomFichier || null, headers: response.headers };
 }

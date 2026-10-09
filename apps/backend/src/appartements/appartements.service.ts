@@ -54,6 +54,7 @@ export class AppartementsService {
       typeEnergie: dto.typeEnergie
     };
     this.validerChampsHabitation(bienType, champsHabitation);
+    this.validerDepensesEnergie(dto.depensesEnergieMin, dto.depensesEnergieMax);
 
     const [appartement] = await this.db
       .insert(appartements)
@@ -67,7 +68,11 @@ export class AppartementsService {
         nombrePiecesPrincipales: dto.nombrePiecesPrincipales,
         modeChauffage: dto.modeChauffage,
         modeEauChaude: dto.modeEauChaude,
-        typeEnergie: dto.typeEnergie
+        typeEnergie: dto.typeEnergie,
+        classeDpe: dto.classeDpe,
+        depensesEnergieMin: dto.depensesEnergieMin,
+        depensesEnergieMax: dto.depensesEnergieMax,
+        anneeReferencePrixEnergie: dto.anneeReferencePrixEnergie
       })
       .returning();
     if (!appartement) {
@@ -139,6 +144,21 @@ export class AppartementsService {
           `Champs sans objet pour un bien non résidentiel (${bienType}) : ${champsHabitationFournis.join(", ")}.`
         );
       }
+    }
+
+    if (dto.depensesEnergieMin !== undefined || dto.depensesEnergieMax !== undefined) {
+      const [appartementExistant] = await this.db
+        .select({ depensesEnergieMin: appartements.depensesEnergieMin, depensesEnergieMax: appartements.depensesEnergieMax })
+        .from(appartements)
+        .where(eq(appartements.id, id))
+        .limit(1);
+      if (!appartementExistant) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+      this.validerDepensesEnergie(
+        dto.depensesEnergieMin ?? appartementExistant.depensesEnergieMin ?? undefined,
+        dto.depensesEnergieMax ?? appartementExistant.depensesEnergieMax ?? undefined
+      );
     }
 
     const [appartement] = await mettreAJourAvecAudit(
@@ -241,6 +261,21 @@ export class AppartementsService {
     }
   }
 
+  // Mentions de performance énergétique (contrat-type, décret n° 2015-587)
+  // — un montant unique inscrit au DPE se saisit dans les deux champs
+  // (min = max, donc toujours valide ici), jamais un rejet "égal" refusé.
+  // Même principe que la vérification dateFin >= dateDebut sur les baux :
+  // en service, jamais au niveau du DTO (un seul champ fourni ne peut pas
+  // se comparer à lui-même via class-validator).
+  private validerDepensesEnergie(min: string | undefined, max: string | undefined): void {
+    if (min === undefined || max === undefined) {
+      return;
+    }
+    if (Number(min) > Number(max)) {
+      throw new BadRequestException("depensesEnergieMin doit être inférieur ou égal à depensesEnergieMax.");
+    }
+  }
+
   // Gap 2 — concurrence Module 3 (docs/backlog.md, dette technique) :
   // empêche un appartement "loué fantôme" (statut forcé manuellement sans
   // bail réel derrière) tout en préservant la correction légitime d'une
@@ -290,6 +325,10 @@ export class AppartementsService {
       nombreWc: appartement.nombreWc,
       autrePiece1: appartement.autrePiece1,
       autrePiece2: appartement.autrePiece2,
+      classeDpe: appartement.classeDpe,
+      depensesEnergieMin: appartement.depensesEnergieMin,
+      depensesEnergieMax: appartement.depensesEnergieMax,
+      anneeReferencePrixEnergie: appartement.anneeReferencePrixEnergie,
       statut: appartement.statut
     };
   }

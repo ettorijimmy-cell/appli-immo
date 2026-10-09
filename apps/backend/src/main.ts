@@ -18,8 +18,11 @@ async function bootstrap() {
   // le backend l'envoie correctement. Bug latent depuis l'origine de ces
   // endpoints, masqué jusqu'ici par les noms de repli déjà suffixés en
   // .docx côté renderer — révélé par la validation d'extension du canal
-  // IPC documents:ouvrirTemporaire (2026-09-22).
-  app.enableCors({ exposedHeaders: ["Content-Disposition"] });
+  // IPC documents:ouvrirTemporaire (2026-09-22). X-Champs-Energie-Manquants
+  // (bail-document-docx.controller.ts) : même raison, nécessaire pour que
+  // genererDocumentBail (locataires/api.ts) puisse avertir avant d'ouvrir
+  // un document généré avec des mentions énergétiques "[À COMPLÉTER]".
+  app.enableCors({ exposedHeaders: ["Content-Disposition", "X-Champs-Energie-Manquants"] });
   await app.listen(process.env.PORT ?? 3000);
 }
 

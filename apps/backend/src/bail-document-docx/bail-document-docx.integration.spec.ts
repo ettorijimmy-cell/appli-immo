@@ -271,7 +271,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   it("génère un .docx complet quand toutes les données requises sont présentes (régime avant le 1er octobre 2026)", async () => {
     const { bail, sci, locataire } = await creerDossierComplet({ dateDebut: "2026-07-01" });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -382,7 +382,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -452,7 +452,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   it("régime à partir du 1er octobre 2026 avec servitude explicitement demandée", async () => {
     const { bail } = await creerDossierComplet({ dateDebut: "2026-10-01" });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, { servitudeResidencePrincipale: true })
     );
 
@@ -473,7 +473,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   it("ne mentionne jamais la servitude si le paramètre n'est pas explicitement fourni, même après le 1er octobre 2026", async () => {
     const { bail } = await creerDossierComplet({ dateDebut: "2026-10-01" });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -512,7 +512,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   it("un bail sans garant génère normalement, sans jamais signaler de champ garant manquant", async () => {
     const { bail } = await creerDossierComplet({ avecGarant: false });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -529,13 +529,13 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
   it("un bail meublé mentionne l'inventaire de mobilier, jamais un bail vide", async () => {
     const { bail: bailVide } = await creerDossierComplet({ typeBail: "vide" });
-    const bufferVide = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer: bufferVide } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bailVide.id, {})
     );
     expect(texteDuDocx(bufferVide)).not.toContain("inventaire du mobilier");
 
     const { bail: bailMeuble } = await creerDossierComplet({ typeBail: "meuble", avecIrl: false });
-    const bufferMeuble = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer: bufferMeuble } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bailMeuble.id, {})
     );
     expect(texteDuDocx(bufferMeuble)).toContain("inventaire du mobilier");
@@ -609,7 +609,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
     await bailLocatairesService.archive(lien.id);
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -631,7 +631,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       role: "colocataire"
     });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -702,7 +702,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       nationalite: "Française"
     });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -758,7 +758,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       nationalite: "Française"
     });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -813,7 +813,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       nationalite: "Française"
     });
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -849,7 +849,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     await creerDocumentTest("bien", bien.id, "elec_gaz");
     await creerDocumentTest("bien", bien.id, "erp");
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -864,7 +864,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const { bail, appartement } = await creerDossierComplet();
     await creerDocumentTest("appartement", appartement.id, "dpe", true);
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -876,7 +876,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const { bail, appartement } = await creerDossierComplet();
     await creerDocumentTest("appartement", appartement.id, "diagnostic");
 
-    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
     );
 
@@ -885,5 +885,88 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     expect(texte).not.toContain("Constat de risque d'exposition au plomb");
     expect(texte).not.toContain("installation intérieure d'électricité et de gaz");
     expect(texte).not.toContain("risques naturels et technologiques");
+  });
+
+  // Mentions de performance énergétique (décret n° 2015-587, annexes 1/2 —
+  // texte identique vide/meublé, aucun bloc conditionnel) : jamais
+  // bloquantes (décision Jimmy, 2026-10-04) — générées avec les vraies
+  // valeurs si renseignées, sinon une marque "[À COMPLÉTER]" par champ.
+  // L'en-tête X-Champs-Energie-Manquants n'est testé qu'au niveau HTTP
+  // (contrôleur) — hors périmètre de ces tests service.
+  describe("mentions de performance énergétique", () => {
+    it.each([["vide"], ["meuble"]] as const)(
+      "bail %s : insère les vraies valeurs quand classe DPE/dépenses/année sont renseignées",
+      async (typeBail) => {
+        const { bail, appartement } = await creerDossierComplet({ typeBail, avecIrl: typeBail === "vide" });
+        await appartementsService.update(appartement.id, {
+          classeDpe: "C",
+          depensesEnergieMin: "150.00",
+          depensesEnergieMax: "200.00",
+          anneeReferencePrixEnergie: 2024
+        });
+
+        const { buffer, champsManquantsEnergie } = await requestContextService.executerAvecContexte(
+          { utilisateurId: userId },
+          () => bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+        );
+
+        expect(champsManquantsEnergie).toEqual([]);
+        const texte = texteDuDocx(buffer);
+        expect(texte).toContain("niveau de performance du logement : C.");
+        expect(texte).toContain("entre 150.00 et 200.00 €");
+        expect(texte).toContain("l’année : 2024");
+        expect(texte).not.toContain("[À COMPLÉTER");
+        // Le calendrier de décence énergétique (texte fixe, inconditionnel)
+        // doit toujours être présent, quel que soit le type de bail.
+        expect(texte).toContain("classe F du DPE");
+        expect(texte).toContain("classe E du DPE");
+        expect(texte).toContain("classe D du DPE");
+      }
+    );
+
+    it.each([["vide"], ["meuble"]] as const)(
+      "bail %s : insère une marque '[À COMPLÉTER]' par champ manquant, jamais un blanc, et signale les champs manquants",
+      async (typeBail) => {
+        const { bail } = await creerDossierComplet({ typeBail, avecIrl: typeBail === "vide" });
+        // classeDpe/depensesEnergieMin/Max/anneeReferencePrixEnergie
+        // volontairement non renseignés (aucun update).
+
+        const { buffer, champsManquantsEnergie } = await requestContextService.executerAvecContexte(
+          { utilisateurId: userId },
+          () => bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+        );
+
+        expect(champsManquantsEnergie.sort()).toEqual(
+          ["anneeReferencePrixEnergie", "classeDpe", "depensesEnergie"].sort()
+        );
+        const texte = texteDuDocx(buffer);
+        expect(texte).toContain("[À COMPLÉTER : classe DPE]");
+        expect(texte).toContain("[À COMPLÉTER : dépenses énergétiques]");
+        expect(texte).toContain("[À COMPLÉTER : année de référence des prix énergétiques]");
+        // Aucune balise brute ({classe DPE}, {dépenses énergétiques}...)
+        // ne doit jamais subsister dans le document final.
+        expect(texte).not.toMatch(/\{classe DPE\}|\{dépenses énergétiques\}|\{année de référence/);
+      }
+    );
+
+    it("affiche un montant unique (jamais une fourchette dégénérée) quand min et max sont égaux", async () => {
+      const { bail, appartement } = await creerDossierComplet();
+      await appartementsService.update(appartement.id, {
+        classeDpe: "D",
+        depensesEnergieMin: "180.00",
+        depensesEnergieMax: "180.00",
+        anneeReferencePrixEnergie: 2025
+      });
+
+      const { buffer, champsManquantsEnergie } = await requestContextService.executerAvecContexte(
+        { utilisateurId: userId },
+        () => bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      expect(champsManquantsEnergie).toEqual([]);
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("180.00 €");
+      expect(texte).not.toContain("entre 180.00 € et 180.00 €");
+    });
   });
 });
