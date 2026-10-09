@@ -976,4 +976,43 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       expect(texte).not.toContain("entre 180.00 € et 180.00 €");
     });
   });
+
+  // Variante meublée de la section RÉSILIATION DU CONTRAT (article 25-8,
+  // loi n° 89-462), ajoutée le 2026-10-09 : jusqu'ici le modèle n'imprimait
+  // que les clauses du bail vide (article 15), même pour un bail meublé.
+  describe("résiliation du contrat (clause meublée/vide)", () => {
+    it("bail vide : imprime les motifs de congé locataire propres au vide (article 15), jamais les clauses de l'article 25-8", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "vide" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("délai de trois mois sans motif");
+      expect(texte).toContain("zones tendues");
+      expect(texte).toContain("le congé vaut offre de vente");
+      expect(texte).toContain("délai de préavis de six mois");
+      expect(texte).not.toContain("article 25-8");
+      expect(texte).not.toContain("sans condition de motif");
+      expect(texte).not.toContain("réduite à neuf mois");
+    });
+
+    it("bail meublé : applique l'article 25-8 (préavis locataire 1 mois sans motif, bailleur 3 mois), jamais les clauses du vide", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "meuble" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("sans condition de motif");
+      expect(texte).toContain("réduite à neuf mois");
+      expect(texte).toContain("sur la vente du logement ;");
+      expect(texte).not.toContain("délai de trois mois sans motif");
+      expect(texte).not.toContain("zones tendues");
+      expect(texte).not.toContain("le congé vaut offre de vente");
+      expect(texte).not.toContain("délai de préavis de six mois");
+    });
+  });
 });
