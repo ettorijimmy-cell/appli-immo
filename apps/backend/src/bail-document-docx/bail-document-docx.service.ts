@@ -1,6 +1,13 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   ajouterMois,
@@ -61,6 +68,7 @@ const CHAMP_ENERGIE_MANQUANT = {
 
 @Injectable()
 export class BailDocumentDocxService {
+  private readonly logger = new Logger(BailDocumentDocxService.name);
   private readonly templatePath: string;
 
   constructor(
@@ -70,9 +78,17 @@ export class BailDocumentDocxService {
     private readonly bienService: BienService,
     config: ConfigService
   ) {
+    // Résolu relativement au fichier compilé (__dirname), jamais à
+    // process.cwd() : ce dernier diffère entre dev (apps/backend) et le
+    // conteneur (WORKDIR /app), alors que __dirname pointe toujours vers
+    // le dossier du module courant (src/bail-document-docx en dev,
+    // dist/bail-document-docx en production) — le .docx vit dans
+    // assets/ juste à côté dans les deux cas (copié dans dist/ au build,
+    // voir nest-cli.json compilerOptions.assets). BAIL_DOCUMENT_DOCX_TEMPLATE_PATH
+    // reste une surcharge optionnelle (tests, cas exceptionnel).
     this.templatePath =
       config.get<string>("BAIL_DOCUMENT_DOCX_TEMPLATE_PATH") ??
-      path.join(process.cwd(), "..", "..", "tmp", "Modèle bail.docx");
+      path.join(__dirname, "assets", "modele-bail.docx");
   }
 
   async genererDocumentBailDocx(
@@ -509,6 +525,17 @@ export class BailDocumentDocxService {
       diagnosticErpPresent: boolean;
     }
   ): Buffer {
+    if (!existsSync(this.templatePath)) {
+      // Jamais un "Internal Server Error" muet côté desktop (voir
+      // docs/error-log.md) : le chemin résolu part dans les logs serveur
+      // (utile pour diagnostiquer une image/déploiement mal configuré),
+      // jamais dans le message renvoyé au client (pas d'information
+      // d'infrastructure exposée à l'utilisateur final).
+      this.logger.error(`Modèle de bail introuvable au chemin résolu : ${this.templatePath}`);
+      throw new InternalServerErrorException(
+        "Le modèle de bail est introuvable sur le serveur. Contactez l'administrateur."
+      );
+    }
     const contenu = readFileSync(this.templatePath, "binary");
     const zip = new PizZip(contenu);
     const document = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });

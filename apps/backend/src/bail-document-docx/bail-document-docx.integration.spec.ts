@@ -46,15 +46,16 @@ import { VersementsService } from "../versements/versements.service";
 import { BailDocumentDocxModule } from "./bail-document-docx.module";
 import { BailDocumentDocxService } from "./bail-document-docx.service";
 
-// Fixture committée : copie corrigée du modèle réel du propriétaire
-// (tmp/Modèle bail.docx, hors dépôt) — les 3 balises cassées ("]" au lieu
-// de "}") corrigées, et les blocs conditionnels clauseResolutoireAvant/
-// clauseResolutoireApres/servitude/aGarant/meuble ajoutés (absents du
-// fichier réel à ce jour, voir docs/backlog.md). Le vrai fichier du
-// propriétaire nécessite encore ces corrections avant de pouvoir être
-// utilisé tel quel — aGarant masque le paragraphe "caution solidaire"
-// (GARANTS SOLIDAIRES) et la ligne "Acte de caution solidaire" des
-// pièces annexées quand aucun garant n'est rattaché ; meuble masque la
+// Fixture committée, délibérément distincte du modèle réel
+// (apps/backend/src/bail-document-docx/assets/modele-bail.docx, utilisé
+// en production) — historiquement une copie corrigée pendant que le
+// fichier réel accumulait encore des balises cassées ("]" au lieu de
+// "}") et des blocs conditionnels manquants ; les deux fichiers sont
+// alignés depuis, mais restent deux fichiers séparés à mettre à jour
+// ensemble (jamais un lien symbolique ni une copie automatique) — voir
+// aGarant qui masque le paragraphe "caution solidaire" (GARANTS
+// SOLIDAIRES) et la ligne "Acte de caution solidaire" des pièces
+// annexées quand aucun garant n'est rattaché ; meuble qui masque la
 // ligne "Etat descriptif et inventaire du mobilier" pour un bail vide.
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-bail-test.docx");
 process.env["BAIL_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
