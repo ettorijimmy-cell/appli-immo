@@ -5,6 +5,11 @@ export interface DureeBailLegale {
   // textuel, jamais parsable de façon fiable pour un calcul.
   dureeMois: number;
   texteLegal: string;
+  // false uniquement pour le bail étudiant (article 25-7, alinéa 4 : la
+  // reconduction tacite de l'alinéa 3 y est explicitement inapplicable).
+  // Vrai pour tous les autres régimes (article 10 pour le vide, article
+  // 25-7 alinéa 3 pour le meublé standard).
+  reconductionTacite: boolean;
 }
 
 /**
@@ -49,20 +54,23 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
       return {
         duree: "trois ans",
         dureeMois: 36,
-        texteLegal: `Le bailleur étant réputé personne physique (SCI familiale, article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`
+        texteLegal: `Le bailleur étant réputé personne physique (SCI familiale, article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`,
+        reconductionTacite: true
       };
     }
     if (choix.regime === "personne_physique") {
       return {
         duree: "trois ans",
         dureeMois: 36,
-        texteLegal: `Le bailleur étant une personne physique (article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`
+        texteLegal: `Le bailleur étant une personne physique (article 10 de la ${LOI_1989}), la durée du contrat est fixée à trois ans.`,
+        reconductionTacite: true
       };
     }
     return {
       duree: "six ans",
       dureeMois: 72,
-      texteLegal: `Le bailleur étant une personne morale (article 10 de la ${LOI_1989}), la durée du contrat est fixée à six ans.`
+      texteLegal: `Le bailleur étant une personne morale (article 10 de la ${LOI_1989}), la durée du contrat est fixée à six ans.`,
+      reconductionTacite: true
     };
   }
 
@@ -70,13 +78,15 @@ export function calculerDureeBail(choix: ChoixDureeBail): DureeBailLegale {
     return {
       duree: "neuf mois",
       dureeMois: 9,
-      texteLegal: `Le locataire justifiant du statut d'étudiant (article 25-7 de la ${LOI_1989}), la durée du contrat est fixée à neuf mois, sans reconduction tacite.`
+      texteLegal: `Le locataire justifiant du statut d'étudiant (article 25-7 de la ${LOI_1989}), la durée du contrat est fixée à neuf mois, sans reconduction tacite.`,
+      reconductionTacite: false
     };
   }
   return {
     duree: "un an",
     dureeMois: 12,
-    texteLegal: `Conformément à l'article 25-7 de la ${LOI_1989}, la durée du contrat est fixée à un an.`
+    texteLegal: `Conformément à l'article 25-7 de la ${LOI_1989}, la durée du contrat est fixée à un an.`,
+    reconductionTacite: true
   };
 }
 

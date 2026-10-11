@@ -9,6 +9,7 @@ import {
   calculerLoyerPrecedentLocataire,
   calculerMontantEcheanceLoyer,
   determinerRegimeClauseResolutoire,
+  formaterDureeBail,
   formaterFourchetteDepensesEnergie,
   irlEstPerime,
   libelleMoisDepuisDate,
@@ -410,13 +411,22 @@ export class BailDocumentDocxService {
       "classe DPE": appartement.classeDpe ?? CHAMP_ENERGIE_MANQUANT.classeDpe,
       "dépenses énergétiques": depensesEnergieFormatees ?? CHAMP_ENERGIE_MANQUANT.depensesEnergie,
       "année de référence des prix énergétiques":
-        appartement.anneeReferencePrixEnergie?.toString() ?? CHAMP_ENERGIE_MANQUANT.anneeReferencePrixEnergie
+        appartement.anneeReferencePrixEnergie?.toString() ?? CHAMP_ENERGIE_MANQUANT.anneeReferencePrixEnergie,
+
+      // Libellé chiffré ("3 ans", "1 an", "9 mois") des deux mentions de
+      // durée du contrat (section III) — dérivé de duree.dureeMois, jamais
+      // écrit en dur par régime (voir reconductionTacite ci-dessous pour
+      // la présence/absence du segment de reconduction tacite).
+      "duree bail": formaterDureeBail(duree.dureeMois)
     };
 
     const buffer = this.rendreDocument(donneesBalises, {
       clauseResolutoireAvant: regime === "avant_2026_10_01",
       clauseResolutoireApres: regime === "depuis_2026_10_01",
       servitude: servitudeApplicable,
+      // false uniquement pour le bail étudiant (article 25-7, alinéa 4) —
+      // voir calculerDureeBail, packages/core.
+      reconductionTacite: duree.reconductionTacite,
       // Remplacent les 4 lignes à cases à cocher du modèle (type
       // d'habitat/régime juridique de l'immeuble, chauffage/eau chaude de
       // l'appartement) — noms de balises confirmés avec l'utilisateur,
@@ -479,6 +489,7 @@ export class BailDocumentDocxService {
       clauseResolutoireAvant: boolean;
       clauseResolutoireApres: boolean;
       servitude: boolean;
+      reconductionTacite: boolean;
       collectif: boolean;
       individuel: boolean;
       copropriete: boolean;

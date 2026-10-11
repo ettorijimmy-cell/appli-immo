@@ -162,9 +162,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // les dossiers de test), pour permettre à un même appartement de porter
   // plusieurs baux successifs (bail précédent + nouveau bail) sans dupliquer
   // ce montage.
-  async function creerAppartementDeBase() {
+  async function creerAppartementDeBase(estFamiliale = true) {
     const sci = await scisService.create(userId, { nom: "SCI Docx Test", regimeFiscal: "IR", adresse: "1 rue de Test", codePostal: "75001", ville: "Paris" });
-    await scisService.update(sci.id, { telephone: "0555555555", estFamiliale: true });
+    await scisService.update(sci.id, { telephone: "0555555555", estFamiliale });
 
     const bien = await bienService.create(userId, {
       type: "immeuble",
@@ -210,12 +210,14 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       avecGarant?: boolean;
       avecIrl?: boolean;
       typeBail?: "vide" | "meuble";
+      estFamiliale?: boolean;
     } = {}
   ) {
     const dateDebut = options.dateDebut ?? "2026-07-01";
     const avecGarant = options.avecGarant ?? true;
     const avecIrl = options.avecIrl ?? true;
     const typeBail = options.typeBail ?? "vide";
+    const estFamiliale = options.estFamiliale ?? true;
 
     if (avecIrl) {
       // annee 9999 : valeur délibérément hors de toute plage réaliste,
@@ -229,7 +231,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
     }
 
-    const { sci, bien, appartement } = await creerAppartementDeBase();
+    const { sci, bien, appartement } = await creerAppartementDeBase(estFamiliale);
 
     const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
     await locatairesService.update(locataire.id, {
@@ -1013,6 +1015,146 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       expect(texte).not.toContain("zones tendues");
       expect(texte).not.toContain("le congé vaut offre de vente");
       expect(texte).not.toContain("délai de préavis de six mois");
+    });
+  });
+
+  // Durées légales (article 10, bail vide ; article 25-7, bail meublé) —
+  // les deux phrases de la section III ("Durée de contrat : ..." et "La
+  // présente location est consentie ...") étaient figées à "3 ans" pour
+  // les 5 régimes, ajouté le 2026-10-09. Les valeurs viennent de
+  // calculerDureeBail/formaterDureeBail (packages/core), jamais écrites
+  // en dur ici.
+  describe("durée du contrat et reconduction tacite (section III)", () => {
+    it("SCI familiale (vide) : 3 ans, reconductible par périodes de 3 ans", async () => {
+      const { bail } = await creerDossierComplet({ estFamiliale: true });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("Durée de contrat : 3 ans reconductible par tacite reconduction par période de : 3 ans");
+      expect(texte).toContain(
+        "La présente location est consentie et acceptée pour une durée de 3 ans renouvelable ensuite par tacite reconduction et par périodes de 3 ans (voir conditions particulières en page 2) faute de congé préalable."
+      );
+      expect(texte).not.toContain("6 ans");
+      expect(texte).not.toContain("1 an ");
+      expect(texte).not.toContain("9 mois");
+    });
+
+    it("SCI non familiale (vide) : 6 ans, reconductible par périodes de 6 ans", async () => {
+      const { bail } = await creerDossierComplet({ estFamiliale: false });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("Durée de contrat : 6 ans reconductible par tacite reconduction par période de : 6 ans");
+      expect(texte).toContain(
+        "La présente location est consentie et acceptée pour une durée de 6 ans renouvelable ensuite par tacite reconduction et par périodes de 6 ans (voir conditions particulières en page 2) faute de congé préalable."
+      );
+      expect(texte).not.toContain("3 ans");
+      expect(texte).not.toContain("1 an ");
+      expect(texte).not.toContain("9 mois");
+    });
+
+    it("Personne physique (vide, sans SCI) : 3 ans, reconductible par périodes de 3 ans, automatique sans choix humain", async () => {
+      await db.insert(indicesIrl).values({ annee: 9997, trimestre: 2, valeur: "148.37" });
+
+      const bien = await bienService.create(userId, {
+        type: "maison",
+        proprietaireType: "personne_physique",
+        nomProprietaire: "Bernard Martin",
+        adresse: "5 chemin de la Maison",
+        codePostal: "19100",
+        ville: "Brive"
+      });
+      await db.update(bienTable).set({ anneeConstruction: 1998 }).where(eq(bienTable.id, bien.id));
+      const appartement = await appartementsService.create({
+        bienId: bien.id,
+        numero: "unique-duree",
+        type: "T3",
+        surface: "60.00",
+        loyerReference: "650.00",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
+      await appartementsService.update(appartement.id, {
+        equipementCuisine: "Plaques, four, réfrigérateur",
+        dependancesAnnexes: "Cave"
+      });
+
+      const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
+      await locatairesService.update(locataire.id, {
+        adresse: "1 rue du Locataire",
+        codePostal: "19100",
+        ville: "Brive",
+        dateNaissance: "1990-05-12",
+        telephone: "0611111111",
+        email: "ilan.devos@example.com"
+      });
+
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-07-01",
+        loyerMensuel: "650.00",
+        depotGarantie: "650.00",
+        provisionsCharges: "30.00",
+        jourEcheance: 5
+      });
+      await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("Durée de contrat : 3 ans reconductible par tacite reconduction par période de : 3 ans");
+      expect(texte).toContain(
+        "La présente location est consentie et acceptée pour une durée de 3 ans renouvelable ensuite par tacite reconduction et par périodes de 3 ans (voir conditions particulières en page 2) faute de congé préalable."
+      );
+      expect(texte).not.toContain("6 ans");
+      expect(texte).not.toContain("1 an ");
+      expect(texte).not.toContain("9 mois");
+    });
+
+    it("Meublé standard : 1 an, reconductible par périodes de 1 an", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "meuble" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("Durée de contrat : 1 an reconductible par tacite reconduction par période de : 1 an");
+      expect(texte).toContain(
+        "La présente location est consentie et acceptée pour une durée de 1 an renouvelable ensuite par tacite reconduction et par périodes de 1 an (voir conditions particulières en page 2) faute de congé préalable."
+      );
+      expect(texte).not.toContain("3 ans");
+      expect(texte).not.toContain("6 ans");
+      expect(texte).not.toContain("9 mois");
+    });
+
+    it("Meublé étudiant : 9 mois, sans reconduction tacite (article 25-7, alinéa 4)", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "meuble" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, { regimeDureeMeuble: "etudiant" })
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("Durée de contrat : 9 mois, non reconductible par tacite reconduction");
+      expect(texte).toContain(
+        "La présente location est consentie et acceptée pour une durée de 9 mois (voir conditions particulières en page 2). Conformément à l’article 25-7 de la loi du 6 juillet 1989, cette durée n’est pas renouvelable par tacite reconduction."
+      );
+      expect(texte).not.toContain("3 ans");
+      expect(texte).not.toContain("6 ans");
+      expect(texte).not.toContain("1 an");
+      expect(texte).not.toContain("renouvelable ensuite par tacite reconduction et par périodes");
+      expect(texte).not.toContain("faute de congé préalable");
     });
   });
 });
