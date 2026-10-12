@@ -47,6 +47,7 @@ import { BienService } from "../bien/bien.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-docx.dto";
+import { nettoyerMiseEnFormeBail } from "./nettoyer-mise-en-forme-bail";
 
 // Vide si non renseigné (colocataire absent, honoraires nuls...) — jamais
 // "undefined" littéral dans le document final.
@@ -538,8 +539,16 @@ export class BailDocumentDocxService {
     }
     const contenu = readFileSync(this.templatePath, "binary");
     const zip = new PizZip(contenu);
+    // Capturé AVANT le rendu : nécessaire à nettoyerMiseEnFormeBail pour
+    // distinguer un paragraphe vide voulu (espacement du modèle) d'un
+    // paragraphe vidé par une balise conditionnelle fausse.
+    const xmlModele = zip.file("word/document.xml")!.asText();
     const document = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
     document.render({ ...donneesBalises, ...drapeaux });
-    return document.getZip().generate({ type: "nodebuffer" }) as Buffer;
+
+    const zipRendu = document.getZip();
+    const xmlRendu = zipRendu.file("word/document.xml")!.asText();
+    zipRendu.file("word/document.xml", nettoyerMiseEnFormeBail(xmlModele, xmlRendu));
+    return zipRendu.generate({ type: "nodebuffer" }) as Buffer;
   }
 }
