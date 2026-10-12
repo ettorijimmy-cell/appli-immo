@@ -16,6 +16,7 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
 import { getRemboursementsEnAttente, type RemboursementEnAttente } from "../tableau-de-bord/api";
 import {
@@ -358,6 +359,7 @@ function BailActuelDetail({
   const [tropPercuMessage, setTropPercuMessage] = useState<string | null>(null);
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [documentChampsManquants, setDocumentChampsManquants] = useState<string[] | null>(null);
   const [isDownloadingNotice, setIsDownloadingNotice] = useState(false);
   const [noticeError, setNoticeError] = useState<string | null>(null);
   // Un remboursement peut être créé depuis DepotGarantieSection (dépôt) ou
@@ -432,6 +434,7 @@ function BailActuelDetail({
 
   async function handleGenererDocument(): Promise<void> {
     setDocumentError(null);
+    setDocumentChampsManquants(null);
     setIsGeneratingDocument(true);
     try {
       await genererDocumentBail(bail.id);
@@ -440,8 +443,13 @@ function BailActuelDetail({
       // canal IPC documents:ouvrirTemporaire (ex. aucune application
       // associée à .docx sur le système) — message clair plutôt qu'un
       // générique qui masquerait que la génération a réussi mais que
-      // l'ouverture a échoué.
+      // l'ouverture a échoué. champsManquants n'existe que sur ApiError
+      // (BadRequestException de la génération de bail, voir
+      // bail-document-docx.service.ts) — jamais sur l'échec IPC.
       setDocumentError(err instanceof Error ? err.message : "Impossible de générer le document");
+      setDocumentChampsManquants(
+        err instanceof ApiError && err.champsManquants && err.champsManquants.length > 0 ? err.champsManquants : null
+      );
     } finally {
       setIsGeneratingDocument(false);
     }
@@ -554,9 +562,22 @@ function BailActuelDetail({
       )}
 
       {documentError && (
-        <p role="alert" className="text-sm text-red-600">
-          {documentError}
-        </p>
+        <div role="alert" className="text-sm text-red-600">
+          <p>{documentError}</p>
+          {documentChampsManquants && (
+            <ul className="mt-1 list-disc pl-5">
+              {documentChampsManquants.map((champ) => {
+                const { libelle, lieu } = resoudreAffichageChampManquant(champ);
+                return (
+                  <li key={champ}>
+                    {libelle}
+                    {lieu && <span className="text-slate-500"> — {lieu}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       )}
 
       {noticeError && (

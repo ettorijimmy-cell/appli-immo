@@ -4,26 +4,41 @@ import { API_BASE_URL } from "./api-config";
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message?: string
+    message?: string,
+    public readonly champsManquants?: string[]
   ) {
     super(message ?? `Requête échouée (${status})`);
   }
 }
 
+interface CorpsErreur {
+  message?: string | undefined;
+  champsManquants?: string[] | undefined;
+}
+
 // NestJS renvoie {statusCode, message, error} sur une exception — on
 // remonte ce message (ex. "l'appartement n'est pas vacant") plutôt qu'un
 // message générique, utile pour les règles métier qui refusent une action
-// (activation/résiliation de bail notamment).
-async function extraireMessageErreur(response: Response): Promise<string | undefined> {
+// (activation/résiliation de bail notamment). `champsManquants` est un
+// tableau additionnel propre à BadRequestException de la génération de
+// bail (voir bail-document-docx.service.ts) — absent de toutes les autres
+// réponses d'erreur, donc toujours optionnel ici.
+async function extraireCorpsErreur(response: Response): Promise<CorpsErreur> {
   try {
     const body: unknown = await response.json();
-    if (body && typeof body === "object" && "message" in body) {
-      const { message } = body as { message: unknown };
-      return typeof message === "string" ? message : undefined;
+    if (!body || typeof body !== "object") {
+      return {};
     }
-    return undefined;
+    const { message, champsManquants } = body as { message?: unknown; champsManquants?: unknown };
+    return {
+      message: typeof message === "string" ? message : undefined,
+      champsManquants:
+        Array.isArray(champsManquants) && champsManquants.every((champ) => typeof champ === "string")
+          ? (champsManquants as string[])
+          : undefined
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -50,7 +65,8 @@ async function requeteAuthentifiee(path: string, init: RequestInit): Promise<Res
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await extraireMessageErreur(response));
+    const { message, champsManquants } = await extraireCorpsErreur(response);
+    throw new ApiError(response.status, message, champsManquants);
   }
   return response;
 }

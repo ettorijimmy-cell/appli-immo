@@ -75,6 +75,46 @@ describe("authenticatedFetch", () => {
     });
   });
 
+  it("reprend champsManquants dans l'ApiError quand le corps de la réponse le porte (génération de bail)", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: "Génération impossible : champs obligatoires manquants",
+          champsManquants: ["Téléphone de la SCI", "Garant — date de naissance"]
+        }),
+        { status: 400 }
+      )
+    );
+
+    await expect(authenticatedFetch("/baux/1/generer-document")).rejects.toMatchObject({
+      status: 400,
+      message: "Génération impossible : champs obligatoires manquants",
+      champsManquants: ["Téléphone de la SCI", "Garant — date de naissance"]
+    });
+  });
+
+  it("champsManquants reste undefined quand le corps de la réponse ne le porte pas", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ statusCode: 409, message: "l'appartement n'est pas vacant" }), { status: 409 })
+    );
+
+    await expect(authenticatedFetch("/baux/1/activer")).rejects.toMatchObject({
+      status: 409,
+      champsManquants: undefined
+    });
+  });
+
+  it("ignore champsManquants si ce n'est pas un tableau de chaînes", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ message: "erreur", champsManquants: "pas un tableau" }), { status: 400 })
+    );
+
+    await expect(authenticatedFetch("/baux/1/generer-document")).rejects.toMatchObject({
+      champsManquants: undefined
+    });
+  });
+
   it("retombe sur un message générique si le corps de la réponse n'est pas du JSON exploitable", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
 
