@@ -318,26 +318,37 @@ les trois parcours ci-dessus).
   passage, qui affichait un texte fixe quel que soit le message réel de
   l'erreur.
 
-- **Aucune vérification que `bienId`/`sciId` transmis par le client appartiennent
-  bien à l'organisation de l'utilisateur authentifié — non résolu.** Constaté
-  2026-09-07 (revue financial-logic-reviewer, Module Charges et fiscalité
-  Étape 1) : `DepensesService.create()` vérifie seulement que le `bienId`
-  fourni existe (`NotFoundException` sinon), jamais que
-  `bien.organisationId === user.organisationId` — un appelant connaissant
-  l'id d'un bien d'une autre organisation pourrait créer une dépense qui
-  porte son propre `organisationId` mais un `sciId` dénormalisé appartenant
-  à une organisation tierce (fuite d'id, mauvaise attribution). **Gap
-  préexistant, pas une régression de ce chantier** : le même défaut existe
-  déjà dans `BienService.create()` (le `sciId` fourni par le client n'est
-  pas non plus vérifié contre l'organisation de l'appelant) et dans
-  `DocumentsService.verifierEntiteExiste` (vérifie l'existence de l'entité
-  cible, jamais son appartenance à l'organisation de l'appelant). Sans
-  conséquence réelle aujourd'hui (usage personnel mono-organisation, pas de
-  compte tiers), mais **à corriger avant toute ouverture multi-utilisateur/
-  SaaS** (voir CLAUDE.md, "conçu dès le départ pour une évolution SaaS
-  future") — un audit transversal de tous les services qui acceptent un id
-  d'entité liée en entrée serait plus efficace qu'un correctif isolé par
-  module.
+- **Vérification d'appartenance organisationnelle sur les ids transmis par le
+  client — résolu (E2, E3, E5, et `DepensesService` le 2026-10-12).**
+  Constaté 2026-09-07 (revue financial-logic-reviewer, Module Charges et
+  fiscalité Étape 1) : `DepensesService.create()` n'a jamais vérifié que
+  `bienId`/`sciId` transmis par le client appartiennent à l'organisation de
+  l'utilisateur authentifié — c'était déjà vrai dans le commit initial du
+  module (`21445e8`, 2026-09-07), confirmé par `git log -S` : aucune
+  occurrence antérieure d'un contrôle d'organisation sur ces deux champs. Le
+  chantier de scoping multi-organisation (Catégorie E, 2026-09-19) a corrigé
+  le même défaut sur `BienService.create` (priorité E2,
+  `verifierAppartenanceSci`) et `BauxService.create`/`update` (priorité E3,
+  `verifierAppartenanceBail`), et le commit `5e1c434` (2026-09-18) a scopé
+  `DepensesService.findAll` par organisation — mais **`DepensesService.create`
+  n'a jamais été traité par ce chantier** : `bienId`/`sciId` y sont restés
+  des oublis non corrigés depuis le constat du 2026-09-07.
+  `DocumentsService.verifierEntiteExiste` a été corrigé séparément en
+  priorité E5 (`OrganisationResolutionService.resoudreEntiteIdsOrganisation`).
+  Un troisième champ, `appartementId`, a été ajouté à `DepensesService.create`
+  par le commit `fcb3f50` (2026-10-01) — **après** la clôture du chantier de
+  scoping — en reproduisant le même défaut (aucun contrôle d'organisation)
+  sur ce nouveau champ. Un `sciId` transmis seul (sans `bienId`/`appartementId`)
+  n'était même pas vérifié pour son existence : il partait directement dans
+  l'`INSERT`, protégé uniquement par la contrainte de clé étrangère Postgres
+  `depense_sci_id_scis_id_fk`.
+  **Corrigé le 2026-10-12** (commit `2b175c5`) : réutilisation de
+  `OrganisationResolutionService.resoudreEntiteIdsOrganisation` pour les
+  trois champs, `NotFoundException` sur un id étranger ou inexistant,
+  contrôle sauté hors contexte HTTP (même convention qu'ailleurs), revu par
+  financial-logic-reviewer, tests bidirectionnels Org A/Org B. Hors contexte
+  HTTP, un `sciId` inexistant reste détecté uniquement par la contrainte SQL
+  (comportement inchangé, documenté mais non modifié).
 
 - **IPs autorisées de la base Postgres de production laissées grand ouvertes
   (0.0.0.0/0, "Allow All") — résolu, confirmé directement par le
