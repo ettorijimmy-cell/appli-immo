@@ -11,6 +11,7 @@ import { appartements, bien, depense, mettreAJourAvecAudit, type Database } from
 import { and, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { ReglesCategorisationService } from "../regles-categorisation/regles-categorisation.service";
 import { UsersService } from "../users/users.service";
 import type { DepenseCategorie } from "./depense-categories";
@@ -40,8 +41,37 @@ export class DepensesService {
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
     private readonly usersService: UsersService,
-    private readonly reglesCategorisationService: ReglesCategorisationService
+    private readonly reglesCategorisationService: ReglesCategorisationService,
+    private readonly organisationResolutionService: OrganisationResolutionService
   ) {}
+
+  // Contrôle d'appartenance à l'organisation (audit 2026-10-12, docs/backlog.md
+  // — DepensesService.create n'avait jamais été traité par le chantier de
+  // scoping multi-organisation, Catégorie E, 2026-09-19 : bienId/sciId
+  // étaient déjà des oublis de ce chantier, appartementId une régression
+  // ajoutée après sa clôture, commit fcb3f50, 2026-10-01). Réutilise
+  // OrganisationResolutionService plutôt qu'un helper privé dupliqué
+  // (contrairement à BienService.verifierAppartenanceSci) : contrairement à
+  // BienModule/ComptesBancairesSciModule, OrganisationResolutionService est
+  // déjà un service transverse consommé par DocumentsService et
+  // AlertesService, DepensesModule peut en dépendre sans créer un cycle.
+  // Skip si organisationId absent (hors contexte HTTP — jobs, scripts,
+  // tests), même convention que partout ailleurs dans ce fichier. Même
+  // message que "n'existe pas", aucune différence observable.
+  private async verifierAppartenanceOrganisation(
+    entiteType: "appartement" | "bien" | "sci",
+    entiteId: string,
+    messageErreur: string
+  ): Promise<void> {
+    const organisationId = this.requestContext.getOrganisationId();
+    if (!organisationId) {
+      return;
+    }
+    const idsValides = await this.organisationResolutionService.resoudreEntiteIdsOrganisation(entiteType, organisationId);
+    if (!idsValides.includes(entiteId)) {
+      throw new NotFoundException(messageErreur);
+    }
+  }
 
   async create(userId: string, dto: CreateDepenseDto) {
     const user = await this.usersService.findById(userId);
@@ -50,6 +80,16 @@ export class DepensesService {
     }
     if (!dto.bienId && !dto.sciId && !dto.appartementId) {
       throw new BadRequestException("bienId, sciId ou appartementId est requis (au moins l'un des trois).");
+    }
+
+    // Vérifié dès que transmis, même quand bienId ou appartementId sont
+    // également fournis : dto.sciId sera écrasé plus bas par bien.sciId
+    // dans ce cas (voir dérivation ci-dessous), mais une valeur transmise
+    // par le client reste une valeur transmise par le client — elle ne
+    // doit jamais être acceptée sans contrôle, même temporairement avant
+    // d'être remplacée.
+    if (dto.sciId) {
+      await this.verifierAppartenanceOrganisation("sci", dto.sciId, "SCI introuvable");
     }
 
     // appartementId implique toujours un bien précis (appartements.bien_id
@@ -61,6 +101,7 @@ export class DepensesService {
     // silencieusement (Module Régularisation des charges, Sous-commit A).
     let bienIdEffectif = dto.bienId ?? null;
     if (dto.appartementId) {
+      await this.verifierAppartenanceOrganisation("appartement", dto.appartementId, "Appartement introuvable");
       const [appartementRattache] = await this.db
         .select()
         .from(appartements)
@@ -85,6 +126,7 @@ export class DepensesService {
     // de dénormalisation.
     let sciId: string | null = dto.sciId ?? null;
     if (bienIdEffectif) {
+      await this.verifierAppartenanceOrganisation("bien", bienIdEffectif, "Bien introuvable");
       const [bienRattache] = await this.db.select().from(bien).where(eq(bien.id, bienIdEffectif)).limit(1);
       if (!bienRattache) {
         throw new NotFoundException("Bien introuvable");
@@ -363,6 +405,11 @@ export class DepensesService {
     appartementsEligibles: (typeof appartements.$inferSelect)[];
     parts: ReturnType<typeof repartirProportionnellement>;
   }> {
+    // depenseSource.bienId est sûr ici UNIQUEMENT parce que
+    // chargerDepenseSourceRepartissable a déjà vérifié
+    // depenseSource.organisationId avant de renvoyer cette ligne — ne
+    // jamais appeler calculerRepartition avec un bienId reçu directement
+    // du client (DTO, query param) sans ce même contrôle en amont.
     const appartementsEligibles = await dbOrTx
       .select()
       .from(appartements)
