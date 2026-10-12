@@ -289,30 +289,34 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
-- **Absence totale de logging des requêtes HTTP côté backend — non
-  résolu.** Constaté 2026-09-27 pendant le diagnostic d'un rejet réseau
-  Postgres masqué en 500 générique (voir docs/error-log.md, entrée du
-  même jour) : `main.ts` ne configure aucun middleware d'accès HTTP, et le
-  filtre d'exception par défaut de NestJS ne journalise jamais une
-  exception "attendue" (4xx) — seulement les 5xx/non gérées. Résultat :
-  aucune trace exploitable pour distinguer, après coup, une tentative de
-  connexion échouée par mauvais mot de passe d'une requête qui n'a jamais
-  atteint l'application, ni même pour confirmer qu'une requête a bien été
-  reçue. Pas urgent en usage personnel actuel, mais deviendrait vite
-  gênant pour du support à distance ou une ouverture multi-utilisateur —
-  un logging d'accès minimal (méthode, route, statut, durée, sans corps ni
-  en-têtes sensibles) réglerait ça simplement.
+- **Absence totale de logging des requêtes HTTP côté backend — résolu
+  (commit `98a05ed`, 2026-09-27).** Constaté le même jour pendant le
+  diagnostic d'un rejet réseau Postgres masqué en 500 générique (voir
+  docs/error-log.md, entrée du même jour) : `main.ts` ne configurait
+  aucun middleware d'accès HTTP, et le filtre d'exception par défaut de
+  NestJS ne journalisait jamais une exception "attendue" (4xx) —
+  seulement les 5xx/non gérées. Résolu par `HttpLoggingInterceptor`
+  (`apps/backend/src/common/http-logging.interceptor.ts`), enregistré
+  globalement via `APP_INTERCEPTOR` dans `CommonModule` (avant
+  `UserContextInterceptor`, pour englober toute la requête dans la
+  mesure de durée) — écoute l'évènement `finish` de la réponse plutôt
+  qu'un opérateur RxJS, pour garantir un code de statut final fiable même
+  sur une exception non gérée. Journalise méthode, route, statut, durée,
+  jamais le corps ni les en-têtes sensibles.
 
 - **Message "Identifiants invalides" générique côté frontend pour toute
-  réponse non-2xx — non résolu.** Constaté 2026-09-27, même diagnostic
-  (`apps/desktop/src/renderer/src/auth/api.ts`) : le client de connexion
-  affiche ce message pour n'importe quel statut HTTP différent de 2xx, pas
-  seulement un vrai 401 — un 500 (panne serveur, comme l'incident du
-  2026-09-27) s'affiche donc de façon identique à un vrai rejet
-  d'identifiants, ce qui a significativement rallongé ce diagnostic
-  précis. Distinguer au moins les 5xx ("Erreur serveur, réessayer plus
-  tard") des 401 ("Identifiants invalides") éviterait de rejouer cette
-  confusion.
+  réponse non-2xx — résolu (commit `85b4566`, 2026-09-28).** Constaté le
+  2026-09-27, même diagnostic (`apps/desktop/src/renderer/src/auth/api.ts`) :
+  le client de connexion affichait ce message pour n'importe quel statut
+  HTTP différent de 2xx, pas seulement un vrai 401 — un 500 (panne
+  serveur, comme l'incident du 2026-09-27) s'affichait donc de façon
+  identique à un vrai rejet d'identifiants, ce qui avait significativement
+  rallongé ce diagnostic précis. Résolu en réutilisant `ApiError`
+  (`lib/authenticated-fetch.ts`) pour distinguer 401 (vrai rejet
+  d'identifiants), tout autre statut HTTP (panne serveur) et une erreur
+  fetch elle-même (serveur inatteignable) — `LoginPage.tsx` corrigé au
+  passage, qui affichait un texte fixe quel que soit le message réel de
+  l'erreur.
 
 - **Aucune vérification que `bienId`/`sciId` transmis par le client appartiennent
   bien à l'organisation de l'utilisateur authentifié — non résolu.** Constaté
@@ -955,6 +959,34 @@ les trois parcours ci-dessus).
   des lieux) sans quitter l'application — fonctionnalité souhaitée, jamais
   dans le périmètre de ce chantier.
 
+- **Deux tests `sinistre_stagnation` instables en intégration — non
+  résolu, cause identifiée (2026-10-12).** `alertes.integration.spec.ts` :
+  "un sinistre archivé referme une alerte déjà active" et "un changement
+  réel de statut (dateChangementStatut avancée) referme puis peut rouvrir
+  l'alerte" échouent de façon reproductible, indépendamment de tout
+  changement de code (confirmé en isolant les modifications en cours via
+  `git stash` avant diagnostic — échec identique sur `main`). Cause
+  confirmée par requête directe sur le Postgres de dev : une ligne réelle
+  `alertes` (`type='sinistre_stagnation'`, id `01a0f10e-5d5a-7ab2-
+  98f3-33dc9aaed460`, créée le 2026-09-30, provenant d'un vrai sinistre de
+  Jimmy) persiste dans la base de dev locale — celle que ces tests
+  d'intégration utilisent directement (`DATABASE_URL` de dev, pas une base
+  éphémère). Les deux tests en échec appellent `alertesService.findAll({
+  type: "sinistre_stagnation" })` **sans filtrer par `entiteId`** et
+  destructurent directement le premier élément (`const [alerteOuverte] =
+  ...`) — or ce `findAll()` est appelé hors contexte HTTP dans ces tests,
+  donc sans filtrage par organisation (comportement déjà documenté et
+  volontaire, voir plus haut "AlertesService — scoping par organisation").
+  La ligne réelle de Jimmy est donc retournée au même titre que la ligne
+  fraîchement créée par le test, et rien ne garantit laquelle des deux
+  `findAll()` renvoie en premier — d'où un id (et donc un statut) qui ne
+  correspond pas toujours à celui attendu par le test. Les autres tests
+  `sinistre_stagnation` du même fichier (ex. "statut 'clos'") filtrent
+  explicitement par `entiteId` et ne sont jamais affectés. **Correctif non
+  appliqué** (hors périmètre de cette consignation) : filtrer les deux
+  assertions par `entiteId` comme les autres tests du fichier, ou nettoyer
+  la ligne réelle de la base de dev.
+
 ---
 
 ## Maintenance
@@ -963,6 +995,29 @@ les trois parcours ci-dessus).
   2027-08-08.** À renouveler avant cette date : en cas d'expiration non
   anticipée, le stockage des documents (pièces d'identité, RIB, photos
   d'état des lieux) tombe en panne.
+
+---
+
+## État de la production
+
+**Dernière mise à jour confirmée : 2026-10-12.**
+
+- Migrations Drizzle `0058` à `0065` appliquées en base de production
+  (confirmé par Jimmy après test manuel réel).
+- Image backend déployée : tag `f6a0980` (commit `f6a0980`, chantier
+  nettoyage de la mise en forme du bail — voir "Édition d'un bail"
+  ci-dessus), construite et poussée vers le Container Registry Scaleway.
+- Installeur desktop reconstruit sur le commit `d13d2e3` (affichage de la
+  liste des champs manquants à la génération du bail) et testé en
+  conditions réelles contre la production — confirmé par Jimmy, le bail
+  se génère correctement.
+- Notice d'information annexée au bail (arrêté du 29 mai 2015) vérifiée
+  conforme à la version en vigueur sur Légifrance — rien à mettre à jour
+  côté application (fichier statique, voir "Édition d'un bail" ci-dessus,
+  section notice d'information).
+- Runbook de déploiement (commande exacte des migrations, build/push de
+  l'image, reconstruction de l'installeur) : conservé dans le projet
+  Claude (claude.ai), pas dans ce dépôt.
 
 ---
 
@@ -1269,6 +1324,56 @@ par le futur module "Révision annuelle" du cahier des charges initial
   totalement absent de l'UI, seul l'endpoint existait — et "Télécharger la
   notice d'information") ajoutés ensemble dans `BailActuelDetail`
   (BailTabs.tsx), même zone que Activer/Résilier le bail.
+
+**Modèle `.docx` versionné dans le dépôt (commit `1547bc5`, 2026-10-11).**
+Le modèle était lu depuis `tmp/`, exclu de l'image Docker
+(`.dockerignore`) — la génération du bail était cassée en production,
+`BAIL_DOCUMENT_DOCX_TEMPLATE_PATH` n'ayant jamais été défini dans la
+console Scaleway. Déplacé vers
+`apps/backend/src/bail-document-docx/assets/modele-bail.docx` (contenu
+strictement identique, vérifié par hash SHA-256 avant/après), copié dans
+`dist/` au build (`nest-cli.json`, `compilerOptions.assets`), chemin par
+défaut résolu via `__dirname` (fonctionne en dev, test et conteneur sans
+configuration supplémentaire) — `BAIL_DOCUMENT_DOCX_TEMPLATE_PATH` reste
+une surcharge optionnelle. Erreur explicite et journalisée côté serveur
+si le modèle est introuvable, message exploitable côté client (plus de
+"Internal Server Error" muet).
+
+**Nettoyage de la mise en forme du bail généré (commit `f6a0980`,
+2026-10-12).** Certaines balises conditionnelles tenant dans un seul
+paragraphe (puces des pièces annexées, mentions du loyer précédent,
+servitude, colocation) laissaient un paragraphe ou une puce vide quand la
+condition était fausse ; deux sauts de page manuels du modèle (avant
+"LES CHARGES" et avant "Fait à") créaient en plus des pages quasi vides.
+`nettoyerMiseEnFormeBail` (`apps/backend/src/bail-document-docx/
+nettoyer-mise-en-forme-bail.ts`, appliquée après le rendu Docxtemplater)
+supprime ces résidus, retire les deux sauts de page, et ajoute
+`keepNext`/`keepLines` pour que "LES CHARGES" et le bloc signatures ne
+soient plus jamais coupés par un saut de page — aucun mot du texte
+juridique modifié (prouvé par tests). Constat empirique important
+découvert à cette occasion : avec `paragraphLoop: true`, Docxtemplater
+supprime déjà correctement, de lui-même, les blocs conditionnels qui
+s'étendent sur plusieurs paragraphes entiers (bloc caution détaillé, bloc
+résiliation vide/meublé) — seuls les blocs tenant dans un seul paragraphe
+laissent un résidu. 83 nouveaux tests (15 unitaires + 68 sur le vrai
+modèle, couvrant les 64 combinaisons vide/meublé × garant × diagnostics ×
+colocation × servitude × clause résolutoire).
+
+**Affichage de la liste des champs manquants à la génération (commit
+`d13d2e3`, 2026-10-12).** Le backend renvoyait déjà `champsManquants`
+dans le corps de la réponse 400 (`BailDocumentDocxService`,
+`validerCompletudeGenerationBail`), mais `authenticated-fetch.ts` ne
+lisait que le champ `message` — l'utilisateur ne voyait que "Génération
+impossible : champs obligatoires manquants", sans savoir lequel ni où le
+renseigner. `ApiError` porte désormais `champsManquants` (optionnel), lu
+par `extraireCorpsErreur`. `BailTabs.tsx` affiche la liste sous le
+message, avec un libellé lisible et l'écran où renseigner chaque champ
+(`apps/desktop/src/renderer/src/patrimoine/libelles-champs-manquants.ts`)
+— fiche SCI, fiche du bien, fiche de l'appartement, fiche du locataire,
+ou section Garants de la fiche locataire pour les champs du garant
+(jamais le formulaire d'ajout de garant de l'onglet "Bail actuel", qui ne
+les demande pas — point découvert lors de l'audit ayant motivé ce
+correctif). Aucune règle métier, DTO ni route backend modifiés.
 
 ### État des lieux (en cours, priorité 2)
 
