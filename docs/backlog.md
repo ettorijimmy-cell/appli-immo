@@ -970,33 +970,62 @@ les trois parcours ci-dessus).
   des lieux) sans quitter l'application — fonctionnalité souhaitée, jamais
   dans le périmètre de ce chantier.
 
-- **Deux tests `sinistre_stagnation` instables en intégration — non
-  résolu, cause identifiée (2026-10-12).** `alertes.integration.spec.ts` :
+- **Deux tests `sinistre_stagnation` instables en intégration — résolu
+  (commit `120e1a2`).** Constaté le 2026-10-12 : `alertes.integration.spec.ts`,
   "un sinistre archivé referme une alerte déjà active" et "un changement
   réel de statut (dateChangementStatut avancée) referme puis peut rouvrir
-  l'alerte" échouent de façon reproductible, indépendamment de tout
-  changement de code (confirmé en isolant les modifications en cours via
-  `git stash` avant diagnostic — échec identique sur `main`). Cause
-  confirmée par requête directe sur le Postgres de dev : une ligne réelle
-  `alertes` (`type='sinistre_stagnation'`, id `01a0f10e-5d5a-7ab2-
-  98f3-33dc9aaed460`, créée le 2026-09-30, provenant d'un vrai sinistre de
-  Jimmy) persiste dans la base de dev locale — celle que ces tests
-  d'intégration utilisent directement (`DATABASE_URL` de dev, pas une base
-  éphémère). Les deux tests en échec appellent `alertesService.findAll({
+  l'alerte" échouaient de façon reproductible. Cause confirmée par requête
+  directe sur le Postgres de dev : une ligne réelle `alertes`
+  (`type='sinistre_stagnation'`, id `01a0f10e-5d5a-7ab2-98f3-33dc9aaed460`,
+  créée le 2026-09-30, provenant d'un vrai sinistre de Jimmy) persiste dans
+  la base de dev locale — celle que ces tests d'intégration utilisent
+  directement. Les deux tests en échec appelaient `alertesService.findAll({
   type: "sinistre_stagnation" })` **sans filtrer par `entiteId`** et
-  destructurent directement le premier élément (`const [alerteOuverte] =
-  ...`) — or ce `findAll()` est appelé hors contexte HTTP dans ces tests,
-  donc sans filtrage par organisation (comportement déjà documenté et
-  volontaire, voir plus haut "AlertesService — scoping par organisation").
-  La ligne réelle de Jimmy est donc retournée au même titre que la ligne
-  fraîchement créée par le test, et rien ne garantit laquelle des deux
-  `findAll()` renvoie en premier — d'où un id (et donc un statut) qui ne
-  correspond pas toujours à celui attendu par le test. Les autres tests
-  `sinistre_stagnation` du même fichier (ex. "statut 'clos'") filtrent
-  explicitement par `entiteId` et ne sont jamais affectés. **Correctif non
-  appliqué** (hors périmètre de cette consignation) : filtrer les deux
-  assertions par `entiteId` comme les autres tests du fichier, ou nettoyer
-  la ligne réelle de la base de dev.
+  destructuraient directement le premier élément — hors contexte HTTP
+  (sans filtrage par organisation), la ligne réelle de Jimmy était donc
+  retournée au même titre que la ligne fraîchement créée par le test, sans
+  garantie sur l'ordre de retour. **Correctif étendu à 16 assertions de
+  même profil** (pas seulement les 2 en échec) : `alertes.integration.spec.ts`
+  — `sinistre_stagnation` (2 tests) et `bail_fin_proche` (5 appels,
+  lignes 461/487/509/545/553) ; `taches.integration.spec.ts` —
+  `entretien_equipement` (2), `impaye` (2), `revision_loyer` (3),
+  `regularisation_charges` (2). Chaque assertion filtre désormais par
+  `entiteId`/`bailId`/`appartementId` de la fixture du test, jamais un
+  `findAll()` non filtré. Aucune ligne de la base de dev modifiée.
+
+- **Deadlock intermittent en intégration parallèle — cause non établie.**
+  1 occurrence sur 7 lancements de la suite d'intégration sur base vide
+  (2026-10-13, `pnpm test:integration:clean`, Postgres jetable port 5434) :
+  `taches.integration.spec.ts`, "document_expire (cas bail) : titulaire
+  résolu directement via bailId — notification générée" a échoué avec
+  `PostgresError: deadlock detected`. Jamais reproduit depuis (6 lancements
+  supplémentaires verts, dont 5 consécutifs). Jamais observé en CI (20
+  derniers runs vérifiés via `gh run list`/`gh run view --log-failed`,
+  aucune mention de deadlock) ni sur la base de dev 5433 (3 exécutions
+  complètes de la suite dans la même période, toutes vertes). Cause non
+  établie : Vitest exécute les fichiers d'intégration en parallèle par
+  défaut (`vitest.integration.config.ts` ne surcharge ni `fileParallelism`
+  ni `pool`), même configuration en CI qu'en local. Seule piste identifiée
+  par lecture statique, non prouvée comme cause du cycle de verrous observé :
+  `modele_courrier.code` (`packages/db/src/schema/modele-courrier.ts`) porte
+  une contrainte `UNIQUE` globale ; `taches.integration.spec.ts` (ligne
+  1113, `beforeEach` du describe "révision de loyer") et
+  `taches-scoping.integration.spec.ts` (ligne 478, `beforeEach`) écrivent
+  tous les deux `code: "revision_loyer"`, à chaque test de leurs describe
+  blocks respectifs, pendant toute la durée du run — les deux fichiers
+  tournant dans des threads Vitest distincts. Aucun second verrou complétant
+  un cycle n'a été identifié pour le test qui a effectivement échoué (qui
+  n'écrit que `code: "document_expire"`, jamais `revision_loyer`).
+  **Outil en place** (commit `f52c478`) : `pnpm test:integration:clean`
+  enregistre désormais `docker compose logs postgres-test` dans `tmp/`
+  (ignoré par git) en cas d'échec, avant de détruire le conteneur — le
+  DETAIL exact du deadlock (PID, requêtes, verrous) n'a encore jamais été
+  capturé par cet outil (0 occurrence depuis sa mise en place). **Si ça se
+  reproduit : lire ce journal avant toute correction.** Options de
+  correctif écartées pour l'instant, faute de preuve suffisante : sérialiser
+  les fichiers d'intégration (`fileParallelism: false` — ralentirait la
+  suite, y compris en CI) ou réordonner des requêtes de production (modifier
+  `genererTachesDepuisAlertes()` sur une hypothèse non confirmée).
 
 ---
 
