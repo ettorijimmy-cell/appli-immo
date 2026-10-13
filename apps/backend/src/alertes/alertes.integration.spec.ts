@@ -458,7 +458,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       await bauxService.activer(bail.id);
 
       await alertesJobService.genererAlertes("2026-07-01");
-      const [alerte] = await alertesService.findAll({ type: "bail_fin_proche" });
+      const alerte = (await alertesService.findAll({ type: "bail_fin_proche" })).find((a) => a.entiteId === bail.id);
       if (!alerte) {
         throw new Error("Alerte bail_fin_proche attendue introuvable");
       }
@@ -484,7 +484,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       await bauxService.activer(bail.id);
 
       await alertesJobService.genererAlertes("2026-07-01");
-      const [alerte] = await alertesService.findAll({ type: "bail_fin_proche" });
+      const alerte = (await alertesService.findAll({ type: "bail_fin_proche" })).find((a) => a.entiteId === bail.id);
       if (!alerte) {
         throw new Error("Alerte bail_fin_proche attendue introuvable");
       }
@@ -506,7 +506,9 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       await bauxService.activer(bail.id);
 
       await alertesJobService.genererAlertes("2026-07-01");
-      const [alerteInitiale] = await alertesService.findAll({ type: "bail_fin_proche" });
+      const alerteInitiale = (await alertesService.findAll({ type: "bail_fin_proche" })).find(
+        (a) => a.entiteId === bail.id
+      );
       if (!alerteInitiale) {
         throw new Error("Alerte bail_fin_proche attendue introuvable");
       }
@@ -542,7 +544,9 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       await bauxService.activer(bail.id);
 
       await alertesJobService.genererAlertes("2026-07-01");
-      const [alerteInitiale] = await alertesService.findAll({ type: "bail_fin_proche" });
+      const alerteInitiale = (await alertesService.findAll({ type: "bail_fin_proche" })).find(
+        (a) => a.entiteId === bail.id
+      );
       if (!alerteInitiale) {
         throw new Error("Alerte bail_fin_proche attendue introuvable");
       }
@@ -550,7 +554,7 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       // Fermeture automatique : jamais traitee par un humain ici.
       await bauxService.update(bail.id, { dateFin: "2027-06-01" });
       await alertesJobService.genererAlertes("2026-07-05");
-      const [fermee] = await alertesService.findAll({ type: "bail_fin_proche" });
+      const fermee = (await alertesService.findAll({ type: "bail_fin_proche" })).find((a) => a.entiteId === bail.id);
       expect(fermee?.id).toBe(alerteInitiale.id);
       expect(fermee?.statut).toBe("resolue");
 
@@ -651,13 +655,17 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
 
       await alertesJobService.genererAlertes("2026-06-20");
-      const [alerteOuverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const alerteOuverte = (await alertesService.findAll({ type: "sinistre_stagnation" })).find(
+        (a) => a.entiteId === sinistreLigne.id
+      );
       expect(alerteOuverte?.statut).toBe("active");
 
       await db.update(sinistre).set({ archivedAt: new Date() }).where(eq(sinistre.id, sinistreLigne.id));
       await alertesJobService.genererAlertes("2026-06-21");
 
-      const [fermee] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const fermee = (await alertesService.findAll({ type: "sinistre_stagnation" })).find(
+        (a) => a.entiteId === sinistreLigne.id
+      );
       expect(fermee?.id).toBe(alerteOuverte?.id);
       expect(fermee?.statut).toBe("resolue");
     });
@@ -680,7 +688,9 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
       if (!sinistreLigne) throw new Error("Échec de l'insertion du sinistre de test");
 
       await alertesJobService.genererAlertes("2026-06-20");
-      const [alerteOuverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const alerteOuverte = (await alertesService.findAll({ type: "sinistre_stagnation" })).find(
+        (a) => a.entiteId === sinistreLigne.id
+      );
       expect(alerteOuverte?.statut).toBe("active");
 
       // Le dossier avance réellement (expertise planifiée) : le compteur
@@ -690,14 +700,18 @@ describe("Alertes — job récurrent, idempotence, 5 types d'alertes (intégrati
         .set({ statut: "expertise_planifiee", dateChangementStatut: new Date("2026-06-20T00:00:00Z") })
         .where(eq(sinistre.id, sinistreLigne.id));
       await alertesJobService.genererAlertes("2026-06-21");
-      const [fermee] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const fermee = (await alertesService.findAll({ type: "sinistre_stagnation" })).find(
+        (a) => a.entiteId === sinistreLigne.id
+      );
       expect(fermee?.id).toBe(alerteOuverte?.id);
       expect(fermee?.statut).toBe("resolue");
 
       // La stagnation reprend depuis la nouvelle date : réouverture EN
       // PLACE de la même ligne (même principe que bail_fin_proche).
       await alertesJobService.genererAlertes("2026-07-06");
-      const [rouverte] = await alertesService.findAll({ type: "sinistre_stagnation" });
+      const rouverte = (await alertesService.findAll({ type: "sinistre_stagnation" })).find(
+        (a) => a.entiteId === sinistreLigne.id
+      );
       expect(rouverte?.id).toBe(alerteOuverte?.id);
       expect(rouverte?.statut).toBe("active");
     });

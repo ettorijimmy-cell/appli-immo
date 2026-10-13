@@ -446,7 +446,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     if (!equipement) throw new Error("Échec de l'insertion de l'équipement de test");
     await alertesJobService.genererAlertes("2026-07-01");
     await tachesJobService.genererTachesDepuisAlertes();
-    const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement" });
+    const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement", appartementId });
     if (!tacheCreee) throw new Error("Tâche entretien_equipement attendue introuvable");
 
     const misAJour = await tachesService.marquerFait(tacheCreee.id);
@@ -468,7 +468,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
     if (!equipement) throw new Error("Échec de l'insertion de l'équipement de test");
     await alertesJobService.genererAlertes("2026-07-01");
     await tachesJobService.genererTachesDepuisAlertes();
-    const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement" });
+    const [tacheCreee] = await tachesService.findAll({ type: "entretien_equipement", appartementId });
     if (!tacheCreee) throw new Error("Tâche entretien_equipement attendue introuvable");
     await tachesService.marquerFait(tacheCreee.id);
 
@@ -495,7 +495,7 @@ describe("Tâches — génération depuis alertes, idempotence, actions (intégr
 
     await alertesJobService.genererAlertes("2026-06-11");
     await tachesJobService.genererTachesDepuisAlertes();
-    const [tacheInitiale] = await tachesService.findAll({ type: "impaye" });
+    const [tacheInitiale] = await tachesService.findAll({ type: "impaye", bailId: bail.id });
     if (!tacheInitiale) throw new Error("Tâche impaye attendue introuvable");
     await tachesService.marquerFait(tacheInitiale.id);
 
@@ -1145,7 +1145,7 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
   }
 
   it("crée une tâche à la date anniversaire quand les deux indices sont disponibles", async () => {
-    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    const bail = await creerBailAvecClauseIndexation("1998-06-15", 2);
     await db.insert(indicesIrl).values([
       { annee: 1999, trimestre: 2, valeur: "145.50" },
       { annee: 1998, trimestre: 2, valeur: "143.00" }
@@ -1154,7 +1154,7 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
     const nombreCreees = await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
 
     expect(nombreCreees).toBe(1);
-    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer", bailId: bail.id });
     expect(tacheCreee).toBeDefined();
     expect(tacheCreee?.origine).toBe("planifiee");
     expect(tacheCreee?.statut).toBe("a_faire");
@@ -1215,7 +1215,7 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
       { annee: 1998, trimestre: 2, valeur: "143.00" }
     ]);
     await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
-    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer", bailId: bail.id });
     if (!tacheCreee) throw new Error("Tâche revision_loyer attendue introuvable");
 
     // Montant ajusté manuellement, différent du montant proposé par le job
@@ -1244,13 +1244,13 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
   });
 
   it("appliquerRevision rejette une tâche déjà appliquée (statut != a_faire)", async () => {
-    await creerBailAvecClauseIndexation("1998-06-15", 2);
+    const bail = await creerBailAvecClauseIndexation("1998-06-15", 2);
     await db.insert(indicesIrl).values([
       { annee: 1999, trimestre: 2, valeur: "145.50" },
       { annee: 1998, trimestre: 2, valeur: "143.00" }
     ]);
     await tachesJobService.genererTachesRevisionLoyer("1999-06-15");
-    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer" });
+    const [tacheCreee] = await tachesService.findAll({ type: "revision_loyer", bailId: bail.id });
     if (!tacheCreee) throw new Error("Tâche revision_loyer attendue introuvable");
     await tachesService.appliquerRevision(tacheCreee.id, "810.00");
 
@@ -1269,7 +1269,7 @@ describe("Tâches — révision de loyer (intégration Postgres réelle)", () =>
     // chemin applicatif réel.
     await alertesJobService.genererAlertes("2020-06-20");
     await tachesJobService.genererTachesDepuisAlertes();
-    const [tacheImpaye] = await tachesService.findAll({ type: "impaye" });
+    const [tacheImpaye] = await tachesService.findAll({ type: "impaye", bailId: bail.id });
     if (!tacheImpaye) throw new Error("Tâche impaye attendue introuvable");
 
     await expect(tachesService.appliquerRevision(tacheImpaye.id, "999.00")).rejects.toThrow();
@@ -2140,7 +2140,7 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
       const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2026-03-15");
 
       expect(nombreCreees).toBe(1);
-      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges" });
+      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges", bailId: bail.id });
       expect(tacheCreee).toBeDefined();
       expect(tacheCreee?.origine).toBe("planifiee");
       expect(tacheCreee?.statut).toBe("a_faire");
@@ -2193,7 +2193,7 @@ describe("Tâches — régularisation des charges (intégration Postgres réelle
       const nombreCreees = await tachesJobService.genererTachesRegularisationCharges("2028-02-29");
 
       expect(nombreCreees).toBe(1);
-      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges" });
+      const [tacheCreee] = await tachesService.findAll({ type: "regularisation_charges", bailId: bail.id });
       expect(tacheCreee?.periodeRecurrence).toBe("2027-02-28_2028-02-29");
     });
   });
