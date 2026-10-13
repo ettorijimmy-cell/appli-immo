@@ -1027,6 +1027,49 @@ les trois parcours ci-dessus).
   suite, y compris en CI) ou réordonner des requêtes de production (modifier
   `genererTachesDepuisAlertes()` sur une hypothèse non confirmée).
 
+- **Garant Visale/autre dans la génération du bail — non résolu, cause
+  identifiée (2026-10-13).** `packages/core/src/baux/valider-completude-
+  generation-bail.ts:161-172` exige `dateNaissance`/`lieuNaissance`/
+  `nationalite` pour **tout** garant du bail, sans filtrer par
+  `typeGarantie`.
+  `apps/backend/src/bail-document-docx/bail-document-docx.service.ts:215-219`
+  alimente ce contrôle via `garantsDuBail.map(...)`, également sans filtre
+  de type ; la ligne 325 (`const caution = garantsDuBail[0] ?? null`)
+  imprime dans le document le premier garant du bail quel que soit son
+  type, sans distinction. Conséquence concrète : un bail dont le seul
+  garant est de type Visale ou `autre` bloque systématiquement la
+  génération du document avec "Garant — date de naissance" (etc.) tant que
+  ces champs ne sont pas renseignés — alors que l'UI ne les présente ni ne
+  les exige différemment selon le type (décision actée le 2026-10-13 : les
+  3 champs restent affichés pour tous les types de garant, aucun
+  masquage). Question juridique ouverte : quelles mentions le bail et
+  l'acte de cautionnement doivent contenir selon le type de garantie
+  (personne physique, Visale, autre) — à établir sur Légifrance
+  (notamment article 22-1 de la loi 89-462 et articles 2297 et suivants du
+  Code civil dans leur rédaction issue de l'ordonnance 2021-1192) avant
+  toute modification. Aucune modification de `validerCompletudeGenerationBail`
+  ni de `bail-document-docx.service.ts` avant cette vérification.
+
+- **`EditLocataireForm` ne peut pas vider un champ optionnel une fois
+  rempli — non résolu, cause identifiée (2026-10-13).**
+  `apps/desktop/src/renderer/src/locataires/LocataireDetailView.tsx:456-466`
+  (`EditLocataireForm.handleSubmit`) construit le corps de la requête
+  `PATCH /locataires/:id` avec `...(email && { email})`,
+  `...(telephone && { telephone })`, etc. — si l'utilisateur vide un champ
+  optionnel dans le formulaire, la clé correspondante est **omise** du
+  corps plutôt qu'envoyée comme `null` explicite. Comme `UpdateLocataireDto`
+  traite une clé absente comme "champ non modifié" (`@IsOptional()`,
+  aucune écriture côté `mettreAJourAvecAudit`), l'ancienne valeur persiste
+  silencieusement en base — aucune erreur, aucun message, le champ
+  réapparaît simplement tel qu'avant au rechargement suivant. Repéré en
+  construisant `EditGarantForm` (point 6a), qui adopte délibérément le
+  comportement inverse (`valeurOuNull`, toujours `null` explicite pour un
+  champ vidé — voir `UpdateGarantDto`/`UpdateGarantInput`). Correctif pour
+  `EditLocataireForm` : reprendre le même helper `valeurOuNull` et
+  vérifier que `UpdateLocataireDto` accepte bien `null` sur chacun de ses
+  champs optionnels (email, téléphone, adresse, codePostal, ville,
+  dateNaissance) — non fait ici, hors périmètre du commit `f3513de`.
+
 ---
 
 ## Maintenance
