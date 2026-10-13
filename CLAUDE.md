@@ -72,6 +72,7 @@ pnpm test             exécuter les tests (Vitest) sur tous les packages
 pnpm lint             linter tout le monorepo
 pnpm build            build de production
 pnpm backup:local     pg_dump du Postgres de dev vers backups/ (horodaté, ignoré par git)
+pnpm test:integration:clean  suite d'intégration backend sur un Postgres jetable (port 5434, recréé à chaque lancement)
 ```
 
 Le Postgres de dev (`docker-compose.yml`) tourne sur le port 5433, pas 5432,
@@ -79,6 +80,16 @@ pour ne jamais entrer en conflit avec un autre Postgres déjà présent sur la
 machine. La chaîne de connexion de repli (`DEFAULT_DEV_DATABASE_URL`,
 packages/db/src/client.ts) pointe dessus — aucune variable d'environnement
 à définir pour un usage local.
+
+`pnpm test:integration:clean` (`scripts/test-integration-clean.mjs`) lance
+la suite d'intégration backend contre un second Postgres, entièrement
+jetable (`docker-compose.test.yml`, port 5434), jamais contre la base de
+dev — utile avant un commit pour vérifier qu'un test ne dépend pas
+silencieusement de données déjà présentes en base de dev (voir
+docs/backlog.md, Dette technique, tests `sinistre_stagnation` instables).
+Le conteneur est détruit (`down -v`) avant ET après chaque lancement, même
+si les tests échouent — toujours reparti d'une base vide. N'affecte jamais
+le Postgres de dev (port 5433) : ports et bases de données distincts.
 
 ## Règles importantes — à ne jamais enfreindre
 

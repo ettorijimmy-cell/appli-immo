@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
+    "test:integration:clean": "node scripts/test-integration-clean.mjs",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "seed:user": "pnpm --filter backend seed:user",
