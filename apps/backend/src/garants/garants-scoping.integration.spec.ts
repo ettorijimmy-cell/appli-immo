@@ -262,6 +262,38 @@ describe("GarantsService — contrôle d'appartenance à l'organisation (create/
       );
       expect(garant.telephone).toBe("0611111111");
     });
+
+    // Point 6a (docs/backlog.md) : dateNaissance/lieuNaissance/nationalite
+    // n'existaient pas sur UpdateGarantDto jusqu'ici — avec whitelist: true
+    // (main.ts), ces clés étaient silencieusement supprimées du corps de la
+    // requête avant même d'atteindre GarantsService.update. Le fixture
+    // créé par creerFixtureOrganisation() n'en fournit aucune (voir
+    // garantsService.create ci-dessus) : les trois partent de `null`.
+    it("écrit les 3 nouveaux champs (dateNaissance, lieuNaissance, nationalite)", async () => {
+      const garant = await contexteOrgA(() =>
+        garantsService.update(orgA.garantId, {
+          dateNaissance: "1985-03-12",
+          lieuNaissance: "Lyon",
+          nationalite: "française"
+        })
+      );
+      expect(garant.dateNaissance).toBe("1985-03-12");
+      expect(garant.lieuNaissance).toBe("Lyon");
+      expect(garant.nationalite).toBe("française");
+    });
+
+    // EditGarantForm (desktop) envoie explicitement `null` pour un champ
+    // optionnel vidé, jamais en omettant la clé (contrairement à
+    // EditLocataireForm, docs/backlog.md) — ce test prouve que le service
+    // écrit bien NULL en base dans ce cas, pas seulement que le DTO
+    // l'accepte sans erreur de validation.
+    it("remet un champ à null pour l'effacer réellement, jamais en omettant la clé", async () => {
+      await contexteOrgA(() => garantsService.update(orgA.garantId, { lieuNaissance: "Lyon" }));
+
+      const garant = await contexteOrgA(() => garantsService.update(orgA.garantId, { lieuNaissance: null }));
+
+      expect(garant.lieuNaissance).toBeNull();
+    });
   });
 
   describe("archive", () => {

@@ -118,6 +118,22 @@ export interface CreateGarantInput {
   nationalite?: string;
 }
 
+// `| null` sur les champs optionnels : contrairement à CreateGarantInput, un
+// champ vidé dans le formulaire de modification doit être envoyé comme
+// `null` explicite pour effacer réellement la valeur en base (voir
+// EditGarantForm) — omettre la clé, comme le fait UpdateLocataireInput,
+// laisserait l'ancienne valeur inchangée.
+export interface UpdateGarantInput {
+  nom?: string;
+  prenom?: string;
+  email?: string | null;
+  telephone?: string | null;
+  typeGarantie?: GarantTypeGarantie;
+  dateNaissance?: string | null;
+  lieuNaissance?: string | null;
+  nationalite?: string | null;
+}
+
 export type BailLocataireRole = "titulaire" | "colocataire";
 
 export interface BailLocataire {
@@ -261,6 +277,10 @@ export function getGarant(id: string): Promise<Garant> {
 
 export function createGarant(input: CreateGarantInput): Promise<Garant> {
   return authenticatedFetch<Garant>("/garants", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateGarant(id: string, input: UpdateGarantInput): Promise<Garant> {
+  return authenticatedFetch<Garant>(`/garants/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function archiveGarant(id: string): Promise<Garant> {

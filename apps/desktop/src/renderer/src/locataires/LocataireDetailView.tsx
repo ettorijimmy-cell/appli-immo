@@ -3,6 +3,7 @@ import { CollapsibleSection } from "../components/CollapsibleSection";
 import { ArchiveBadge } from "../components/ArchiveFilter";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
+import { ApiError } from "../lib/authenticated-fetch";
 import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
   archiveGarant,
@@ -12,6 +13,7 @@ import {
   getLocataire,
   listBailLocataires,
   listGarants,
+  updateGarant,
   updateLocataire,
   type Bail,
   type BailLocataire,
@@ -224,6 +226,7 @@ function BailDetail({
 }): React.JSX.Element {
   const { bail, appartement, colocataires, garants } = contexte;
   const [showGarantForm, setShowGarantForm] = useState(false);
+  const [editingGarantId, setEditingGarantId] = useState<string | null>(null);
 
   async function handleArchiveGarant(id: string): Promise<void> {
     await archiveGarant(id);
@@ -298,27 +301,49 @@ function BailDetail({
         {garants.filter((g) => g.archivedAt === null).length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">Aucun garant.</p>
         ) : (
-          <ul className="mt-1 text-sm">
+          <ul className="mt-1 space-y-1 text-sm">
             {garants
               .filter((g) => g.archivedAt === null)
-              .map((garant) => (
-                <li key={garant.id} className="flex items-center justify-between py-0.5">
-                  <span>
-                    {garant.prenom} {garant.nom} <span className="text-slate-400">({garant.typeGarantie})</span>
-                  </span>
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleArchiveGarant(garant.id);
+              .map((garant) =>
+                editingGarantId === garant.id ? (
+                  <li key={garant.id} className="py-0.5">
+                    <EditGarantForm
+                      garant={garant}
+                      onSaved={() => {
+                        setEditingGarantId(null);
+                        onChanged();
                       }}
-                      className="text-xs text-slate-500 hover:text-red-600"
-                    >
-                      Retirer
-                    </button>
-                  )}
-                </li>
-              ))}
+                      onCancel={() => setEditingGarantId(null)}
+                    />
+                  </li>
+                ) : (
+                  <li key={garant.id} className="flex items-center justify-between py-0.5">
+                    <span>
+                      {garant.prenom} {garant.nom} <span className="text-slate-400">({garant.typeGarantie})</span>
+                    </span>
+                    {!readOnly && (
+                      <span className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingGarantId(garant.id)}
+                          className="text-xs text-slate-500 hover:text-slate-700"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleArchiveGarant(garant.id);
+                          }}
+                          className="text-xs text-slate-500 hover:text-red-600"
+                        >
+                          Retirer
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                )
+              )}
           </ul>
         )}
       </div>
@@ -329,6 +354,8 @@ function BailDetail({
 function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () => void }): React.JSX.Element {
   const [nom, setNom] = useState("");
   const [prenom, setPrenom] = useState("");
+  const [email, setEmail] = useState("");
+  const [telephone, setTelephone] = useState("");
   const [typeGarantie, setTypeGarantie] = useState<GarantTypeGarantie>("personne_physique");
   const [dateNaissance, setDateNaissance] = useState("");
   const [lieuNaissance, setLieuNaissance] = useState("");
@@ -346,13 +373,15 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
         nom,
         prenom,
         typeGarantie,
+        ...(email && { email }),
+        ...(telephone && { telephone }),
         ...(dateNaissance && { dateNaissance }),
         ...(lieuNaissance && { lieuNaissance }),
         ...(nationalite && { nationalite })
       });
       onCreated();
-    } catch {
-      setError("Impossible d'ajouter le garant");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'ajouter le garant");
     } finally {
       setIsSubmitting(false);
     }
@@ -378,6 +407,19 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
           placeholder="Prénom"
           value={prenom}
           onChange={(event) => setPrenom(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Téléphone"
+          value={telephone}
+          onChange={(event) => setTelephone(event.target.value)}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
         />
         <select
@@ -423,6 +465,148 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
       >
         {isSubmitting ? "Ajout…" : "Ajouter"}
       </button>
+    </form>
+  );
+}
+
+// Un champ optionnel vidé (valeur "") est envoyé comme `null` explicite,
+// jamais en omettant la clé (contrairement à EditLocataireForm — voir
+// UpdateGarantInput, docs/backlog.md) : sinon le champ resterait inchangé
+// côté serveur au lieu d'être réellement effacé.
+function valeurOuNull(valeur: string): string | null {
+  return valeur === "" ? null : valeur;
+}
+
+function EditGarantForm({
+  garant,
+  onSaved,
+  onCancel
+}: {
+  garant: Garant;
+  onSaved: () => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  const [nom, setNom] = useState(garant.nom);
+  const [prenom, setPrenom] = useState(garant.prenom);
+  const [email, setEmail] = useState(garant.email ?? "");
+  const [telephone, setTelephone] = useState(garant.telephone ?? "");
+  const [typeGarantie, setTypeGarantie] = useState<GarantTypeGarantie>(garant.typeGarantie);
+  const [dateNaissance, setDateNaissance] = useState(garant.dateNaissance ?? "");
+  const [lieuNaissance, setLieuNaissance] = useState(garant.lieuNaissance ?? "");
+  const [nationalite, setNationalite] = useState(garant.nationalite ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await updateGarant(garant.id, {
+        nom,
+        prenom,
+        typeGarantie,
+        email: valeurOuNull(email),
+        telephone: valeurOuNull(telephone),
+        dateNaissance: valeurOuNull(dateNaissance),
+        lieuNaissance: valeurOuNull(lieuNaissance),
+        nationalite: valeurOuNull(nationalite)
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer les modifications");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        void handleSubmit(event);
+      }}
+      className="mt-2 space-y-3 rounded-md border border-slate-200 p-3"
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <input
+          required
+          placeholder="Nom"
+          value={nom}
+          onChange={(event) => setNom(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          required
+          placeholder="Prénom"
+          value={prenom}
+          onChange={(event) => setPrenom(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Téléphone"
+          value={telephone}
+          onChange={(event) => setTelephone(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <select
+          value={typeGarantie}
+          onChange={(event) => setTypeGarantie(event.target.value as GarantTypeGarantie)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        >
+          {GARANT_TYPES.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          placeholder="Date de naissance"
+          value={dateNaissance}
+          onChange={(event) => setDateNaissance(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Lieu de naissance"
+          value={lieuNaissance}
+          onChange={(event) => setLieuNaissance(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          placeholder="Nationalité"
+          value={nationalite}
+          onChange={(event) => setNationalite(event.target.value)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+        >
+          {isSubmitting ? "Enregistrement…" : "Enregistrer"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-slate-500 hover:text-slate-700"
+        >
+          Annuler
+        </button>
+      </div>
     </form>
   );
 }
