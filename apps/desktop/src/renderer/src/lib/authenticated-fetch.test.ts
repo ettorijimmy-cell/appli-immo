@@ -75,6 +75,49 @@ describe("authenticatedFetch", () => {
     });
   });
 
+  it("joint un message ValidationPipe (tableau de chaînes) avec ' ; '", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          statusCode: 400,
+          message: ["loyerMensuel doit être positif", "dateDebut doit être une date valide"],
+          error: "Bad Request"
+        }),
+        { status: 400 }
+      )
+    );
+
+    await expect(authenticatedFetch("/baux")).rejects.toMatchObject({
+      status: 400,
+      message: "loyerMensuel doit être positif ; dateDebut doit être une date valide"
+    });
+  });
+
+  it("retombe sur le message générique quand le tableau de message est vide", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ statusCode: 400, message: [], error: "Bad Request" }), { status: 400 })
+    );
+
+    await expect(authenticatedFetch("/baux")).rejects.toMatchObject({
+      status: 400,
+      message: "Requête échouée (400)"
+    });
+  });
+
+  it("ignore les éléments non-chaîne d'un tableau de message mixte", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ statusCode: 400, message: ["loyerMensuel doit être positif", 42, null, { foo: "bar" }] }),
+        { status: 400 }
+      )
+    );
+
+    await expect(authenticatedFetch("/baux")).rejects.toMatchObject({
+      status: 400,
+      message: "loyerMensuel doit être positif"
+    });
+  });
+
   it("reprend champsManquants dans l'ApiError quand le corps de la réponse le porte (génération de bail)", async () => {
     fetchMock.mockResolvedValue(
       new Response(

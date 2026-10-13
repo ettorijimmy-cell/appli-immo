@@ -16,6 +16,23 @@ interface CorpsErreur {
   champsManquants?: string[] | undefined;
 }
 
+// ValidationPipe (main.ts, whitelist+transform) renvoie {statusCode: 400,
+// message: string[], error: "Bad Request"} sur une erreur de validation de
+// DTO — un tableau, pas une chaîne, contrairement à toute autre exception
+// NestJS de ce backend (ConflictException, BadRequestException métier...).
+// Sans ce cas, le tableau était silencieusement ignoré (typeof !== "string")
+// et l'utilisateur ne voyait que le message générique "Requête échouée (400)".
+function normaliserMessage(message: unknown): string | undefined {
+  if (typeof message === "string") {
+    return message;
+  }
+  if (Array.isArray(message)) {
+    const chaines = message.filter((item): item is string => typeof item === "string");
+    return chaines.length > 0 ? chaines.join(" ; ") : undefined;
+  }
+  return undefined;
+}
+
 // NestJS renvoie {statusCode, message, error} sur une exception — on
 // remonte ce message (ex. "l'appartement n'est pas vacant") plutôt qu'un
 // message générique, utile pour les règles métier qui refusent une action
@@ -31,7 +48,7 @@ async function extraireCorpsErreur(response: Response): Promise<CorpsErreur> {
     }
     const { message, champsManquants } = body as { message?: unknown; champsManquants?: unknown };
     return {
-      message: typeof message === "string" ? message : undefined,
+      message: normaliserMessage(message),
       champsManquants:
         Array.isArray(champsManquants) && champsManquants.every((champ) => typeof champ === "string")
           ? (champsManquants as string[])
