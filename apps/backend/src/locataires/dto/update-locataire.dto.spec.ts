@@ -21,6 +21,22 @@ describe("UpdateLocataireDto", () => {
     expect(erreurs.some((e) => e.property === "nom")).toBe(false);
   });
 
+  // @ValidateIf (pas @IsOptional) : un `null` explicite doit être
+  // réellement rejeté plutôt que traité comme "absent" — sans quoi la
+  // requête atteindrait la contrainte NOT NULL de Postgres et remonterait
+  // en 500 au lieu d'un 400 propre.
+  it("nom null est rejeté — jamais effaçable", async () => {
+    const dto = plainToInstance(UpdateLocataireDto, { nom: null });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "nom")).toBe(true);
+  });
+
+  it("prenom null est rejeté — jamais effaçable", async () => {
+    const dto = plainToInstance(UpdateLocataireDto, { prenom: null });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "prenom")).toBe(true);
+  });
+
   for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance"]) {
     it(`${champ} accepte null (champ à effacer)`, async () => {
       const dto = plainToInstance(UpdateLocataireDto, { [champ]: null });
