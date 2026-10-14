@@ -124,6 +124,59 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     expect(rattachement?.dateFin).toBeNull();
   });
 
+  // Point 6d (docs/backlog.md) : telephone/estFamiliale proposés dès la
+  // création — même mécanisme générique (listing manuel dans create(),
+  // voir commentaire au-dessus de l'insert) que le bug corrigé en 4faa41d
+  // pour les locataires, vérifié explicitement ici.
+  it("écrit telephone et estFamiliale dès la création", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Avec Téléphone",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      telephone: "0102030405",
+      estFamiliale: true
+    });
+
+    expect(sci.telephone).toBe("0102030405");
+    expect(sci.estFamiliale).toBe(true);
+
+    const relue = await scisService.findById(sci.id);
+    expect(relue.telephone).toBe("0102030405");
+    expect(relue.estFamiliale).toBe(true);
+  });
+
+  it("estFamiliale absent à la création reste NULL en base, jamais false", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Sans Choix",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+
+    expect(sci.estFamiliale).toBeNull();
+    expect(sci.telephone).toBeNull();
+  });
+
+  it("remet telephone et estFamiliale à null pour les effacer réellement", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI À Effacer",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      telephone: "0102030405",
+      estFamiliale: true
+    });
+
+    const misAJour = await scisService.update(sci.id, { telephone: null, estFamiliale: null });
+
+    expect(misAJour.telephone).toBeNull();
+    expect(misAJour.estFamiliale).toBeNull();
+  });
+
   it("modifie une SCI existante (nom, régime fiscal, forme juridique, SIRET)", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI À Corriger",

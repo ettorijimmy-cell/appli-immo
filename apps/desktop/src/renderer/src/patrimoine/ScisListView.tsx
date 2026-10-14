@@ -3,6 +3,12 @@ import { archiveSci, createSci, listScis, type CreateSciInput, type Sci } from "
 import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
 import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
+
+// "" = non renseigné (clé omise à la création, jamais `false`) — distinct
+// de "false", jamais présélectionné par défaut (docs/data-dictionary.md).
+// Partagé avec EditSciForm (SciDetailView.tsx), qui a la même définition.
+type EstFamilialeChoix = "" | "true" | "false";
 
 export function ScisListView({
   onSelect,
@@ -234,6 +240,8 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
   const [adresse, setAdresse] = useState("");
   const [codePostal, setCodePostal] = useState("");
   const [ville, setVille] = useState("");
+  const [telephone, setTelephone] = useState("");
+  const [estFamiliale, setEstFamiliale] = useState<EstFamilialeChoix>("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -249,11 +257,14 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
         codePostal,
         ville,
         ...(formeJuridique && { formeJuridique }),
-        ...(siret && { siret })
+        ...(siret && { siret }),
+        ...(telephone && { telephone }),
+        // "" (Non renseigné) = clé omise, jamais `false`.
+        ...(estFamiliale !== "" && { estFamiliale: estFamiliale === "true" })
       });
       onCreated();
-    } catch {
-      setError("Impossible de créer la SCI");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible de créer la SCI");
     } finally {
       setIsSubmitting(false);
     }
@@ -356,6 +367,34 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
             onChange={(event) => setVille(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-telephone" className="text-sm font-medium text-slate-700">
+            Téléphone
+          </label>
+          <input
+            id="sci-telephone"
+            value={telephone}
+            onChange={(event) => setTelephone(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-est-familiale" className="text-sm font-medium text-slate-700">
+            SCI familiale
+          </label>
+          <select
+            id="sci-est-familiale"
+            value={estFamiliale}
+            onChange={(event) => setEstFamiliale(event.target.value as EstFamilialeChoix)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">Non renseigné</option>
+            <option value="true">Oui</option>
+            <option value="false">Non</option>
+          </select>
         </div>
       </div>
 

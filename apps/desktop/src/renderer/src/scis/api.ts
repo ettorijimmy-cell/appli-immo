@@ -28,8 +28,15 @@ export interface CreateSciInput {
   adresse: string;
   codePostal: string;
   ville: string;
+  telephone?: string;
+  estFamiliale?: boolean;
 }
 
+// `| null` sur telephone/estFamiliale (point 6d, docs/backlog.md) : un
+// champ vidé dans EditSciForm doit être envoyé comme `null` explicite pour
+// effacer réellement la valeur en base (voir valeurOuNull,
+// lib/valeur-ou-null.ts) — omettre la clé laisserait l'ancienne valeur
+// inchangée. nom/regimeFiscal restent non vidables.
 export interface UpdateSciInput {
   nom?: string;
   regimeFiscal?: RegimeFiscal;
@@ -38,8 +45,8 @@ export interface UpdateSciInput {
   adresse?: string;
   codePostal?: string;
   ville?: string;
-  telephone?: string;
-  estFamiliale?: boolean;
+  telephone?: string | null;
+  estFamiliale?: boolean | null;
 }
 
 export interface CompteBancaire {

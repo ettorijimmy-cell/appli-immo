@@ -34,7 +34,9 @@ export class ScisService {
           siret: dto.siret,
           adresse: dto.adresse,
           codePostal: dto.codePostal,
-          ville: dto.ville
+          ville: dto.ville,
+          telephone: dto.telephone,
+          estFamiliale: dto.estFamiliale
         })
         .returning();
       if (!sci) {

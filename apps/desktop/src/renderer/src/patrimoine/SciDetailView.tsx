@@ -12,6 +12,8 @@ import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from
 import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
+import { ApiError } from "../lib/authenticated-fetch";
+import { valeurOuNull } from "../lib/valeur-ou-null";
 
 export function SciDetailView({
   sciId,
@@ -309,12 +311,15 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
         ...(adresse && { adresse }),
         ...(codePostal && { codePostal }),
         ...(ville && { ville }),
-        ...(telephone && { telephone }),
-        ...(estFamiliale !== "" && { estFamiliale: estFamiliale === "true" })
+        telephone: valeurOuNull(telephone),
+        // "" (Non renseigné) envoie désormais null explicite, pour
+        // réellement effacer une valeur Oui/Non déjà enregistrée — plus
+        // seulement omettre la clé (point 6d, docs/backlog.md).
+        estFamiliale: estFamiliale === "" ? null : estFamiliale === "true"
       });
       onSaved();
-    } catch {
-      setError("Impossible d'enregistrer les modifications");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer les modifications");
     } finally {
       setIsSubmitting(false);
     }

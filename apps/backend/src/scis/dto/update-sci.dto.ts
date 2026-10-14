@@ -1,12 +1,19 @@
-import { IsBoolean, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf } from "class-validator";
 
 export class UpdateSciDto {
-  @IsOptional()
+  // @ValidateIf (pas @IsOptional) : nom/regimeFiscal ne doivent jamais
+  // pouvoir passer à null — colonnes NOT NULL en base
+  // (packages/db/src/schema/scis.ts). @IsOptional() traite `null` comme
+  // "absent" et sauterait @IsString/@MinLength ou @IsIn, laissant passer un
+  // `null` explicite malgré leur typage TS sans `| null` — même correctif
+  // que numero sur UpdateAppartementDto (point 6c) et nom/prenom sur
+  // UpdateLocataireDto/UpdateGarantDto (commit 99169d2).
+  @ValidateIf((o) => o.nom !== undefined)
   @IsString()
   @MinLength(1)
   nom?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.regimeFiscal !== undefined)
   @IsIn(["IS", "IR"])
   regimeFiscal?: "IS" | "IR";
 
@@ -37,13 +44,18 @@ export class UpdateSciDto {
   @MinLength(1)
   ville?: string;
 
+  // `| null` (point 6d, docs/backlog.md) : un champ vidé dans EditSciForm
+  // doit être envoyé comme `null` explicite pour effacer réellement la
+  // valeur en base — omettre la clé laisserait l'ancienne valeur
+  // inchangée.
   @IsOptional()
   @IsString()
-  telephone?: string;
+  telephone?: string | null;
 
-  // Pas de valeur par défaut, y compris ici : un envoi explicite de
-  // `false` doit rester possible (docs/data-dictionary.md).
+  // `| null` (point 6d) : "Non renseigné" dans EditSciForm doit pouvoir
+  // revenir à null, distinct de `false` — pas de valeur par défaut, y
+  // compris ici.
   @IsOptional()
   @IsBoolean()
-  estFamiliale?: boolean;
+  estFamiliale?: boolean | null;
 }
