@@ -1071,6 +1071,24 @@ les trois parcours ci-dessus).
   `UpdateLocataireDto` accepte `null` sur email/telephone/adresse/
   codePostal/ville/dateNaissance (nom/prenom restent non vidables).
 
+- **`scis.nom_gerant`/`prenom_gerant` sans aucun chemin d'écriture — non
+  résolu, cause identifiée (2026-10-14).** Les deux colonnes existent en
+  base et sont exposées en lecture par `ScisService.versDto`
+  (`scis.service.ts:166-167`), mais ni `CreateSciDto` ni `UpdateSciDto` ne
+  les exposent — aucune UI ne les édite, elles valent toujours `null` pour
+  toute SCI, confirmé par `patrimoine.integration.spec.ts:361`. Découvert
+  pendant l'audit du point 6d (telephone/estFamiliale). Non utilisées dans
+  la génération du bail ni de la quittance (vérifié : aucune occurrence
+  dans `bail-document-docx.service.ts`, `quittance-document-docx.service.ts`,
+  `valider-completude-generation-bail.ts`). Le modèle de bail
+  (`modele-bail.docx`) ne mentionne pas non plus le gérant : l'en-tête LE
+  BAILLEUR ne contient que le nom, l'adresse et le téléphone de la SCI.
+  Faut-il nommer le représentant de la SCI dans le bail ? Question
+  juridique, à soumettre à l'ADIL avec la liste du point 7. À traiter :
+  soit ajouter les champs aux deux DTOs + formulaires SCI, soit supprimer
+  les colonnes si elles sont jugées inutiles — décision à prendre avec
+  Jimmy, pas tranchée ici.
+
 ---
 
 ## Maintenance
