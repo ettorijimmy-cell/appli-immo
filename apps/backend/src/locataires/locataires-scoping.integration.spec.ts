@@ -110,6 +110,25 @@ describe("LocatairesService — contrôle d'appartenance à l'organisation (find
     return requestContextService.executerAvecContexte({ utilisateurId: orgB.userId, organisationId: orgB.organisationId }, fn);
   }
 
+  describe("create", () => {
+    it("écrit adresse/codePostal/ville/dateNaissance dès la création (point 6b, docs/backlog.md)", async () => {
+      const locataire = await contexteOrgA(() =>
+        locatairesService.create(orgA.userId, {
+          nom: "Durand",
+          prenom: "Claire",
+          adresse: "12 rue des Lilas",
+          codePostal: "75001",
+          ville: "Paris",
+          dateNaissance: "1990-05-12"
+        })
+      );
+      expect(locataire.adresse).toBe("12 rue des Lilas");
+      expect(locataire.codePostal).toBe("75001");
+      expect(locataire.ville).toBe("Paris");
+      expect(locataire.dateNaissance).toBe("1990-05-12");
+    });
+  });
+
   describe("findById", () => {
     it("réussit normalement quand le locataire appartient à l'organisation appelante", async () => {
       const locataire = await contexteOrgA(() => locatairesService.findById(orgA.locataireId));
@@ -159,6 +178,12 @@ describe("LocatairesService — contrôle d'appartenance à l'organisation (find
         locatairesService.update(orgA.locataireId, { ville: "Lyon" })
       );
       expect(locataire.ville).toBe("Lyon");
+    });
+
+    it("remet un champ à null pour l'effacer réellement, jamais en omettant la clé (point 6b, docs/backlog.md)", async () => {
+      await contexteOrgA(() => locatairesService.update(orgA.locataireId, { ville: "Lyon" }));
+      const locataire = await contexteOrgA(() => locatairesService.update(orgA.locataireId, { ville: null }));
+      expect(locataire.ville).toBeNull();
     });
   });
 

@@ -470,9 +470,10 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
 }
 
 // Un champ optionnel vidé (valeur "") est envoyé comme `null` explicite,
-// jamais en omettant la clé (contrairement à EditLocataireForm — voir
-// UpdateGarantInput, docs/backlog.md) : sinon le champ resterait inchangé
-// côté serveur au lieu d'être réellement effacé.
+// jamais en omettant la clé (voir UpdateGarantInput/UpdateLocataireInput,
+// docs/backlog.md) : sinon le champ resterait inchangé côté serveur au
+// lieu d'être réellement effacé. Partagé par EditGarantForm et
+// EditLocataireForm, tous deux dans ce fichier.
 function valeurOuNull(valeur: string): string | null {
   return valeur === "" ? null : valeur;
 }
@@ -641,16 +642,16 @@ function EditLocataireForm({
         nom,
         prenom,
         statut,
-        ...(email && { email }),
-        ...(telephone && { telephone }),
-        ...(adresse && { adresse }),
-        ...(codePostal && { codePostal }),
-        ...(ville && { ville }),
-        ...(dateNaissance && { dateNaissance })
+        email: valeurOuNull(email),
+        telephone: valeurOuNull(telephone),
+        adresse: valeurOuNull(adresse),
+        codePostal: valeurOuNull(codePostal),
+        ville: valeurOuNull(ville),
+        dateNaissance: valeurOuNull(dateNaissance)
       });
       onSaved();
-    } catch {
-      setError("Impossible d'enregistrer les modifications");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer les modifications");
     } finally {
       setIsSubmitting(false);
     }

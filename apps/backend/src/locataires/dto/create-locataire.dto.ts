@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsDateString, IsEmail, IsOptional, IsString, MinLength } from "class-validator";
 
 export class CreateLocataireDto {
   @IsString()
@@ -16,4 +16,20 @@ export class CreateLocataireDto {
   @IsOptional()
   @IsString()
   telephone?: string;
+
+  @IsOptional()
+  @IsString()
+  adresse?: string;
+
+  @IsOptional()
+  @IsString()
+  codePostal?: string;
+
+  @IsOptional()
+  @IsString()
+  ville?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateNaissance?: string;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
 import { archiveLocataire, createLocataire, listLocataires, type Locataire } from "./api";
 
 export function LocatairesListView({
@@ -131,6 +132,10 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
   const [prenom, setPrenom] = useState("");
   const [email, setEmail] = useState("");
   const [telephone, setTelephone] = useState("");
+  const [adresse, setAdresse] = useState("");
+  const [codePostal, setCodePostal] = useState("");
+  const [ville, setVille] = useState("");
+  const [dateNaissance, setDateNaissance] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -143,15 +148,23 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
         nom,
         prenom,
         ...(email && { email }),
-        ...(telephone && { telephone })
+        ...(telephone && { telephone }),
+        ...(adresse && { adresse }),
+        ...(codePostal && { codePostal }),
+        ...(ville && { ville }),
+        ...(dateNaissance && { dateNaissance })
       });
       setNom("");
       setPrenom("");
       setEmail("");
       setTelephone("");
+      setAdresse("");
+      setCodePostal("");
+      setVille("");
+      setDateNaissance("");
       onCreated();
-    } catch {
-      setError("Impossible de créer le locataire");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible de créer le locataire");
     } finally {
       setIsSubmitting(false);
     }
@@ -212,6 +225,55 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
             id="locataire-telephone"
             value={telephone}
             onChange={(event) => setTelephone(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-adresse" className="text-sm font-medium text-slate-700">
+            Adresse
+          </label>
+          <input
+            id="locataire-adresse"
+            value={adresse}
+            onChange={(event) => setAdresse(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-code-postal" className="text-sm font-medium text-slate-700">
+            Code postal
+          </label>
+          <input
+            id="locataire-code-postal"
+            value={codePostal}
+            onChange={(event) => setCodePostal(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-ville" className="text-sm font-medium text-slate-700">
+            Ville
+          </label>
+          <input
+            id="locataire-ville"
+            value={ville}
+            onChange={(event) => setVille(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-date-naissance" className="text-sm font-medium text-slate-700">
+            Date de naissance
+          </label>
+          <input
+            id="locataire-date-naissance"
+            type="date"
+            value={dateNaissance}
+            onChange={(event) => setDateNaissance(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

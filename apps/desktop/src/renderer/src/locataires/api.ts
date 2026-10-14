@@ -21,17 +21,26 @@ export interface CreateLocataireInput {
   prenom: string;
   email?: string;
   telephone?: string;
-}
-
-export interface UpdateLocataireInput {
-  nom?: string;
-  prenom?: string;
-  email?: string;
-  telephone?: string;
   adresse?: string;
   codePostal?: string;
   ville?: string;
   dateNaissance?: string;
+}
+
+// `| null` sur les champs optionnels : un champ vidé dans le formulaire de
+// modification doit être envoyé comme `null` explicite pour effacer
+// réellement la valeur en base (voir EditLocataireForm, valeurOuNull) —
+// omettre la clé laisserait l'ancienne valeur inchangée. Même convention
+// que UpdateGarantInput (commit f3513de). nom/prenom restent non vidables.
+export interface UpdateLocataireInput {
+  nom?: string;
+  prenom?: string;
+  email?: string | null;
+  telephone?: string | null;
+  adresse?: string | null;
+  codePostal?: string | null;
+  ville?: string | null;
+  dateNaissance?: string | null;
   statut?: LocataireStatutModifiable;
 }
 

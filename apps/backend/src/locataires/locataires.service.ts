@@ -30,6 +30,10 @@ export class LocatairesService {
         prenom: dto.prenom,
         email: dto.email,
         telephone: dto.telephone,
+        adresse: dto.adresse,
+        codePostal: dto.codePostal,
+        ville: dto.ville,
+        dateNaissance: dto.dateNaissance,
         organisationId: user.organisationId
       })
       .returning();

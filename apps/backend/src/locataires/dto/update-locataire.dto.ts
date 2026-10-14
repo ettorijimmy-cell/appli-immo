@@ -15,29 +15,34 @@ export class UpdateLocataireDto {
   @MinLength(1)
   prenom?: string;
 
+  // `| null` sur les champs ci-dessous (point 6b, docs/backlog.md) : un
+  // champ vidé dans EditLocataireForm doit être envoyé comme `null`
+  // explicite pour effacer réellement la valeur en base — omettre la clé
+  // laisserait l'ancienne valeur inchangée (même raisonnement que
+  // UpdateGarantDto, commit f3513de). nom/prenom restent non vidables.
   @IsOptional()
   @IsEmail()
-  email?: string;
+  email?: string | null;
 
   @IsOptional()
   @IsString()
-  telephone?: string;
+  telephone?: string | null;
 
   @IsOptional()
   @IsString()
-  adresse?: string;
+  adresse?: string | null;
 
   @IsOptional()
   @IsString()
-  codePostal?: string;
+  codePostal?: string | null;
 
   @IsOptional()
   @IsString()
-  ville?: string;
+  ville?: string | null;
 
   @IsOptional()
   @IsDateString()
-  dateNaissance?: string;
+  dateNaissance?: string | null;
 
   @IsOptional()
   @IsIn(LOCATAIRE_STATUTS_MODIFIABLES)
