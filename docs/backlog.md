@@ -1051,24 +1051,25 @@ les trois parcours ci-dessus).
   ni de `bail-document-docx.service.ts` avant cette vérification.
 
 - **`EditLocataireForm` ne peut pas vider un champ optionnel une fois
-  rempli — non résolu, cause identifiée (2026-10-13).**
+  rempli — résolu (commit `4faa41d`, 2026-10-14).**
   `apps/desktop/src/renderer/src/locataires/LocataireDetailView.tsx:456-466`
-  (`EditLocataireForm.handleSubmit`) construit le corps de la requête
+  (`EditLocataireForm.handleSubmit`) construisait le corps de la requête
   `PATCH /locataires/:id` avec `...(email && { email})`,
-  `...(telephone && { telephone })`, etc. — si l'utilisateur vide un champ
-  optionnel dans le formulaire, la clé correspondante est **omise** du
+  `...(telephone && { telephone })`, etc. — si l'utilisateur vidait un champ
+  optionnel dans le formulaire, la clé correspondante était **omise** du
   corps plutôt qu'envoyée comme `null` explicite. Comme `UpdateLocataireDto`
-  traite une clé absente comme "champ non modifié" (`@IsOptional()`,
-  aucune écriture côté `mettreAJourAvecAudit`), l'ancienne valeur persiste
+  traitait une clé absente comme "champ non modifié" (`@IsOptional()`,
+  aucune écriture côté `mettreAJourAvecAudit`), l'ancienne valeur persistait
   silencieusement en base — aucune erreur, aucun message, le champ
-  réapparaît simplement tel qu'avant au rechargement suivant. Repéré en
-  construisant `EditGarantForm` (point 6a), qui adopte délibérément le
+  réapparaissait simplement tel qu'avant au rechargement suivant. Repéré en
+  construisant `EditGarantForm` (point 6a), qui adoptait délibérément le
   comportement inverse (`valeurOuNull`, toujours `null` explicite pour un
-  champ vidé — voir `UpdateGarantDto`/`UpdateGarantInput`). Correctif pour
-  `EditLocataireForm` : reprendre le même helper `valeurOuNull` et
-  vérifier que `UpdateLocataireDto` accepte bien `null` sur chacun de ses
-  champs optionnels (email, téléphone, adresse, codePostal, ville,
-  dateNaissance) — non fait ici, hors périmètre du commit `f3513de`.
+  champ vidé — voir `UpdateGarantDto`/`UpdateGarantInput`, commit `f3513de`).
+  **Corrigé le 2026-10-14** (point 6b, commit `4faa41d`) :
+  `EditLocataireForm` réutilise désormais le même helper `valeurOuNull`
+  (partagé avec `EditGarantForm`, tous deux dans ce fichier) ;
+  `UpdateLocataireDto` accepte `null` sur email/telephone/adresse/
+  codePostal/ville/dateNaissance (nom/prenom restent non vidables).
 
 ---
 
