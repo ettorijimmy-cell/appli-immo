@@ -21,6 +21,8 @@ import {
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
+import { ApiError } from "../lib/authenticated-fetch";
+import { valeurNumeriqueOuNull, valeurOuNull } from "../lib/valeur-ou-null";
 import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
 const EQUIPEMENT_TYPES: EquipementType[] = ["chaudiere", "ballon_eau_chaude", "autre"];
@@ -545,31 +547,32 @@ function EditAppartementForm({
       await updateAppartement(appartement.id, {
         numero,
         statut,
+        // type/nombrePiecesPrincipales/modeChauffage/modeEauChaude : jamais
+        // envoyés comme `null` quand le bien est résidentiel — obligatoires
+        // dans ce cas, AppartementsService les rejette explicitement
+        // (point 6c, docs/backlog.md). Clé omise si vidés, comme avant.
         ...(estResidentiel && type && { type }),
-        ...(surface && { surface }),
-        ...(tantieme && { tantieme }),
-        ...(loyerReference && { loyerReference }),
-        ...(equipementCuisine && { equipementCuisine }),
-        ...(dependancesAnnexes && { dependancesAnnexes }),
+        surface: valeurOuNull(surface),
+        tantieme: valeurOuNull(tantieme),
+        loyerReference: valeurOuNull(loyerReference),
+        equipementCuisine: valeurOuNull(equipementCuisine),
+        dependancesAnnexes: valeurOuNull(dependancesAnnexes),
         ...(estResidentiel && nombrePiecesPrincipales && { nombrePiecesPrincipales: Number(nombrePiecesPrincipales) }),
         ...(estResidentiel && modeChauffage && { modeChauffage }),
         ...(estResidentiel && modeEauChaude && { modeEauChaude }),
-        // !== "" (pas simplement truthy) : 0 est une valeur légitime ici
-        // (ex. studio sans chambre séparée), contrairement aux champs
-        // ci-dessus où 0 n'a pas de sens.
-        ...(nombreChambres !== "" && { nombreChambres: Number(nombreChambres) }),
-        ...(nombreSallesDeBain !== "" && { nombreSallesDeBain: Number(nombreSallesDeBain) }),
-        ...(nombreWc !== "" && { nombreWc: Number(nombreWc) }),
-        ...(autrePiece1 && { autrePiece1 }),
-        ...(autrePiece2 && { autrePiece2 }),
-        ...(classeDpe && { classeDpe }),
-        ...(depensesEnergieMin && { depensesEnergieMin }),
-        ...(depensesEnergieMax && { depensesEnergieMax }),
-        ...(anneeReferencePrixEnergie && { anneeReferencePrixEnergie: Number(anneeReferencePrixEnergie) })
+        nombreChambres: valeurNumeriqueOuNull(nombreChambres),
+        nombreSallesDeBain: valeurNumeriqueOuNull(nombreSallesDeBain),
+        nombreWc: valeurNumeriqueOuNull(nombreWc),
+        autrePiece1: valeurOuNull(autrePiece1),
+        autrePiece2: valeurOuNull(autrePiece2),
+        classeDpe: classeDpe === "" ? null : classeDpe,
+        depensesEnergieMin: valeurOuNull(depensesEnergieMin),
+        depensesEnergieMax: valeurOuNull(depensesEnergieMax),
+        anneeReferencePrixEnergie: valeurNumeriqueOuNull(anneeReferencePrixEnergie)
       });
       onSaved();
-    } catch {
-      setError("Impossible d'enregistrer les modifications");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer les modifications");
     } finally {
       setIsSubmitting(false);
     }

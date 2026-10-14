@@ -52,3 +52,56 @@ describe("CreateAppartementDto — tantieme", () => {
     expect(erreurs.some((e) => e.property === "surface")).toBe(true);
   });
 });
+
+describe("CreateAppartementDto — numero", () => {
+  it("vide est rejeté (MinLength(1))", async () => {
+    const dto = plainToInstance(CreateAppartementDto, { ...CHAMPS_VALIDES, numero: "" });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "numero")).toBe(true);
+  });
+});
+
+// Point 6c (docs/backlog.md) : equipementCuisine/dependancesAnnexes
+// (exigés par validerCompletudeGenerationBail) et les 5 champs de
+// composition du logement (module État des lieux) manquaient jusqu'ici
+// entièrement à la création.
+describe("CreateAppartementDto — composition du lot", () => {
+  it("accepte les 7 nouveaux champs à la création", async () => {
+    const dto = plainToInstance(CreateAppartementDto, {
+      ...CHAMPS_VALIDES,
+      equipementCuisine: "Plaques + four",
+      dependancesAnnexes: "Cave",
+      nombreChambres: 2,
+      nombreSallesDeBain: 1,
+      nombreWc: 1,
+      autrePiece1: "Bureau",
+      autrePiece2: "Dressing"
+    });
+    const erreurs = await validate(dto);
+    expect(erreurs).toHaveLength(0);
+  });
+
+  it("absents ne déclenchent aucune erreur", async () => {
+    const dto = plainToInstance(CreateAppartementDto, { ...CHAMPS_VALIDES });
+    const erreurs = await validate(dto);
+    expect(erreurs).toHaveLength(0);
+  });
+
+  it("nombreChambres hors bornes (max 3) est rejeté", async () => {
+    const dto = plainToInstance(CreateAppartementDto, { ...CHAMPS_VALIDES, nombreChambres: 4 });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "nombreChambres")).toBe(true);
+  });
+
+  it("nombreSallesDeBain hors bornes (max 2) est rejeté", async () => {
+    const dto = plainToInstance(CreateAppartementDto, { ...CHAMPS_VALIDES, nombreSallesDeBain: 3 });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "nombreSallesDeBain")).toBe(true);
+  });
+
+  it("nombreChambres = 0 est accepté (studio sans chambre séparée)", async () => {
+    const dto = plainToInstance(CreateAppartementDto, { ...CHAMPS_VALIDES, nombreChambres: 0 });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "nombreChambres")).toBe(false);
+  });
+});

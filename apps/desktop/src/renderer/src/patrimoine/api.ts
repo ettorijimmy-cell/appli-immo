@@ -168,31 +168,56 @@ export interface CreateAppartementInput {
   depensesEnergieMin?: string;
   depensesEnergieMax?: string;
   anneeReferencePrixEnergie?: number;
-}
-
-export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
-
-export interface UpdateAppartementInput {
-  numero?: string;
-  type?: AppartementType;
-  surface?: string;
-  tantieme?: string;
-  loyerReference?: string;
+  // Point 6c (docs/backlog.md) : equipementCuisine/dependancesAnnexes sont
+  // exigés par validerCompletudeGenerationBail pour tout appartement,
+  // manquaient jusqu'ici entièrement à la création. Les 5 autres
+  // (composition réelle, module État des lieux) partagent la même
+  // asymétrie création/modification sans être exigés par la génération du
+  // bail.
   equipementCuisine?: string;
   dependancesAnnexes?: string;
-  nombrePiecesPrincipales?: number;
-  modeChauffage?: AppartementModeProduction;
-  modeEauChaude?: AppartementModeProduction;
-  typeEnergie?: AppartementTypeEnergie;
   nombreChambres?: number;
   nombreSallesDeBain?: number;
   nombreWc?: number;
   autrePiece1?: string;
   autrePiece2?: string;
-  classeDpe?: AppartementClasseDpe;
-  depensesEnergieMin?: string;
-  depensesEnergieMax?: string;
-  anneeReferencePrixEnergie?: number;
+}
+
+export type AppartementStatutModifiable = "vacant" | "loue" | "travaux";
+
+// `| null` sur la plupart des champs optionnels (point 6c, docs/backlog.md) :
+// un champ vidé dans EditAppartementForm doit être envoyé comme `null`
+// explicite pour effacer réellement la valeur en base (voir valeurOuNull,
+// lib/valeur-ou-null.ts) — omettre la clé laisserait l'ancienne valeur
+// inchangée. Exceptions, jamais nullables :
+// - numero : un appartement a toujours un numéro.
+// - type/nombrePiecesPrincipales/modeChauffage/modeEauChaude : obligatoires
+//   pour un bien résidentiel (AppartementsService les rejette explicitement
+//   en update si fournis à `null` dans ce cas) — formulaire : jamais
+//   envoyés comme `null`, clé omise si vidés (même risque qu'avant ce
+//   commit, mais écarté côté backend).
+// - statut : un appartement a toujours un statut concret.
+export interface UpdateAppartementInput {
+  numero?: string;
+  type?: AppartementType | null;
+  surface?: string | null;
+  tantieme?: string | null;
+  loyerReference?: string | null;
+  equipementCuisine?: string | null;
+  dependancesAnnexes?: string | null;
+  nombrePiecesPrincipales?: number | null;
+  modeChauffage?: AppartementModeProduction | null;
+  modeEauChaude?: AppartementModeProduction | null;
+  typeEnergie?: AppartementTypeEnergie | null;
+  nombreChambres?: number | null;
+  nombreSallesDeBain?: number | null;
+  nombreWc?: number | null;
+  autrePiece1?: string | null;
+  autrePiece2?: string | null;
+  classeDpe?: AppartementClasseDpe | null;
+  depensesEnergieMin?: string | null;
+  depensesEnergieMax?: string | null;
+  anneeReferencePrixEnergie?: number | null;
   statut?: AppartementStatutModifiable;
 }
 

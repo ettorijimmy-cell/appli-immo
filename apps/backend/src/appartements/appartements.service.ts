@@ -72,7 +72,14 @@ export class AppartementsService {
         classeDpe: dto.classeDpe,
         depensesEnergieMin: dto.depensesEnergieMin,
         depensesEnergieMax: dto.depensesEnergieMax,
-        anneeReferencePrixEnergie: dto.anneeReferencePrixEnergie
+        anneeReferencePrixEnergie: dto.anneeReferencePrixEnergie,
+        equipementCuisine: dto.equipementCuisine,
+        dependancesAnnexes: dto.dependancesAnnexes,
+        nombreChambres: dto.nombreChambres,
+        nombreSallesDeBain: dto.nombreSallesDeBain,
+        nombreWc: dto.nombreWc,
+        autrePiece1: dto.autrePiece1,
+        autrePiece2: dto.autrePiece2
       })
       .returning();
     if (!appartement) {
@@ -144,6 +151,19 @@ export class AppartementsService {
           `Champs sans objet pour un bien non résidentiel (${bienType}) : ${champsHabitationFournis.join(", ")}.`
         );
       }
+      // Point 6c (docs/backlog.md) : un `null` explicite sur l'un de ces 4
+      // champs est syntaxiquement accepté par UpdateAppartementDto (sinon
+      // sa valeur ne pourrait jamais être testée ici), mais toujours
+      // obligatoire pour un bien résidentiel — jamais effaçable, à la
+      // différence de equipementCuisine/dependancesAnnexes par exemple.
+      const champsEffacesInterdits = CHAMPS_HABITATION_REQUIS_A_LA_CREATION.filter(
+        (champ) => dto[champ] === null
+      );
+      if (champsEffacesInterdits.length > 0) {
+        throw new BadRequestException(
+          `Champs obligatoires pour un appartement résidentiel, ne peuvent jamais être effacés : ${champsEffacesInterdits.join(", ")}.`
+        );
+      }
     }
 
     if (dto.depensesEnergieMin !== undefined || dto.depensesEnergieMax !== undefined) {
@@ -155,9 +175,20 @@ export class AppartementsService {
       if (!appartementExistant) {
         throw new NotFoundException("Appartement introuvable");
       }
+      // `dto.xxx === undefined` (pas `??`) : un `null` explicite (champ à
+      // effacer) ne doit jamais retomber sur la valeur existante en base
+      // pour cette vérification croisée min <= max — sinon le `null` voulu
+      // par l'appelant serait silencieusement remplacé par l'ancienne
+      // valeur au moment de la comparaison (le `null` reste correctement
+      // écrit ensuite par mettreAJourAvecAudit, seule cette comparaison
+      // serait faussée).
       this.validerDepensesEnergie(
-        dto.depensesEnergieMin ?? appartementExistant.depensesEnergieMin ?? undefined,
-        dto.depensesEnergieMax ?? appartementExistant.depensesEnergieMax ?? undefined
+        dto.depensesEnergieMin === undefined
+          ? appartementExistant.depensesEnergieMin ?? undefined
+          : dto.depensesEnergieMin ?? undefined,
+        dto.depensesEnergieMax === undefined
+          ? appartementExistant.depensesEnergieMax ?? undefined
+          : dto.depensesEnergieMax ?? undefined
       );
     }
 

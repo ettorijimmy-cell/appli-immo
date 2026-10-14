@@ -19,6 +19,7 @@ import {
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
+import { ApiError } from "../lib/authenticated-fetch";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
 const TYPES_HABITAT: BienTypeHabitat[] = ["collectif", "individuel"];
@@ -284,6 +285,13 @@ function NewAppartementForm({
   const [depensesEnergieMin, setDepensesEnergieMin] = useState("");
   const [depensesEnergieMax, setDepensesEnergieMax] = useState("");
   const [anneeReferencePrixEnergie, setAnneeReferencePrixEnergie] = useState("");
+  const [equipementCuisine, setEquipementCuisine] = useState("");
+  const [dependancesAnnexes, setDependancesAnnexes] = useState("");
+  const [nombreChambres, setNombreChambres] = useState("");
+  const [nombreSallesDeBain, setNombreSallesDeBain] = useState("");
+  const [nombreWc, setNombreWc] = useState("");
+  const [autrePiece1, setAutrePiece1] = useState("");
+  const [autrePiece2, setAutrePiece2] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -314,7 +322,16 @@ function NewAppartementForm({
         ...(classeDpe && { classeDpe }),
         ...(depensesEnergieMin && { depensesEnergieMin }),
         ...(depensesEnergieMax && { depensesEnergieMax }),
-        ...(anneeReferencePrixEnergie && { anneeReferencePrixEnergie: Number(anneeReferencePrixEnergie) })
+        ...(anneeReferencePrixEnergie && { anneeReferencePrixEnergie: Number(anneeReferencePrixEnergie) }),
+        ...(equipementCuisine && { equipementCuisine }),
+        ...(dependancesAnnexes && { dependancesAnnexes }),
+        // !== "" (pas simplement truthy) : 0 est une valeur légitime ici
+        // (ex. studio sans chambre séparée).
+        ...(nombreChambres !== "" && { nombreChambres: Number(nombreChambres) }),
+        ...(nombreSallesDeBain !== "" && { nombreSallesDeBain: Number(nombreSallesDeBain) }),
+        ...(nombreWc !== "" && { nombreWc: Number(nombreWc) }),
+        ...(autrePiece1 && { autrePiece1 }),
+        ...(autrePiece2 && { autrePiece2 })
       });
       setNumero("");
       setSurface("");
@@ -324,11 +341,18 @@ function NewAppartementForm({
       setDepensesEnergieMin("");
       setDepensesEnergieMax("");
       setAnneeReferencePrixEnergie("");
+      setEquipementCuisine("");
+      setDependancesAnnexes("");
+      setNombreChambres("");
+      setNombreSallesDeBain("");
+      setNombreWc("");
+      setAutrePiece1("");
+      setAutrePiece2("");
       setNombrePiecesPrincipales(deduireNombrePiecesDepuisType(type)?.toString() ?? "");
       setNombrePiecesModifieManuellement(false);
       onCreated();
-    } catch {
-      setError("Impossible de créer l'appartement");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible de créer l'appartement");
     } finally {
       setIsSubmitting(false);
     }
@@ -463,6 +487,99 @@ function NewAppartementForm({
             type="number"
             value={anneeReferencePrixEnergie}
             onChange={(event) => setAnneeReferencePrixEnergie(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-equipement-cuisine" className="text-sm font-medium text-slate-700">
+            Équipement de la cuisine
+          </label>
+          <input
+            id="appartement-equipement-cuisine"
+            value={equipementCuisine}
+            onChange={(event) => setEquipementCuisine(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-dependances" className="text-sm font-medium text-slate-700">
+            Dépendances et annexes
+          </label>
+          <input
+            id="appartement-dependances"
+            value={dependancesAnnexes}
+            onChange={(event) => setDependancesAnnexes(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-nombre-chambres" className="text-sm font-medium text-slate-700">
+            Chambres
+          </label>
+          <input
+            id="appartement-nombre-chambres"
+            type="number"
+            min={0}
+            max={3}
+            value={nombreChambres}
+            onChange={(event) => setNombreChambres(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-nombre-sdb" className="text-sm font-medium text-slate-700">
+            Salles de bain
+          </label>
+          <input
+            id="appartement-nombre-sdb"
+            type="number"
+            min={0}
+            max={2}
+            value={nombreSallesDeBain}
+            onChange={(event) => setNombreSallesDeBain(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-nombre-wc" className="text-sm font-medium text-slate-700">
+            WC
+          </label>
+          <input
+            id="appartement-nombre-wc"
+            type="number"
+            min={0}
+            max={2}
+            value={nombreWc}
+            onChange={(event) => setNombreWc(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-autre-piece-1" className="text-sm font-medium text-slate-700">
+            Autre pièce 1 (ex. Bureau)
+          </label>
+          <input
+            id="appartement-autre-piece-1"
+            value={autrePiece1}
+            onChange={(event) => setAutrePiece1(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="appartement-autre-piece-2" className="text-sm font-medium text-slate-700">
+            Autre pièce 2
+          </label>
+          <input
+            id="appartement-autre-piece-2"
+            value={autrePiece2}
+            onChange={(event) => setAutrePiece2(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

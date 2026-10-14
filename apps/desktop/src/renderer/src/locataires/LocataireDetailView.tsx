@@ -4,6 +4,7 @@ import { ArchiveBadge } from "../components/ArchiveFilter";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { valeurOuNull } from "../lib/valeur-ou-null";
 import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
   archiveGarant,
@@ -467,15 +468,6 @@ function NewGarantForm({ bailId, onCreated }: { bailId: string; onCreated: () =>
       </button>
     </form>
   );
-}
-
-// Un champ optionnel vidé (valeur "") est envoyé comme `null` explicite,
-// jamais en omettant la clé (voir UpdateGarantInput/UpdateLocataireInput,
-// docs/backlog.md) : sinon le champ resterait inchangé côté serveur au
-// lieu d'être réellement effacé. Partagé par EditGarantForm et
-// EditLocataireForm, tous deux dans ce fichier.
-function valeurOuNull(valeur: string): string | null {
-  return valeur === "" ? null : valeur;
 }
 
 function EditGarantForm({
