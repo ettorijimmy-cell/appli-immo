@@ -1158,4 +1158,49 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       expect(texte).not.toContain("faute de congé préalable");
     });
   });
+
+  describe("chantier bail — corrections juridiques, commit A (taxe d’habitation, coquilles congé)", () => {
+    it("bail vide : la mention de la taxe d'habitation est retirée, la phrase se termine par un point", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "vide" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).not.toContain("taxe d’habitation");
+      expect(texte).not.toContain("1686");
+      expect(texte).toContain(
+        "Ne pas déménager sans s’être conformé à ses obligations (paiement des loyers, des charges et des contributions diverses lui incombant personnellement, relevé des différents compteurs, exécution des réparations locatives, etc…)."
+      );
+    });
+
+    it("bail meublé : la mention de la taxe d'habitation est retirée (clause commune aux deux régimes)", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "meuble" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).not.toContain("taxe d’habitation");
+      expect(texte).not.toContain("1686");
+    });
+
+    it("bail vide : les 3 coquilles du bloc de motifs de congé sont corrigées", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "vide" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("l’allocation adulte handicapé ; s’il s’est vu attribuer");
+      expect(texte).not.toContain("handicapé ;, s’il");
+      expect(texte).toContain("concubin notoire) ;");
+      expect(texte).not.toContain("notoire). ;");
+      expect(texte).toContain("pendant les deux premiers mois du délai de préavis");
+      expect(texte).not.toContain("pendant deux premiers mois");
+    });
+  });
 });
