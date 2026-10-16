@@ -458,6 +458,11 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
             <option value="true">Oui</option>
             <option value="false">Non</option>
           </select>
+          <p className="text-xs text-slate-500">
+            Oui uniquement si la SCI est constituée exclusivement entre parents et alliés jusqu'au quatrième degré
+            inclus (article 13 de la loi du 6 juillet 1989). Détermine la durée du bail vide : 3 ans si oui, 6 ans
+            sinon.
+          </p>
         </div>
 
         <div className="space-y-1">
