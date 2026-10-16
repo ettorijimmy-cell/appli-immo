@@ -1203,4 +1203,49 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       expect(texte).not.toContain("pendant deux premiers mois");
     });
   });
+
+  describe("chantier bail — corrections juridiques, commit B (propreté, indemnité d’occupation, frais et manquements, congé)", () => {
+    it("bail vide : B.1 propreté, B.2 indemnité d’occupation, B.3 frais et manquements, B.4 congé", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "vide" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+
+      expect(texte).not.toContain("100 euros");
+      expect(texte).not.toContain("frais de ménage");
+      expect(texte).toContain(
+        "Le locataire devra restituer le logement dans un état de propreté conforme à celui constaté lors de l’entrée dans les lieux"
+      );
+
+      expect(texte).not.toContain("double du loyer");
+      expect(texte).toContain("il sera redevable d’une indemnité d’occupation jusqu’à la libération effective des lieux");
+
+      expect(texte).not.toContain("Le coût des commandements");
+      expect(texte).not.toContain("De plus, le BAILLEUR se réserve");
+      expect(texte).not.toContain("CLAUSE RESOLUTOIRE ET CLAUSE PENALE");
+      expect(texte).toContain("CLAUSE RESOLUTOIRE ET CONSEQUENCES DES MANQUEMENTS CONTRACTUELS");
+      expect(texte).toContain("En cas de manquement du locataire à ses obligations");
+
+      expect(texte).not.toContain("ne recourir à aucune formalité");
+      expect(texte).not.toContain("clause pénale incluse");
+      expect(texte).toContain("Le congé est délivré par la partie qui en prend l’initiative");
+    });
+
+    it("bail meublé : B.1 à B.4 s’appliquent aussi (clauses communes aux deux régimes)", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "meuble" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).not.toContain("100 euros");
+      expect(texte).not.toContain("double du loyer");
+      expect(texte).not.toContain("Le coût des commandements");
+      expect(texte).not.toContain("ne recourir à aucune formalité");
+    });
+  });
 });
