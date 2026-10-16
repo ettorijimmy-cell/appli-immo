@@ -37,3 +37,30 @@ describe("CreateSciDto — telephone/estFamiliale", () => {
     expect(erreurs.some((e) => e.property === "estFamiliale")).toBe(true);
   });
 });
+
+// Chantier bail — corrections juridiques, commit C : nomGerant/prenomGerant
+// suivent exactement le même traitement que telephone ci-dessus (optionnels,
+// aucune valeur par défaut).
+describe("CreateSciDto — nomGerant/prenomGerant", () => {
+  it("absents ne déclenchent aucune erreur", async () => {
+    const dto = plainToInstance(CreateSciDto, { ...CHAMPS_VALIDES });
+    const erreurs = await validate(dto);
+    expect(erreurs).toHaveLength(0);
+  });
+
+  it("accepte nomGerant et prenomGerant à la création", async () => {
+    const dto = plainToInstance(CreateSciDto, {
+      ...CHAMPS_VALIDES,
+      nomGerant: "Dupont",
+      prenomGerant: "Jean"
+    });
+    const erreurs = await validate(dto);
+    expect(erreurs).toHaveLength(0);
+  });
+
+  it("nomGerant rejette une valeur non textuelle", async () => {
+    const dto = plainToInstance(CreateSciDto, { ...CHAMPS_VALIDES, nomGerant: 42 });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "nomGerant")).toBe(true);
+  });
+});

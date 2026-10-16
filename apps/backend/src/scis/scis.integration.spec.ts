@@ -177,6 +177,59 @@ describe("SCI + comptes bancaires (intégration Postgres réelle)", () => {
     expect(misAJour.estFamiliale).toBeNull();
   });
 
+  // Chantier bail — corrections juridiques, commit C : même mécanisme que
+  // telephone/estFamiliale ci-dessus — nomGerant/prenomGerant existaient en
+  // base sans aucun chemin d'écriture (docs/backlog.md, point sur
+  // scis.nom_gerant), désormais exposés par create()/update().
+  it("écrit nomGerant et prenomGerant dès la création", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Avec Gérant",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      nomGerant: "Dupont",
+      prenomGerant: "Jean"
+    });
+
+    expect(sci.nomGerant).toBe("Dupont");
+    expect(sci.prenomGerant).toBe("Jean");
+
+    const relue = await scisService.findById(sci.id);
+    expect(relue.nomGerant).toBe("Dupont");
+    expect(relue.prenomGerant).toBe("Jean");
+  });
+
+  it("nomGerant/prenomGerant absents à la création restent NULL en base", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Sans Gérant",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+
+    expect(sci.nomGerant).toBeNull();
+    expect(sci.prenomGerant).toBeNull();
+  });
+
+  it("remet nomGerant et prenomGerant à null pour les effacer réellement", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Gérant À Effacer",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      nomGerant: "Dupont",
+      prenomGerant: "Jean"
+    });
+
+    const misAJour = await scisService.update(sci.id, { nomGerant: null, prenomGerant: null });
+
+    expect(misAJour.nomGerant).toBeNull();
+    expect(misAJour.prenomGerant).toBeNull();
+  });
+
   it("modifie une SCI existante (nom, régime fiscal, forme juridique, SIRET)", async () => {
     const sci = await scisService.create(userId, {
       nom: "SCI À Corriger",

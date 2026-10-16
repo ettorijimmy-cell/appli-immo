@@ -138,6 +138,10 @@ export function SciDetailView({
               <dt className="text-slate-500">SCI familiale</dt>
               <dd>{sci.estFamiliale === null ? "Non renseigné" : sci.estFamiliale ? "Oui" : "Non"}</dd>
             </div>
+            <div className="flex justify-between border-b border-slate-100 py-1">
+              <dt className="text-slate-500">Gérant</dt>
+              <dd>{sci.prenomGerant && sci.nomGerant ? `${sci.prenomGerant} ${sci.nomGerant}` : "—"}</dd>
+            </div>
           </dl>
         )}
       </div>
@@ -295,6 +299,8 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
   const [estFamiliale, setEstFamiliale] = useState<EstFamilialeChoix>(
     sci.estFamiliale === null ? "" : sci.estFamiliale ? "true" : "false"
   );
+  const [nomGerant, setNomGerant] = useState(sci.nomGerant ?? "");
+  const [prenomGerant, setPrenomGerant] = useState(sci.prenomGerant ?? "");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -315,7 +321,9 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
         // "" (Non renseigné) envoie désormais null explicite, pour
         // réellement effacer une valeur Oui/Non déjà enregistrée — plus
         // seulement omettre la clé (point 6d, docs/backlog.md).
-        estFamiliale: estFamiliale === "" ? null : estFamiliale === "true"
+        estFamiliale: estFamiliale === "" ? null : estFamiliale === "true",
+        nomGerant: valeurOuNull(nomGerant),
+        prenomGerant: valeurOuNull(prenomGerant)
       });
       onSaved();
     } catch (err) {
@@ -450,6 +458,30 @@ function EditSciForm({ sci, onSaved }: { sci: Sci; onSaved: () => void }): React
             <option value="true">Oui</option>
             <option value="false">Non</option>
           </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-nom-gerant" className="text-sm font-medium text-slate-700">
+            Nom du gérant
+          </label>
+          <input
+            id="sci-edit-nom-gerant"
+            value={nomGerant}
+            onChange={(event) => setNomGerant(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-edit-prenom-gerant" className="text-sm font-medium text-slate-700">
+            Prénom du gérant
+          </label>
+          <input
+            id="sci-edit-prenom-gerant"
+            value={prenomGerant}
+            onChange={(event) => setPrenomGerant(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </div>
       </div>
 

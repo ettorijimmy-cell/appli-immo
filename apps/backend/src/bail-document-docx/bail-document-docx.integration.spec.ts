@@ -924,7 +924,15 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
         expect(texte).toContain("niveau de performance du logement : C.");
         expect(texte).toContain("entre 150.00 et 200.00 €");
         expect(texte).toContain("l’année : 2024");
-        expect(texte).not.toContain("[À COMPLÉTER");
+        // Scopé aux 3 placeholders énergie (pas une absence générique de
+        // "[À COMPLÉTER" sur tout le document) : depuis le chantier bail —
+        // corrections juridiques, commit C, le même mécanisme s'applique
+        // aussi au gérant de la SCI (non renseigné par creerDossierComplet
+        // dans ce test, donc attendu ici — voir describe "commit C"
+        // ci-dessous pour les assertions dédiées).
+        expect(texte).not.toContain("[À COMPLÉTER : classe DPE]");
+        expect(texte).not.toContain("[À COMPLÉTER : dépenses énergétiques]");
+        expect(texte).not.toContain("[À COMPLÉTER : année de référence des prix énergétiques]");
         // Le calendrier de décence énergétique (texte fixe, inconditionnel)
         // doit toujours être présent, quel que soit le type de bail.
         expect(texte).toContain("classe F du DPE");
@@ -1246,6 +1254,95 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       expect(texte).not.toContain("double du loyer");
       expect(texte).not.toContain("Le coût des commandements");
       expect(texte).not.toContain("ne recourir à aucune formalité");
+    });
+  });
+
+  describe("chantier bail — corrections juridiques, commit C (représentant de la SCI)", () => {
+    it("SCI avec gérant renseigné : le bail mentionne le représentant", async () => {
+      const { sci, bail } = await creerDossierComplet({ typeBail: "vide" });
+      await scisService.update(sci.id, { nomGerant: "Dupont", prenomGerant: "Jean" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain(
+        "représentée par Jean Dupont, agissant en qualité de gérant, dûment habilité aux fins des présentes"
+      );
+    });
+
+    it("SCI sans gérant renseigné : le bail affiche [À COMPLÉTER], jamais de blocage", async () => {
+      const { bail } = await creerDossierComplet({ typeBail: "vide" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("représentée par [À COMPLÉTER : gérant de la SCI], agissant en qualité de gérant");
+    });
+
+    it("Bailleur personne physique : aucune mention de représentant, paragraphe entièrement absent", async () => {
+      // Construit manuellement (pas via creerDossierComplet, qui ne couvre
+      // que le cas SCI) : l'IRL doit donc être inséré explicitement ici,
+      // sous peine d'un 400 validerCompletudeGenerationBail (irlIndisponible)
+      // — même piège que la section "durée du contrat" plus bas, qui
+      // utilise l'année 9997 pour la même raison.
+      await db.insert(indicesIrl).values({ annee: 9996, trimestre: 2, valeur: "148.37" });
+
+      const bien = await bienService.create(userId, {
+        type: "maison",
+        proprietaireType: "personne_physique",
+        nomProprietaire: "Bernard Martin",
+        adresse: "5 chemin de la Maison",
+        codePostal: "19100",
+        ville: "Brive"
+      });
+      await db.update(bienTable).set({ anneeConstruction: 1998 }).where(eq(bienTable.id, bien.id));
+      const appartement = await appartementsService.create({
+        bienId: bien.id,
+        numero: "unique-representant",
+        type: "T3",
+        surface: "60.00",
+        loyerReference: "650.00",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel"
+      });
+      await appartementsService.update(appartement.id, {
+        equipementCuisine: "Plaques, four, réfrigérateur",
+        dependancesAnnexes: "Cave"
+      });
+
+      const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
+      await locatairesService.update(locataire.id, {
+        adresse: "1 rue du Locataire",
+        codePostal: "19100",
+        ville: "Brive",
+        dateNaissance: "1990-05-12",
+        telephone: "0611111111",
+        email: "ilan.devos@example.com"
+      });
+
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-07-01",
+        loyerMensuel: "650.00",
+        depotGarantie: "650.00",
+        provisionsCharges: "30.00",
+        jourEcheance: 5
+      });
+      await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+
+      const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+      );
+
+      const texte = texteDuDocx(buffer);
+      expect(texte).not.toContain("agissant en qualité de gérant");
+      expect(texte).not.toContain("représentée par");
     });
   });
 });

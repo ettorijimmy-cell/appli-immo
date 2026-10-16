@@ -103,7 +103,9 @@ const DONNEES_BALISES = {
   "classe DPE": "D",
   "dépenses énergétiques": "500 à 600",
   "année de référence des prix énergétiques": "2024",
-  "duree bail": "3 ans"
+  "duree bail": "3 ans",
+  // Chantier bail — corrections juridiques, commit C.
+  "prénom nom du gérant": "Jean Dupont"
 };
 
 function genererDocumentXml(drapeaux: Drapeaux): string {
@@ -124,6 +126,10 @@ function genererDocumentXml(drapeaux: Drapeaux): string {
     eauChaudeCollective: false,
     meuble: drapeaux.meuble,
     aGarant: drapeaux.aGarant,
+    // Chantier bail — corrections juridiques, commit C : true dans toute
+    // la matrice (bailleur SCI) — hors des 6 dimensions combinées, même
+    // traitement que reconductionTacite/collectif/... ci-dessus.
+    representantSci: true,
     colocation: drapeaux.colocation,
     servitude: drapeaux.servitude,
     clauseResolutoireAvant: drapeaux.clauseResolutoireAvant,

@@ -242,6 +242,8 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
   const [ville, setVille] = useState("");
   const [telephone, setTelephone] = useState("");
   const [estFamiliale, setEstFamiliale] = useState<EstFamilialeChoix>("");
+  const [nomGerant, setNomGerant] = useState("");
+  const [prenomGerant, setPrenomGerant] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -260,7 +262,9 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
         ...(siret && { siret }),
         ...(telephone && { telephone }),
         // "" (Non renseigné) = clé omise, jamais `false`.
-        ...(estFamiliale !== "" && { estFamiliale: estFamiliale === "true" })
+        ...(estFamiliale !== "" && { estFamiliale: estFamiliale === "true" }),
+        ...(nomGerant && { nomGerant }),
+        ...(prenomGerant && { prenomGerant })
       });
       onCreated();
     } catch (err) {
@@ -395,6 +399,30 @@ function NewSciForm({ onCreated }: { onCreated: () => void }): React.JSX.Element
             <option value="true">Oui</option>
             <option value="false">Non</option>
           </select>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-nom-gerant" className="text-sm font-medium text-slate-700">
+            Nom du gérant
+          </label>
+          <input
+            id="sci-nom-gerant"
+            value={nomGerant}
+            onChange={(event) => setNomGerant(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="sci-prenom-gerant" className="text-sm font-medium text-slate-700">
+            Prénom du gérant
+          </label>
+          <input
+            id="sci-prenom-gerant"
+            value={prenomGerant}
+            onChange={(event) => setPrenomGerant(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </div>
       </div>
 

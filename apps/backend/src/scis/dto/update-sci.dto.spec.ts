@@ -70,3 +70,28 @@ describe("UpdateSciDto — telephone/estFamiliale (null accepté)", () => {
     expect(erreurs.some((e) => e.property === "estFamiliale")).toBe(true);
   });
 });
+
+// Chantier bail — corrections juridiques, commit C : nomGerant/prenomGerant
+// suivent exactement le même traitement que telephone/estFamiliale ci-dessus
+// (`| null`, effaçables).
+describe("UpdateSciDto — nomGerant/prenomGerant (null accepté)", () => {
+  for (const champ of ["nomGerant", "prenomGerant"]) {
+    it(`${champ} accepte null (champ à effacer)`, async () => {
+      const dto = plainToInstance(UpdateSciDto, { [champ]: null });
+      const erreurs = await validate(dto);
+      expect(erreurs.some((e) => e.property === champ)).toBe(false);
+    });
+
+    it(`${champ} absent (non fourni) ne déclenche aucune erreur`, async () => {
+      const dto = plainToInstance(UpdateSciDto, {});
+      const erreurs = await validate(dto);
+      expect(erreurs.some((e) => e.property === champ)).toBe(false);
+    });
+
+    it(`${champ} rejette une valeur non textuelle`, async () => {
+      const dto = plainToInstance(UpdateSciDto, { [champ]: 42 });
+      const erreurs = await validate(dto);
+      expect(erreurs.some((e) => e.property === champ)).toBe(true);
+    });
+  }
+});

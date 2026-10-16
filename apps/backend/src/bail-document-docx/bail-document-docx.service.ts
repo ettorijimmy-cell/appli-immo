@@ -67,6 +67,13 @@ const CHAMP_ENERGIE_MANQUANT = {
   anneeReferencePrixEnergie: "[À COMPLÉTER : année de référence des prix énergétiques]"
 } as const;
 
+// Même mécanisme ("[À COMPLÉTER]", jamais de blocage de génération) que
+// CHAMP_ENERGIE_MANQUANT ci-dessus — chantier bail — corrections
+// juridiques, commit C. Ne s'applique qu'à un bailleur SCI (voir
+// representantSci) : un bailleur personne physique n'a jamais de mention
+// de gérant, le paragraphe du modèle disparaît alors entièrement.
+const CHAMP_GERANT_MANQUANT = "[À COMPLÉTER : gérant de la SCI]";
+
 @Injectable()
 export class BailDocumentDocxService {
   private readonly logger = new Logger(BailDocumentDocxService.name);
@@ -352,6 +359,11 @@ export class BailDocumentDocxService {
       "code postal SCI": sci?.codePostal ?? VIDE,
       "Ville SCI": sci?.ville ?? VIDE,
       "téléphone SCI": sci?.telephone ?? VIDE,
+      // Sans objet pour un bailleur en nom propre (sci === null) : la
+      // valeur n'est jamais évaluée dans ce cas, le paragraphe entier
+      // disparaît via le drapeau representantSci (voir rendreDocument).
+      "prénom nom du gérant":
+        sci && sci.prenomGerant && sci.nomGerant ? `${sci.prenomGerant} ${sci.nomGerant}` : CHAMP_GERANT_MANQUANT,
 
       "Nom prénom du locataire": titulaire ? `${titulaire.prenom} ${titulaire.nom}` : VIDE,
       "Adresse locataire": titulaire?.adresse ?? VIDE,
@@ -463,6 +475,15 @@ export class BailDocumentDocxService {
       // vides plutôt que masquées, un vrai gap constaté sur le bail
       // Ilan Devos (aucun garant).
       aGarant: garantsDuBail.length > 0,
+      // Mention "représentée par {gérant}" dans l'en-tête LE BAILLEUR
+      // (chantier bail — corrections juridiques, commit C) : uniquement
+      // pour un bailleur SCI, jamais pour un bailleur en nom propre — voir
+      // sci ci-dessus (non-null uniquement quand bienRow.sciId est
+      // renseigné). Indépendant du fait que le gérant soit lui-même
+      // renseigné ou non (voir "[À COMPLÉTER]" ci-dessus) : le paragraphe
+      // reste présent avec la mention à compléter, jamais masqué par
+      // accident pour une SCI dont le gérant n'a pas encore été saisi.
+      representantSci: sci !== null,
       // "Etat descriptif et inventaire du mobilier" (pièces annexées) :
       // mention meublé uniquement, décision arrêtée avant ce chantier
       // (docs/backlog.md, "Édition d'un bail") — l'inventaire lui-même
@@ -516,6 +537,7 @@ export class BailDocumentDocxService {
       eauChaudeIndividuelle: boolean;
       eauChaudeCollective: boolean;
       aGarant: boolean;
+      representantSci: boolean;
       meuble: boolean;
       colocation: boolean;
       mentionLoyerPrecedentComplete: boolean;

@@ -15,6 +15,12 @@ export interface Sci {
   // null = non renseigné, distinct de false — ne jamais pré-remplir
   // automatiquement (docs/data-dictionary.md).
   estFamiliale: boolean | null;
+  // Représentant légal (chantier bail — corrections juridiques, commit C)
+  // — mentionné dans l'en-tête LE BAILLEUR du bail généré pour une SCI,
+  // avec un repli "[À COMPLÉTER]" tant que non renseigné (jamais de
+  // blocage de génération).
+  nomGerant: string | null;
+  prenomGerant: string | null;
   statut: "active" | "archive";
 }
 
@@ -30,6 +36,8 @@ export interface CreateSciInput {
   ville: string;
   telephone?: string;
   estFamiliale?: boolean;
+  nomGerant?: string;
+  prenomGerant?: string;
 }
 
 // `| null` sur telephone/estFamiliale (point 6d, docs/backlog.md) : un
@@ -47,6 +55,8 @@ export interface UpdateSciInput {
   ville?: string;
   telephone?: string | null;
   estFamiliale?: boolean | null;
+  nomGerant?: string | null;
+  prenomGerant?: string | null;
 }
 
 export interface CompteBancaire {

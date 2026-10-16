@@ -45,4 +45,17 @@ export class CreateSciDto {
   @IsOptional()
   @IsBoolean()
   estFamiliale?: boolean;
+
+  // Représentant légal de la SCI (chantier bail — corrections juridiques,
+  // commit C) : optionnels, comme telephone ci-dessus — une SCI peut être
+  // créée sans connaître encore son gérant. Absent du modèle de bail tant
+  // que non renseigné (mécanisme [À COMPLÉTER], jamais de blocage de
+  // génération — voir bail-document-docx.service.ts).
+  @IsOptional()
+  @IsString()
+  nomGerant?: string;
+
+  @IsOptional()
+  @IsString()
+  prenomGerant?: string;
 }

@@ -58,4 +58,15 @@ export class UpdateSciDto {
   @IsOptional()
   @IsBoolean()
   estFamiliale?: boolean | null;
+
+  // Représentant légal de la SCI (chantier bail — corrections juridiques,
+  // commit C) : `| null` comme telephone/estFamiliale ci-dessus, pour
+  // pouvoir réellement effacer un gérant déjà renseigné.
+  @IsOptional()
+  @IsString()
+  nomGerant?: string | null;
+
+  @IsOptional()
+  @IsString()
+  prenomGerant?: string | null;
 }
