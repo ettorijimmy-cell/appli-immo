@@ -1087,6 +1087,33 @@ les trois parcours ci-dessus).
   principe que les mentions DPE), jamais de blocage de génération. Pas de
   capital/RCS/SIREN ajoutés (hors scope de ce commit).
 
+- **`JwtAuthGuard` : catch-all qui confondait toutes les causes de 401,
+  jamais journalisées — résolu (`8ab7f2b`, 2026-10-16).** Dette consignée
+  lors de l'incident JWT du 2026-09-28 (expiration interprétée en
+  millisecondes au lieu de secondes, voir `auth.module.ts`,
+  `resoudreExpirationJwtSecondes`) : ce correctif-là avait traité la cause
+  de la durée d'expiration mal interprétée, mais le `catch { throw new
+  UnauthorizedException(); }` du garde restait un trou — aucune cause
+  distinguée, et surtout aucune trace du tout en cas d'échec
+  d'authentification. **Audit préalable (lecture seule, vérifié par test
+  — pas seulement par lecture) :** un 401 levé par `JwtAuthGuard`
+  n'apparaissait dans AUCUN journal, y compris celui de
+  `HttpLoggingInterceptor` censé couvrir tout le trafic HTTP — dans le
+  pipeline Nest, les **Guards s'exécutent avant les Interceptors** ;
+  quand `canActivate()` rejette, `intercept()` n'est jamais appelé, donc
+  le listener `response.on("finish")` de l'intercepteur n'est même jamais
+  posé. Confirmé par un test end-to-end dédié
+  (`jwt-guard-interceptor-order.spec.ts`, vraie instance Nest, vraie
+  requête HTTP) plutôt que supposé depuis la documentation de Nest.
+  Corrigé en journalisant **depuis le garde lui-même** (`Logger("Auth")`,
+  `warn`), jamais en déplaçant l'intercepteur : une ligne par échec
+  (méthode + `request.path` + cause parmi `jeton_absent`,
+  `schema_invalide`, `jeton_expire`/`jeton_pas_encore_actif` (avec
+  `expiredAt`/`date` en ISO), `signature_invalide`, `jeton_malforme`,
+  `autre`). Réponse au client inchangée (`UnauthorizedException()`
+  générique). Jamais journalisé : le jeton, une partie du jeton,
+  l'en-tête `Authorization`, le secret, le payload.
+
 ---
 
 ## Maintenance
