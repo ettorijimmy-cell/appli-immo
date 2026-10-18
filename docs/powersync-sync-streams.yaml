@@ -44,7 +44,7 @@ streams:
     query: >
       SELECT id, nom, regime_fiscal, forme_juridique, siret, adresse,
       code_postal, ville, nom_gerant, prenom_gerant, telephone,
-      est_familiale, statut, updated_at FROM scis
+      est_familiale, statut, archived_at, version, updated_at FROM scis
       WHERE scis.id IN (
         SELECT organisation_sci.sci_id FROM organisation_sci
         INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
@@ -71,7 +71,7 @@ streams:
   immeubles:
     query: >
       SELECT id, sci_id, nom, adresse, code_postal, ville, type_habitat,
-      regime_juridique, annee_construction, statut, updated_at FROM immeubles_legacy
+      regime_juridique, annee_construction, statut, archived_at, version, updated_at FROM immeubles_legacy
       WHERE immeubles_legacy.sci_id IN (
         SELECT organisation_sci.sci_id FROM organisation_sci
         INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
@@ -106,7 +106,7 @@ streams:
       SELECT id, type, proprietaire_type, sci_id, organisation_id, adresse,
       code_postal, ville, nom, nom_proprietaire, annee_construction,
       date_acquisition, valeur_acquisition, type_habitat, regime_juridique,
-      statut, updated_at
+      statut, archived_at, version, updated_at
       FROM bien
       WHERE bien.organisation_id IN (
         SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
@@ -126,7 +126,7 @@ streams:
   bien_immeuble_detail:
     query: >
       SELECT id, bien_id, syndic, nb_lots, charges_copro_annuelles,
-      updated_at FROM bien_immeuble_detail
+      archived_at, version, updated_at FROM bien_immeuble_detail
       WHERE bien_immeuble_detail.bien_id IN (
         SELECT id FROM bien WHERE bien.organisation_id IN (
           SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
@@ -161,7 +161,7 @@ streams:
       nombre_salles_de_bain, nombre_wc, autre_piece_1, autre_piece_2,
       tantieme, classe_dpe, depenses_energie_min, depenses_energie_max,
       annee_reference_prix_energie, statut,
-      updated_at FROM appartements
+      archived_at, version, updated_at FROM appartements
       WHERE appartements.bien_id IN (
         SELECT id FROM bien WHERE bien.organisation_id IN (
           SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
@@ -189,7 +189,7 @@ streams:
   equipements:
     query: >
       SELECT id, appartement_id, type, date_dernier_entretien,
-      intervalle_entretien_mois, updated_at FROM equipements
+      intervalle_entretien_mois, archived_at, version, updated_at FROM equipements
       WHERE equipements.appartement_id IN (
         SELECT id FROM appartements WHERE appartements.bien_id IN (
           SELECT id FROM bien WHERE bien.organisation_id IN (
@@ -215,7 +215,7 @@ streams:
       date_fin, date_activation, date_signature, date_resiliation,
       travaux_realises, honoraires_bailleur, honoraires_locataire,
       trimestre_reference_revision,
-      updated_at FROM baux
+      archived_at, version, updated_at FROM baux
       WHERE baux.appartement_id IN (
         SELECT id FROM appartements WHERE appartements.bien_id IN (
           SELECT id FROM bien WHERE bien.organisation_id IN (
@@ -237,7 +237,7 @@ streams:
     query: >
       SELECT id, bail_id, nom, prenom, email, telephone, type_garantie,
       adresse, code_postal, ville, date_naissance, lieu_naissance,
-      nationalite, updated_at FROM garants
+      nationalite, archived_at, version, updated_at FROM garants
       WHERE garants.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -257,7 +257,7 @@ streams:
   # deux UUID + un enum de rôle. Toutes les colonnes incluses.
   bail_locataires:
     query: >
-      SELECT id, bail_id, locataire_id, role, updated_at FROM bail_locataires
+      SELECT id, bail_id, locataire_id, role, archived_at, version, updated_at FROM bail_locataires
       WHERE bail_locataires.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -292,7 +292,7 @@ streams:
   locataires:
     query: >
       SELECT id, nom, prenom, email, telephone, adresse, code_postal, ville,
-      date_naissance, lieu_naissance, statut, anonymise_le, updated_at
+      date_naissance, lieu_naissance, statut, anonymise_le, archived_at, version, updated_at
       FROM locataires
       WHERE locataires.id IN (
         SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
@@ -322,7 +322,7 @@ streams:
   paiements:
     query: >
       SELECT id, bail_id, type, statut, montant, loyer_hors_charges,
-      charges, date_echeance, updated_at
+      charges, date_echeance, archived_at, version, updated_at
       FROM paiements
       WHERE paiements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -346,7 +346,7 @@ streams:
   # décision du 2026-08-16). Toutes les autres colonnes métier incluses.
   versements:
     query: >
-      SELECT id, paiement_id, montant, date_versement, mode, updated_at
+      SELECT id, paiement_id, montant, date_versement, mode, archived_at, version, updated_at
       FROM versements
       WHERE versements.paiement_id IN (
         SELECT id FROM paiements WHERE paiements.bail_id IN (
@@ -384,7 +384,7 @@ streams:
       SELECT id, bail_id, paiement_id, type, montant_origine,
       montant_rembourse, date_remboursement, mode, motif_retenue,
       piece_justificative_nom_fichier, piece_justificative_mime_type,
-      piece_justificative_taille_octets, updated_at
+      piece_justificative_taille_octets, archived_at, version, updated_at
       FROM remboursements
       WHERE remboursements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -419,7 +419,7 @@ streams:
 #   type + un entier seuil_jours_avant) — toutes les colonnes incluses.
   parametres_alertes:
     query: >
-      SELECT id, type, seuil_jours_avant, updated_at FROM parametres_alertes
+      SELECT id, type, seuil_jours_avant, archived_at, version, updated_at FROM parametres_alertes
     auto_subscribe: true
 
   # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
@@ -461,7 +461,7 @@ streams:
   # synchronisée sans filtre par hiérarchie. Rien de sensible.
   elements_inventaire_meuble:
     query: >
-      SELECT id, code, libelle, categorie, ordre_affichage, updated_at
+      SELECT id, code, libelle, categorie, ordre_affichage, archived_at, version, updated_at
       FROM elements_inventaire_meuble
     auto_subscribe: true
 
@@ -518,7 +518,7 @@ streams:
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
       nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
       etat_des_lieux_piece_numero, document_precedent_id, candidat_role,
-      updated_at FROM documents
+      archived_at, version, updated_at FROM documents
       WHERE (
         documents.entite_type = 'sci' AND documents.entite_id IN (
           SELECT organisation_sci.sci_id FROM organisation_sci
@@ -618,7 +618,7 @@ streams:
   diagnostics:
     query: >
       SELECT id, document_id, type, classe_dpe, depenses_theoriques_chauffage,
-      risque_present, updated_at FROM diagnostics
+      risque_present, archived_at, version, updated_at FROM diagnostics
       WHERE diagnostics.document_id IN (
         SELECT id FROM documents WHERE (
           documents.entite_type = 'sci' AND documents.entite_id IN (
@@ -722,7 +722,7 @@ streams:
   etats_des_lieux:
     query: >
       SELECT id, bail_id, date_entree, date_sortie, nouvelle_adresse_locataire,
-      updated_at FROM etats_des_lieux
+      archived_at, version, updated_at FROM etats_des_lieux
       WHERE etats_des_lieux.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -750,7 +750,7 @@ streams:
       vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
       plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
       eclairage_etat_sortie, prises_description, prises_etat_entree,
-      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_piece_entree
+      prises_etat_sortie, prises_nombre, archived_at, version, updated_at FROM etat_des_lieux_piece_entree
       WHERE etat_des_lieux_piece_entree.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -775,7 +775,7 @@ streams:
       vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
       plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
       eclairage_etat_sortie, prises_description, prises_etat_entree,
-      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_piece_sejour
+      prises_etat_sortie, prises_nombre, archived_at, version, updated_at FROM etat_des_lieux_piece_sejour
       WHERE etat_des_lieux_piece_sejour.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -806,7 +806,7 @@ streams:
       evier_etat_entree, evier_etat_sortie, plaques_cuisson_description,
       plaques_cuisson_etat_entree, plaques_cuisson_etat_sortie,
       hotte_description, hotte_etat_entree, hotte_etat_sortie,
-      electromenager_description, updated_at FROM etat_des_lieux_piece_cuisine
+      electromenager_description, archived_at, version, updated_at FROM etat_des_lieux_piece_cuisine
       WHERE etat_des_lieux_piece_cuisine.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -833,7 +833,7 @@ streams:
       electricite_ancien_occupant_sortie, gaz_numero_compteur_entree,
       gaz_numero_compteur_sortie, gaz_releve_entree, gaz_releve_sortie,
       eau_releve_froide_entree, eau_releve_froide_sortie,
-      eau_releve_chaude_entree, eau_releve_chaude_sortie, updated_at
+      eau_releve_chaude_entree, eau_releve_chaude_sortie, archived_at, version, updated_at
       FROM etat_des_lieux_compteurs
       WHERE etat_des_lieux_compteurs.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
@@ -859,7 +859,7 @@ streams:
       vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
       plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
       eclairage_etat_sortie, prises_description, prises_etat_entree,
-      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_pieces_chambre
+      prises_etat_sortie, prises_nombre, archived_at, version, updated_at FROM etat_des_lieux_pieces_chambre
       WHERE etat_des_lieux_pieces_chambre.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -887,7 +887,7 @@ streams:
       eclairage_etat_sortie, prises_description, prises_etat_entree,
       prises_etat_sortie, prises_nombre, lavabo_description,
       lavabo_etat_entree, lavabo_etat_sortie, baignoire_description,
-      baignoire_etat_entree, baignoire_etat_sortie, updated_at
+      baignoire_etat_entree, baignoire_etat_sortie, archived_at, version, updated_at
       FROM etat_des_lieux_pieces_salle_de_bain
       WHERE etat_des_lieux_pieces_salle_de_bain.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
@@ -916,7 +916,7 @@ streams:
       eclairage_etat_sortie, prises_description, prises_etat_entree,
       prises_etat_sortie, prises_nombre, lavabo_description,
       lavabo_etat_entree, lavabo_etat_sortie, wc_description, wc_etat_entree,
-      wc_etat_sortie, updated_at FROM etat_des_lieux_pieces_wc
+      wc_etat_sortie, archived_at, version, updated_at FROM etat_des_lieux_pieces_wc
       WHERE etat_des_lieux_pieces_wc.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -942,7 +942,7 @@ streams:
       vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
       plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
       eclairage_etat_sortie, prises_description, prises_etat_entree,
-      prises_etat_sortie, prises_nombre, updated_at FROM etat_des_lieux_pieces_autre
+      prises_etat_sortie, prises_nombre, archived_at, version, updated_at FROM etat_des_lieux_pieces_autre
       WHERE etat_des_lieux_pieces_autre.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -966,7 +966,7 @@ streams:
   etat_des_lieux_cles:
     query: >
       SELECT id, etat_des_lieux_id, type_cle, libelle_autre, nombre_entree,
-      nombre_sortie, updated_at FROM etat_des_lieux_cles
+      nombre_sortie, archived_at, version, updated_at FROM etat_des_lieux_cles
       WHERE etat_des_lieux_cles.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -986,7 +986,7 @@ streams:
   etat_des_lieux_equipements_divers:
     query: >
       SELECT id, etat_des_lieux_id, libelle, nombre_entree, etat_entree,
-      nombre_sortie, etat_sortie, updated_at FROM etat_des_lieux_equipements_divers
+      nombre_sortie, etat_sortie, archived_at, version, updated_at FROM etat_des_lieux_equipements_divers
       WHERE etat_des_lieux_equipements_divers.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -1010,7 +1010,7 @@ streams:
   etat_des_lieux_inventaire:
     query: >
       SELECT id, etat_des_lieux_id, element_id, nombre_entree, etat_entree,
-      nombre_sortie, etat_sortie, updated_at FROM etat_des_lieux_inventaire
+      nombre_sortie, etat_sortie, archived_at, version, updated_at FROM etat_des_lieux_inventaire
       WHERE etat_des_lieux_inventaire.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -1063,7 +1063,7 @@ streams:
   # colonnes métier incluses.
   alertes:
     query: >
-      SELECT id, type, entite_id, statut, message, date_reference, updated_at
+      SELECT id, type, entite_id, statut, message, date_reference, archived_at, version, updated_at
       FROM alertes
       WHERE (
         alertes.type = 'bail_fin_proche' AND alertes.entite_id IN (
@@ -1275,7 +1275,7 @@ streams:
       SELECT id, type, statut, origine, alerte_source_id, bail_id,
       appartement_id, bien_id, locataire_id, paiement_id, sinistre_id,
       date_echeance, date_completion,
-      periode_recurrence, notes, metadata, organisation_id, updated_at
+      periode_recurrence, notes, metadata, organisation_id, archived_at, version, updated_at
       FROM tache
       WHERE tache.organisation_id IN (
         SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()

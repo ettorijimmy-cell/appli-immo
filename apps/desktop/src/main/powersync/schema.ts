@@ -19,6 +19,8 @@ const scis = new Table({
   telephone: column.text,
   est_familiale: column.integer,
   statut: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -35,6 +37,8 @@ const immeubles = new Table({
   regime_juridique: column.text,
   annee_construction: column.integer,
   statut: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -60,6 +64,8 @@ const bien = new Table({
   type_habitat: column.text,
   regime_juridique: column.text,
   statut: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -70,6 +76,8 @@ const bien_immeuble_detail = new Table({
   syndic: column.text,
   nb_lots: column.integer,
   charges_copro_annuelles: column.real,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -101,6 +109,8 @@ const appartements = new Table({
   depenses_energie_max: column.real,
   annee_reference_prix_energie: column.integer,
   statut: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -111,6 +121,8 @@ const equipements = new Table({
   type: column.text,
   date_dernier_entretien: column.text,
   intervalle_entretien_mois: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -131,6 +143,8 @@ const baux = new Table({
   honoraires_bailleur: column.real,
   honoraires_locataire: column.real,
   trimestre_reference_revision: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -150,6 +164,8 @@ const garants = new Table({
   date_naissance: column.text,
   lieu_naissance: column.text,
   nationalite: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -157,6 +173,8 @@ const bail_locataires = new Table({
   bail_id: column.text,
   locataire_id: column.text,
   role: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -176,6 +194,8 @@ const locataires = new Table({
   lieu_naissance: column.text,
   statut: column.text,
   anonymise_le: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -187,6 +207,8 @@ const paiements = new Table({
   loyer_hors_charges: column.real,
   charges: column.real,
   date_echeance: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -198,6 +220,8 @@ const versements = new Table({
   montant: column.real,
   date_versement: column.text,
   mode: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -221,6 +245,8 @@ const remboursements = new Table({
   piece_justificative_nom_fichier: column.text,
   piece_justificative_mime_type: column.text,
   piece_justificative_taille_octets: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -232,6 +258,8 @@ const remboursements = new Table({
 const parametres_alertes = new Table({
   type: column.text,
   seuil_jours_avant: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -250,6 +278,8 @@ const elements_inventaire_meuble = new Table({
   libelle: column.text,
   categorie: column.text,
   ordre_affichage: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -271,6 +301,8 @@ const documents = new Table({
   etat_des_lieux_piece_numero: column.integer,
   document_precedent_id: column.text,
   candidat_role: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -283,6 +315,8 @@ const diagnostics = new Table({
   classe_dpe: column.text,
   depenses_theoriques_chauffage: column.real,
   risque_present: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -295,6 +329,8 @@ const etats_des_lieux = new Table({
   date_entree: column.text,
   date_sortie: column.text,
   nouvelle_adresse_locataire: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -328,6 +364,8 @@ const etat_des_lieux_piece_entree = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -353,6 +391,8 @@ const etat_des_lieux_piece_sejour = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -392,6 +432,8 @@ const etat_des_lieux_piece_cuisine = new Table({
   hotte_etat_entree: column.text,
   hotte_etat_sortie: column.text,
   electromenager_description: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -415,6 +457,8 @@ const etat_des_lieux_compteurs = new Table({
   eau_releve_froide_sortie: column.real,
   eau_releve_chaude_entree: column.real,
   eau_releve_chaude_sortie: column.real,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -442,6 +486,8 @@ const etat_des_lieux_pieces_chambre = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -475,6 +521,8 @@ const etat_des_lieux_pieces_salle_de_bain = new Table({
   baignoire_description: column.text,
   baignoire_etat_entree: column.text,
   baignoire_etat_sortie: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -508,6 +556,8 @@ const etat_des_lieux_pieces_wc = new Table({
   wc_description: column.text,
   wc_etat_entree: column.text,
   wc_etat_sortie: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -536,6 +586,8 @@ const etat_des_lieux_pieces_autre = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -549,6 +601,8 @@ const etat_des_lieux_cles = new Table({
   libelle_autre: column.text,
   nombre_entree: column.integer,
   nombre_sortie: column.integer,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -561,6 +615,8 @@ const etat_des_lieux_equipements_divers = new Table({
   etat_entree: column.text,
   nombre_sortie: column.integer,
   etat_sortie: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -575,6 +631,8 @@ const etat_des_lieux_inventaire = new Table({
   etat_entree: column.text,
   nombre_sortie: column.integer,
   etat_sortie: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -589,6 +647,8 @@ const alertes = new Table({
   statut: column.text,
   message: column.text,
   date_reference: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
@@ -614,6 +674,8 @@ const tache = new Table({
   notes: column.text,
   metadata: column.text,
   organisation_id: column.text,
+  archived_at: column.text,
+  version: column.integer,
   updated_at: column.text
 });
 
