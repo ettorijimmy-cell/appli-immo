@@ -34,9 +34,17 @@ streams:
   # des colonnes non voulues). Testé de bout en bout (Postgres Scaleway ->
   # PowerSync -> SQLite locale), y compris après restriction des IPs
   # autorisées côté Postgres.
+  # forme_juridique/siret/adresse/code_postal/ville/nom_gerant/prenom_gerant/
+  # telephone/est_familiale et updated_at ajoutés le 2026-10-18 (chantier
+  # d'alignement du schéma) : colonnes Drizzle ajoutées après le déploiement
+  # initial du 2026-08-13, jamais reportées ici jusqu'à présent. Toutes
+  # décidées exposées (aucune donnée sensible — mentions légales du
+  # bailleur personne morale et paramètres du bail vide).
   scis:
     query: >
-      SELECT id, nom, regime_fiscal, statut FROM scis
+      SELECT id, nom, regime_fiscal, forme_juridique, siret, adresse,
+      code_postal, ville, nom_gerant, prenom_gerant, telephone,
+      est_familiale, statut, updated_at FROM scis
       WHERE scis.id IN (
         SELECT organisation_sci.sci_id FROM organisation_sci
         INNER JOIN utilisateurs ON utilisateurs.organisation_id = organisation_sci.organisation_id
@@ -89,11 +97,16 @@ streams:
   # n° 2015-587), pas des données de gestion de copropriété — dérivés
   # automatiquement pour type='maison' (jamais null pour ce type), requis
   # explicitement pour tout autre type.
+  # nom_proprietaire ajouté le 2026-10-18 (chantier d'alignement du
+  # schéma) : colonne Drizzle ajoutée pour Quittance Étape 4
+  # (bien.nomProprietaire, mention "LE BAILLEUR" du modèle de bail pour un
+  # propriétaire personne physique), jamais reportée ici jusqu'à présent.
   bien:
     query: >
       SELECT id, type, proprietaire_type, sci_id, organisation_id, adresse,
-      code_postal, ville, nom, annee_construction, date_acquisition,
-      valeur_acquisition, type_habitat, regime_juridique, statut, updated_at
+      code_postal, ville, nom, nom_proprietaire, annee_construction,
+      date_acquisition, valeur_acquisition, type_habitat, regime_juridique,
+      statut, updated_at
       FROM bien
       WHERE bien.organisation_id IN (
         SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
@@ -135,12 +148,19 @@ streams:
   # identifiant_fiscal EXCLU volontairement de la liste de colonnes
   # (donnée fiscale nominative du lot, plus sensible que le reste des
   # colonnes de cette table — voir échange du 2026-08-15).
+  # tantieme/classe_dpe/depenses_energie_min/depenses_energie_max/
+  # annee_reference_prix_energie ajoutées le 2026-10-18 (chantier
+  # d'alignement du schéma) : colonnes Drizzle ajoutées pour l'Étape 4
+  # (composition, DPE), jamais reportées ici jusqu'à présent.
+  # identifiant_fiscal reste EXCLU (voir commentaire plus haut).
   appartements:
     query: >
       SELECT id, bien_id, numero, type, surface, loyer_reference,
       nombre_pieces_principales, mode_chauffage, mode_eau_chaude, type_energie,
       equipement_cuisine, dependances_annexes, nombre_chambres,
-      nombre_salles_de_bain, nombre_wc, autre_piece_1, autre_piece_2, statut,
+      nombre_salles_de_bain, nombre_wc, autre_piece_1, autre_piece_2,
+      tantieme, classe_dpe, depenses_energie_min, depenses_energie_max,
+      annee_reference_prix_energie, statut,
       updated_at FROM appartements
       WHERE appartements.bien_id IN (
         SELECT id FROM bien WHERE bien.organisation_id IN (
@@ -185,12 +205,16 @@ streams:
   # bien_id -> bien.organisation_id -> utilisateurs, migré le 2026-08-26),
   # appartement_id étant une FK directe sur baux. Aucune colonne exclue —
   # rien de sensible identifié sur cette table (voir échange du 2026-08-15).
+  # trimestre_reference_revision ajoutée le 2026-10-18 (chantier
+  # d'alignement du schéma) : colonne Drizzle ajoutée pour le module
+  # Révision loyer, jamais reportée ici jusqu'à présent.
   baux:
     query: >
       SELECT id, appartement_id, type_bail, statut, loyer_mensuel,
       depot_garantie, provisions_charges, jour_echeance, date_debut,
       date_fin, date_activation, date_signature, date_resiliation,
       travaux_realises, honoraires_bailleur, honoraires_locataire,
+      trimestre_reference_revision,
       updated_at FROM baux
       WHERE baux.appartement_id IN (
         SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -262,10 +286,14 @@ streams:
   # du 2026-08-15 : mécanisme RGPD non implémenté à ce jour — voir
   # docs/backlog.md, dette technique — mais la colonne doit déjà être
   # présente côté client pour le jour où il le sera).
+  # lieu_naissance ajoutée le 2026-10-18 (chantier d'alignement du schéma) :
+  # décidée exposée par cohérence avec garants.lieu_naissance et
+  # locataires.date_naissance, déjà synchronisées.
   locataires:
     query: >
       SELECT id, nom, prenom, email, telephone, adresse, code_postal, ville,
-      date_naissance, statut, anonymise_le, updated_at FROM locataires
+      date_naissance, lieu_naissance, statut, anonymise_le, updated_at
+      FROM locataires
       WHERE locataires.id IN (
         SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -287,9 +315,14 @@ streams:
   # bail_id étant une FK directe sur paiements. Aucune colonne exclue —
   # rien de sensible identifié sur cette table (statut est calculé, jamais
   # saisi directement — voir docs/data-dictionary.md).
+  # loyer_hors_charges/charges ajoutées le 2026-10-18 (chantier
+  # d'alignement du schéma) : colonnes Drizzle ajoutées pour Quittance
+  # Étape 4 (genererEcheancesRecurrentes fige ces montants à l'échéance),
+  # jamais reportées ici jusqu'à présent.
   paiements:
     query: >
-      SELECT id, bail_id, type, statut, montant, date_echeance, updated_at
+      SELECT id, bail_id, type, statut, montant, loyer_hors_charges,
+      charges, date_echeance, updated_at
       FROM paiements
       WHERE paiements.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -471,11 +504,21 @@ streams:
   # bien.organisation_id pour les branches appartement/bail/garant/
   # locataire/etat_des_lieux — jamais testé à cette profondeur avant ce
   # stream, à surveiller côté temps de réponse une fois déployé).
+  # candidat_role ajoutée le 2026-10-18 (chantier d'alignement du
+  # schéma) : colonne Drizzle ajoutée pour le module Candidats, jamais
+  # reportée ici jusqu'à présent. Rappel (packages/db/src/schema/
+  # documents.ts) : renseignée UNIQUEMENT quand entite_type='candidat' —
+  # or cette branche n'existe pas dans le WHERE ci-dessous et n'est pas
+  # prévue (candidat jamais publiée, voir plus bas dans ce fichier).
+  # Conséquence : cette colonne arrivera donc toujours NULL côté client
+  # en pratique aujourd'hui ; exposée quand même par décision explicite
+  # (complétude du schéma), sans effet fonctionnel actuel.
   documents:
     query: >
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
       nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, document_precedent_id, updated_at FROM documents
+      etat_des_lieux_piece_numero, document_precedent_id, candidat_role,
+      updated_at FROM documents
       WHERE (
         documents.entite_type = 'sci' AND documents.entite_id IN (
           SELECT organisation_sci.sci_id FROM organisation_sci
@@ -1224,10 +1267,14 @@ streams:
   # à la création, voir docs/data-dictionary.md section tache) — pas besoin
   # de la chaîne de sous-select par type comme sur alertes.entite_id, un
   # seul niveau de scoping suffit.
+  # paiement_id/sinistre_id ajoutées le 2026-10-18 (chantier d'alignement
+  # du schéma) : colonnes Drizzle ajoutées pour Quittance Étape 4 et le
+  # module Sinistres, jamais reportées ici jusqu'à présent.
   tache:
     query: >
       SELECT id, type, statut, origine, alerte_source_id, bail_id,
-      appartement_id, bien_id, locataire_id, date_echeance, date_completion,
+      appartement_id, bien_id, locataire_id, paiement_id, sinistre_id,
+      date_echeance, date_completion,
       periode_recurrence, notes, metadata, organisation_id, updated_at
       FROM tache
       WHERE tache.organisation_id IN (

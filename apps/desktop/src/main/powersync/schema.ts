@@ -9,7 +9,17 @@ import { column, Schema, Table } from "@powersync/node";
 const scis = new Table({
   nom: column.text,
   regime_fiscal: column.text,
-  statut: column.text
+  forme_juridique: column.text,
+  siret: column.text,
+  adresse: column.text,
+  code_postal: column.text,
+  ville: column.text,
+  nom_gerant: column.text,
+  prenom_gerant: column.text,
+  telephone: column.text,
+  est_familiale: column.integer,
+  statut: column.text,
+  updated_at: column.text
 });
 
 // Conservée telle quelle lors de la migration bien (2026-08-26) : la table
@@ -41,6 +51,7 @@ const bien = new Table({
   code_postal: column.text,
   ville: column.text,
   nom: column.text,
+  nom_proprietaire: column.text,
   annee_construction: column.integer,
   date_acquisition: column.text,
   valeur_acquisition: column.real,
@@ -84,6 +95,11 @@ const appartements = new Table({
   nombre_wc: column.integer,
   autre_piece_1: column.text,
   autre_piece_2: column.text,
+  tantieme: column.real,
+  classe_dpe: column.text,
+  depenses_energie_min: column.real,
+  depenses_energie_max: column.real,
+  annee_reference_prix_energie: column.integer,
   statut: column.text,
   updated_at: column.text
 });
@@ -114,6 +130,7 @@ const baux = new Table({
   travaux_realises: column.text,
   honoraires_bailleur: column.real,
   honoraires_locataire: column.real,
+  trimestre_reference_revision: column.integer,
   updated_at: column.text
 });
 
@@ -156,6 +173,7 @@ const locataires = new Table({
   code_postal: column.text,
   ville: column.text,
   date_naissance: column.text,
+  lieu_naissance: column.text,
   statut: column.text,
   anonymise_le: column.text,
   updated_at: column.text
@@ -166,6 +184,8 @@ const paiements = new Table({
   type: column.text,
   statut: column.text,
   montant: column.real,
+  loyer_hors_charges: column.real,
+  charges: column.real,
   date_echeance: column.text,
   updated_at: column.text
 });
@@ -250,6 +270,7 @@ const documents = new Table({
   etat_des_lieux_piece_type: column.text,
   etat_des_lieux_piece_numero: column.integer,
   document_precedent_id: column.text,
+  candidat_role: column.text,
   updated_at: column.text
 });
 
@@ -585,6 +606,8 @@ const tache = new Table({
   appartement_id: column.text,
   bien_id: column.text,
   locataire_id: column.text,
+  paiement_id: column.text,
+  sinistre_id: column.text,
   date_echeance: column.text,
   date_completion: column.text,
   periode_recurrence: column.text,
