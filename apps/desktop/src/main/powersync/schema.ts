@@ -183,7 +183,12 @@ const versements = new Table({
 
 // commentaire volontairement absent — exclu du Sync Stream remboursements
 // (texte libre non contraint, saisi manuellement, voir
-// docs/powersync-sync-streams.yaml).
+// docs/powersync-sync-streams.yaml). piece_justificative_chemin absente
+// pour le même motif que documents.chemin_stockage (chemin du blob
+// chiffré, jamais exposable) — voir docs/powersync-sync-streams.yaml.
+// motif_retenue et les 3 piece_justificative_nom_fichier/mime_type/
+// taille_octets étaient déjà dans le yaml mais manquaient ici (dérive
+// corrigée le 2026-10-18).
 const remboursements = new Table({
   bail_id: column.text,
   paiement_id: column.text,
@@ -192,6 +197,10 @@ const remboursements = new Table({
   montant_rembourse: column.real,
   date_remboursement: column.text,
   mode: column.text,
+  motif_retenue: column.text,
+  piece_justificative_nom_fichier: column.text,
+  piece_justificative_mime_type: column.text,
+  piece_justificative_taille_octets: column.integer,
   updated_at: column.text
 });
 
