@@ -488,22 +488,28 @@ streams:
   # révélateur selon le nom donné par l'utilisateur à l'upload (ex.
   # "CNI_Jean_Dupont.jpg") — pas de mécanisme d'anonymisation, accepté tel
   # quel.
-  # entite_id est une référence polymorphe sur 8 cibles (sci, immeuble, bien,
-  # appartement, locataire, bail, etat_des_lieux, garant — voir commentaire
-  # du schéma Drizzle, packages/db/src/schema/documents.ts). Les 8 branches
-  # sont désormais toutes couvertes (2026-08-21, domaine État des lieux
-  # traité ; 2026-08-24, 7e branche garant ajoutée — checklist documentaire ;
-  # 2026-08-26, 8e branche bien ajoutée — migration bien, docs/backlog.md :
-  # seul chemin possible pour un bien non-immeuble ou un immeuble créé après
-  # cette date via BienService, la branche 'immeuble' restant réservée aux
-  # documents déjà rattachés à une ligne immeubles existante) — chacune avec
-  # sa propre condition entite_type = '...' AND entite_id IN (chaîne de
-  # filtrage habituelle vers la table cible correspondante, jusqu'à 5
-  # niveaux de profondeur pour la branche etat_des_lieux — un cran de plus
-  # que locataire, migré le 2026-08-26 vers la chaîne bien_id ->
-  # bien.organisation_id pour les branches appartement/bail/garant/
-  # locataire/etat_des_lieux — jamais testé à cette profondeur avant ce
-  # stream, à surveiller côté temps de réponse une fois déployé).
+  # entite_id est une référence polymorphe sur 11 cibles au total côté
+  # Drizzle (sci, immeuble, bien, appartement, locataire, bail,
+  # etat_des_lieux, garant, depense, candidat, sinistre — voir commentaire
+  # du schéma Drizzle, packages/db/src/schema/documents.ts). 10 branches
+  # couvertes ici (2026-08-21, domaine État des lieux traité ; 2026-08-24,
+  # 7e branche garant ajoutée — checklist documentaire ; 2026-08-26, 8e
+  # branche bien ajoutée — migration bien, docs/backlog.md : seul chemin
+  # possible pour un bien non-immeuble ou un immeuble créé après cette
+  # date via BienService, la branche 'immeuble' restant réservée aux
+  # documents déjà rattachés à une ligne immeubles existante ; 2026-10-21,
+  # 9e et 10e branches depense/sinistre ajoutées, filtrage par
+  # depense.organisation_id/sinistre.organisation_id — colonnes directes,
+  # pas de chaîne bien à traverser) — chacune avec sa propre condition
+  # entite_type = '...' AND entite_id IN (chaîne de filtrage habituelle
+  # vers la table cible correspondante, jusqu'à 5 niveaux de profondeur
+  # pour la branche etat_des_lieux — un cran de plus que locataire, migré
+  # le 2026-08-26 vers la chaîne bien_id -> bien.organisation_id pour les
+  # branches appartement/bail/garant/locataire/etat_des_lieux — jamais
+  # testé à cette profondeur avant ce stream, à surveiller côté temps de
+  # réponse une fois déployé). 11e cible 'candidat' volontairement non
+  # couverte — voir la décision permanente plus bas dans ce fichier
+  # (candidat jamais publiée).
   # candidat_role ajoutée le 2026-10-18 (chantier d'alignement du
   # schéma) : colonne Drizzle ajoutée pour le module Candidats, jamais
   # reportée ici jusqu'à présent. Rappel (packages/db/src/schema/
@@ -596,19 +602,33 @@ streams:
             )
           )
         )
+      ) OR (
+        documents.entite_type = 'depense' AND documents.entite_id IN (
+          SELECT id FROM depense WHERE depense.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+          )
+        )
+      ) OR (
+        documents.entite_type = 'sinistre' AND documents.entite_id IN (
+          SELECT id FROM sinistre WHERE sinistre.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+          )
+        )
       )
     auto_subscribe: true
 
   # Préparé le 2026-08-20, corrigé le 2026-08-20 (même correction UNION
   # ALL -> OR que documents ci-dessus), complété le 2026-08-21 (6e branche
   # etat_des_lieux, domaine État des lieux désormais traité), complété le
-  # 2026-08-24 (7e branche garant) et le 2026-08-26 (8e branche bien,
-  # migration bien) — voir docs/backlog.md pour le suivi.
+  # 2026-08-24 (7e branche garant), le 2026-08-26 (8e branche bien,
+  # migration bien) et le 2026-10-21 (9e/10e branches depense/sinistre,
+  # mêmes raisons que sur documents ci-dessus — colonnes organisation_id
+  # directes, pas de chaîne bien).
   # Relation 1:1 avec documents, FK simple document_id (pas de référence
   # polymorphe propre à cette table — voir commentaire du schéma Drizzle).
   # Filtrage par document_id IN (la requête documents ci-dessus,
   # répétée ici en ne sélectionnant que id) : la requête la plus profonde
-  # et la plus complexe de ce chantier à ce jour (7 blocs OR imbriqués
+  # et la plus complexe de ce chantier à ce jour (9 blocs OR imbriqués
   # dans un IN, jusqu'à 5 niveaux de profondeur pour la branche
   # etat_des_lieux, migré le 2026-08-26) — à surveiller particulièrement
   # côté temps de réponse une fois déployé.
@@ -695,6 +715,18 @@ streams:
                   )
                 )
               )
+            )
+          )
+        ) OR (
+          documents.entite_type = 'depense' AND documents.entite_id IN (
+            SELECT id FROM depense WHERE depense.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+            )
+          )
+        ) OR (
+          documents.entite_type = 'sinistre' AND documents.entite_id IN (
+            SELECT id FROM sinistre WHERE sinistre.organisation_id IN (
+              SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
             )
           )
         )
@@ -1033,11 +1065,13 @@ streams:
   # ce bloc — voir docs/backlog.md pour le suivi. Domaine Alertes, dernier
   # domaine de ce chantier — voir la note "Domaine Alertes (2026-08-16)"
   # ci-dessus pour l'historique du report.
-  # entite_id est une référence polymorphe sur 4 cibles selon `type` (pas
+  # entite_id est une référence polymorphe sur 5 cibles selon `type` (pas
   # de FK possible, voir commentaire du schéma Drizzle,
   # packages/db/src/schema/alertes.ts) : bail_fin_proche -> baux, impaye
   # -> paiements, document_expire/document_expire_proche -> documents,
-  # entretien_equipement -> equipements. 5 blocs OR (pas UNION ALL — leçon
+  # entretien_equipement -> equipements, sinistre_stagnation -> sinistre
+  # (6e branche ajoutée le 2026-10-21, colonne sinistre.organisation_id
+  # directe, pas de chaîne bien). 6 blocs OR (pas UNION ALL — leçon
   # retenue du domaine Documents), chacun avec sa propre chaîne de
   # filtrage vers la table cible correspondante.
   # Corrigé le 2026-08-21 : `alertes.type IN ('document_expire',
@@ -1049,12 +1083,14 @@ streams:
   # propre bloc OR, avec le même filtre vers documents dupliqué deux fois
   # (5 blocs au total, pas 4) plutôt que mutualisé.
   # Chacune des deux branches document_expire(_proche) réutilise intégralement le filtre
-  # polymorphe à 7 branches de documents (documents.entite_type IN
-  # sci/immeuble/appartement/bail/garant/locataire/etat_des_lieux) en sous-
-  # requête — la chaîne la plus profonde et la plus complexe de ce
-  # chantier à ce jour, jusqu'à 6 niveaux d'imbrication (alertes ->
-  # documents -> etats_des_lieux -> baux -> appartements -> bien ->
-  # utilisateurs, migré le 2026-08-26) — à surveiller en priorité côté
+  # polymorphe à 10 branches de documents (documents.entite_type IN
+  # sci/immeuble/bien/appartement/bail/garant/locataire/etat_des_lieux/
+  # depense/sinistre — 9e/10e branches ajoutées le 2026-10-21, mêmes
+  # raisons que sur documents ci-dessus) en sous-requête — la chaîne la
+  # plus profonde et la plus complexe de ce chantier à ce jour, jusqu'à
+  # 6 niveaux d'imbrication (alertes -> documents -> etats_des_lieux ->
+  # baux -> appartements -> bien -> utilisateurs, migré le 2026-08-26) —
+  # à surveiller en priorité côté
   # temps de réponse une fois déployé.
   # derniere_condition_vraie EXCLU (champ interne, jamais exposé à
   # l'utilisateur selon le commentaire du schéma — décision actée dès la
@@ -1166,6 +1202,18 @@ streams:
                 )
               )
             )
+          ) OR (
+            documents.entite_type = 'depense' AND documents.entite_id IN (
+              SELECT id FROM depense WHERE depense.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
+          ) OR (
+            documents.entite_type = 'sinistre' AND documents.entite_id IN (
+              SELECT id FROM sinistre WHERE sinistre.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
           )
         )
       ) OR (
@@ -1247,6 +1295,18 @@ streams:
                 )
               )
             )
+          ) OR (
+            documents.entite_type = 'depense' AND documents.entite_id IN (
+              SELECT id FROM depense WHERE depense.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
+          ) OR (
+            documents.entite_type = 'sinistre' AND documents.entite_id IN (
+              SELECT id FROM sinistre WHERE sinistre.organisation_id IN (
+                SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
+              )
+            )
           )
         )
       ) OR (
@@ -1257,6 +1317,12 @@ streams:
                 SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
               )
             )
+          )
+        )
+      ) OR (
+        alertes.type = 'sinistre_stagnation' AND alertes.entite_id IN (
+          SELECT id FROM sinistre WHERE sinistre.organisation_id IN (
+            SELECT organisation_id FROM utilisateurs WHERE utilisateurs.id = auth.user_id()
           )
         )
       )
