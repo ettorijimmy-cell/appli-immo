@@ -29,7 +29,8 @@
     "seed:modele-quittance-mensuelle": "tsx scripts/seed-modele-quittance-mensuelle.ts",
     "seed:modele-sinistre-stagnation": "tsx scripts/seed-modele-sinistre-stagnation.ts",
     "seed:modele-regularisation-charges": "tsx scripts/seed-modele-regularisation-charges.ts",
-    "backfill:organisation-locataires-garants": "tsx scripts/backfill-organisation-locataires-garants.ts"
+    "backfill:organisation-locataires-garants": "tsx scripts/backfill-organisation-locataires-garants.ts",
+    "powersync:publication": "tsx scripts/powersync-publication.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.906.0",
