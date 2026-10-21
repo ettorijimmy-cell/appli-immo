@@ -1295,3 +1295,31 @@ streams:
 # passe déjà par cet appel API direct, aucune tentative de lecture
 # locale. Absence de ce stream = choix délibéré, pas un oubli à
 # combler lors d'une future extension par domaine.
+
+# Décision actée le 2026-10-18 : connexion_gmail n'a VOLONTAIREMENT aucun
+# Sync Stream, et ne doit jamais en avoir un, même partiel. access_token_
+# chiffre et refresh_token_chiffre sont chiffrés via EncryptionService
+# (AES-256-GCM), même mécanique que comptes_bancaires_sci.iban_chiffre/
+# bic_chiffre — jamais en clair en base, jamais déchiffrés côté
+# apps/desktop (CLAUDE.md). Pas de besoin de consultation hors-ligne pour
+# cette table. Absence de ce stream = choix délibéré, pas un oubli à
+# combler lors d'une future extension par domaine.
+
+# Décision actée le 2026-10-18 : boite_mail_dediee n'a VOLONTAIREMENT
+# aucun Sync Stream, et ne doit jamais en avoir un, même partiel.
+# mot_de_passe_app_chiffre est chiffré via EncryptionService (AES-256-GCM),
+# même mécanique que comptes_bancaires_sci.iban_chiffre/bic_chiffre et
+# connexion_gmail.access_token_chiffre — jamais en clair en base, jamais
+# journalisé, jamais déchiffré côté apps/desktop (CLAUDE.md). Pas de besoin
+# de consultation hors-ligne pour cette table. Absence de ce stream =
+# choix délibéré, pas un oubli à combler lors d'une future extension par
+# domaine.
+
+# Décision du 2026-10-18 : candidat n'est pas publiée et n'a aucun Sync
+# Stream, ni la branche documents/diagnostics entite_type='candidat' (voir
+# le commentaire du stream documents plus haut dans ce fichier). Raison :
+# la publication Postgres porte sur la table entière, donc publier
+# candidat copierait vers PowerSync Cloud les revenus des candidats et de
+# leurs garants (revenu_mensuel_net, garant_revenu_mensuel_net), même si
+# aucun stream ne les envoie au poste. Les écrans Candidats lisent via le
+# backend. Revenir sur ce choix exige une décision explicite.
