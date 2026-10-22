@@ -24,6 +24,33 @@
 #   - journal_audit ne doit jamais faire l'objet d'un stream — protégée
 #     structurellement en amont (absente de la publication Postgres), pas
 #     par une simple discipline de requête.
+#
+# État du déploiement (2026-10-22) : configuration complète déployée dans
+# le dashboard PowerSync (32 streams au total — tous les streams de ce
+# fichier). Déploiement confirmé par connexion réelle depuis l'appli
+# desktop packagée (dist/win-unpacked) : powersync.db est passée de 0 à
+# 745 Ko.
+#   - Streams vérifiés avec des données réelles ce jour-là (comptages
+#     observés dans powersync.db) : scis, bien, bien_immeuble_detail,
+#     appartements, equipements, baux, alertes, tache, parametres_alertes,
+#     indices_irl, elements_inventaire_meuble.
+#   - Streams déployés mais non vérifiés, faute de données réelles côté
+#     Postgres à ce jour (aucun locataire rattaché, aucun document — état
+#     normal de la production actuelle, pas un signe de problème) :
+#     immeubles, garants, bail_locataires, locataires, paiements,
+#     versements, remboursements, documents, diagnostics, et les 12 tables
+#     du domaine État des lieux (etats_des_lieux et ses tables satellites).
+#     À vérifier quand des données réelles existeront pour ces domaines —
+#     voir docs/backlog.md, entrée "PowerSync — suite".
+#
+# indices_irl a longtemps été considérée comme jamais confirmée
+# fonctionnelle (voir son historique de bug de backfill plus bas dans ce
+# fichier) : la cause réelle n'avait rien à voir avec ce stream — la base
+# locale powersync.db ne s'ouvrait jamais du tout (extension native
+# chargée depuis l'intérieur de app.asar, corrigée le 2026-10-22,
+# apps/desktop/src/main/powersync/database.worker.ts, commit bf72015).
+# Une fois la base ouverte, indices_irl s'est synchronisée normalement
+# (2 lignes reçues).
 
 config:
   edition: 3
@@ -53,8 +80,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de la
-  # création de ce fichier — voir docs/backlog.md pour le suivi.
   # Même logique de portée que scis (organisation_sci -> utilisateurs ->
   # auth.user_id()), immeubles ayant une FK directe sci_id.
   # identifiant_fiscal n'existe pas sur cette table (présent sur
@@ -134,8 +159,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de la
-  # création de ce fichier — voir docs/backlog.md pour le suivi.
   # Migré le 2026-08-26 (migration bien, docs/backlog.md) : scoping via
   # bien_id -> bien.organisation_id -> utilisateurs, à la place de l'ancien
   # immeuble_id -> immeubles.sci_id -> organisation_sci -> utilisateurs.
@@ -169,8 +192,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Pas de statut sur cette table (contrairement à scis/immeubles/
   # appartements) — aucun pgEnum de statut défini côté Drizzle.
   # Pas de appartement_id -> bien_id direct comme appartements : equipements
@@ -199,8 +220,7 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Locataires & baux.
+  # Domaine Locataires & baux.
   # Même profondeur que appartements (2 niveaux : appartement_id ->
   # bien_id -> bien.organisation_id -> utilisateurs, migré le 2026-08-26),
   # appartement_id étant une FK directe sur baux. Aucune colonne exclue —
@@ -225,8 +245,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Même chaîne de filtrage que baux, un niveau de plus (bail_id ->
   # appartement_id -> bien_id -> bien.organisation_id -> utilisateurs,
   # 3 niveaux, comme equipements — migré le 2026-08-26).
@@ -249,8 +267,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Table de jonction pure (colocation) — mêmes 3 niveaux que garants
   # (bail_id -> appartement_id -> bien_id -> bien.organisation_id ->
   # utilisateurs, migré le 2026-08-26). Aucune colonne sensible : juste
@@ -269,8 +285,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-15, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Le niveau le plus profond du projet à ce jour (4 niveaux, migré le
   # 2026-08-26) : locataires n'a AUCUNE FK directe vers baux/appartements/
   # bien (c'est une entité indépendante, partagée entre plusieurs baux dans
@@ -308,8 +322,7 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Finances.
+  # Domaine Finances.
   # Même profondeur que baux (3 niveaux : bail_id -> appartement_id ->
   # bien_id -> bien.organisation_id -> utilisateurs, migré le 2026-08-26),
   # bail_id étant une FK directe sur paiements. Aucune colonne exclue —
@@ -335,8 +348,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Même chaîne de filtrage que paiements, un niveau de plus (paiement_id ->
   # bail_id -> appartement_id -> bien_id -> bien.organisation_id ->
   # utilisateurs, 4 niveaux, comme locataires — migré le 2026-08-26).
@@ -361,8 +372,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-16, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Deux FK vers deux niveaux différents (bail_id, ancre stable toujours
   # présente ; paiement_id, nullable, lien optionnel vers l'échéance
   # d'origine) — filtrage sur bail_id uniquement, même profondeur que
@@ -422,9 +431,7 @@ streams:
       SELECT id, type, seuil_jours_avant, archived_at, version, updated_at FROM parametres_alertes
     auto_subscribe: true
 
-  # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Références
-  # globales.
+  # Domaine Références globales.
   # Table de référence réglementaire (série INSEE BDM 001515333), sans
   # rattachement SCI/utilisateur — synchronisée sans filtre par hiérarchie,
   # comme parametres_alertes. Rien de sensible.
@@ -449,13 +456,16 @@ streams:
   # depuis. Ce changement force un nouveau hash de définition côté
   # PowerSync pour provoquer une réinitialisation du bucket, sans autre
   # effet — voir docs/backlog.md pour le suivi.
+  # Résolu par la suite : le contournement décrit dans docs/backlog.md
+  # (« Bug de backfill initial PowerSync ») a corrigé la réplication côté
+  # PowerSync Cloud le 2026-08-20. La confirmation côté client a dû
+  # attendre le 2026-10-22 (voir l'en-tête de ce fichier) : la base locale
+  # ne s'ouvrait pas du tout, pour une raison sans rapport avec ce stream.
   indices_irl:
     query: >
       SELECT id, date_recuperation, annee, trimestre, valeur FROM indices_irl
     auto_subscribe: true
 
-  # Préparé le 2026-08-19, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi.
   # Catalogue de référence fixe (~85 lignes, seed déjà réalisé — voir
   # commentaire du schéma Drizzle), sans rattachement SCI/utilisateur —
   # synchronisée sans filtre par hiérarchie. Rien de sensible.
@@ -740,9 +750,8 @@ streams:
 # (8e branche bien, migration bien) — les 8 branches de la référence
 # polymorphe documents.entite_id sont désormais toutes couvertes.
 
-  # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine État des lieux,
-  # le plus étendu de ce chantier (12 tables). Table racine : bail_id
+  # Domaine État des lieux, le plus étendu de ce chantier (12 tables).
+  # Table racine : bail_id
   # unique (un seul état des lieux par bail, document unique
   # entrée+sortie, décret n° 2016-382 art. 3, 2°). Même chaîne de
   # filtrage que baux lui-même (bail_id -> appartement_id -> bien_id ->
@@ -766,7 +775,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Mono-instance (unique sur etat_des_lieux_id). Aucune colonne exclue,
   # y compris les *_description (contenu de fond du modèle Word réel, pas
   # une annotation accessoire — décision du 2026-08-20, distincte du
@@ -796,7 +804,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Mono-instance. Même base que piece_entree sans porte_*/sonnette_*.
   # Aucune colonne exclue.
   etat_des_lieux_piece_sejour:
@@ -821,7 +828,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Mono-instance. Base de piece_sejour + placards/evier/plaques_cuisson/
   # hotte/electromenager (ce dernier sans colonnes d'état, ligne libre du
   # modèle réel). Aucune colonne exclue.
@@ -852,7 +858,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Mono-instance. Relevés de compteurs (décret n° 2016-382, art. 2, 1° f).
   # numero_compteur inclus (non nominatif, décision du 2026-08-20). Aucune
   # colonne exclue.
@@ -880,7 +885,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 3
   # chambres. Aucune colonne exclue.
   etat_des_lieux_pieces_chambre:
@@ -905,7 +909,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 salles
   # de bain. Base de pieces_chambre + lavabo/baignoire. Aucune colonne
   # exclue.
@@ -934,7 +937,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2 WC.
   # Base de pieces_chambre + lavabo/wc (la cuvette, distincte du lavabo).
   # Aucune colonne exclue.
@@ -962,7 +964,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, unique sur (etat_des_lieux_id, numero) — 1 à 2
   # emplacements libres. libelle inclus (contenu de fond, même décision
   # que les *_description). Aucune colonne exclue.
@@ -988,7 +989,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, AUCUNE contrainte d'unicité DB (upsert par id
   # explicite côté service, etats-des-lieux.service.ts) — sans impact sur
   # ce filtre, qui ne fait que lire par hiérarchie (décision du
@@ -1012,7 +1012,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, AUCUNE contrainte d'unicité DB (même situation que
   # cles). commentaire EXCLU (même motif). libelle inclus.
   etat_des_lieux_equipements_divers:
@@ -1032,7 +1031,6 @@ streams:
       )
     auto_subscribe: true
 
-  # Préparé le 2026-08-21, pas encore déployé/testé — voir docs/backlog.md.
   # Multi-instance, unique sur (etat_des_lieux_id, element_id) —
   # contrairement à cles/equipements_divers, cette table a bien une
   # contrainte d'unicité DB (corrigé une prémisse inexacte du 2026-08-21).
@@ -1061,9 +1059,8 @@ streams:
 # 'etat_des_lieux') a été ajoutée séparément, voir le bloc documents/
 # diagnostics ci-dessus.
 
-  # Préparé le 2026-08-21, pas encore déployé/testé au moment de l'ajout de
-  # ce bloc — voir docs/backlog.md pour le suivi. Domaine Alertes, dernier
-  # domaine de ce chantier — voir la note "Domaine Alertes (2026-08-16)"
+  # Domaine Alertes, dernier domaine de ce chantier — voir la note
+  # "Domaine Alertes (2026-08-16)"
   # ci-dessus pour l'historique du report.
   # entite_id est une référence polymorphe sur 5 cibles selon `type` (pas
   # de FK possible, voir commentaire du schéma Drizzle,

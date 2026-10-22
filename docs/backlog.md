@@ -743,10 +743,12 @@ les trois parcours ci-dessus).
   (parametres_alertes puis alertes elle-même, terminée en dernier),
   Références globales (indices_irl/elements_inventaire_meuble), Documents
   (documents/diagnostics), État des lieux (12 tables). Une seule
-  exclusion volontaire et permanente : `comptes_bancaires_sci`, jamais de
-  Sync Stream (IBAN/BIC chiffrés, consultation exclusivement via
-  l'endpoint authentifié dédié, voir plus bas). **29 Sync Streams au
-  total** — `docs/powersync-sync-streams.yaml` fait foi comme source de
+  exclusion volontaire et permanente (au 2026-08-21 ; s'y ajoutent depuis
+  le 2026-10-18 `candidat`, `connexion_gmail` et `boite_mail_dediee`) :
+  `comptes_bancaires_sci`, jamais de Sync Stream (IBAN/BIC chiffrés,
+  consultation exclusivement via
+  l'endpoint authentifié dédié, voir plus bas). **32 Sync Streams au
+  total (29 au 2026-08-21)** — `docs/powersync-sync-streams.yaml` fait foi comme source de
   vérité versionnée de ce qui est réellement déployé dans le dashboard
   PowerSync, pas ce fichier.
 
@@ -1113,6 +1115,58 @@ les trois parcours ci-dessus).
   `autre`). Réponse au client inchangée (`UnauthorizedException()`
   générique). Jamais journalisé : le jeton, une partie du jeton,
   l'en-tête `Authorization`, le secret, le payload.
+
+- **PowerSync — suite (ouvert, 2026-10-22).** Chantier de déploiement
+  terminé — config complète (32 streams) déployée dans le dashboard
+  PowerSync, confirmée par connexion réelle depuis l'appli desktop
+  packagée (voir `docs/powersync-sync-streams.yaml` pour le détail par
+  stream). Reste à traiter :
+  - (a) Faire lire la base locale par les écrans desktop. Aujourd'hui ils
+    lisent systématiquement via le backend (API REST), jamais directement
+    `powersync.db` — alors que c'est tout l'intérêt du mode offline-first
+    pour lequel PowerSync a été mis en place.
+  - (b) Écritures hors ligne, éventuellement — dépend de (a), et d'un
+    choix de stratégie de résolution de conflit non tranché à ce jour.
+  - Vérifier les streams déployés mais jamais testés avec des données
+    réelles, faute de données en production à ce jour : `locataires`,
+    `bail_locataires`, `garants`, `paiements`, `versements`,
+    `remboursements`, `documents`, `diagnostics`, et les 12 tables du
+    domaine État des lieux (`etats_des_lieux` et ses tables satellites) —
+    dès qu'un locataire, un bail actif, un paiement ou un document réels
+    existeront.
+  - Les tables Drizzle sans Sync Stream (vérifié par grep sur
+    `packages/db/src/schema/*.ts` comparé aux 32 streams de
+    `docs/powersync-sync-streams.yaml` et à la liste de publication
+    Postgres, `apps/backend/scripts/powersync-publication.ts`) :
+    - Jamais synchronisées, décision permanente (voir plus haut dans ce
+      fichier le détail de chaque décision) : `candidat`,
+      `connexion_gmail`, `boite_mail_dediee`.
+    - Sans stream mais publiées et utilisées uniquement pour le filtrage
+      dans les requêtes d'autres streams (chacune apparaît en `FROM
+      <table>` dans au moins une sous-requête de scoping, vérifié par
+      grep sur `docs/powersync-sync-streams.yaml`) : `organisation_sci`,
+      `utilisateurs`, `depense`, `sinistre` — à dire explicitement si (a)
+      en a besoin un jour pour elles-mêmes, pas seulement comme table
+      intermédiaire de filtrage.
+    - À traiter avec (a), liste exacte, au fil de l'eau et pas en bloc :
+      `calendrier_abonnement`, `bilan_regularisation_charges`, `contact`,
+      `evenement_calendrier`, `message_communication`,
+      `piece_jointe_message`, `annexe1_saisie_manuelle`,
+      `modele_courrier`, `regle_categorisation`, `revision_loyer`,
+      `organisations` (`organisations` est déjà dans la publication
+      Postgres, conservée le 2026-10-18, mais utilisée par aucun stream —
+      contrairement aux 4 tables de filtrage ci-dessus, aucune occurrence
+      de `FROM organisations` ni même du mot `organisations` dans
+      `docs/powersync-sync-streams.yaml`, vérifié par grep ; à retirer de
+      la publication si (a) n'en a jamais besoin).
+  - Plan gratuit PowerSync : désactivation du projet après ~1 semaine
+    d'inactivité (aucune connexion client) — à surveiller, l'usage
+    personnel actuel pouvant comporter des périodes sans connexion.
+  - `[PowerSync]: Sync error TypeError: terminated` observé deux fois à la
+    fermeture de l'appli lors du test du 2026-10-22 — probablement bénin
+    (socket coupée avant d'être reconnue comme `AbortOperation` par le
+    SDK, voir `AbstractStreamingSyncImplementation.js`), mais non confirmé
+    à 100 % faute de stack trace complète. À surveiller.
 
 ---
 
