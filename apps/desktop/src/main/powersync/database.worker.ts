@@ -1,5 +1,7 @@
 import Database from "better-sqlite3-multiple-ciphers";
-import { startPowerSyncWorker } from "@powersync/node/worker.js";
+import { getPowerSyncExtensionFilename, startPowerSyncWorker } from "@powersync/node/worker.js";
+import { createRequire } from "node:module";
+import { dirname, join, sep } from "node:path";
 import { workerData } from "node:worker_threads";
 
 interface DatabaseAvecPragma {
@@ -57,6 +59,72 @@ if (!cleRecue) {
 }
 const cleChiffrement: string = cleRecue;
 
+// Filet de sécurité pour toute exception qui échapperait au try/catch de
+// ouvrirBaseChiffree ci-dessous — notamment un crash pendant le chargement
+// du module lui-même, avant que startPowerSyncWorker n'ait fini d'installer
+// le canal Comlink : dans ce cas le thread principal ne reçoit jamais de
+// réponse et aucune exception ne remonte via Comlink, d'où l'intérêt des
+// écouteurs "error"/"exit" posés côté main sur l'objet Worker (voir
+// powersync/index.ts). N'affiche jamais que l'exception JS elle-même
+// (error/reason) : ni la clé de chiffrement ni le jeton PowerSync ne
+// transitent par ces variables.
+process.on("uncaughtException", (erreur) => {
+  console.error("[PowerSync worker] exception non interceptée dans le thread worker :", erreur);
+  process.exit(1);
+});
+process.on("unhandledRejection", (raison) => {
+  console.error("[PowerSync worker] rejet de promesse non intercepté dans le thread worker :", raison);
+  process.exit(1);
+});
+
+// Chemin de la bibliothèque native powersync_x64.dll (ou .so/.dylib)
+// chargée par loadExtension() dans BetterSqliteWorker.js:64. Le SDK calcule
+// par défaut ce chemin via `new URL('../' + fichier, import.meta.url)`
+// relatif à son propre fichier SqliteWorker.js — correct en dev, mais en
+// appli packagée ce chemin tombe à l'intérieur de app.asar
+// (resources/app.asar/node_modules/@powersync/node/lib/powersync_x64.dll).
+// loadExtension() appelle en interne LoadLibrary (Windows) / dlopen
+// (Linux/macOS), des appels système sur le fichier réel — ils ne passent
+// jamais par le système de fichiers virtuel qu'Electron superpose à
+// app.asar pour fs/require, et échouent avec "Le module spécifié est
+// introuvable" (erreur Windows 126) sur un chemin à l'intérieur de
+// l'archive. Reproduit et confirmé par les diagnostics ci-dessus
+// (message exact : "SqliteError: Le module spécifié est introuvable",
+// pile dans BetterSqliteWorker.js:64).
+//
+// `extensionPath` est une option officielle et typée de
+// startPowerSyncWorker (PowerSyncWorkerOptions, lib/db/SqliteWorker.d.ts) —
+// utilisée ici plutôt que de dupliquer le binaire via asarUnpack sur tout
+// le paquet @powersync/node (inutile : seul ce .dll a besoin d'être lu par
+// un appel système, pas le reste du code JS du SDK) ou d'intercepter
+// loadExtension après construction de l'instance (plus fragile, dépendrait
+// de la forme exacte de l'instance retournée par le SDK).
+//
+// require.resolve() passe par le résolveur de modules Node (lui bien patché
+// par Electron pour lire dans l'archive) et retrouve donc le même chemin
+// virtuel que import.meta.url aurait donné. Electron place systématiquement
+// un miroir réel sur disque de chaque fichier concerné par asarUnpack sous
+// app.asar.unpacked/, avec la même arborescence relative (confirmé :
+// electron-builder.yml unpack bien powersync_x64.dll) — il suffit donc de
+// rediriger le segment "app.asar" vers "app.asar.unpacked" dans le chemin
+// obtenu pour atteindre l'emplacement réel du binaire. Sans effet en dev :
+// aucun "app.asar" n'apparaît alors dans le chemin.
+function cheminExtensionPowerSync(): string {
+  const requireDepuisCeWorker = createRequire(__filename);
+  const cheminPackageJson = requireDepuisCeWorker.resolve("@powersync/node/package.json");
+  const cheminDansArchive = join(dirname(cheminPackageJson), "lib", getPowerSyncExtensionFilename());
+
+  const segmentArchive = `app.asar${sep}`;
+  const segmentDecompresse = `app.asar.unpacked${sep}`;
+  if (cheminDansArchive.includes(segmentDecompresse)) {
+    return cheminDansArchive;
+  }
+  if (cheminDansArchive.includes(segmentArchive)) {
+    return cheminDansArchive.replace(segmentArchive, segmentDecompresse);
+  }
+  return cheminDansArchive;
+}
+
 // Ne peut pas être une classe TypeScript `extends Database` : le shim
 // better-sqlite3-multiple-ciphers.d.ts type le module en `unknown` (bug de
 // résolution des types de ce package sous moduleResolution "Bundler", voir
@@ -65,11 +133,23 @@ const cleChiffrement: string = cleRecue;
 // après lui avoir posé sa clé, produit exactement le même résultat au
 // runtime (`new` sur une fonction qui `return` un objet retourne cet objet).
 function ouvrirBaseChiffree(...args: unknown[]): unknown {
-  const ConstructeurDatabase = Database as unknown as new (...a: unknown[]) => DatabaseAvecPragma;
-  const instance = new ConstructeurDatabase(...args);
-  const cleEchappee = cleChiffrement.replaceAll("'", "''");
-  instance.pragma(`key = '${cleEchappee}'`);
-  return instance;
+  // Couvre l'ouverture du fichier et la pose de la clé. Ne couvre pas
+  // loadExtension('sqlite3_powersync_init'), qui a lieu après, dans le SDK
+  // (BetterSqliteWorker.js, hors de notre code) — une erreur à cette étape
+  // remonte via le mécanisme RPC Comlink normal du SDK, pas par ce catch.
+  try {
+    const ConstructeurDatabase = Database as unknown as new (...a: unknown[]) => DatabaseAvecPragma;
+    const instance = new ConstructeurDatabase(...args);
+    const cleEchappee = cleChiffrement.replaceAll("'", "''");
+    instance.pragma(`key = '${cleEchappee}'`);
+    return instance;
+  } catch (erreur) {
+    console.error("[PowerSync worker] échec de l'ouverture de la base chiffrée :", erreur);
+    throw erreur;
+  }
 }
 
-startPowerSyncWorker({ loadBetterSqlite3: async () => ouvrirBaseChiffree });
+startPowerSyncWorker({
+  loadBetterSqlite3: async () => ouvrirBaseChiffree,
+  extensionPath: cheminExtensionPowerSync
+});
