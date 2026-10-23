@@ -995,39 +995,91 @@ les trois parcours ci-dessus).
   `entiteId`/`bailId`/`appartementId` de la fixture du test, jamais un
   `findAll()` non filtré. Aucune ligne de la base de dev modifiée.
 
-- **Deadlock intermittent en intégration parallèle — cause non établie.**
-  1 occurrence sur 7 lancements de la suite d'intégration sur base vide
-  (2026-10-13, `pnpm test:integration:clean`, Postgres jetable port 5434) :
-  `taches.integration.spec.ts`, "document_expire (cas bail) : titulaire
-  résolu directement via bailId — notification générée" a échoué avec
-  `PostgresError: deadlock detected`. Jamais reproduit depuis (6 lancements
-  supplémentaires verts, dont 5 consécutifs). Jamais observé en CI (20
-  derniers runs vérifiés via `gh run list`/`gh run view --log-failed`,
-  aucune mention de deadlock) ni sur la base de dev 5433 (3 exécutions
-  complètes de la suite dans la même période, toutes vertes). Cause non
-  établie : Vitest exécute les fichiers d'intégration en parallèle par
-  défaut (`vitest.integration.config.ts` ne surcharge ni `fileParallelism`
-  ni `pool`), même configuration en CI qu'en local. Seule piste identifiée
-  par lecture statique, non prouvée comme cause du cycle de verrous observé :
-  `modele_courrier.code` (`packages/db/src/schema/modele-courrier.ts`) porte
-  une contrainte `UNIQUE` globale ; `taches.integration.spec.ts` (ligne
-  1113, `beforeEach` du describe "révision de loyer") et
-  `taches-scoping.integration.spec.ts` (ligne 478, `beforeEach`) écrivent
-  tous les deux `code: "revision_loyer"`, à chaque test de leurs describe
-  blocks respectifs, pendant toute la durée du run — les deux fichiers
-  tournant dans des threads Vitest distincts. Aucun second verrou complétant
-  un cycle n'a été identifié pour le test qui a effectivement échoué (qui
-  n'écrit que `code: "document_expire"`, jamais `revision_loyer`).
-  **Outil en place** (commit `f52c478`) : `pnpm test:integration:clean`
-  enregistre désormais `docker compose logs postgres-test` dans `tmp/`
-  (ignoré par git) en cas d'échec, avant de détruire le conteneur — le
-  DETAIL exact du deadlock (PID, requêtes, verrous) n'a encore jamais été
-  capturé par cet outil (0 occurrence depuis sa mise en place). **Si ça se
-  reproduit : lire ce journal avant toute correction.** Options de
-  correctif écartées pour l'instant, faute de preuve suffisante : sérialiser
-  les fichiers d'intégration (`fileParallelism: false` — ralentirait la
-  suite, y compris en CI) ou réordonner des requêtes de production (modifier
-  `genererTachesDepuisAlertes()` sur une hypothèse non confirmée).
+- **Deadlock intermittent en intégration parallèle — mécanisme identifié
+  et corrigé (2026-10-23).** 1 occurrence sur 7 lancements de la suite
+  d'intégration sur base vide (2026-10-13, `pnpm test:integration:clean`,
+  Postgres jetable port 5434) : `taches.integration.spec.ts`,
+  "document_expire (cas bail) : titulaire résolu directement via bailId —
+  notification générée" a échoué avec `PostgresError: deadlock detected`.
+  Jamais reproduit depuis à cette date (6 lancements supplémentaires verts,
+  dont 5 consécutifs). Jamais observé en CI (20 derniers runs vérifiés via
+  `gh run list`/`gh run view --log-failed`, aucune mention de deadlock) ni
+  sur la base de dev 5433 (3 exécutions complètes de la suite dans la même
+  période, toutes vertes). Piste explorée à l'époque, jamais confirmée :
+  `modele_courrier.code` (`packages/db/src/schema/modele-courrier.ts`),
+  contrainte `UNIQUE` globale, écrit avec la même valeur
+  `code: "revision_loyer"` par `taches.integration.spec.ts` (ligne 1113) et
+  `taches-scoping.integration.spec.ts` (ligne 478) — mais aucun second
+  verrou complétant un cycle n'avait été identifié pour le test qui avait
+  effectivement échoué (qui n'écrit que `code: "document_expire"`, jamais
+  `revision_loyer`).
+
+  **Première capture réelle du DETAIL exact (2026-10-23)**, lors d'un
+  nouveau lancement de `pnpm test:integration:clean` — cette fois sur
+  `parametres_alertes`, log Postgres sauvegardé et conservé
+  (`tmp/test-integration-postgres-2026-10-23T07-24-54-089Z.log`) :
+  ```
+  ERROR:  deadlock detected
+  DETAIL:  Process 144 waits for ShareLock on transaction 1912; blocked by process 156.
+      Process 156 waits for ShareLock on transaction 1910; blocked by process 144.
+      Process 144: insert into "parametres_alertes" (...) values (...) on conflict do nothing returning ...
+      Process 156: insert into "parametres_alertes" (...) values (...) on conflict do nothing returning ...
+  ```
+
+  **Mécanisme confirmé par lecture du code** (contrairement au cas du
+  2026-10-13, jamais prouvé) : `AlertesConfigService.creerAvecDefaut()`
+  (`apps/backend/src/alertes/alertes-config.service.ts:98-102`) peuple
+  `parametres_alertes` à la volée au premier accès, une ligne à la fois,
+  via `INSERT ... ON CONFLICT DO NOTHING`. 5 fichiers d'intégration
+  déclenchent ce premier accès en instanciant directement
+  `AlertesJobService` (`alertes.integration.spec.ts`,
+  `alertes-scoping.integration.spec.ts`, `taches.integration.spec.ts`,
+  `quittance-document-docx.integration.spec.ts`,
+  `quittance-document-docx-scoping.integration.spec.ts`), tous exécutables
+  en parallèle (`vitest.integration.config.ts` ne surcharge ni
+  `fileParallelism` ni `pool`), chacun dans sa propre transaction ouverte
+  pendant toute la durée du test (jamais commitée avant `rollback()`).
+
+  Un simple conflit sur UNE clé n'aurait pas pu créer de cycle (la seconde
+  transaction attend juste que la première committe ou annule — pas de
+  cycle sans une seconde clé tenue en sens inverse). Le cycle réel vient de
+  deux appels directs à `alertesConfigService.getSeuil(type)` sur UN type
+  précis, dans `alertes.integration.spec.ts`, **avant** de lancer
+  `alertesJobService.genererAlertes(...)` — qui retraverse ensuite les 5
+  types dans l'ordre fixe habituel (`bail_fin_proche →
+  document_expire_proche → entretien_equipement → impaye →
+  sinistre_stagnation`) :
+  - ligne 377 : `getSeuil("impaye")` (4e type), puis ligne 381 :
+    `genererAlertes(...)` (repart du 1er type, `bail_fin_proche`) ;
+  - ligne 582 : `getSeuil("sinistre_stagnation")` (5e et dernier type),
+    puis ligne 602 : `genererAlertes(...)` (repart du 1er type).
+
+  Une transaction qui exécute l'un de ces deux tests verrouille donc un
+  type tardif avant un type précoce ; une autre transaction, dans un
+  fichier différent exécuté en parallèle, verrouille les mêmes types dans
+  l'ordre standard (précoce avant tardif) — les deux s'attendent
+  mutuellement, cycle complet, deadlock.
+
+  **Correction appliquée** : les 5 lignes par défaut sont désormais semées
+  une seule fois, en série, hors de toute transaction de test, avant que
+  Vitest ne démarre (`apps/backend/scripts/seed-parametres-alertes.ts`,
+  réutilise `SEUILS_PAR_DEFAUT`, exporté par `AlertesConfigService` —
+  jamais recopié). Branché dans `scripts/test-integration-clean.mjs` et
+  `.github/workflows/ci.yml`, juste après le seed du catalogue inventaire
+  meublé. Chaque test trouve désormais la ligne déjà présente : plus aucun
+  `INSERT` ne s'y dispute, donc plus de deadlock possible sur cette table.
+  Retry sur l'erreur Postgres `40P01` écarté : annulerait quand même la
+  transaction du test en cours (le test échouerait malgré tout), et en
+  production les 5 lignes existent déjà en pratique dès le premier accès
+  réussi — rien à y retenter.
+
+  **Lien avec le cas du 2026-10-13** : probable, non certain — son DETAIL
+  exact n'avait jamais été capturé (voir ci-dessus), impossible de
+  comparer les deux cycles de verrous précisément. `taches.integration.
+  spec.ts` instancie bien `AlertesJobService`, donc le même mécanisme (seed
+  concurrent non protégé) pouvait déjà être en cause à cette date — la
+  correction ci-dessus s'applique dans tous les cas, qu'il s'agisse ou non
+  du même scénario exact.
 
 - **Garant Visale/autre dans la génération du bail — non résolu, cause
   identifiée (2026-10-13).** `packages/core/src/baux/valider-completude-
