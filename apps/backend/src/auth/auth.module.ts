@@ -6,6 +6,7 @@ import { UsersModule } from "../users/users.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { LimitationTentativesConnexionService } from "./limitation-tentatives-connexion.service";
 
 const DUREE_JWT_PAR_DEFAUT_SECONDES = 3600;
 
@@ -66,7 +67,12 @@ const jwtModule = JwtModule.registerAsync({
 @Module({
   imports: [UsersModule, jwtModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, { provide: APP_GUARD, useExisting: JwtAuthGuard }],
+  providers: [
+    AuthService,
+    JwtAuthGuard,
+    LimitationTentativesConnexionService,
+    { provide: APP_GUARD, useExisting: JwtAuthGuard }
+  ],
   exports: [JwtAuthGuard, jwtModule]
 })
 export class AuthModule {}
