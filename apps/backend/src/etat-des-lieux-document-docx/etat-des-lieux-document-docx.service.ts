@@ -1,6 +1,13 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   calculerStatutEtatDesLieux,
@@ -157,6 +164,7 @@ interface ImageEntree {
 
 @Injectable()
 export class EtatDesLieuxDocumentDocxService {
+  private readonly logger = new Logger(EtatDesLieuxDocumentDocxService.name);
   private readonly templatePath: string;
 
   constructor(
@@ -168,9 +176,35 @@ export class EtatDesLieuxDocumentDocxService {
     private readonly bienService: BienService,
     config: ConfigService
   ) {
+    // Résolu relativement au fichier compilé (__dirname), jamais à
+    // process.cwd() : ce dernier diffère entre dev (apps/backend) et le
+    // conteneur (WORKDIR /app), alors que __dirname pointe toujours vers
+    // le dossier du module courant (src/etat-des-lieux-document-docx en
+    // dev, dist/etat-des-lieux-document-docx en production) — le .docx vit
+    // dans assets/ juste à côté dans les deux cas (copié dans dist/ au
+    // build, voir nest-cli.json compilerOptions.assets). Même mécanisme
+    // que BailDocumentDocxService. ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH
+    // reste une surcharge optionnelle (tests, cas exceptionnel).
     this.templatePath =
       config.get<string>("ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH") ??
-      path.join(process.cwd(), "..", "..", "tmp", "Modèle état des lieux.docx");
+      path.join(__dirname, "assets", "modele-etat-des-lieux.docx");
+  }
+
+  // Jamais un "Internal Server Error" muet côté desktop (voir
+  // docs/error-log.md) : le chemin résolu part dans les logs serveur
+  // (utile pour diagnostiquer une image/déploiement mal configuré), jamais
+  // dans le message renvoyé au client (pas d'information d'infrastructure
+  // exposée à l'utilisateur final). Même principe que
+  // BailDocumentDocxService — appelé aux deux endroits qui lisent le
+  // modèle (verifierIntegriteTemplate et rendreDocument), ni l'un ni
+  // l'autre ne vérifiaient l'existence du fichier avant cette correction.
+  private verifierPresenceTemplate(): void {
+    if (!existsSync(this.templatePath)) {
+      this.logger.error(`Modèle d'état des lieux introuvable au chemin résolu : ${this.templatePath}`);
+      throw new InternalServerErrorException(
+        "Le modèle d'état des lieux est introuvable sur le serveur. Contactez l'administrateur."
+      );
+    }
   }
 
   async genererDocumentEtatDesLieuxDocx(etatDesLieuxId: string): Promise<Buffer> {
@@ -548,6 +582,7 @@ export class EtatDesLieuxDocumentDocxService {
   // une balise entre plusieurs runs (ex. {/meublé} en 3 runs distincts,
   // "{/meubl" + "é" + "}"), un simple regex sur le XML brut la manquerait.
   private verifierIntegriteTemplate(): void {
+    this.verifierPresenceTemplate();
     const contenu = readFileSync(this.templatePath, "binary");
     const zip = new PizZip(contenu);
     const documentXml = zip.file("word/document.xml")?.asText();
@@ -567,6 +602,7 @@ export class EtatDesLieuxDocumentDocxService {
   }
 
   private rendreDocument(donneesBalises: Record<string, unknown>, images: Map<string, ImageEntree>): Buffer {
+    this.verifierPresenceTemplate();
     const contenu = readFileSync(this.templatePath, "binary");
     const zip = new PizZip(contenu);
     const imageModule = new ImageModule({

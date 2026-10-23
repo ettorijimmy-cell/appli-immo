@@ -9,6 +9,10 @@
       {
         "include": "bail-document-docx/assets/**/*",
         "watchAssets": true
+      },
+      {
+        "include": "etat-des-lieux-document-docx/assets/**/*",
+        "watchAssets": true
       }
     ]
   }
