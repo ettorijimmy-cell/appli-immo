@@ -21,6 +21,7 @@
     "seed:test-etat-des-lieux": "tsx scripts/seed-test-etat-des-lieux.ts",
     "seed:test-alertes": "tsx scripts/seed-test-alertes.ts",
     "seed:inventaire-meuble": "tsx scripts/seed-inventaire-meuble.ts",
+    "seed:parametres-alertes": "tsx scripts/seed-parametres-alertes.ts",
     "upload:notice-information": "tsx scripts/upload-notice-information.ts",
     "completer:fixture-generation-bail": "tsx scripts/completer-fixture-generation-bail.ts",
     "seed:modele-exemple": "tsx scripts/seed-modele-exemple.ts",

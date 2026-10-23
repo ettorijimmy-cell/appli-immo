@@ -9,7 +9,11 @@ export type AlerteType = (typeof alerteTypeEnum.enumValues)[number];
 // document_expire n'a volontairement pas d'entrée : c'est un statut déjà
 // calculé (calculerStatutDocument), pas une fenêtre d'anticipation — rien à
 // configurer (docs/data-dictionary.md, section alertes).
-const SEUILS_PAR_DEFAUT: Partial<Record<AlerteType, number>> = {
+//
+// Exporté pour scripts/seed-parametres-alertes.ts (seed unique avant
+// Vitest, voir docs/backlog.md — deadlock intermittent) : seule source de
+// vérité pour ces valeurs, jamais recopiées ailleurs.
+export const SEUILS_PAR_DEFAUT: Partial<Record<AlerteType, number>> = {
   bail_fin_proche: 30,
   document_expire_proche: 30,
   entretien_equipement: 30,

@@ -16,6 +16,7 @@
     "typecheck": "turbo run typecheck",
     "seed:user": "pnpm --filter backend seed:user",
     "seed:inventaire-meuble": "pnpm --filter backend seed:inventaire-meuble",
+    "seed:parametres-alertes": "pnpm --filter backend seed:parametres-alertes",
     "backup:local": "node scripts/backup-local.mjs"
   },
   "devDependencies": {

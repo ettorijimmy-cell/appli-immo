@@ -97,6 +97,17 @@ try {
     throw new Error(`Seed inventaire meublé échoué (code ${codeSeed}).`);
   }
 
+  // Seed unique, en série, avant Vitest : AlertesConfigService.
+  // creerAvecDefaut() peuple normalement parametres_alertes à la volée,
+  // mais plusieurs fichiers d'intégration déclenchent ce premier accès en
+  // parallèle contre cette même base jetable — deadlock reproductible
+  // (voir docs/backlog.md). Avec ce seed, chaque test trouve la ligne
+  // déjà là, plus aucun INSERT ne s'y dispute.
+  const codeSeedAlertes = executer("pnpm", ["seed:parametres-alertes"], { env: envEtapes });
+  if (codeSeedAlertes !== 0) {
+    throw new Error(`Seed paramètres d'alertes échoué (code ${codeSeedAlertes}).`);
+  }
+
   codeSortieTests = executer("pnpm", ["--filter", "backend", "test:integration"], { env: envEtapes });
   if (codeSortieTests !== 0) {
     capturerLogsPostgres();

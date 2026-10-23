@@ -61,6 +61,16 @@ jobs:
       - name: Seeder le catalogue inventaire meublé
         run: pnpm seed:inventaire-meuble
 
+      # Seed unique, en série, avant Vitest : AlertesConfigService.
+      # creerAvecDefaut() peuple normalement parametres_alertes à la
+      # volée au premier accès, mais plusieurs fichiers d'intégration
+      # déclenchent ce premier accès en parallèle contre ce même
+      # Postgres — deadlock reproductible (voir docs/backlog.md). Avec ce
+      # seed, chaque test trouve la ligne déjà là, plus aucun INSERT ne
+      # s'y dispute.
+      - name: Seeder les paramètres d'alertes par défaut
+        run: pnpm seed:parametres-alertes
+
       - name: Test d'intégration — flux de connexion (Argon2 + JWT) contre un vrai Postgres
         run: pnpm test:integration
 
