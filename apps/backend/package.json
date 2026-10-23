@@ -49,6 +49,7 @@
     "docxtemplater": "^3.69.3",
     "docxtemplater-image-module-free": "^1.1.1",
     "drizzle-orm": "^0.38.4",
+    "express": "^5.2.1",
     "imapflow": "^2.0.3",
     "jose": "^6.2.8",
     "mailparser": "^3.9.26",

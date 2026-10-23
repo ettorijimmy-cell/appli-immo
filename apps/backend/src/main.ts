@@ -1,7 +1,9 @@
+import { join } from "node:path";
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { monterMobileWeb } from "./mobile-web/mobile-web";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -23,6 +25,15 @@ async function bootstrap() {
   // genererDocumentBail (locataires/api.ts) puisse avertir avant d'ouvrir
   // un document généré avec des mentions énergétiques "[À COMPLÉTER]".
   app.enableCors({ exposedHeaders: ["Content-Disposition", "X-Champs-Energie-Manquants"] });
+  // Middleware brut, jamais un contrôleur/module Nest — voir mobile-web.ts
+  // pour la raison (contournement délibéré de JwtAuthGuard) ET pour une
+  // contrainte d'ordre impérative, vérifiée empiriquement : cet appel doit
+  // rester AVANT app.listen() (jamais après). mobile-web-dist/ est copié à
+  // côté de ce fichier compilé par le Dockerfile (voir docs/backlog.md) ;
+  // absent en dev local, où creerMiddlewareStatique répond 503 sur
+  // /mobile sans jamais affecter l'API — apps/mobile-web se teste alors
+  // via son propre `pnpm dev`.
+  monterMobileWeb(app, join(__dirname, "mobile-web-dist"));
   await app.listen(process.env.PORT ?? 3000);
 }
 
