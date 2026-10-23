@@ -1826,14 +1826,157 @@ desktop, testé par un test d'intégration Postgres réel. Génération d'un
 document complet réel (dossier `tmp/`) encore en cours de vérification au
 moment de cette mise à jour — pas encore confirmée terminée.
 
-**Hébergement définitif encore à trancher au provisionnement Scaleway
-(tâche déjà en attente).** Deux options : servir les fichiers statiques
-sur un sous-chemin d'`apps/backend`, ou un hébergement statique séparé.
-**Préférence actuelle du propriétaire : sous-chemin du backend** — notée
-ici pour ne pas repartir de zéro le moment venu, mais non figée tant que
-le provisionnement Scaleway n'a pas eu lieu. `VITE_API_URL` reste la
-seule indirection nécessaire pour ce choix : aucun autre changement de
-code attendu quelle que soit l'option retenue.
+**Hébergement mobile-web — tranché et implémenté (2026-10-23).** Décision
+retenue après audit comparatif (conteneur Serverless dédié vs sous-chemin
+du backend) : **sous-chemin du backend, sous `/mobile/`** — même
+conteneur, même déploiement que l'API, pas de ressource Scaleway
+supplémentaire. Choisi sur trois critères concrets vérifiés par un vrai
+build plutôt que supposés : CORS entièrement éliminé (même origine que
+l'API, aucune liste d'origines à maintenir) ; `VITE_API_URL` devient
+inutile en production (URL relative par défaut, voir plus bas) ; coût de
+taille d'image négligeable (258 Ko mesurés, voir plus bas). Seul vrai coût
+accepté : déploiements couplés (un redéploiement backend coupe aussi
+brièvement `/mobile`) — jugé acceptable pour un usage personnel à faible
+fréquence de déploiement.
+
+- **Middleware** (`apps/backend/src/mobile-web/`) : Express brut monté via
+  `INestApplication.use()`, jamais un contrôleur ni `@nestjs/serve-static`
+  — un contrôleur passerait par le routeur Nest et donc par
+  `JwtAuthGuard` (APP_GUARD global), qu'on veut justement ne jamais
+  déclencher sur `/mobile`. **Piège vérifié empiriquement, pas supposé** :
+  ce montage doit impérativement avoir lieu AVANT `app.listen()` (et avant
+  tout `app.init()` explicite) — une fois le routeur Nest initialisé,
+  toute route non mappée par un contrôleur produit directement un 404 JSON
+  interne à Nest (son propre `NotFoundException`), qui ne "retombe" jamais
+  sur un middleware ajouté après coup, contrairement au comportement
+  attendu d'Express seul. Reproduit et confirmé par un script jetable
+  avant correction de l'ordre dans `main.ts`.
+- **Verrou HTTP Basic** devant `/mobile` uniquement, jamais l'API
+  (`mobile-web-basic-auth.middleware.ts`) : `MOBILE_WEB_BASIC_AUTH_USER`/
+  `_PASSWORD` (voir `.env.example`), comparaison à temps constant (hash
+  SHA-256 puis `timingSafeEqual`, jamais une comparaison directe sur des
+  chaînes de longueurs potentiellement différentes), identifiants tentés
+  jamais journalisés (seul un `WARN [Auth]` avec l'IP sur refus).
+  `MOBILE_WEB_BASIC_AUTH_ENABLED=false` désactive totalement le verrou —
+  prévu pour le jour où `/mobile` sera ouvert à des clients authentifiés
+  par leur propre compte (voir Réversibilité plus bas), pas pour
+  aujourd'hui. Si actif mais mal configuré (USER/PASSWORD absents) :
+  `/mobile` répond 503 avec un message clair — **le backend ne refuse
+  jamais de démarrer pour ça**, l'API continue de fonctionner normalement
+  (vérifié par test d'intégration réel, config manquante + `/api-test`
+  simultanément testés).
+- **En-têtes de sécurité** (`mobile-web-security-headers.middleware.ts`),
+  posés en PREMIER dans la chaîne, avant le verrou : CSP +
+  `X-Content-Type-Options: nosniff` présents même sur les 401/503 du
+  verrou lui-même (un en-tête de réponse HTTP s'applique uniformément,
+  contrairement à la balise `<meta>` d'`index.html` qui ne protège que ce
+  document). La CSP est **extraite du vrai `index.html` construit**, pas
+  dupliquée en dur — une seule source de vérité (le `cspPlugin` de
+  `apps/mobile-web/vite.config.ts`). Confirmé dans le code (`auth`
+  controller/guard) qu'un 401 de l'API elle-même ne pose jamais
+  `WWW-Authenticate` — sinon le navigateur afficherait la fenêtre native
+  Basic Auth sur une simple erreur d'API, vérifié par test explicite.
+- **Cache** : `index.html` toujours `Cache-Control: no-cache` (nouvelle
+  version prise immédiatement) ; les assets à nom d'empreinte (ex.
+  `assets/index-DA4rMtP-.js`) en `public, max-age=31536000, immutable`.
+- **Repli SPA** (`mobile-web-static.middleware.ts`) : une route de l'appli
+  React (ex. `/mobile/baux/123`) renvoie `index.html` avec 200, comme
+  `try_files $uri /index.html` en nginx — mais limité à GET/HEAD (405
+  sinon) et jamais sur un chemin dont le dernier segment ressemble à un
+  fichier (ex. `/mobile/assets/ancien.js` absent du disque → 404, jamais
+  le contenu de l'appli).
+- **Build de mobile-web dans l'image backend** (`Dockerfile`) : `turbo
+  prune backend mobile-web --docker` (deux cibles, un squelette pnpm
+  cohérent), build des deux, `apps/mobile-web/dist` copié à côté de
+  `main.js` compilé sous `mobile-web-dist/`. Construit avec les défauts de
+  production de mobile-web (voir plus bas) — aucune variable à fournir à
+  ce build précis. **Piège trouvé et corrigé par un vrai build, pas
+  supposé** : l'étape `prod-deps` installait par défaut les dépendances de
+  production de TOUT le sous-ensemble pruné, y compris `react-dom`/
+  `react-router-dom` (dépendances de mobile-web, jamais utilisées côté
+  serveur) — ~4,5 Mo embarqués pour rien. Corrigé par
+  `pnpm install --prod --frozen-lockfile --filter=backend...` (backend et
+  ses propres dépendances seulement) ; vérifié après coup que l'image
+  finale a un `node_modules` strictement identique à une image backend
+  seul, jusqu'au magasin pnpm racine (259/259 entrées). Coût réel mesuré
+  de l'intégration mobile-web : **258 Ko** (la seule couche
+  `mobile-web-dist`), pas les ~11 Mo du premier essai non corrigé.
+  Vérifié par un conteneur réel contre la base de dev : login (argon2),
+  lecture base, génération docx (docxtemplater), sharp natif isolément,
+  démarrage sans erreur (y compris les 5 modules portant un job `@Cron`).
+- **Build de mobile-web — défauts de production** (`apps/mobile-web/vite.config.ts`) :
+  `base` réglable par `MOBILE_WEB_BASE_PATH` (variable d'outillage de
+  build, lue directement sur `process.env`, **jamais via un fichier
+  `.env`** — voir `.env.example`), défaut `"/mobile/"` si absente.
+  **Toujours terminer cette valeur par une barre `/`** — Vite s'en sert
+  telle quelle comme préfixe d'URL des assets générés, et le routeur
+  (`resoudreBasename`, `src/lib/base-path.ts`) attend ce format en retour
+  (`import.meta.env.BASE_URL`, qui a toujours cette barre finale) pour en
+  dériver le `basename` react-router. `VITE_API_URL` absente du contexte
+  Docker (`.dockerignore` exclut tout `.env*`) → `API_BASE_URL` retombe
+  sur son défaut de production, une chaîne vide (URL relative, même
+  origine) — voir `src/lib/api-config.ts`.
+- **Fragilité connue, surveillée mais non corrigée (CSP dev vs préambule
+  react-refresh)** : en dev, le script inline que `@vitejs/plugin-react`
+  (v6.0.4) injecte pour le rechargement à chaud (`import { injectIntoGlobalHook }
+  from "/@react-refresh"...`) s'exécute AVANT la balise `<meta
+  http-equiv="Content-Security-Policy">` dans le HTML servi — une CSP par
+  balise `<meta>` ne s'applique qu'au contenu rencontré après elle dans le
+  document, donc ce script n'est aujourd'hui jamais soumis à `script-src
+  'self'`, quel que soit son contenu. Vérifié en conditions réelles (vrai
+  Chrome headless, protocole DevTools) : 0 violation CSP, rechargement à
+  chaud confirmé fonctionnel. **Ce n'est garanti que par l'ordre
+  d'injection actuel de Vite/`@vitejs/plugin-react`**, pas par construction
+  — une future mise à jour qui le changerait casserait le HMR
+  silencieusement jusqu'au prochain test manuel. Pas de hash/nonce ajouté
+  préventivement (rien n'est bloqué aujourd'hui) ; à revérifier après
+  toute mise à jour de `@vitejs/plugin-react`.
+- **Session JWT allongée à 4h en production** (`JWT_EXPIRES_IN_SECONDS=14400`,
+  réglée directement sur le conteneur Scaleway, aucun code changé —
+  `resoudreExpirationJwtSecondes` le supportait déjà) : couvre une visite
+  longue avec signatures sans déconnexion forcée en cours de route. Pas de
+  refresh token ni de renouvellement glissant pour l'instant — réservé à
+  la phase SaaS (plusieurs utilisateurs réels), où le vol de jeton devient
+  un enjeu sérieux plutôt que théorique pour un usage personnel.
+- **Réversibilité vers un hébergement séparé (conteneur dédié)**, chemin de
+  migration si besoin un jour : (1) construire et déployer
+  `apps/mobile-web` comme conteneur Serverless Scaleway indépendant
+  (Dockerfile nginx, exemple officiel Scaleway pour ce cas) ; (2) au build
+  de ce conteneur, définir `VITE_API_URL` avec l'URL complète du backend
+  (déjà supportée telle quelle par `api-config.ts`, sans changement de
+  code) et `MOBILE_WEB_BASE_PATH=/` (racine, vérifié par un vrai build) ;
+  (3) côté backend, ajouter une vraie restriction CORS (aujourd'hui
+  permissif, `app.enableCors({ exposedHeaders: [...] })` sans `origin`) —
+  une nouvelle variable `CORS_ALLOWED_ORIGINS` (liste d'origines,
+  séparées par virgules) à whitelister en production, en conservant le
+  repli permissif en dev et la tolérance à une `Origin` absente/`"null"`
+  (desktop packagé, `file://`) ; (4) retirer le montage
+  `monterMobileWeb()` de `main.ts` et le dossier
+  `apps/backend/src/mobile-web/` entier — isolé dès l'origine pour cette
+  raison, rien d'autre à toucher. Aucun changement de code mobile-web
+  attendu dans tous les cas : confirmé par un vrai build avec
+  `MOBILE_WEB_BASE_PATH=/`.
+
+**Modèle du document généré — migré de `tmp/` (hors dépôt) vers
+`apps/backend/src/etat-des-lieux-document-docx/assets/modele-etat-des-lieux.docx`
+(committé, 2026-10-23).** Jusqu'ici résolu via `process.cwd()` vers
+`tmp/Modèle état des lieux.docx`, un fichier local au poste de
+développement, jamais présent dans une image déployée — la génération du
+document était donc impossible en production (confirmé par un conteneur
+réel : `ENOENT`, 500 brut). Vérifié avant de committer : aucune donnée
+personnelle dans le contenu du modèle (texte légal générique, 195 balises
+toutes génériques, 4 petites images décoratives sans contenu
+identifiable) ; seules les propriétés du document (`docProps/core.xml`,
+`dc:creator`/`cp:lastModifiedBy`) portaient un nom — vidées avant commit,
+`docProps/custom.xml` (métadonnées d'outils de fabrication, sans utilité)
+retiré avec sa déclaration `[Content_Types].xml` et sa relation
+`_rels/.rels`. `word/document.xml` prouvé byte-identique avant/après par
+empreinte SHA-256 ; fichier réouvert dans Word sans message de réparation.
+Même mécanisme que `BailDocumentDocxService` : résolution par `__dirname`
+(jamais `process.cwd()`, qui diffère entre dev et conteneur), copié dans
+`dist/` au build via `nest-cli.json`, garde `existsSync` +
+`InternalServerErrorException` au message propre (absente jusqu'ici,
+d'où le 500 brut) aux deux lectures du modèle.
 
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos

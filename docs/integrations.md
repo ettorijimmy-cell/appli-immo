@@ -16,6 +16,17 @@ déboguer chaque intégration au fil du développement.
 | Point de vigilance | La réplication logique (`wal_level=logical`, requise par PowerSync) doit être activée explicitement via les paramètres avancés de l'instance — vérifier à la création, ne pas supposer que c'est actif par défaut |
 | Secrets | Stockés via Scaleway Secret Manager, jamais en `.env` versionné |
 
+## Mobile web — hébergement
+
+| | |
+|---|---|
+| Usage | `apps/mobile-web` — parcours de capture de l'état des lieux depuis un téléphone |
+| Hébergement | Servi par le backend lui-même, sous `/mobile/` (sous-chemin, pas un conteneur Scaleway séparé) — décision et raisonnement complets dans docs/backlog.md, "Hébergement mobile-web" |
+| Build | Intégré au `Dockerfile` du backend (`turbo prune backend mobile-web`, build des deux, `apps/mobile-web/dist` copié à côté de `main.js` sous `mobile-web-dist/`) |
+| Accès | Verrou HTTP Basic devant `/mobile` uniquement, jamais l'API (`apps/backend/src/mobile-web/`) |
+| Variables d'environnement | `MOBILE_WEB_BASIC_AUTH_ENABLED`/`_USER`/`_PASSWORD` (backend, voir `.env.example`) ; `MOBILE_WEB_BASE_PATH` (build mobile-web uniquement, lue sur `process.env` au build, jamais via un fichier `.env`) |
+| Réversibilité | Chemin de migration vers un conteneur Serverless dédié documenté dans docs/backlog.md, "Hébergement mobile-web" — aucun changement de code mobile-web attendu, vérifié par un vrai build |
+
 ## PowerSync — synchronisation
 
 | | |
