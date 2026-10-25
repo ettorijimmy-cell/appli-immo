@@ -1,0 +1,27 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // sync-streams-alignment.test.ts lit directement, en texte brut (fs,
+    // jamais un import — voir son en-tête), packages/db/src/schema/*.ts et
+    // docs/powersync-sync-streams.yaml : deux emplacements hors du
+    // périmètre par défaut de ce package (apps/desktop), donc jamais pris
+    // en compte dans le hash de cache de Turborepo sans cette déclaration
+    // explicite. Sans elle, une colonne Drizzle ajoutée/modifiée peut
+    // rester indétectée par ce garde-fou alors même qu'un run antérieur
+    // (avant le changement de schéma) reste servi depuis le cache —
+    // découvert le 2026-10-24 : `documents.etat_des_lieux_phase` ajoutée
+    // au schéma Drizzle, ni exposée ni exclue côté PowerSync, et le test
+    // qui aurait dû le détecter a été rejoué depuis le cache sans jamais
+    // réellement s'exécuter contre le nouveau schéma. `$TURBO_DEFAULT$`
+    // conserve le périmètre par défaut (fichiers du package desktop) en
+    // plus de ces deux ajouts.
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/db/src/schema/**",
+        "$TURBO_ROOT$/docs/powersync-sync-streams.yaml"
+      ]
+    }
+  }
+}
