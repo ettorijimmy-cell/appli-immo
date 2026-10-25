@@ -26,6 +26,7 @@ import type { PgTable } from "drizzle-orm/pg-core";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { resoudrePhasesSigneesEtatDesLieux } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
+import { CHAMPS_IDENTITE_PAR_TABLE } from "./classification-colonnes-etat-des-lieux";
 import type { CreateEtatDesLieuxDto } from "./dto/create-etat-des-lieux.dto";
 import type { EtatElementDto } from "./dto/etat-element.dto";
 import type { SubmitClesDto } from "./dto/submit-cles.dto";
@@ -1091,7 +1092,35 @@ export class EtatsDesLieuxService {
             throw new NotFoundException(`Ligne ${ligne.id} introuvable pour cet état des lieux`);
           }
         } else {
-          verifierChampsAutorises(phases, table, ligne.champs, null);
+          // Verrou de signature (revue 2026-10-25) : une ligne NEUVE après
+          // la signature d'entrée représente un élément absent à l'entrée
+          // et découvert avant la sortie (ex. une clé remise en cours de
+          // bail) — autorisée UNIQUEMENT si elle ne renseigne aucun champ
+          // "entree", seulement son identité (typeCle/libelleAutre,
+          // libelle — CHAMPS_IDENTITE_PAR_TABLE) et des champs "sortie".
+          // Plus aucune ligne neuve, quelle qu'elle soit, une fois la
+          // sortie signée (document définitivement clos).
+          if (phases.sortieSignee) {
+            throw new ConflictException(
+              "Modification refusée : aucune nouvelle ligne ne peut être ajoutée, la sortie de cet état des lieux est signée."
+            );
+          }
+          if (phases.entreeSignee) {
+            const identite = CHAMPS_IDENTITE_PAR_TABLE.get(table) ?? new Set<string>();
+            const identiteSoumise: Record<string, unknown> = {};
+            for (const champIdentite of identite) {
+              if (ligne.champs[champIdentite] !== undefined) {
+                identiteSoumise[champIdentite] = ligne.champs[champIdentite];
+              }
+            }
+            // `identiteSoumise` jouée comme "ligne existante" : verifierChampsAutorises
+            // compare chaque champ d'identité à lui-même (toujours égal, donc
+            // jamais gelé), tandis qu'un champ "entree" ou "commune" non listé
+            // comme identité (ex. commentaire) n'a pas d'équivalent dans
+            // `identiteSoumise` — comparaison à `undefined`, jamais égale,
+            // donc normalement gelé comme sur une ligne existante.
+            verifierChampsAutorises(phases, table, ligne.champs, identiteSoumise);
+          }
           await tx.insert(table).values({ etatDesLieuxId, ...ligne.champs } as T["$inferInsert"]);
         }
       }
@@ -1099,6 +1128,14 @@ export class EtatsDesLieuxService {
       for (const id of idsASupprimer) {
         if (!idsExistants.has(id)) {
           throw new NotFoundException(`Ligne ${id} introuvable pour cet état des lieux`);
+        }
+        // Verrou de signature : une ligne existante ne peut plus être
+        // archivée une fois l'entrée signée — au même titre qu'une
+        // modification de ses champs (même raisonnement que ci-dessus).
+        if (phases.entreeSignee) {
+          throw new ConflictException(
+            `Modification refusée : impossible d'archiver la ligne ${id}, l'entrée de cet état des lieux est signée.`
+          );
         }
         const [archivee] = await mettreAJourAvecAudit(tx, table, id, { archivedAt: new Date() }, utilisateurId);
         if (!archivee) {
@@ -1136,15 +1173,24 @@ export class EtatsDesLieuxService {
 
       for (const ligne of lignes) {
         const existante = parElementId.get(ligne.elementId);
-        verifierChampsAutorises(
-          phases,
-          etatDesLieuxInventaire,
-          ligne.champs,
-          (existante as Record<string, unknown> | undefined) ?? null
-        );
         if (existante) {
+          verifierChampsAutorises(phases, etatDesLieuxInventaire, ligne.champs, existante as Record<string, unknown>);
           await mettreAJourAvecAudit(tx, etatDesLieuxInventaire, existante.id, ligne.champs, utilisateurId);
         } else {
+          // Même règle que upsertEtArchiverParId ci-dessus : plus aucune
+          // ligne neuve une fois la sortie signée ; après l'entrée seule,
+          // une ligne neuve est autorisée uniquement sans champ "entree"
+          // (elementId est l'identité ici, mais c'est une colonne
+          // structurelle jamais présente dans `ligne.champs` — pas besoin
+          // de l'y réinjecter comme pour cles/équipements divers).
+          if (phases.sortieSignee) {
+            throw new ConflictException(
+              "Modification refusée : aucune nouvelle ligne d'inventaire ne peut être ajoutée, la sortie de cet état des lieux est signée."
+            );
+          }
+          if (phases.entreeSignee) {
+            verifierChampsAutorises(phases, etatDesLieuxInventaire, ligne.champs, null);
+          }
           await tx
             .insert(etatDesLieuxInventaire)
             .values({ etatDesLieuxId, elementId: ligne.elementId, ...ligne.champs });
@@ -1155,6 +1201,13 @@ export class EtatsDesLieuxService {
         const existante = parElementId.get(elementId);
         if (!existante) {
           throw new NotFoundException(`Élément ${elementId} introuvable dans l'inventaire de cet état des lieux`);
+        }
+        // Même règle que upsertEtArchiverParId ci-dessus : aucune ligne
+        // existante archivable une fois l'entrée signée.
+        if (phases.entreeSignee) {
+          throw new ConflictException(
+            `Modification refusée : impossible d'archiver l'élément ${elementId}, l'entrée de cet état des lieux est signée.`
+          );
         }
         await mettreAJourAvecAudit(
           tx,

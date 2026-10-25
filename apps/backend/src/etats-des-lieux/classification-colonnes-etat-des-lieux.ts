@@ -211,3 +211,19 @@ export const CLASSIFICATION_PAR_TABLE = new Map<PgTable, Record<string, Classifi
   [etatDesLieuxEquipementsDivers, CLASSIFICATION_EQUIPEMENTS_DIVERS],
   [etatDesLieuxInventaire, CLASSIFICATION_INVENTAIRE]
 ]);
+
+// Champs d'IDENTITÉ (revue 2026-10-25) : sous-ensemble des champs
+// "commune" d'une table qui désignent QUEL élément une ligne représente,
+// plutôt qu'un fait constaté sur cet élément. Utilisé uniquement par
+// verrou-champs-etat-des-lieux.ts pour autoriser une ligne NEUVE après la
+// signature d'entrée (mais avant celle de sortie) à condition qu'elle ne
+// renseigne QUE son identité et des champs "sortie" — jamais un champ
+// "entree", ni un autre champ "commune" (ex. commentaire). Représente un
+// élément absent à l'entrée et découvert avant la sortie (ex. une clé
+// remise en cours de bail). `etat_des_lieux_inventaire` n'y figure pas :
+// son identité (elementId) est une colonne structurelle, jamais une clé
+// de `champs` (voir upsertEtArchiverParElementId).
+export const CHAMPS_IDENTITE_PAR_TABLE = new Map<PgTable, Set<string>>([
+  [etatDesLieuxCles, new Set(["typeCle", "libelleAutre"])],
+  [etatDesLieuxEquipementsDivers, new Set(["libelle"])]
+]);

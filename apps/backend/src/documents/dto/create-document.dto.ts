@@ -49,7 +49,17 @@ export const DOCUMENT_CATEGORIES = [
   // d'unicité ne l'empêche (voir packages/db/src/schema/documents.ts).
   "fiche_de_paie",
   "contrat_travail",
-  "avis_imposition"
+  "avis_imposition",
+  // Image de signature de l'état des lieux (chantier Signatures,
+  // 2026-10-25) — valeur RÉELLE de documents.categorie (voir
+  // packages/db/src/schema/documents.ts) mais jamais une valeur que cette
+  // route générique doit accepter : listée ici uniquement pour que
+  // DocumentsService puisse comparer dto.categorie === "signature" et la
+  // refuser explicitement (creerDepuisBuffer/update/remplacerDocument),
+  // plutôt que de compter implicitement sur son absence de cette liste.
+  // Seul EtatsDesLieuxSignatureService crée ces documents, par un insert
+  // direct dans sa propre transaction de signature.
+  "signature"
 ] as const;
 export type DocumentCategorie = (typeof DOCUMENT_CATEGORIES)[number];
 

@@ -78,6 +78,20 @@ export class DocumentsService {
     mimeType: string,
     tailleOctets: number
   ) {
+    // Chantier Signatures (2026-10-25) : la catégorie "signature" n'est
+    // jamais créée par cette route générique (upload() ou
+    // MessagesCommunicationService.classerDansDocuments(), les deux seuls
+    // appelants) — seul EtatsDesLieuxSignatureService l'écrit, par un
+    // insert direct dans la transaction de signature, en dehors de
+    // creerDepuisBuffer. Un client qui tenterait de poster une "signature"
+    // par cette voie produirait un document qui ressemble à une vraie
+    // signature sans jamais être couvert par une ligne
+    // etat_des_lieux_signature — refus avant tout autre traitement.
+    if (dto.categorie === "signature") {
+      throw new BadRequestException(
+        "La catégorie 'signature' ne peut pas être utilisée pour un envoi de document : elle est réservée au service de signature de l'état des lieux."
+      );
+    }
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
     this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
     this.verifierCandidatRoleSelonEntiteType(dto.entiteType, dto.candidatRole);
@@ -134,6 +148,19 @@ export class DocumentsService {
     const [ancien] = await this.db.select().from(documents).where(eq(documents.id, documentPrecedentId)).limit(1);
     if (!ancien) {
       throw new NotFoundException("Document à remplacer introuvable");
+    }
+    // Même raisonnement que creerDepuisBuffer()/update() : ni remplacer un
+    // document de signature existant, ni en créer un nouveau par cette
+    // voie (categorie demandée) — ce chemin créerait aussi une nouvelle
+    // ligne `documents` de catégorie "signature" en dehors de
+    // EtatsDesLieuxSignatureService.
+    if (ancien.categorie === "signature") {
+      throw new ConflictException("Un document de signature ne peut jamais être remplacé.");
+    }
+    if (dto.categorie === "signature") {
+      throw new BadRequestException(
+        "La catégorie 'signature' ne peut pas être affectée par cette route : elle est réservée au service de signature de l'état des lieux."
+      );
     }
     // Contrôle d'appartenance AVANT toute écriture (Priorité 2, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19) : réutilise
@@ -296,7 +323,27 @@ export class DocumentsService {
   async update(id: string, dto: UpdateDocumentDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreDocumentAvecAppartenance(id);
+    const existant = await this.resoudreDocumentAvecAppartenance(id);
+    // Chantier Signatures (2026-10-25) : un document de catégorie
+    // "signature" est l'image de signature écrite par
+    // EtatsDesLieuxSignatureService dans la même transaction que la ligne
+    // etat_des_lieux_signature correspondante — jamais un document que le
+    // client doit pouvoir reclasser ou dont il doit pouvoir changer la
+    // date d'expiration. Refus inconditionnel, quelle que soit la phase
+    // signée ou non (une signature est immuable dès sa création, pas
+    // seulement après coup).
+    if (existant.categorie === "signature") {
+      throw new ConflictException("Un document de signature ne peut jamais être modifié.");
+    }
+    // Même raisonnement que creerDepuisBuffer() : un document existant ne
+    // peut pas non plus être RECLASSÉ en "signature" par cette route —
+    // produirait un document qui ressemble à une signature sans jamais
+    // être couvert par une ligne etat_des_lieux_signature.
+    if (dto.categorie === "signature") {
+      throw new BadRequestException(
+        "La catégorie 'signature' ne peut pas être affectée par cette route : elle est réservée au service de signature de l'état des lieux."
+      );
+    }
 
     const [document] = await mettreAJourAvecAudit(
       this.db,
@@ -320,6 +367,11 @@ export class DocumentsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudreDocumentAvecAppartenance(id);
+    // Même règle que update() ci-dessus : un document de signature n'est
+    // jamais archivable par la route générique, inconditionnellement.
+    if (existant.categorie === "signature") {
+      throw new ConflictException("Un document de signature ne peut jamais être archivé.");
+    }
     // Verrou de signature (chantier Signatures, 2026-10-25) : une photo de
     // la phase entrée ne peut plus être archivée une fois l'entrée signée,
     // aucune ne peut plus l'être une fois la sortie signée.

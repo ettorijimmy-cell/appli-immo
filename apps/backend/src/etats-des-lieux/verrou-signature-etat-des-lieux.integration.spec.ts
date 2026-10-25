@@ -8,11 +8,15 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
+  documents,
   elementsInventaireMeuble,
+  etatDesLieuxCles,
+  etatDesLieuxEquipementsDivers,
   organisations,
   utilisateurs,
   type Database
 } from "db";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -289,12 +293,189 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       expect(resultat.electriciteNumeroCompteurSortie).toBe("Y9");
     });
 
-    it("submitCles : interdit la création d'une ligne neuve (typeCle, commune, est forcément posé)", async () => {
+    it("submitCles : une ligne neuve avec un champ 'entree' reste interdite", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await signerEntree(etatDesLieuxId, titulaire.id);
       await expect(
         avecContexte(() =>
           etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ typeCle: "cave", nombreEntree: 1 }] })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitCles : une ligne neuve avec SEULEMENT son identité (typeCle/libelleAutre) et un champ 'sortie' est autorisée — élément absent à l'entrée, remis avant la sortie", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, {
+          lignes: [{ typeCle: "autre", libelleAutre: "Badge remis en cours de bail", nombreSortie: 1 }]
+        })
+      );
+      const nouvelle = resultat.find((l) => l.libelleAutre === "Badge remis en cours de bail");
+      expect(nouvelle?.nombreSortie).toBe(1);
+      expect(nouvelle?.nombreEntree).toBeNull();
+    });
+
+    it("submitCles : une ligne neuve avec un champ 'commune' non-identité (commentaire) reste interdite", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitCles(etatDesLieuxId, {
+            lignes: [{ typeCle: "cave", nombreSortie: 1, commentaire: "note" }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitCles : toute ligne neuve est interdite une fois la sortie signée, même sans champ 'entree'", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitCles(etatDesLieuxId, {
+            lignes: [{ typeCle: "autre", libelleAutre: "Trop tard", nombreSortie: 1 }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitCles : interdit l'archivage (idsASupprimer) d'une ligne existante", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [ligne] = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ typeCle: "cave", nombreEntree: 1 }] })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [], idsASupprimer: [ligne!.id] }))
+      ).rejects.toThrow(ConflictException);
+      const [enBase] = await db.select().from(etatDesLieuxCles).where(eq(etatDesLieuxCles.id, ligne!.id));
+      expect(enBase?.archivedAt).toBeNull(); // pas d'effet de bord malgré le refus
+    });
+
+    it("submitEquipementsDivers : ligne neuve avec un champ 'entree' interdite, avec seulement identité + 'sortie' autorisée, avec 'commentaire' interdite", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+            lignes: [{ libelle: "Nouveau", nombreEntree: 1 }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+          lignes: [{ libelle: "Télécommande portail", nombreSortie: 1, etatSortie: "bon" }]
+        })
+      );
+      const nouvelle = resultat.find((l) => l.libelle === "Télécommande portail");
+      expect(nouvelle?.etatSortie).toBe("bon");
+      expect(nouvelle?.nombreEntree).toBeNull();
+      expect(nouvelle?.etatEntree).toBeNull();
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+            lignes: [{ libelle: "Autre", nombreSortie: 1, commentaire: "note" }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitEquipementsDivers : toute ligne neuve est interdite une fois la sortie signée, et l'archivage d'une ligne existante reste interdit après l'entrée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [ligne] = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [{ libelle: "Aspirateur" }] })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [], idsASupprimer: [ligne!.id] })
+        )
+      ).rejects.toThrow(ConflictException);
+      const [enBase] = await db
+        .select()
+        .from(etatDesLieuxEquipementsDivers)
+        .where(eq(etatDesLieuxEquipementsDivers.id, ligne!.id));
+      expect(enBase?.archivedAt).toBeNull();
+
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+            lignes: [{ libelle: "Trop tard", nombreSortie: 1 }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitInventaire : une ligne JAMAIS vue à l'entrée, posée seulement avec etatSortie après signature, est désormais autorisée — élément absent à l'entrée, découvert avant la sortie ; mais un champ 'entree' sur une ligne neuve reste interdit", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const elementsCatalogue = await db
+        .select({ id: elementsInventaireMeuble.id })
+        .from(elementsInventaireMeuble)
+        .limit(3);
+      if (elementsCatalogue.length < 3) {
+        throw new Error("Catalogue elements_inventaire_meuble insuffisant sur ce Postgres de test");
+      }
+      const [elementVuAEntree, elementJamaisVu, elementEncoreJamaisVu] = elementsCatalogue;
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementVuAEntree!.id, nombreEntree: 1, etatEntree: "bon" }]
+        })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementJamaisVu!.id, etatSortie: "dusage" }]
+        })
+      );
+      const nouvelle = resultat.find((l) => l.elementId === elementJamaisVu!.id);
+      expect(nouvelle?.etatSortie).toBe("dusage");
+      expect(nouvelle?.etatEntree).toBeNull();
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+            lignes: [{ elementId: elementEncoreJamaisVu!.id, nombreEntree: 1 }]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitInventaire : toute ligne neuve est interdite une fois la sortie signée, et l'archivage d'une ligne existante reste interdit après l'entrée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [element] = await db.select({ id: elementsInventaireMeuble.id }).from(elementsInventaireMeuble).limit(1);
+      if (!element) {
+        throw new Error("Catalogue elements_inventaire_meuble vide sur ce Postgres de test");
+      }
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: element.id, nombreEntree: 1, etatEntree: "bon" }]
+        })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [], elementsASupprimer: [element.id] })
+        )
+      ).rejects.toThrow(ConflictException);
+
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      const [autreElement] = await db
+        .select({ id: elementsInventaireMeuble.id })
+        .from(elementsInventaireMeuble)
+        .limit(2);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+            lignes: [{ elementId: autreElement!.id, etatSortie: "dusage" }]
+          })
         )
       ).rejects.toThrow(ConflictException);
     });
@@ -429,6 +610,32 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       // Archivage de la photo de sortie : toujours permis (sortie pas encore signée).
       await expect(avecContexte(() => documentsService.archiver(photoSortie.id))).resolves.toBeTruthy();
     });
+
+    it("photos : une photo sans phase (etat_des_lieux_phase NULL, antérieure à cette fonctionnalité) est traitée comme une photo d'entrée — refus d'archivage", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [photoSansPhase] = await db
+        .insert(documents)
+        .values({
+          entiteType: "etat_des_lieux",
+          entiteId: etatDesLieuxId,
+          categorie: "photo",
+          nomFichier: "photo-anterieure.jpg",
+          mimeType: "image/jpeg",
+          tailleOctets: 16,
+          cheminStockage: `documents/etat_des_lieux/${etatDesLieuxId}/${randomUUID()}.enc`,
+          etatDesLieuxPhase: null
+        })
+        .returning();
+      if (!photoSansPhase) {
+        throw new Error("Échec de l'insertion de la photo factice sans phase");
+      }
+
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      await expect(avecContexte(() => documentsService.archiver(photoSansPhase.id))).rejects.toThrow(
+        ConflictException
+      );
+    });
   });
 
   describe("après signature de la sortie", () => {
@@ -477,6 +684,327 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
         )
       ).rejects.toThrow(ConflictException);
       await expect(avecContexte(() => documentsService.archiver(photo.id))).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe("documents de catégorie 'signature' — immuables, quelle que soit la phase", () => {
+    it("refuse l'archivage d'un document de signature par la route générique", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      const [docSignature] = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.entiteId, etatDesLieuxId), eq(documents.categorie, "signature")))
+        .limit(1);
+      if (!docSignature) {
+        throw new Error("Aucun document de signature trouvé après signerEntree");
+      }
+      await expect(avecContexte(() => documentsService.archiver(docSignature.id))).rejects.toThrow(
+        ConflictException
+      );
+    });
+
+    it("refuse toute modification de métadonnées (update) d'un document de signature", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      const [docSignature] = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.entiteId, etatDesLieuxId), eq(documents.categorie, "signature")))
+        .limit(1);
+      if (!docSignature) {
+        throw new Error("Aucun document de signature trouvé après signerEntree");
+      }
+      await expect(
+        avecContexte(() => documentsService.update(docSignature.id, { categorie: "photo" }))
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe("fermé par défaut — exhaustivité réelle des 11 submitX()/updateHeader() (régression)", () => {
+    it("une soumission intégralement remplie, après signature de sortie, refuse CHAQUE méthode avec ConflictException — jamais une Error générique (qui révélerait un champ non classé)", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [elementInventaire] = await db
+        .select({ id: elementsInventaireMeuble.id })
+        .from(elementsInventaireMeuble)
+        .limit(1);
+      if (!elementInventaire) {
+        throw new Error("Catalogue elements_inventaire_meuble vide sur ce Postgres de test");
+      }
+      // Toutes les lignes list-based doivent déjà exister (sinon l'insertion
+      // neuve serait refusée pour une autre raison — la soumission d'une
+      // ligne existante est le scénario qui exerce le plus de champs).
+      const [ligneCles] = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ typeCle: "cave", nombreEntree: 1 }] })
+      );
+      const [ligneEquipement] = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+          lignes: [{ libelle: "Aspirateur", nombreEntree: 1, etatEntree: "bon" }]
+        })
+      );
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementInventaire.id, nombreEntree: 1, etatEntree: "bon" }]
+        })
+      );
+
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await signerSortie(etatDesLieuxId, titulaire.id);
+
+      const socleComplet = () => ({
+        description: "d",
+        etatEntree: "B" as const,
+        etatSortie: "B" as const
+      });
+      const prisesComplet = () => ({ ...socleComplet(), nombre: 4 });
+
+      const appels: { nom: string; appel: () => Promise<unknown> }[] = [
+        {
+          nom: "submitPieceEntree",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceEntree(etatDesLieuxId, {
+                porte: socleComplet(),
+                sonnette: socleComplet(),
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet()
+              })
+            )
+        },
+        {
+          nom: "submitPieceSejour",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, {
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet()
+              })
+            )
+        },
+        {
+          nom: "submitPieceCuisine",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceCuisine(etatDesLieuxId, {
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet(),
+                placards: socleComplet(),
+                evier: socleComplet(),
+                plaquesCuisson: socleComplet(),
+                hotte: socleComplet(),
+                electromenagerDescription: "d"
+              })
+            )
+        },
+        {
+          nom: "submitPieceChambre",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceChambre(etatDesLieuxId, {
+                numero: 1,
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet()
+              })
+            )
+        },
+        {
+          nom: "submitPieceSalleDeBain",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceSalleDeBain(etatDesLieuxId, {
+                numero: 1,
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet(),
+                lavabo: socleComplet(),
+                baignoire: socleComplet()
+              })
+            )
+        },
+        {
+          nom: "submitPieceWc",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceWc(etatDesLieuxId, {
+                numero: 1,
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet(),
+                lavabo: socleComplet(),
+                wc: socleComplet()
+              })
+            )
+        },
+        {
+          nom: "submitPieceAutre",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, {
+                numero: 1,
+                libelle: "Buanderie",
+                mur: socleComplet(),
+                sol: socleComplet(),
+                vitrageVolets: socleComplet(),
+                plafond: socleComplet(),
+                eclairage: socleComplet(),
+                prises: prisesComplet()
+              })
+            )
+        },
+        {
+          nom: "submitCompteurs",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitCompteurs(etatDesLieuxId, {
+                electricite: {
+                  numeroCompteurEntree: "1",
+                  numeroCompteurSortie: "1",
+                  releveHpEntree: "1.00",
+                  releveHpSortie: "1.00",
+                  releveHcEntree: "1.00",
+                  releveHcSortie: "1.00",
+                  ancienOccupantEntree: "1.00",
+                  ancienOccupantSortie: "1.00"
+                },
+                gaz: {
+                  numeroCompteurEntree: "1",
+                  numeroCompteurSortie: "1",
+                  releveEntree: "1.00",
+                  releveSortie: "1.00"
+                },
+                eau: {
+                  releveFroideEntree: "1.00",
+                  releveFroideSortie: "1.00",
+                  releveChaudeEntree: "1.00",
+                  releveChaudeSortie: "1.00"
+                }
+              })
+            )
+        },
+        {
+          nom: "submitCles",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitCles(etatDesLieuxId, {
+                lignes: [
+                  {
+                    id: ligneCles!.id,
+                    typeCle: "cave",
+                    libelleAutre: "x",
+                    nombreEntree: 2,
+                    nombreSortie: 2,
+                    commentaire: "c"
+                  }
+                ]
+              })
+            )
+        },
+        {
+          nom: "submitEquipementsDivers",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+                lignes: [
+                  {
+                    id: ligneEquipement!.id,
+                    libelle: "Aspirateur",
+                    nombreEntree: 2,
+                    etatEntree: "bon",
+                    nombreSortie: 2,
+                    etatSortie: "bon",
+                    commentaire: "c"
+                  }
+                ]
+              })
+            )
+        },
+        {
+          nom: "submitInventaire",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+                lignes: [
+                  {
+                    elementId: elementInventaire.id,
+                    nombreEntree: 2,
+                    etatEntree: "bon",
+                    nombreSortie: 2,
+                    etatSortie: "bon",
+                    commentaire: "c"
+                  }
+                ]
+              })
+            )
+        },
+        {
+          nom: "updateHeader",
+          appel: () =>
+            avecContexte(() =>
+              etatsDesLieuxService.updateHeader(etatDesLieuxId, {
+                dateEntree: "2026-01-01",
+                dateSortie: "2026-02-01",
+                nouvelleAdresseLocataire: "x"
+              })
+            )
+        }
+      ];
+
+      for (const { nom, appel } of appels) {
+        await expect(appel(), nom).rejects.toThrow(ConflictException);
+      }
+    });
+  });
+
+  describe("comparaison normalisée — relevé de compteur décimal (régression réelle, pas seulement unitaire)", () => {
+    it("resoumet le même relevé décimal avec une représentation différente ('650.0' vs '650.00' normalisé par Postgres) sans être bloqué, tout en posant un nouveau champ 'sortie'", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      // electriciteReleveHpEntree est une colonne `decimal(10,2)` : Postgres
+      // la normalise à "650.00" quelle que soit la précision envoyée.
+      await avecContexte(() =>
+        etatsDesLieuxService.submitCompteurs(etatDesLieuxId, { electricite: { releveHpEntree: "650" } })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitCompteurs(etatDesLieuxId, {
+          // Même valeur numérique que la ligne en base ("650.00"), reçue
+          // ici avec une précision différente ("650.0") — ne doit jamais
+          // être vue comme une modification du champ "entree", déjà figé
+          // par la signature.
+          electricite: { releveHpEntree: "650.0", releveHpSortie: "700" }
+        })
+      );
+      expect(resultat.electriciteReleveHpEntree).toBe("650.00"); // inchangé en base
+      expect(resultat.electriciteReleveHpSortie).toBe("700.00");
+
+      // Une vraie modification du relevé d'entrée reste refusée.
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitCompteurs(etatDesLieuxId, { electricite: { releveHpEntree: "651" } })
+        )
+      ).rejects.toThrow(ConflictException);
     });
   });
 

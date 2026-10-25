@@ -1,5 +1,5 @@
 import { ConflictException } from "@nestjs/common";
-import { etatDesLieuxCles, etatDesLieuxPieceEntree } from "db";
+import { etatDesLieuxCles, etatDesLieuxCompteurs, etatDesLieuxPieceEntree, etatsDesLieux } from "db";
 import { describe, expect, it } from "vitest";
 import { verifierChampsAutorises } from "./verrou-champs-etat-des-lieux";
 
@@ -82,5 +82,86 @@ describe("verifierChampsAutorises", () => {
     expect(() => verifierChampsAutorises(ENTREE_SIGNEE, tableInconnue, { x: 1 }, null)).toThrow(
       /CLASSIFICATION_PAR_TABLE/
     );
+  });
+
+  describe("fermé par défaut — champ ni structurel ni classé", () => {
+    it("refuse (Error, pas ConflictException) même sans aucune phase signée — c'est un bug de configuration, pas une règle de gel", () => {
+      expect(() =>
+        verifierChampsAutorises(AUCUNE_PHASE_SIGNEE, etatDesLieuxPieceEntree, { champFantome: "x" }, null)
+      ).toThrow(Error);
+      expect(() =>
+        verifierChampsAutorises(AUCUNE_PHASE_SIGNEE, etatDesLieuxPieceEntree, { champFantome: "x" }, null)
+      ).not.toThrow(ConflictException);
+    });
+
+    it("nomme le champ fautif dans le message", () => {
+      expect(() =>
+        verifierChampsAutorises(AUCUNE_PHASE_SIGNEE, etatDesLieuxPieceEntree, { champFantome: "x" }, null)
+      ).toThrow(/champFantome/);
+    });
+
+    it("collecte TOUS les champs non classés en un seul appel, pas seulement le premier", () => {
+      expect(() =>
+        verifierChampsAutorises(
+          AUCUNE_PHASE_SIGNEE,
+          etatDesLieuxPieceEntree,
+          { champFantome1: "x", murDescription: "ok", champFantome2: "y" },
+          null
+        )
+      ).toThrow(/champFantome1.*champFantome2|champFantome2.*champFantome1/);
+    });
+
+    it("un champ correctement classé ne déclenche jamais ce refus", () => {
+      expect(() =>
+        verifierChampsAutorises(AUCUNE_PHASE_SIGNEE, etatDesLieuxPieceEntree, { murDescription: "ok" }, null)
+      ).not.toThrow();
+    });
+  });
+
+  describe("comparaison normalisée (resoumission à l'identique)", () => {
+    it("un décimal Postgres ('650.00', colonne `decimal`) et le même montant moins formaté ('650') reçu du DTO sont équivalents", () => {
+      expect(() =>
+        verifierChampsAutorises(
+          ENTREE_SIGNEE,
+          etatDesLieuxCompteurs,
+          { electriciteReleveHpEntree: "650" },
+          { electriciteReleveHpEntree: "650.00" }
+        )
+      ).not.toThrow();
+    });
+
+    it("un décimal réellement différent reste refusé", () => {
+      expect(() =>
+        verifierChampsAutorises(
+          ENTREE_SIGNEE,
+          etatDesLieuxCompteurs,
+          { electriciteReleveHpEntree: "651" },
+          { electriciteReleveHpEntree: "650.00" }
+        )
+      ).toThrow(ConflictException);
+    });
+
+    it("une date identique représentée par un objet Date d'un côté et une chaîne ISO de l'autre est équivalente", () => {
+      expect(() =>
+        verifierChampsAutorises(
+          ENTREE_SIGNEE,
+          etatsDesLieux,
+          { dateEntree: "2026-01-15" },
+          { dateEntree: new Date("2026-01-15T00:00:00.000Z") }
+        )
+      ).not.toThrow();
+    });
+
+    it("null (existant) et undefined-équivalent (absent) sont traités comme la même absence de valeur", () => {
+      // valeur `null` explicite dans la ligne existante, valeur non-nulle
+      // soumise : une vraie modification, toujours refusée.
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCles, { nombreEntree: 1 }, { nombreEntree: null })
+      ).toThrow(ConflictException);
+      // Les deux côtés `null` : aucune modification réelle.
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCles, { nombreEntree: null }, { nombreEntree: null })
+      ).not.toThrow();
+    });
   });
 });

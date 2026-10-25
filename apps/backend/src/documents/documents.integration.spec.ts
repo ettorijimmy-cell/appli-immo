@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { readFile, rm } from "fs/promises";
 import os from "os";
 import path from "path";
+import { BadRequestException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -196,6 +197,35 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
         fichierTest("peu importe")
       )
     ).rejects.toThrow();
+  });
+
+  it("upload : refuse (400) la catégorie 'signature' — réservée à EtatsDesLieuxSignatureService", async () => {
+    await expect(
+      documentsService.upload(
+        { entiteType: "appartement", entiteId: appartementId, categorie: "signature" },
+        fichierTest("peu importe")
+      )
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("update() : refuse (400) de reclasser un document existant en catégorie 'signature'", async () => {
+    const document = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "bail" },
+      fichierTest("peu importe")
+    );
+    await expect(documentsService.update(document.id, { categorie: "signature" })).rejects.toThrow(
+      BadRequestException
+    );
+  });
+
+  it("remplacerDocument() : refuse (400) de créer une nouvelle version en catégorie 'signature'", async () => {
+    const document = await documentsService.upload(
+      { entiteType: "appartement", entiteId: appartementId, categorie: "bail" },
+      fichierTest("peu importe")
+    );
+    await expect(
+      documentsService.remplacerDocument(document.id, { categorie: "signature" }, fichierTest("v2"))
+    ).rejects.toThrow(BadRequestException);
   });
 
   it("statut expire : calculé à la lecture, sans jamais réécrire la colonne stockée (Module 6 s'en chargera)", async () => {
