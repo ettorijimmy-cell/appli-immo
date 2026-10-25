@@ -23,6 +23,7 @@ import {
   bien,
   elementsInventaireMeuble,
   equipements,
+  etatDesLieuxSignature,
   locataires,
   scis,
   type Database
@@ -58,6 +59,24 @@ const LABEL_TYPE_ENERGIE: Record<string, string> = {
 };
 
 const LARGEUR_PHOTO_CIBLE_PX = 180;
+
+// Signatures (chantier Signatures, 2026-10-25) : largeur proposée, plus
+// petite qu'une photo de pièce — à ajuster après un premier essai réel
+// dans Word (le propriétaire ouvre un exemple généré et indique le
+// réglage souhaité, voir docs/backlog.md).
+const LARGEUR_SIGNATURE_CIBLE_PX = 90;
+
+// Pointillés EXACTS du modèle Word d'origine (vérifiés caractère par
+// caractère sur assets/modele-etat-des-lieux.docx — voir la preuve SHA-256
+// du commit) : affichés tels quels quand la phase correspondante n'est pas
+// signée, pour que le document ressemble au modèle papier vierge plutôt
+// que d'afficher une case vide sans repère visuel. Le "/" séparateur entre
+// jour/mois/année reste littéral dans le modèle (hors balise) : seules les
+// suites de points sont remplacées par une balise.
+const POINTILLES_JOUR = "……..";
+const POINTILLES_MOIS = "……..";
+const POINTILLES_ANNEE = "…";
+const POINTILLES_LIEU = "…..…..…..…..…...…..…..…..…";
 
 // Ordre d'affichage des catégories dans l'inventaire meublé — doit
 // correspondre à l'ordre de tri Postgres de l'enum (déclaration order,
@@ -160,6 +179,11 @@ interface ImageEntree {
   buffer: Buffer;
   width: number;
   height: number;
+  // Signature vs photo : largeurs cibles différentes (voir
+  // LARGEUR_SIGNATURE_CIBLE_PX/LARGEUR_PHOTO_CIBLE_PX) — portée par
+  // l'entrée plutôt que déduite de l'id, pour que getSize() reste une
+  // simple lecture, jamais une re-détection.
+  largeurCiblePx: number;
 }
 
 @Injectable()
@@ -327,7 +351,12 @@ export class EtatDesLieuxDocumentDocxService {
           .png()
           .toBuffer();
         const meta = await sharp(reencode).metadata();
-        images.set(doc.id, { buffer: reencode, width: meta.width ?? 1, height: meta.height ?? 1 });
+        images.set(doc.id, {
+          buffer: reencode,
+          width: meta.width ?? 1,
+          height: meta.height ?? 1,
+          largeurCiblePx: LARGEUR_PHOTO_CIBLE_PX
+        });
       })
     );
     function idsPhotos(type: string, numero: number | null): string[] {
@@ -335,6 +364,66 @@ export class EtatDesLieuxDocumentDocxService {
         .filter((p) => p.etatDesLieuxPieceType === type && p.etatDesLieuxPieceNumero === numero)
         .map((p) => p.id);
     }
+
+    // Signatures (chantier Signatures, 2026-10-25) : etat_des_lieux_signature
+    // n'est pas exposée par EtatsDesLieuxService.findById (pas une donnée de
+    // pièce) — requêtée directement ici, comme les compteurs d'équipements
+    // juste au-dessus. Image lue via DocumentsService.telecharger() (même
+    // point de déchiffrement unique que les photos, CLAUDE.md) ; jamais
+    // réencodée (déjà un PNG valide ≤512 Ko, décoderEtValiderImageSignature
+    // l'a garanti à la signature — pas la pipeline rotate/resize/png des
+    // photos, pensée pour des photos de téléphone, pas pour un petit tracé
+    // de signature).
+    const signatures = await this.db
+      .select()
+      .from(etatDesLieuxSignature)
+      .where(and(eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId), isNull(etatDesLieuxSignature.archivedAt)))
+      .orderBy(etatDesLieuxSignature.signeLe);
+    await Promise.all(
+      signatures.map(async (s) => {
+        const { contenu } = await this.documentsService.telecharger(s.documentId);
+        const meta = await sharp(contenu).metadata();
+        images.set(s.documentId, {
+          buffer: contenu,
+          width: meta.width ?? 1,
+          height: meta.height ?? 1,
+          largeurCiblePx: LARGEUR_SIGNATURE_CIBLE_PX
+        });
+      })
+    );
+    function signatairesPhase(phase: "entree" | "sortie") {
+      const lignes = signatures.filter((s) => s.phase === phase);
+      const bailleurLigne = lignes.find((s) => s.role === "bailleur");
+      return {
+        bailleur: bailleurLigne ? [{ nom: bailleurLigne.nomAffiche, image: bailleurLigne.documentId }] : [],
+        locataires: lignes
+          .filter((s) => s.role === "locataire")
+          .map((s) => ({ nom: s.nomAffiche, image: s.documentId }))
+      };
+    }
+    const signatureEntree = signatairesPhase("entree");
+    const signatureSortie = signatairesPhase("sortie");
+
+    // Date/lieu de chaque phase : gelés sur les pointillés du modèle papier
+    // tant que la phase n'est pas SIGNÉE (entreeSigneeParTous/
+    // sortieSigneeParTous — jamais sur la simple présence de date_entree/
+    // date_sortie, qui peuvent être posées à la main sans signature, cas
+    // papier ressaisi — même principe que resoudrePhaseEtatDesLieuxCourante,
+    // apps/backend/src/etats-des-lieux-signature).
+    function formaterJourMoisAnnee(dateIso: string): { jour: string; mois: string; annee: string } {
+      const [annee, mois, jour] = dateIso.split("-");
+      return { jour: jour ?? VIDE, mois: mois ?? VIDE, annee: annee ?? VIDE };
+    }
+    const dateEntreeAffichee =
+      donnees.entreeSigneeParTous && donnees.dateEntree
+        ? formaterJourMoisAnnee(donnees.dateEntree)
+        : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
+    const dateSortieAffichee =
+      donnees.sortieSigneeParTous && donnees.dateSortie
+        ? formaterJourMoisAnnee(donnees.dateSortie)
+        : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
+    const lieuEntreeAffiche = donnees.entreeSigneeParTous ? (donnees.lieuEntree ?? VIDE) : POINTILLES_LIEU;
+    const lieuSortieAffiche = donnees.sortieSigneeParTous ? (donnees.lieuSortie ?? VIDE) : POINTILLES_LIEU;
 
     // Nombre réel de chaudières/chauffe-eau déclarés sur la fiche
     // appartement (Module 2) — calculé à chaque génération, jamais
@@ -560,6 +649,30 @@ export class EtatDesLieuxDocumentDocxService {
       viderChampsSortie(donneesBalises);
     }
 
+    // Fusionnées APRÈS viderChampsSortie (jamais avant) : ces clés
+    // contiennent toutes "Sortie" dans leur nom pour la moitié sortie
+    // (dateSortieJour, lieuSortieAffiche, bailleurSignatureSortie...) et
+    // seraient sinon vidées à tort par ce filet de sécurité générique, qui
+    // ne connaît pas la distinction "non signée" (pointillés à conserver)
+    // vs "sans valeur" (VIDE) — ces champs gèrent déjà eux-mêmes leur cas
+    // non signé (POINTILLES_*, tableaux vides), sur un critère différent
+    // (entreeSigneeParTous/sortieSigneeParTous, pas date_sortie).
+    Object.assign(donneesBalises, {
+      dateEntreeJour: dateEntreeAffichee.jour,
+      dateEntreeMois: dateEntreeAffichee.mois,
+      dateEntreeAnnee: dateEntreeAffichee.annee,
+      lieuEntreeAffiche,
+      bailleurSignatureEntree: signatureEntree.bailleur,
+      locatairesSignatureEntree: signatureEntree.locataires,
+
+      dateSortieJour: dateSortieAffichee.jour,
+      dateSortieMois: dateSortieAffichee.mois,
+      dateSortieAnnee: dateSortieAffichee.annee,
+      lieuSortieAffiche,
+      bailleurSignatureSortie: signatureSortie.bailleur,
+      locatairesSignatureSortie: signatureSortie.locataires
+    });
+
     const utilisateurId = this.requestContext.getUtilisateurId();
     const buffer = this.rendreDocument(donneesBalises, images);
 
@@ -610,7 +723,7 @@ export class EtatDesLieuxDocumentDocxService {
       getImage: (tagValue: string) => {
         const image = images.get(tagValue);
         if (!image) {
-          throw new Error(`Photo introuvable pour la clé ${tagValue}`);
+          throw new Error(`Image introuvable pour la clé ${tagValue}`);
         }
         return image.buffer;
       },
@@ -619,7 +732,7 @@ export class EtatDesLieuxDocumentDocxService {
         if (!image) {
           return [LARGEUR_PHOTO_CIBLE_PX, LARGEUR_PHOTO_CIBLE_PX];
         }
-        return [LARGEUR_PHOTO_CIBLE_PX, Math.round((LARGEUR_PHOTO_CIBLE_PX * image.height) / image.width)];
+        return [image.largeurCiblePx, Math.round((image.largeurCiblePx * image.height) / image.width)];
       }
     });
     const document = new Docxtemplater(zip, {
