@@ -22,6 +22,10 @@ import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { resoudrePhaseEtatDesLieuxCourante } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
+import {
+  verifierAjoutPhotoAutorise,
+  verifierArchivagePhotoAutorise
+} from "../etats-des-lieux-signature/verrou-photos-etat-des-lieux";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import {
   DOCUMENT_ENTITE_TYPES,
@@ -77,6 +81,13 @@ export class DocumentsService {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
     this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
     this.verifierCandidatRoleSelonEntiteType(dto.entiteType, dto.candidatRole);
+    // Verrou de signature (chantier Signatures, 2026-10-25) : plus aucun
+    // document ne peut être ajouté à un état des lieux signé en sortie —
+    // voir verrou-photos-etat-des-lieux.ts (fonction pure, aucune
+    // dépendance de ce module vers EtatsDesLieuxModule).
+    if (dto.entiteType === "etat_des_lieux") {
+      await verifierAjoutPhotoAutorise(this.db, dto.entiteId);
+    }
     const etatDesLieuxPhase = await this.resoudrePhaseEtatDesLieuxPourUpload(dto.entiteType, dto.entiteId);
 
     // L'id est généré ici (plutôt que laissé au $defaultFn du schéma) car il
@@ -308,7 +319,13 @@ export class DocumentsService {
   async archiver(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreDocumentAvecAppartenance(id);
+    const existant = await this.resoudreDocumentAvecAppartenance(id);
+    // Verrou de signature (chantier Signatures, 2026-10-25) : une photo de
+    // la phase entrée ne peut plus être archivée une fois l'entrée signée,
+    // aucune ne peut plus l'être une fois la sortie signée.
+    if (existant.entiteType === "etat_des_lieux") {
+      await verifierArchivagePhotoAutorise(this.db, existant.entiteId, existant.etatDesLieuxPhase);
+    }
 
     const [document] = await mettreAJourAvecAudit(
       this.db,

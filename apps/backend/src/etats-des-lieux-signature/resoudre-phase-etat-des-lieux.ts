@@ -16,21 +16,35 @@ import { and, eq, isNull } from "drizzle-orm";
 // `db` typé `Pick<Database, "select">` pour accepter indifféremment le
 // client racine ou une transaction (`tx`) — même principe que
 // mettreAJourAvecAudit (packages/db/src/audit-write.ts).
-export async function resoudrePhaseEtatDesLieuxCourante(
+//
+// Centralise la requête déjà dupliquée à trois endroits avant le commit du
+// verrou (EtatsDesLieuxService.versDto, EtatsDesLieuxSignatureService
+// .chargerContexte, resoudrePhaseEtatDesLieuxCourante ci-dessous) — un seul
+// point de vérité pour "quelles phases sont signées côté bailleur",
+// consommé aussi par le verrou des submitX()/updateHeader() et par le
+// verrou des photos (verrou-photos-etat-des-lieux.ts).
+export async function resoudrePhasesSigneesEtatDesLieux(
   db: Pick<Database, "select">,
   etatDesLieuxId: string
-): Promise<"entree" | "sortie"> {
-  const [signatureEntree] = await db
-    .select({ id: etatDesLieuxSignature.id })
+): Promise<{ entreeSignee: boolean; sortieSignee: boolean }> {
+  const signaturesBailleur = await db
+    .select({ phase: etatDesLieuxSignature.phase })
     .from(etatDesLieuxSignature)
     .where(
       and(
         eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId),
         eq(etatDesLieuxSignature.role, "bailleur"),
-        eq(etatDesLieuxSignature.phase, "entree"),
         isNull(etatDesLieuxSignature.archivedAt)
       )
-    )
-    .limit(1);
-  return signatureEntree ? "sortie" : "entree";
+    );
+  const phasesSignees = new Set(signaturesBailleur.map((ligne) => ligne.phase));
+  return { entreeSignee: phasesSignees.has("entree"), sortieSignee: phasesSignees.has("sortie") };
+}
+
+export async function resoudrePhaseEtatDesLieuxCourante(
+  db: Pick<Database, "select">,
+  etatDesLieuxId: string
+): Promise<"entree" | "sortie"> {
+  const { entreeSignee } = await resoudrePhasesSigneesEtatDesLieux(db, etatDesLieuxId);
+  return entreeSignee ? "sortie" : "entree";
 }

@@ -25,6 +25,7 @@ import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { resoudrePhasesSigneesEtatDesLieux } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
 import type { CreateEtatDesLieuxDto } from "./dto/create-etat-des-lieux.dto";
 import type { EtatElementDto } from "./dto/etat-element.dto";
 import type { SubmitClesDto } from "./dto/submit-cles.dto";
@@ -39,6 +40,7 @@ import type { SubmitPieceSalleDeBainDto } from "./dto/submit-piece-salle-de-bain
 import type { SubmitPieceSejourDto } from "./dto/submit-piece-sejour.dto";
 import type { SubmitPieceWcDto } from "./dto/submit-piece-wc.dto";
 import type { UpdateEtatDesLieuxDto } from "./dto/update-etat-des-lieux.dto";
+import { verifierChampsAutorises } from "./verrou-champs-etat-des-lieux";
 
 // La DTO expose les éléments (mur, sol, prises...) comme des objets
 // imbriqués pour coller au parcours mobile pas-à-pas (un élément à la
@@ -365,17 +367,18 @@ export class EtatsDesLieuxService {
     return this.findById(entete.id, avecArchives);
   }
 
-  // Note pour le commit du verrou (chantier signatures, 2026-10-25) :
-  // dateEntree/dateSortie doivent rester modifiables à la main via cet
-  // endpoint UNIQUEMENT tant que la phase correspondante n'est pas signée
-  // (cas d'un état des lieux papier ressaisi après coup, sans jamais
-  // passer par EtatsDesLieuxSignatureService) — figées dès qu'une
-  // signature bailleur existe pour cette phase (même critère que
-  // resoudrePhaseEtatDesLieuxCourante/entreeSigneeParTous ci-dessous).
-  // Pas encore implémenté ici : updateHeader() accepte aujourd'hui
-  // n'importe quelle modification, y compris après signature.
+  // dateEntree/dateSortie/nouvelleAdresseLocataire restent modifiables à la
+  // main via cet endpoint UNIQUEMENT tant que leur phase n'est pas signée
+  // (cas d'un état des lieux papier ressaisi après coup, sans jamais passer
+  // par EtatsDesLieuxSignatureService) — figés dès qu'une signature
+  // bailleur existe pour la phase correspondante (verifierChampsAutorises,
+  // classification-colonnes-etat-des-lieux.ts). lieuEntree/lieuSortie ne
+  // sont volontairement pas dans UpdateEtatDesLieuxDto : seul
+  // EtatsDesLieuxSignatureService les pose, au moment de la signature.
   async updateHeader(id: string, dto: UpdateEtatDesLieuxDto) {
     await this.verifierExiste(id);
+    const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, id);
+    verifierChampsAutorises(phases, etatsDesLieux, { ...dto }, null);
     const [entete] = await mettreAJourAvecAudit(
       this.db,
       etatsDesLieux,
@@ -967,11 +970,13 @@ export class EtatsDesLieuxService {
     projeter: (ligne: T["$inferSelect"]) => R
   ): Promise<R> {
     const utilisateurId = this.requestContext.getUtilisateurId();
+    const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, etatDesLieuxId);
     const [existant] = await this.db
       .select()
       .from(table)
       .where(eq(table.etatDesLieuxId, etatDesLieuxId))
       .limit(1);
+    verifierChampsAutorises(phases, table, champs, (existant as Record<string, unknown> | undefined) ?? null);
     if (existant) {
       const [ligne] = await mettreAJourAvecAudit(this.db, table, (existant as { id: string }).id, champs, utilisateurId);
       if (!ligne) {
@@ -1012,11 +1017,13 @@ export class EtatsDesLieuxService {
     projeter: (ligne: T["$inferSelect"]) => R
   ): Promise<R> {
     const utilisateurId = this.requestContext.getUtilisateurId();
+    const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, etatDesLieuxId);
     const [existant] = await this.db
       .select()
       .from(table)
       .where(and(eq(table.etatDesLieuxId, etatDesLieuxId), eq(table.numero, numero)))
       .limit(1);
+    verifierChampsAutorises(phases, table, champs, (existant as Record<string, unknown> | undefined) ?? null);
     if (existant) {
       const [ligne] = await mettreAJourAvecAudit(this.db, table, (existant as { id: string }).id, champs, utilisateurId);
       if (!ligne) {
@@ -1065,22 +1072,26 @@ export class EtatsDesLieuxService {
   ): Promise<R[]> {
     const utilisateurId = this.requestContext.getUtilisateurId();
     return this.db.transaction(async (tx) => {
+      const phases = await resoudrePhasesSigneesEtatDesLieux(tx, etatDesLieuxId);
       const existantes = await tx
         .select()
         .from(table)
         .where(and(eq(table.etatDesLieuxId, etatDesLieuxId), isNull(table.archivedAt)));
       const idsExistants = new Set(existantes.map((ligne) => (ligne as { id: string }).id));
+      const parId = new Map(existantes.map((ligne) => [(ligne as { id: string }).id, ligne as Record<string, unknown>]));
 
       for (const ligne of lignes) {
         if (ligne.id) {
           if (!idsExistants.has(ligne.id)) {
             throw new NotFoundException(`Ligne ${ligne.id} introuvable pour cet état des lieux`);
           }
+          verifierChampsAutorises(phases, table, ligne.champs, parId.get(ligne.id) ?? null);
           const [misAJour] = await mettreAJourAvecAudit(tx, table, ligne.id, ligne.champs, utilisateurId);
           if (!misAJour) {
             throw new NotFoundException(`Ligne ${ligne.id} introuvable pour cet état des lieux`);
           }
         } else {
+          verifierChampsAutorises(phases, table, ligne.champs, null);
           await tx.insert(table).values({ etatDesLieuxId, ...ligne.champs } as T["$inferInsert"]);
         }
       }
@@ -1114,6 +1125,7 @@ export class EtatsDesLieuxService {
   ) {
     const utilisateurId = this.requestContext.getUtilisateurId();
     return this.db.transaction(async (tx) => {
+      const phases = await resoudrePhasesSigneesEtatDesLieux(tx, etatDesLieuxId);
       const existantes = await tx
         .select()
         .from(etatDesLieuxInventaire)
@@ -1124,6 +1136,12 @@ export class EtatsDesLieuxService {
 
       for (const ligne of lignes) {
         const existante = parElementId.get(ligne.elementId);
+        verifierChampsAutorises(
+          phases,
+          etatDesLieuxInventaire,
+          ligne.champs,
+          (existante as Record<string, unknown> | undefined) ?? null
+        );
         if (existante) {
           await mettreAJourAvecAudit(tx, etatDesLieuxInventaire, existante.id, ligne.champs, utilisateurId);
         } else {
