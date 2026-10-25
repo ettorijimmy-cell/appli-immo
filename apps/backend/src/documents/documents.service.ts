@@ -21,6 +21,7 @@ import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import { resoudrePhaseEtatDesLieuxCourante } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import {
   DOCUMENT_ENTITE_TYPES,
@@ -76,6 +77,7 @@ export class DocumentsService {
     await this.verifierEntiteExiste(dto.entiteType, dto.entiteId);
     this.verifierPieceValideSelonEntiteType(dto.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
     this.verifierCandidatRoleSelonEntiteType(dto.entiteType, dto.candidatRole);
+    const etatDesLieuxPhase = await this.resoudrePhaseEtatDesLieuxPourUpload(dto.entiteType, dto.entiteId);
 
     // L'id est généré ici (plutôt que laissé au $defaultFn du schéma) car il
     // fait partie du chemin de stockage — il doit être connu avant l'écriture
@@ -98,6 +100,7 @@ export class DocumentsService {
         cheminStockage,
         etatDesLieuxPieceType: dto.etatDesLieuxPieceType ?? null,
         etatDesLieuxPieceNumero: dto.etatDesLieuxPieceNumero ?? null,
+        etatDesLieuxPhase,
         candidatRole: dto.candidatRole ?? null
       })
       .returning();
@@ -389,6 +392,7 @@ export class DocumentsService {
       tailleOctets: document.tailleOctets,
       etatDesLieuxPieceType: document.etatDesLieuxPieceType,
       etatDesLieuxPieceNumero: document.etatDesLieuxPieceNumero,
+      etatDesLieuxPhase: document.etatDesLieuxPhase,
       candidatRole: document.candidatRole,
       documentPrecedentId: document.documentPrecedentId,
       statut: calculerStatutDocument(document.dateExpiration, document.archivedAt !== null, dateReference)
@@ -424,6 +428,27 @@ export class DocumentsService {
     if (candidatRole && entiteType !== "candidat") {
       throw new BadRequestException("candidatRole n'est valable que pour entiteType 'candidat'.");
     }
+  }
+
+  // Chantier signatures (2026-10-25) : distingue une photo prise à la
+  // visite d'entrée de celle prise à la sortie (voir
+  // docs/data-dictionary.md, section documents, et
+  // etat-des-lieux-signature.ts). Jamais transmis par le client — déduit
+  // de resoudrePhaseEtatDesLieuxCourante (source de vérité unique,
+  // partagée avec le futur verrou), JAMAIS de date_entree/date_sortie :
+  // ces dates peuvent être posées sans aucune signature (bouton
+  // "Terminer" du parcours mobile avant ce chantier, correction manuelle
+  // côté desktop, état des lieux papier ressaisi après coup) — seule
+  // l'existence d'une signature bailleur fait foi. `null` pour les 10
+  // autres entiteType, où la notion de phase n'a pas de sens.
+  private async resoudrePhaseEtatDesLieuxPourUpload(
+    entiteType: DocumentEntiteType,
+    entiteId: string
+  ): Promise<"entree" | "sortie" | null> {
+    if (entiteType !== "etat_des_lieux") {
+      return null;
+    }
+    return resoudrePhaseEtatDesLieuxCourante(this.db, entiteId);
   }
 
   // Le lien polymorphe n'a pas de contrainte de clé étrangère possible

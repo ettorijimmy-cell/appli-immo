@@ -48,5 +48,13 @@ export const etatsDesLieux = pgTable("etats_des_lieux", {
   // Seul champ "domicile" du locataire porté par ce document (décret
   // n° 2016-382, art. 2, 2° a) — connu uniquement à la sortie, jamais
   // à l'entrée. Texte libre, décision assumée avec le propriétaire.
-  nouvelleAdresseLocataire: text("nouvelle_adresse_locataire")
+  nouvelleAdresseLocataire: text("nouvelle_adresse_locataire"),
+  // "Fait à ..." de chaque phase (chantier signatures, 2026-10-25) : posé
+  // une seule fois par phase, en même temps que date_entree/date_sortie
+  // (même transaction, EtatsDesLieuxSignatureService) — pas sur
+  // etat_des_lieux_signature, qui porterait la même valeur en double sur
+  // chaque ligne (un bailleur + N locataires signent au même endroit).
+  // Reçu dans la requête de signature, défaut bien.ville si absent.
+  lieuEntree: text("lieu_entree"),
+  lieuSortie: text("lieu_sortie")
 });

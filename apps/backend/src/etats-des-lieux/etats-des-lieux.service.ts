@@ -16,6 +16,7 @@ import {
   etatDesLieuxPiecesChambre,
   etatDesLieuxPiecesSalleDeBain,
   etatDesLieuxPiecesWc,
+  etatDesLieuxSignature,
   etatsDesLieux,
   mettreAJourAvecAudit,
   type Database
@@ -337,7 +338,7 @@ export class EtatsDesLieuxService {
     ]);
 
     return {
-      ...this.versDto(entete),
+      ...(await this.versDto(entete)),
       entree: entree ? this.versDtoPieceEntree(entree) : null,
       sejour: sejour ? this.versDtoPieceSejour(sejour) : null,
       cuisine: cuisine ? this.versDtoPieceCuisine(cuisine) : null,
@@ -364,6 +365,15 @@ export class EtatsDesLieuxService {
     return this.findById(entete.id, avecArchives);
   }
 
+  // Note pour le commit du verrou (chantier signatures, 2026-10-25) :
+  // dateEntree/dateSortie doivent rester modifiables à la main via cet
+  // endpoint UNIQUEMENT tant que la phase correspondante n'est pas signée
+  // (cas d'un état des lieux papier ressaisi après coup, sans jamais
+  // passer par EtatsDesLieuxSignatureService) — figées dès qu'une
+  // signature bailleur existe pour cette phase (même critère que
+  // resoudrePhaseEtatDesLieuxCourante/entreeSigneeParTous ci-dessous).
+  // Pas encore implémenté ici : updateHeader() accepte aujourd'hui
+  // n'importe quelle modification, y compris après signature.
   async updateHeader(id: string, dto: UpdateEtatDesLieuxDto) {
     await this.verifierExiste(id);
     const [entete] = await mettreAJourAvecAudit(
@@ -385,10 +395,36 @@ export class EtatsDesLieuxService {
     return this.versDto(entete as typeof etatsDesLieux.$inferSelect);
   }
 
-  private versDto(entete: typeof etatsDesLieux.$inferSelect) {
+  // Async depuis le chantier signatures (2026-10-25) : entreeSigneeParTous/
+  // sortieSigneeParTous sont dérivés de l'existence d'une signature
+  // BAILLEUR pour la phase (etat_des_lieux_signature, role='bailleur') —
+  // jamais stockés, même principe que `statut` ci-dessous, et jamais
+  // dérivés de date_entree/date_sortie (voir resoudrePhaseEtatDesLieuxCourante,
+  // apps/backend/src/etats-des-lieux-signature, ces dates pouvant être
+  // posées sans aucune signature). Suffisant de ne vérifier QUE le
+  // bailleur : EtatsDesLieuxSignatureService écrit toujours sa signature
+  // et celle de chaque locataire actif dans UNE SEULE transaction, jamais
+  // l'une sans les autres — une signature locataire d'une phase ne peut
+  // donc jamais exister sans la signature bailleur de cette même phase
+  // (garanti par test, voir
+  // etats-des-lieux-signature.integration.spec.ts).
+  private async versDto(entete: typeof etatsDesLieux.$inferSelect) {
+    const signaturesBailleur = await this.db
+      .select({ phase: etatDesLieuxSignature.phase })
+      .from(etatDesLieuxSignature)
+      .where(
+        and(
+          eq(etatDesLieuxSignature.etatDesLieuxId, entete.id),
+          eq(etatDesLieuxSignature.role, "bailleur"),
+          isNull(etatDesLieuxSignature.archivedAt)
+        )
+      );
+    const phasesSignees = new Set(signaturesBailleur.map((ligne) => ligne.phase));
     return {
       ...entete,
-      statut: calculerStatutEtatDesLieux(entete.dateEntree, entete.dateSortie)
+      statut: calculerStatutEtatDesLieux(entete.dateEntree, entete.dateSortie),
+      entreeSigneeParTous: phasesSignees.has("entree"),
+      sortieSigneeParTous: phasesSignees.has("sortie")
     };
   }
 

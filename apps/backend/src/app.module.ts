@@ -21,6 +21,7 @@ import { DepensesModule } from "./depenses/depenses.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
+import { EtatsDesLieuxSignatureModule } from "./etats-des-lieux-signature/etats-des-lieux-signature.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
 import { EvenementsCalendrierModule } from "./evenements-calendrier/evenements-calendrier.module";
 import { FiscaliteModule } from "./fiscalite/fiscalite.module";
@@ -82,6 +83,7 @@ import { VersementsModule } from "./versements/versements.module";
     IndicesIrlModule,
     BailDocumentDocxModule,
     EtatsDesLieuxModule,
+    EtatsDesLieuxSignatureModule,
     EtatDesLieuxDocumentDocxModule,
     QuittanceDocumentDocxModule,
     // GoogleOAuthModule désactivé (pas supprimé), décision actée avec

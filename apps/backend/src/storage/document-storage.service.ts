@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EncryptionService } from "../crypto/encryption.service";
@@ -87,5 +87,21 @@ export class DocumentStorageService {
       donnees = await readFile(path.join(this.localStorageDir!, chemin));
     }
     return chiffrer ? this.encryptionService.decryptBuffer(donnees) : donnees;
+  }
+
+  // Jamais exposée pour supprimer un vrai document (CLAUDE.md : aucune
+  // suppression définitive de document) — réservée au nettoyage d'un blob
+  // écrit puis jamais rattaché à une ligne `documents` (transaction SQL
+  // annulée après l'écriture du fichier, ex. EtatsDesLieuxSignatureService) :
+  // ce blob n'a jamais été un "document" au sens métier, juste un fichier
+  // orphelin sur le stockage. Best-effort : l'appelant doit journaliser et
+  // continuer si cette méthode échoue elle-même, jamais masquer l'erreur
+  // d'origine qui a déclenché le nettoyage.
+  async supprimer(chemin: string): Promise<void> {
+    if (this.s3) {
+      await this.s3.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: chemin }));
+    } else {
+      await unlink(path.join(this.localStorageDir!, chemin));
+    }
   }
 }

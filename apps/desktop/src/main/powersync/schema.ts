@@ -330,6 +330,9 @@ const etats_des_lieux = new Table({
   date_entree: column.text,
   date_sortie: column.text,
   nouvelle_adresse_locataire: column.text,
+  // lieu_entree/lieu_sortie ajoutées le 2026-10-25 (chantier Signatures).
+  lieu_entree: column.text,
+  lieu_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
