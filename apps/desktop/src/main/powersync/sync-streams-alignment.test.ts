@@ -270,11 +270,16 @@ interface StreamYaml {
 // Extrait chaque bloc "  <clé>:\n    query: >\n<corps>\n    auto_subscribe:
 // true" du yaml, puis isole "SELECT <colonnes> FROM <table>" dans le corps
 // (non-greedy jusqu'au premier FROM : suffisant, le FROM de la requête
-// principale est toujours le premier token FROM rencontré).
-function parserStreamsYaml(): Map<string, StreamYaml> {
-  const texte = readFileSync(YAML_PATH, "utf-8");
+// principale est toujours le premier token FROM rencontré). `\r?` devant
+// chaque `\n` : tolère un fichier en CRLF, pas seulement en LF — incident
+// du 2026-10-24 où un `git checkout` (core.autocrlf=true sur une machine
+// Windows) a réécrit le yaml en CRLF et fait tomber ce parseur à zéro bloc
+// trouvé, silencieusement (voir le test dédié "tolère un contenu en CRLF"
+// plus bas). `texte` paramétrable (au lieu d'une lecture disque fixe) pour
+// permettre ce test sans passer par un fichier temporaire sur disque.
+function parserStreamsYaml(texte: string = readFileSync(YAML_PATH, "utf-8")): Map<string, StreamYaml> {
   const resultat = new Map<string, StreamYaml>();
-  const regexBloc = /^ {2}([a-z][a-z0-9_]*):\n {4}query: >\n([\s\S]*?)\n {4}auto_subscribe: true/gm;
+  const regexBloc = /^ {2}([a-z][a-z0-9_]*):\r?\n {4}query: >\r?\n([\s\S]*?)\r?\n {4}auto_subscribe: true/gm;
   let matchBloc: RegExpExecArray | null;
   while ((matchBloc = regexBloc.exec(texte)) !== null) {
     const cleStream = matchBloc[1];
@@ -336,6 +341,38 @@ describe("PowerSync — alignement Drizzle / yaml / schema.ts (3 sources)", () =
         "\"auto_subscribe: true\" dans le format attendu (le parseur l'exige pour délimiter " +
         "le corps de la requête), sinon il est ignoré sans erreur."
     ).toBe(nombreBlocsQuery);
+  });
+
+  it("parserStreamsYaml tolère un yaml en CRLF à l'identique d'un yaml en LF — reproduit l'incident du 2026-10-24", () => {
+    const contenuLf =
+      "streams:\n" +
+      "  exemple_stream:\n" +
+      "    query: >\n" +
+      "      SELECT id, colonne_a, colonne_b FROM exemple_table\n" +
+      "    auto_subscribe: true\n";
+    const contenuCrlf = contenuLf.replace(/\n/g, "\r\n");
+
+    const streamsLf = parserStreamsYaml(contenuLf);
+    const streamsCrlf = parserStreamsYaml(contenuCrlf);
+
+    expect(streamsLf.size, "le contenu de référence (LF) doit produire exactement 1 stream").toBe(1);
+    expect(
+      streamsCrlf.size,
+      "le même contenu en CRLF doit produire exactement le même nombre de streams — sans le " +
+        "\\r? ajouté à regexBloc, ce test échouait avec 0 stream trouvé, silencieusement."
+    ).toBe(1);
+    expect(streamsCrlf.get("exemple_stream")).toEqual(streamsLf.get("exemple_stream"));
+  });
+
+  it("diviserEntreesSommet (parsing des fichiers packages/db/src/schema/*.ts) tolère un corps en CRLF à l'identique d'un corps en LF", () => {
+    const corpsLf = 'nom: text("nom").notNull(),\n' + "// commentaire à ignorer, y compris sa virgule finale,\n" + 'age: integer("age")';
+    const corpsCrlf = corpsLf.replace(/\n/g, "\r\n");
+
+    expect(
+      diviserEntreesSommet(corpsCrlf),
+      "déjà protégé par le retrait explicite de \\r en tête de diviserEntreesSommet " +
+        "(voir son commentaire) — ce test en fait une garantie vérifiée, pas seulement documentée."
+    ).toEqual(diviserEntreesSommet(corpsLf));
   });
 
   const clesSchemaTs = new Set(AppSchema.tables.map((t) => t.name));
