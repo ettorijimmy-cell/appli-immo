@@ -1210,7 +1210,10 @@ les trois parcours ci-dessus).
       contrairement aux 4 tables de filtrage ci-dessus, aucune occurrence
       de `FROM organisations` ni même du mot `organisations` dans
       `docs/powersync-sync-streams.yaml`, vérifié par grep ; à retirer de
-      la publication si (a) n'en a jamais besoin).
+      la publication si (a) n'en a jamais besoin), `etat_des_lieux_signature`
+      (ajoutée le 2026-10-24, chantier Signatures — décision explicite de
+      ne pas la publier/synchroniser pour l'instant, pas un oubli : voir
+      la section État des lieux ci-dessus pour le détail du modèle).
   - Plan gratuit PowerSync : désactivation du projet après ~1 semaine
     d'inactivité (aucune connexion client) — à surveiller, l'usage
     personnel actuel pouvant comporter des périodes sans connexion.
@@ -1977,6 +1980,105 @@ Même mécanisme que `BailDocumentDocxService` : résolution par `__dirname`
 `dist/` au build via `nest-cli.json`, garde `existsSync` +
 `InternalServerErrorException` au message propre (absente jusqu'ici,
 d'où le 500 brut) aux deux lectures du modèle.
+
+**Signatures de l'état des lieux — modèle de données tranché et migré
+(commit 1/7, 2026-10-24).** Chantier suivant l'hébergement mobile-web :
+signature tactile du bailleur et de chaque locataire, en deux temps
+(entrée puis sortie), sur le document unique déjà en place (voir
+"Génération du document légal état des lieux" plus haut). Décisions
+actées après audit de conception en lecture seule :
+
+- **Table dédiée** `etat_des_lieux_signature`, pas une simple catégorie de
+  `documents` (voir docs/data-dictionary.md, section du même nom, pour le
+  détail des colonnes/contraintes) — nécessaire pour interroger
+  directement "la phase X est-elle signée par tout le monde ?" (jointure
+  avec les `bail_locataires` actifs), ce qu'une catégorie polymorphe
+  rendrait pénible. L'image elle-même reste stockée comme les photos :
+  une ligne `documents` (nouvelle valeur `signature` sur
+  `document_categorie`), chiffrée via `DocumentStorageService`,
+  référencée par `etat_des_lieux_signature.document_id` — même
+  mécanisme, même journal d'accès, aucun second chemin de stockage.
+- **`nom_affiche` éditable, jamais relu dynamiquement** : saisi au moment
+  de signer (cas du mandataire côté bailleur), indépendant de
+  `scis.nom_gerant`/`bien.nom_proprietaire` ou de la fiche locataire —
+  le nom imprimé reste celui effectivement présenté à la signature même
+  si la fiche change ensuite.
+- **Trou corrigé dans `documents`** : `etat_des_lieux_piece_type`/
+  `_numero` identifient la pièce d'une photo mais ne distinguaient
+  jusqu'ici jamais si elle a été prise à l'entrée ou à la sortie — toutes
+  les photos d'une pièce étaient mélangées dans la même balise
+  `{#photos}` du document généré (`EtatDesLieuxDocumentDocxService
+  .idsPhotos`), sans notion de phase. Nouvelle colonne nullable
+  `etat_des_lieux_phase` (même enum `etat_des_lieux_phase` que la table
+  signatures), posée automatiquement à l'upload selon la phase en cours —
+  condition nécessaire pour que le verrou de signature (commit à venir)
+  puisse bloquer l'ajout/la suppression des photos de la partie entrée
+  sans bloquer celles de la sortie. Lignes historiques déjà en base :
+  `etat_des_lieux_phase` reste `NULL`, aucune migration de données
+  rétroactive décidée.
+- **Verrou (commit à venir)** : champs sans suffixe `Entree`/`Sortie`
+  (description, libellé, commentaire) figés dès la signature d'entrée —
+  décision explicite, pas par défaut technique. Couverture prévue : un
+  test qui énumère toutes les colonnes Drizzle des tables du domaine État
+  des lieux et échoue si une colonne n'est explicitement classée ni
+  entrée, ni sortie, ni commune — un champ ajouté plus tard ne doit
+  jamais échapper au verrou silencieusement.
+- **Colocataire ajouté après la signature d'entrée mais avant la sortie**
+  (son `bail_locataires` n'existait pas encore à l'entrée, donc jamais
+  signée) : limite connue, assumée, aucun garde-fou bloquant prévu — rien
+  dans le schéma actuel (un seul état des lieux par bail, une seule
+  signature d'entrée) ne permet de documenter une signature d'entrée
+  rétroactive proprement.
+- **Taille maximale d'une image de signature : 512 Ko (524 288 octets)**,
+  appliquée côté serveur à l'endpoint de signature (commit à venir) —
+  bien plus restrictif que la limite générique de `/documents`
+  (`TAILLE_MAX_OCTETS`, 20 Mo, pensée pour des photos/scans) : un PNG de
+  signature tactile (`signature_pad`, trait fin sur fond uni) pèse
+  normalement quelques dizaines de Ko ; une limite basse empêche qu'un
+  fichier sans rapport (photo, scan) soit soumis comme signature et
+  gonfle inutilement le document généré.
+- **PowerSync** : `etat_des_lieux_signature` n'est **pas** publiée ni
+  synchronisée pour l'instant — décision explicite, pas un oubli (voir
+  plus bas, section "PowerSync — suite", liste "à traiter avec (a)").
+- Migration Drizzle `0066` : `CREATE TYPE etat_des_lieux_phase`,
+  `CREATE TYPE etat_des_lieux_signature_role`, `ALTER TYPE
+  document_categorie ADD VALUE 'signature'`, `CREATE TABLE
+  etat_des_lieux_signature`, `ALTER TABLE documents ADD COLUMN
+  etat_des_lieux_phase` — appliquée en dev, pas encore en production.
+- **Piège trouvé et corrigé, pas supposé (commit `c1d9d99`)** : le cache
+  Turborepo de `desktop:test` ne tenait aucun compte de
+  `packages/db/src/schema/**` ni de `docs/powersync-sync-streams.yaml` —
+  deux emplacements hors du périmètre par défaut du package, pourtant lus
+  en texte brut par `sync-streams-alignment.test.ts`. Conséquence
+  concrète, pas théorique : `documents.etat_des_lieux_phase` ajoutée au
+  schéma sans être exposée côté PowerSync, et le test censé le détecter a
+  été rejoué depuis un cache périmé, sans jamais s'exécuter contre le
+  nouveau schéma — découvert seulement en relançant sans cache, pas par
+  un échec visible dans le pipeline normal. Corrigé par une Package
+  Configuration dédiée (`apps/desktop/turbo.json`, `extends: ["//"]`,
+  inputs `$TURBO_ROOT$/packages/db/src/schema/**` et
+  `$TURBO_ROOT$/docs/powersync-sync-streams.yaml`) plutôt qu'un
+  changement au niveau racine, pour ne pas élargir cette sensibilité aux
+  packages qui n'en ont pas besoin. Preuve par aller-retour du hash
+  `desktop#test` (fichier hors package modifié puis restauré à
+  l'identique, hash qui change puis revient pile à sa valeur de départ),
+  pas seulement un dry-run.
+- **Incident et correctif de robustesse (commit `ed09d48`)** : en
+  annulant un ajout de preuve temporaire pendant la vérification
+  ci-dessus, `git checkout -- docs/powersync-sync-streams.yaml` a
+  réécrit le fichier en CRLF (`core.autocrlf=true` sur cette machine
+  Windows, fichier resté en LF depuis sa création jusque-là) —
+  `sync-streams-alignment.test.ts` parse ce yaml via une regex exigeant
+  des `\n` littéraux, qui tombe alors à zéro bloc trouvé, silencieusement
+  (33 tests en échec d'une façon qui n'évoquait d'abord en rien le trou
+  de cache ci-dessus). Fragilité réelle, pas un accident isolé : n'importe
+  quelle opération git qui « touche » ce fichier (checkout, reset --hard,
+  stash pop) peut reproduire l'incident. Corrigé par `\r?` devant chaque
+  `\n` de `regexBloc`, avec deux tests dédiés comparant explicitement le
+  même contenu en LF et en CRLF — `parserStreamsYaml` et
+  `diviserEntreesSommet` (parsing des fichiers `packages/db/src/schema/
+  *.ts`, déjà protégé par un retrait explicite de `\r` mais seulement
+  documenté en commentaire jusqu'ici, jamais vérifié par un test).
 
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos
