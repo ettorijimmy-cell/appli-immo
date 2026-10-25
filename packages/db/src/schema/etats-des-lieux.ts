@@ -21,6 +21,17 @@ export const etatDesLieuxInventaireEtatEnum = pgEnum("etat_des_lieux_inventaire_
   "mauvais"
 ]);
 
+// Les deux temps de signature (décret n° 2016-382, art. 3, 2°) : la
+// signature d'entrée fige la partie entrée, la signature de sortie fige
+// tout le document (voir etat-des-lieux-signature.ts). Défini ici plutôt
+// que dans etat-des-lieux-signature.ts ou documents.ts : les deux
+// l'importent (etat_des_lieux_signature.phase, documents
+// .etat_des_lieux_phase ci-dessous), et ce fichier racine du domaine
+// État des lieux n'importe lui-même ni l'un ni l'autre — évite un cycle
+// d'imports (etat-des-lieux-signature.ts référence déjà documents.ts
+// pour sa colonne document_id).
+export const etatDesLieuxPhaseEnum = pgEnum("etat_des_lieux_phase", ["entree", "sortie"]);
+
 // Un seul état des lieux par bail (bail_id unique) : le même document
 // couvre l'entrée et la sortie (décret n° 2016-382, art. 3, 2° — "document
 // unique" permettant la comparaison), pas deux enregistrements séparés.

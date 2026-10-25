@@ -297,7 +297,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 |---|---|---|
 | entite_type | enum | `sci` \| `immeuble` \| `bien` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` \| `garant` — lien polymorphe. Pas de contrainte de clé étrangère possible (8 tables cibles) : `DocumentsService.verifierEntiteExiste()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03). `garant` ajouté le 2026-08-24 (checklist documentaire, pièce d'identité du garant). `bien` ajouté le 2026-08-26 (migration bien) : seul chemin possible pour rattacher un document à un bien non-immeuble (maison, parking, bureau, local_commercial) ou à un immeuble créé après cette date via `BienService` — `immeuble` reste réservé aux documents déjà rattachés à une ligne `immeubles` existante (table conservée, voir section `bien` ci-dessous) |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
-| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous) |
+| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` \| `signature` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous). `signature` ajoutée le 2026-10-24 (chantier Signatures, voir section `etat_des_lieux_signature` ci-dessous) : toujours `entiteType='etat_des_lieux'`, l'image étant référencée par `etat_des_lieux_signature.document_id`, jamais affichée par ailleurs |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
 | date_expiration | date, nullable | Alimente le moteur d'alertes (Module 6) et le calcul de `statut` |
 | nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |
@@ -306,6 +306,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 | chemin_stockage | text | Clé/chemin du blob chiffré sur le stockage configuré (voir décision ci-dessous) — `documents/<entite_type>/<entite_id>/<id>.enc`, interne à `DocumentsService`/`DocumentStorageService` |
 | etat_des_lieux_piece_type | enum, nullable | `entree` \| `sejour` \| `cuisine` \| `chambre` \| `salle_de_bain` \| `wc` \| `autre` — significatif uniquement quand `entite_type = 'etat_des_lieux'` (photos prises depuis le parcours mobile pas-à-pas, un bouton "+ Photo" par pièce). Ajouté le 2026-08-07 : corrige un trou identifié en test manuel (photo visible dans Documents mais pas rattachée à sa pièce en relecture desktop) |
 | etat_des_lieux_piece_numero | integer, nullable | Numéro d'instance pour chambre/salle_de_bain/wc/autre (null pour entrée/séjour/cuisine, pièces à instance unique) |
+| etat_des_lieux_phase | enum, nullable | `entree` \| `sortie` (`etat_des_lieux_phase`, même enum que `etat_des_lieux_signature.phase`) — distingue une photo prise à la visite d'entrée de celle prise à la sortie, significatif uniquement quand `entite_type = 'etat_des_lieux'`. Ajouté le 2026-10-24 (chantier Signatures) : corrige un trou où toutes les photos d'une pièce étaient mélangées sans notion de phase (`EtatDesLieuxDocumentDocxService.idsPhotos`), condition nécessaire pour que le verrou posé par la signature d'entrée puisse bloquer les photos de l'entrée sans bloquer celles de la sortie. Posé automatiquement à l'upload selon la phase en cours, jamais transmis par le client ; `NULL` pour les lignes historiques (aucune migration de données rétroactive) |
 | candidat_role | enum, nullable | `candidat` \| `garant` (`document_candidat_role`) — distingue un document du candidat lui-même de celui de son garant (le garant d'un candidat n'est pas une entité `garant` réelle, juste `garant_nom`/`garant_revenu_mensuel_net` en texte sur `candidat`). Obligatoire quand `entite_type = 'candidat'`, interdit sinon (vérifié applicativement dans `DocumentsService.verifierCandidatRoleSelonEntiteType`). Ajouté le 2026-09-15 (checklist documentaire candidat) |
 
 **Rattachement des photos à une pièce précise (2026-08-07)** : `entite_id`
@@ -3177,6 +3178,59 @@ commentaires compense).
 | element_id | uuid | FK vers `elements_inventaire_meuble` |
 | nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
 | commentaire | text, nullable | |
+
+### etat_des_lieux_signature
+Signature tactile du bailleur et de chaque locataire, en deux temps
+(décret n° 2016-382, art. 3, 2°) : la signature d'entrée fige la partie
+entrée, la signature de sortie fige le tout. Table dédiée plutôt qu'une
+simple catégorie de `documents` — décision actée après audit (2026-10-24) :
+permet d'interroger directement "la phase X est-elle signée par tout le
+monde ?" (jointure avec les `bail_locataires` actifs au moment de la
+signature), ce qu'une catégorie polymorphe rendrait pénible. L'image
+elle-même reste stockée comme les photos — une ligne `documents`
+(`categorie = 'signature'`, voir ci-dessus), chiffrée via
+`DocumentStorageService`, référencée ici par `document_id`.
+| Champ | Type | Description |
+|---|---|---|
+| etat_des_lieux_id | uuid, FK `etats_des_lieux` | |
+| phase | enum | `entree` \| `sortie` (`etat_des_lieux_phase`, même enum que `documents.etat_des_lieux_phase` ci-dessus) |
+| role | enum | `bailleur` \| `locataire` (`etat_des_lieux_signature_role`) — un seul signataire côté bailleur par phase (SCI représentée par son gérant, ou propriétaire personne physique), un signataire par `bail_locataires` actif côté locataire (colocation) |
+| locataire_id | uuid, FK `locataires`, nullable | `NULL` si `role = 'bailleur'`, requis sinon — contrainte `etat_des_lieux_signature_locataire_coherent` |
+| nom_affiche | text | Saisi au moment de signer, **jamais relu dynamiquement** depuis `scis.nom_gerant`/`bien.nom_proprietaire` ou la fiche locataire après signature — permet le cas du mandataire côté bailleur (nom différent du gérant déclaré) ; le nom imprimé sur le document reste celui effectivement présenté à la signature même si la fiche change ensuite |
+| document_id | uuid, FK `documents` | Image de la signature (`categorie = 'signature'`) |
+| lu_et_approuve | boolean | Trace la case "Lu et approuvé" cochée avant signature — jamais du texte libre imprimé au document. Doit être à `true` avant que la ligne existe, imposé applicativement (pas de contrainte CHECK : la colonne porte la preuve de la donnée écrite, indépendamment de la logique applicative du jour) |
+| signe_le | timestamp with time zone | Horodatage de la signature — distinct de `created_at` par principe (même ligne créée et signée au même instant en pratique aujourd'hui, mais la colonne a un sens métier propre) |
+
+**Unicité** : au plus une signature bailleur par phase
+(`etat_des_lieux_signature_bailleur_phase_unique`, index partiel sur
+`role = 'bailleur' AND archived_at IS NULL`) ; au plus une signature par
+locataire et par phase (`etat_des_lieux_signature_locataire_phase_unique`,
+même principe sur `role = 'locataire'`). Partiel sur `archived_at` par
+cohérence avec le reste du schéma (CLAUDE.md, jamais de `DELETE`), mais
+aucun flux applicatif ne doit jamais archiver une signature posée — une
+signature est définitive, pas corrigible après coup.
+
+**Signataires locataires résolus en direct, jamais stockés à part** :
+tous les `bail_locataires` actifs (`archived_at IS NULL`) au moment de la
+signature de la phase concernée, même filtre que
+`BailDocumentDocxService`/`QuittanceDocumentDocxService`. Un colocataire
+dont la ligne `bail_locataires` est archivée avant la sortie ne signe plus
+la sortie (plus partie au bail). **Limite connue, assumée** : un
+colocataire ajouté après la signature d'entrée mais avant la sortie n'aura
+jamais signé l'entrée — aucun garde-fou bloquant prévu, rien dans le
+schéma actuel (un seul état des lieux par bail, une seule signature
+d'entrée) ne permet de documenter une signature d'entrée rétroactive
+proprement.
+
+**Taille maximale d'une image de signature : 512 Ko (524 288 octets)**,
+appliquée côté serveur à l'upload — bien plus restrictif que la limite
+générique de `/documents` (`TAILLE_MAX_OCTETS`, 20 Mo, pensée pour des
+photos/scans) : un PNG de signature tactile (`signature_pad`, trait fin
+sur fond uni) pèse normalement quelques dizaines de Ko.
+
+**PowerSync** : table **non publiée, non synchronisée** pour l'instant —
+décision explicite (voir `docs/backlog.md`, section "PowerSync — suite",
+liste "à traiter avec (a)"), pas un oubli.
 
 **Accès mobile** : page web légère, API REST directe sur `apps/backend`,
 pas de SDK PowerSync web — voir `docs/app-spec.md`, section 3, pour le

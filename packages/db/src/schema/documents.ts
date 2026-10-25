@@ -1,5 +1,6 @@
 import { date, integer, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
+import { etatDesLieuxPhaseEnum } from "./etats-des-lieux";
 
 export const documentEntiteTypeEnum = pgEnum("document_entite_type", [
   "sci",
@@ -72,7 +73,13 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   // (3 attendues), aucune contrainte d'unicité ne l'empêche.
   "fiche_de_paie",
   "contrat_travail",
-  "avis_imposition"
+  "avis_imposition",
+  // Image de signature tactile de l'état des lieux (chantier signatures,
+  // voir etat-des-lieux-signature.ts) — toujours entiteType='etat_des_lieux',
+  // référencée par etat_des_lieux_signature.document_id, jamais affichée
+  // en dehors de ce mécanisme (pas de carte "Documents" dédiée côté desktop
+  // pour cette catégorie).
+  "signature"
 ]);
 
 // 'valide'/'expire' sont calculés à la lecture (packages/core,
@@ -128,6 +135,19 @@ export const documents = pgTable("documents", {
   // 5 autres entiteType.
   etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
   etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero"),
+  // Chantier signatures (2026-10-24) : distingue une photo prise pendant
+  // la visite d'entrée de celle prise à la sortie — nécessaire pour que le
+  // verrou posé par la signature d'entrée (EtatsDesLieuxService) puisse
+  // bloquer l'ajout/la suppression des photos de la partie entrée sans
+  // bloquer celles de la sortie, alors qu'aucune des deux n'était
+  // distinguée avant ce chantier (toutes les photos d'une pièce étaient
+  // mélangées dans la même balise {#photos}, quelle que soit leur phase
+  // de prise — voir EtatDesLieuxDocumentDocxService.idsPhotos). Posée
+  // automatiquement à l'upload selon la phase en cours (jamais transmise
+  // par le client) ; nullable pour les lignes historiques déjà en base
+  // (aucune migration de données rétroactive) et pour les 10 autres
+  // entiteType, où elle n'a pas de sens.
+  etatDesLieuxPhase: etatDesLieuxPhaseEnum("etat_des_lieux_phase"),
   // Nullable, exigé uniquement quand entiteType = 'candidat' (vérifié
   // applicativement, voir DocumentsService.verifierPieceValideSelonEntiteType) —
   // jamais renseigné pour les 6 autres entiteType.

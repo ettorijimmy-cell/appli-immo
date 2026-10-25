@@ -299,6 +299,7 @@ const documents = new Table({
   taille_octets: column.integer,
   etat_des_lieux_piece_type: column.text,
   etat_des_lieux_piece_numero: column.integer,
+  etat_des_lieux_phase: column.text,
   document_precedent_id: column.text,
   candidat_role: column.text,
   archived_at: column.text,

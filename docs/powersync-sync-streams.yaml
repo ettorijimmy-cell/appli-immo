@@ -529,12 +529,17 @@ streams:
   # Conséquence : cette colonne arrivera donc toujours NULL côté client
   # en pratique aujourd'hui ; exposée quand même par décision explicite
   # (complétude du schéma), sans effet fonctionnel actuel.
+  # etat_des_lieux_phase ajoutée le 2026-10-24 (chantier Signatures) :
+  # même principe que etat_des_lieux_piece_type/_numero ci-dessus,
+  # significative uniquement quand entite_type='etat_des_lieux' (branche
+  # bien couverte par le WHERE ci-dessous), distingue une photo prise à
+  # l'entrée de celle prise à la sortie.
   documents:
     query: >
       SELECT id, entite_type, entite_id, categorie, statut, date_expiration,
       nom_fichier, mime_type, taille_octets, etat_des_lieux_piece_type,
-      etat_des_lieux_piece_numero, document_precedent_id, candidat_role,
-      archived_at, version, updated_at FROM documents
+      etat_des_lieux_piece_numero, etat_des_lieux_phase, document_precedent_id,
+      candidat_role, archived_at, version, updated_at FROM documents
       WHERE (
         documents.entite_type = 'sci' AND documents.entite_id IN (
           SELECT organisation_sci.sci_id FROM organisation_sci
