@@ -3,9 +3,11 @@ import { expect, test, type Locator } from "@playwright/test";
 // Vérifie le verrou des champs communs (Clés/Équipements divers/
 // Inventaire) dans un vrai navigateur — voir verrou-champs-main.tsx pour
 // les 2 scénarios montés (entrée signée seule / entrée+sortie signées) et
-// verrou-champs-commun.ts pour la règle elle-même. Pas d'appel réseau ici
-// (ces 3 écrans sont de purs composants contrôlés par props), donc aucun
-// page.route() n'est nécessaire — à la différence de signature.spec.ts.
+// champModifiable ("core", classification-champs-etat-des-lieux.ts) pour
+// la règle elle-même, partagée avec le verrou backend et desktop. Pas
+// d'appel réseau ici (ces 3 écrans sont de purs composants contrôlés par
+// props), donc aucun page.route() n'est nécessaire — à la différence de
+// signature.spec.ts.
 
 // Les 3 écrans partagent exactement la même classe de conteneur par ligne
 // ("space-y-2 border-b border-slate-100 pb-4 last:border-0") — permet de

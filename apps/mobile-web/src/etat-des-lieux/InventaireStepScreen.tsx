@@ -1,3 +1,4 @@
+import { champModifiable, CLASSIFICATION_INVENTAIRE } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type {
   CategorieInventaire,
@@ -8,7 +9,6 @@ import type {
 } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
-import { champEditable } from "./verrou-champs-commun";
 
 const LABEL_CATEGORIE: Record<CategorieInventaire, string> = {
   meuble: "Meubles",
@@ -32,7 +32,8 @@ interface ChampsElement {
 // EquipementsDiversStepScreen — pas d'identité ici (elementId vient du
 // catalogue fixe, jamais saisi), seuls etat/nombre (sortie) restent
 // éditables sur une ligne jamais vue à l'entrée, commentaire jamais
-// éditable une fois l'entrée signée (voir verrou-champs-commun.ts).
+// éditable une fois l'entrée signée (CLASSIFICATION_INVENTAIRE, "core",
+// champModifiable — même source que InventaireSection.tsx côté desktop).
 export const InventaireStepScreen = forwardRef<
   EtapeHandle,
   {
@@ -105,8 +106,17 @@ export const InventaireStepScreen = forwardRef<
                 return null;
               }
               const existante = parElementId.get(element.id) !== undefined;
-              const champsSortieEditables = champEditable("sortie", existante, entreeSignee, sortieSignee);
-              const commentaireEditable = champEditable("commune", existante, entreeSignee, sortieSignee);
+              const champParams = {
+                classification: CLASSIFICATION_INVENTAIRE,
+                ligneExistante: existante,
+                entreeSignee,
+                sortieSignee
+              };
+              const champsSortieEditables = champModifiable({
+                ...champParams,
+                nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
+              });
+              const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
               const existanteLigne = parElementId.get(element.id);
 
               return (

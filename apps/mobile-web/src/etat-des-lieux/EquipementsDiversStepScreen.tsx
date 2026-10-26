@@ -1,8 +1,8 @@
+import { CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS, champModifiable, CLASSIFICATION_EQUIPEMENTS_DIVERS } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { EtatInventaire, LigneEquipementDivers, LigneEquipementDiversInput } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
-import { champEditable } from "./verrou-champs-commun";
 
 interface LigneEditable {
   id?: string;
@@ -36,7 +36,9 @@ const LABEL_ETAT: Record<EtatInventaire, string> = { bon: "Bon", dusage: "D'usag
 // entreeSignee/sortieSignee : même règle que ClesStepScreen — ligne
 // existante (id connu) gelée sur libelle/commentaire dès l'entrée signée,
 // ligne neuve limitée à libelle (identité) + sortie, tout verrouillé une
-// fois la sortie signée (voir verrou-champs-commun.ts).
+// fois la sortie signée (CLASSIFICATION_EQUIPEMENTS_DIVERS/
+// CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS, "core", champModifiable — même
+// source que EquipementsDiversSection.tsx côté desktop).
 export const EquipementsDiversStepScreen = forwardRef<
   EtapeHandle,
   {
@@ -74,9 +76,19 @@ export const EquipementsDiversStepScreen = forwardRef<
 
       {etat.map((ligne, index) => {
         const existante = ligne.id !== undefined;
-        const libelleEditable = champEditable("identite", existante, entreeSignee, sortieSignee);
-        const champsSortieEditables = champEditable("sortie", existante, entreeSignee, sortieSignee);
-        const commentaireEditable = champEditable("commune", existante, entreeSignee, sortieSignee);
+        const champParams = {
+          classification: CLASSIFICATION_EQUIPEMENTS_DIVERS,
+          champsIdentite: CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
+          ligneExistante: existante,
+          entreeSignee,
+          sortieSignee
+        };
+        const libelleEditable = champModifiable({ ...champParams, nomChamp: "libelle" });
+        const champsSortieEditables = champModifiable({
+          ...champParams,
+          nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
+        });
+        const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
 
         return (
           <div key={ligne.id ?? index} className="space-y-2 border-b border-slate-100 pb-4 last:border-0">

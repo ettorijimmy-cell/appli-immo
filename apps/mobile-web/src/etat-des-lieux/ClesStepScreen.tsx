@@ -1,8 +1,8 @@
+import { CHAMPS_IDENTITE_CLES, champModifiable, CLASSIFICATION_CLES } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { LigneCle, LigneCleInput, TypeCle } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
 import { ChampReplie, ReferenceLectureSeule } from "./ui";
-import { champEditable } from "./verrou-champs-commun";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
   { valeur: "immeuble", label: "Clés d'immeuble" },
@@ -60,8 +60,9 @@ function initialiser(lignes: LigneCle[], mode: "entree" | "sortie"): LigneEditab
 // dès l'entrée signée ; une ligne NEUVE (pas encore d'id — "+ Ajouter une
 // autre clé") n'a que libelleAutre (son identité) et nombre (sortie)
 // éditables, jamais commentaire. Une fois la sortie signée, tout est
-// lecture seule (voir verrou-champs-commun.ts, même règle que le verrou
-// backend).
+// lecture seule — même classification que le verrou backend et que
+// ClesSection.tsx côté desktop (CLASSIFICATION_CLES/CHAMPS_IDENTITE_CLES,
+// "core", champModifiable), plus réimplémentée à la main ici.
 export const ClesStepScreen = forwardRef<
   EtapeHandle,
   {
@@ -99,9 +100,19 @@ export const ClesStepScreen = forwardRef<
     <div className="space-y-5">
       {etat.map((ligne, index) => {
         const existante = ligne.id !== undefined;
-        const libelleEditable = champEditable("identite", existante, entreeSignee, sortieSignee);
-        const nombreEditable = champEditable("sortie", existante, entreeSignee, sortieSignee);
-        const commentaireEditable = champEditable("commune", existante, entreeSignee, sortieSignee);
+        const champParams = {
+          classification: CLASSIFICATION_CLES,
+          champsIdentite: CHAMPS_IDENTITE_CLES,
+          ligneExistante: existante,
+          entreeSignee,
+          sortieSignee
+        };
+        const libelleEditable = champModifiable({ ...champParams, nomChamp: "libelleAutre" });
+        const nombreEditable = champModifiable({
+          ...champParams,
+          nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
+        });
+        const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
 
         return (
           <div
