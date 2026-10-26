@@ -6,14 +6,30 @@ export type StatutEtatDesLieux = "non_commence" | "entree_terminee" | "complet";
 export type TypeCle = "immeuble" | "porte_entree" | "boite_lettres" | "cave" | "badge_portail" | "parking" | "autre";
 export type CategorieInventaire = "meuble" | "electromenager" | "vaisselle_linge";
 
+export type RoleSignataire = "bailleur" | "locataire";
+
 export interface EtatDesLieux {
   id: string;
   bailId: string;
   dateEntree: string | null;
   dateSortie: string | null;
+  lieuEntree: string | null;
+  lieuSortie: string | null;
   nouvelleAdresseLocataire: string | null;
   statut: StatutEtatDesLieux;
   archivedAt: string | null;
+  entreeSigneeParTous: boolean;
+  sortieSigneeParTous: boolean;
+}
+
+export interface SignaturePosee {
+  phase: "entree" | "sortie";
+  role: RoleSignataire;
+  locataireId: string | null;
+  nomAffiche: string;
+  luEtApprouve: boolean;
+  documentId: string;
+  signeLe: string;
 }
 
 export interface ElementChampInput {
@@ -232,6 +248,14 @@ export function submitInventaire(
 
 export function getCatalogueInventaire(): Promise<ElementInventaireMeuble[]> {
   return authenticatedFetch<ElementInventaireMeuble[]>("/etats-des-lieux/catalogue-inventaire");
+}
+
+// Relecture desktop (SignaturesCard) : signatures déjà posées, toutes
+// phases confondues — l'image de chacune se récupère séparément via le
+// point d'accès générique /documents/:id/contenu (documents/api.ts),
+// jamais renvoyée ici.
+export function getSignaturesPosees(id: string): Promise<SignaturePosee[]> {
+  return authenticatedFetch<SignaturePosee[]>(`/etats-des-lieux/${id}/signatures`);
 }
 
 // Récupère le .docx généré côté backend et l'ouvre directement avec

@@ -284,6 +284,60 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     });
   });
 
+  describe("obtenirSignaturesPosees (GET :id/signatures — relecture desktop)", () => {
+    it("tableau vide avant toute signature", async () => {
+      const { etatDesLieuxId } = await creerDossier(userId);
+      const resultat = await avecContexte(() => etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId));
+      expect(resultat).toEqual([]);
+    });
+
+    it("après signature d'entrée seule : bailleur + locataire de la phase entrée uniquement, avec leur documentId", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+
+      const resultat = await avecContexte(() => etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId));
+
+      expect(resultat).toHaveLength(2);
+      expect(resultat.every((s) => s.phase === "entree" && s.luEtApprouve === true)).toBe(true);
+      expect(resultat.every((s) => typeof s.documentId === "string" && s.documentId.length > 0)).toBe(true);
+      const bailleur = resultat.find((s) => s.role === "bailleur");
+      expect(bailleur?.nomAffiche).toBe("Jimmy Ettori");
+      expect(bailleur?.locataireId).toBeNull();
+      const locataire = resultat.find((s) => s.role === "locataire");
+      expect(locataire?.nomAffiche).toBe("Jean Dupont");
+      expect(locataire?.locataireId).toBe(titulaire.id);
+    });
+
+    it("après entrée ET sortie signées : 4 lignes, 2 par phase", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+      await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id])));
+
+      const resultat = await avecContexte(() => etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId));
+
+      expect(resultat).toHaveLength(4);
+      expect(resultat.filter((s) => s.phase === "entree")).toHaveLength(2);
+      expect(resultat.filter((s) => s.phase === "sortie")).toHaveLength(2);
+    });
+
+    it("refuse (404) un état des lieux d'une autre organisation", async () => {
+      const autre = await creerOrganisationEtUtilisateur("Organisation Signatures Test — Autre (posées)");
+      const { etatDesLieuxId } = await creerDossier(autre.userId);
+      await expect(
+        avecContexte(() => etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("refuse (404) en l'absence de tout contexte organisation", async () => {
+      const { etatDesLieuxId } = await creerDossier(userId);
+      await expect(
+        requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+          etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId)
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   it("signerEntree : pose dateEntree (date de Paris) + lieuEntree (défaut ville du logement), crée les signatures et les documents attendus", async () => {
     const { etatDesLieuxId, titulaire } = await creerDossier(userId);
 

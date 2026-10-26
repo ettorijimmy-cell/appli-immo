@@ -12,6 +12,7 @@ import {
   elementsInventaireMeuble,
   etatDesLieuxCles,
   etatDesLieuxEquipementsDivers,
+  etatDesLieuxPieceSejour,
   organisations,
   utilisateurs,
   type Database
@@ -247,6 +248,40 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
         etatsDesLieuxService.submitPieceEntree(etatDesLieuxId, { mur: { etatSortie: "B" } })
       );
       expect(resultat.murEtatSortie).toBe("B");
+    });
+
+    it("submitPieceSejour : une pièce JAMAIS créée à l'entrée reste créable après coup avec ses seuls champs de sortie — descriptions/états d'entrée restent null, non éditables (régression, bug remonté en test manuel desktop 2026-10-26)", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      // Aucun submitPieceSejour avant la signature : la pièce n'existe pas
+      // encore en base (même scénario que le dossier de test visuel
+      // desktop — le Séjour n'avait jamais été rempli à l'entrée).
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { etatSortie: "B" } })
+      );
+      expect(resultat.murEtatSortie).toBe("B");
+      expect(resultat.murEtatEntree).toBeNull();
+      expect(resultat.murDescription).toBeNull();
+
+      const [enBase] = await db.select().from(etatDesLieuxPieceSejour).where(eq(etatDesLieuxPieceSejour.etatDesLieuxId, etatDesLieuxId));
+      expect(enBase?.murEtatEntree).toBeNull();
+      expect(enBase?.murDescription).toBeNull();
+      expect(enBase?.murEtatSortie).toBe("B");
+
+      // Toujours interdit de renseigner un champ "entree"/"commune" sur cette pièce, même après sa création.
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { etatEntree: "M" } }))
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { description: "Fissure" } }))
+      ).rejects.toThrow(ConflictException);
+
+      // Figée à son tour une fois la sortie signée.
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { etatSortie: "TB" } }))
+      ).rejects.toThrow(ConflictException);
     });
 
     it("submitPieceSejour/Cuisine/Chambre/SalleDeBain/Wc/Autre/Compteurs : refusent chacun un champ 'entree'", async () => {
@@ -1003,6 +1038,49 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       await expect(
         avecContexte(() =>
           etatsDesLieuxService.submitCompteurs(etatDesLieuxId, { electricite: { releveHpEntree: "651" } })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe("comparaison normalisée — description NULL vs chaîne vide (régression réelle, bug remonté en test manuel desktop 2026-10-26)", () => {
+    it("une pièce dont murDescription est NULL en base accepte une soumission de sortie où description vaut '' (ou des espaces), sans ConflictException sur un champ figé", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      // À l'entrée : seul etatEntree est renseigné pour "mur", jamais sa
+      // description — murDescription reste NULL en base (cas réel :
+      // l'utilisateur mobile n'a pas ouvert le commentaire de ce poste).
+      await avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { etatEntree: "B" } }));
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      // Soumission de sortie reproduisant exactement ce qu'envoyait le
+      // desktop avant correction : description toujours présente dans le
+      // payload, "" par défaut d'un champ contrôlé jamais rempli — un
+      // champ "commune" (figé dès l'entrée) resoumis avec une
+      // représentation différente de sa valeur actuelle (NULL), mais pas
+      // une vraie modification. N'était auparavant jamais accepté
+      // (ConflictException) ; la valeur écrite en base reflète ensuite ce
+      // qui a été réellement soumis ("" ici) — seule la DÉCISION
+      // d'autoriser l'écriture change, pas l'écriture elle-même.
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { description: "", etatSortie: "B" } })
+      );
+      expect(resultat.murDescription).toBe("");
+      expect(resultat.murEtatSortie).toBe("B");
+
+      // Des espaces seuls sont équivalents à "" / NULL pour la DÉCISION
+      // (pas de ConflictException), même si la valeur stockée maintenant
+      // ("" juste au-dessus) diffère littéralement de "   ".
+      const resultatEspaces = await avecContexte(() =>
+        etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { description: "   ", etatSortie: "B" } })
+      );
+      expect(resultatEspaces.murDescription).toBe("   ");
+
+      // Une vraie description (non vide) reste refusée — le champ est
+      // réellement figé, seule la représentation d'une absence de valeur
+      // est désormais tolérée.
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { mur: { description: "Fissure visible" } })
         )
       ).rejects.toThrow(ConflictException);
     });

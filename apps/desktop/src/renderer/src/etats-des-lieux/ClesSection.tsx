@@ -1,5 +1,7 @@
+import { champModifiable, CHAMPS_IDENTITE_CLES, CLASSIFICATION_CLES } from "core";
 import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
 import type { LigneCle, LigneCleInput, TypeCle } from "./api";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
@@ -16,12 +18,23 @@ const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
 // (jamais détruites, voir EtatsDesLieuxService) ne sont visibles que
 // lorsque le parent a demandé avecArchives — même mécanisme
 // ArchiveBadge/ARCHIVED_ROW_CLASSNAME que le reste de l'app.
+// entreeSignee/sortieSignee (chantier Signatures, revue 2026-10-26) : même
+// classification que le verrou backend et que le verrou mobile
+// (CLASSIFICATION_CLES/CHAMPS_IDENTITE_CLES, "core") — une ligne EXISTANTE
+// (id connu) a typeCle/libelleAutre/commentaire gelés dès l'entrée signée ;
+// une ligne NEUVE (pas encore d'id) n'a que libelleAutre (son identité) et
+// nombreEntree/nombreSortie (sortie, actif selon la colonne) éditables,
+// jamais commentaire. Tout se fige à la sortie signée.
 export function ClesSection({
   lignes,
+  entreeSignee,
+  sortieSignee,
   onSaveLigne,
   onArchiver
 }: {
   lignes: LigneCle[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSaveLigne: (ligne: LigneCleInput) => Promise<void>;
   onArchiver: (id: string) => Promise<void>;
 }): React.JSX.Element {
@@ -49,6 +62,8 @@ export function ClesSection({
               typeCle={valeur}
               label={label}
               ligne={actives.find((l) => l.typeCle === valeur) ?? null}
+              entreeSignee={entreeSignee}
+              sortieSignee={sortieSignee}
               onSave={onSaveLigne}
               onArchiver={onArchiver}
             />
@@ -59,6 +74,8 @@ export function ClesSection({
               typeCle="autre"
               label={ligne.libelleAutre || "Autre"}
               ligne={ligne}
+              entreeSignee={entreeSignee}
+              sortieSignee={sortieSignee}
               onSave={onSaveLigne}
               onArchiver={onArchiver}
               avecLibelle
@@ -78,7 +95,7 @@ export function ClesSection({
           ))}
         </tbody>
       </table>
-      {autresActives.length < 2 && <NouvelleCleAutreForm onSave={onSaveLigne} />}
+      {autresActives.length < 2 && !sortieSignee && <NouvelleCleAutreForm onSave={onSaveLigne} />}
     </div>
   );
 }
@@ -87,6 +104,8 @@ function LigneCleRow({
   typeCle,
   label,
   ligne,
+  entreeSignee,
+  sortieSignee,
   onSave,
   onArchiver,
   avecLibelle = false
@@ -94,6 +113,8 @@ function LigneCleRow({
   typeCle: TypeCle;
   label: string;
   ligne: LigneCle | null;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (ligne: LigneCleInput) => Promise<void>;
   onArchiver: (id: string) => Promise<void>;
   avecLibelle?: boolean;
@@ -103,8 +124,17 @@ function LigneCleRow({
   const [nombreSortie, setNombreSortie] = useState(ligne?.nombreSortie?.toString() ?? "");
   const [commentaire, setCommentaire] = useState(ligne?.commentaire ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ligneExistante = ligne !== null;
+  const champParams = { ligneExistante, entreeSignee, sortieSignee, champsIdentite: CHAMPS_IDENTITE_CLES };
+  const libelleEditable = champModifiable({ ...champParams, nomChamp: "libelleAutre", classification: CLASSIFICATION_CLES });
+  const nombreEntreeEditable = champModifiable({ ...champParams, nomChamp: "nombreEntree", classification: CLASSIFICATION_CLES });
+  const nombreSortieEditable = champModifiable({ ...champParams, nomChamp: "nombreSortie", classification: CLASSIFICATION_CLES });
+  const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire", classification: CLASSIFICATION_CLES });
 
   async function handleSave(): Promise<void> {
+    setError(null);
     setIsSaving(true);
     try {
       await onSave({
@@ -115,8 +145,19 @@ function LigneCleRow({
         ...(nombreSortie !== "" && { nombreSortie: Number(nombreSortie) }),
         ...(commentaire && { commentaire })
       });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cette clé");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleArchiver(id: string): Promise<void> {
+    setError(null);
+    try {
+      await onArchiver(id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'archiver cette clé");
     }
   }
 
@@ -127,7 +168,10 @@ function LigneCleRow({
           <input
             value={libelleAutre}
             onChange={(e) => setLibelleAutre(e.target.value)}
-            className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+            readOnly={!libelleEditable}
+            className={`w-32 rounded border px-2 py-1 text-sm ${
+              libelleEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+            }`}
           />
         ) : (
           label
@@ -137,21 +181,30 @@ function LigneCleRow({
         <input
           value={nombreEntree}
           onChange={(e) => setNombreEntree(e.target.value)}
-          className="w-16 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreEntreeEditable}
+          className={`w-16 rounded border px-2 py-1 text-sm ${
+            nombreEntreeEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
         <input
           value={nombreSortie}
           onChange={(e) => setNombreSortie(e.target.value)}
-          className="w-16 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreSortieEditable}
+          className={`w-16 rounded border px-2 py-1 text-sm ${
+            nombreSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
         <input
           value={commentaire}
           onChange={(e) => setCommentaire(e.target.value)}
-          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!commentaireEditable}
+          className={`w-full rounded border px-2 py-1 text-sm ${
+            commentaireEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 text-right whitespace-nowrap">
@@ -163,15 +216,16 @@ function LigneCleRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        {ligne && (
+        {ligne && !entreeSignee && (
           <button
             type="button"
-            onClick={() => void onArchiver(ligne.id)}
+            onClick={() => void handleArchiver(ligne.id)}
             className="text-xs text-slate-500 hover:text-red-600"
           >
             Archiver
           </button>
         )}
+        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </td>
     </tr>
   );
@@ -180,36 +234,43 @@ function LigneCleRow({
 function NouvelleCleAutreForm({ onSave }: { onSave: (ligne: LigneCleInput) => Promise<void> }): React.JSX.Element {
   const [libelleAutre, setLibelleAutre] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleAjouter(): Promise<void> {
     if (!libelleAutre.trim()) {
       return;
     }
+    setError(null);
     setIsSaving(true);
     try {
       await onSave({ typeCle: "autre", libelleAutre: libelleAutre.trim() });
       setLibelleAutre("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'ajouter cette clé");
     } finally {
       setIsSaving(false);
     }
   }
 
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <input
-        value={libelleAutre}
-        onChange={(e) => setLibelleAutre(e.target.value)}
-        placeholder="Autre clé (libellé)"
-        className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-      />
-      <button
-        type="button"
-        onClick={() => void handleAjouter()}
-        disabled={isSaving || !libelleAutre.trim()}
-        className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-      >
-        {isSaving ? "Ajout…" : "+ Ajouter"}
-      </button>
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <input
+          value={libelleAutre}
+          onChange={(e) => setLibelleAutre(e.target.value)}
+          placeholder="Autre clé (libellé)"
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => void handleAjouter()}
+          disabled={isSaving || !libelleAutre.trim()}
+          className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+        >
+          {isSaving ? "Ajout…" : "+ Ajouter"}
+        </button>
+      </div>
+      {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

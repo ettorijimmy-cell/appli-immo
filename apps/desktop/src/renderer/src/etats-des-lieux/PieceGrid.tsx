@@ -1,17 +1,27 @@
+import { champModifiable, type ClassificationChamp } from "core";
 import { useEffect, useState } from "react";
 import type { DocumentMetier } from "../documents/api";
-import { authenticatedFetchBlob } from "../lib/authenticated-fetch";
+import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
 import type { ElementDef } from "./pieces-config";
 
 const ETATS: EtatElement[] = ["M", "P", "B", "TB"];
 
-function EtatSelect({ value, onChange }: { value: string; onChange: (valeur: string) => void }): React.JSX.Element {
+function EtatSelect({
+  value,
+  onChange,
+  disabled = false
+}: {
+  value: string;
+  onChange: (valeur: string) => void;
+  disabled?: boolean;
+}): React.JSX.Element {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-slate-300 px-1 py-0.5 text-sm"
+      disabled={disabled}
+      className="rounded border border-slate-300 px-1 py-0.5 text-sm disabled:bg-slate-50 disabled:text-slate-500"
     >
       <option value="">—</option>
       {ETATS.map((etat) => (
@@ -163,14 +173,20 @@ function PhotosPiece({ photos }: { photos: DocumentMetier[] }): React.JSX.Elemen
 export function PieceCard({
   titre,
   elements,
+  classification,
   row,
   photos = [],
+  entreeSignee,
+  sortieSignee,
   onSave
 }: {
   titre: string;
   elements: ElementDef[];
+  classification: Record<string, ClassificationChamp>;
   row: PieceRow | null;
   photos?: DocumentMetier[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
@@ -185,6 +201,31 @@ export function PieceCard({
     setValeurs((v) => ({ ...v, [prefix]: { ...(v[prefix] as ChampsElement), [champ]: valeur } }));
   }
 
+  // Une pièce qui n'existe pas encore (row === null) reste créable même
+  // après la signature d'entrée, exactement comme une ligne neuve de
+  // clés/équipements divers (revue 2026-10-26, confirmé par le test
+  // backend "submitPieceEntree : autorise un champ 'sortie'") : elle
+  // décrit un élément absent/omis à l'entrée, découvert avant la sortie.
+  // Pas d'exception d'identité à passer ici (contrairement aux clés) —
+  // les pièces n'ont pas de champ d'identité dans `champs` (numero est une
+  // colonne structurelle), donc tout champ "entree"/"commune" reste figé
+  // par champModifiable (ligneExistante=false, aucun champsIdentite),
+  // seuls les champs "sortie" restent éditables. Ne JAMAIS bloquer ce cas
+  // par avance ici : ce serait dupliquer (et désynchroniser) la règle déjà
+  // portée par champModifiable/verifierChampsAutorises.
+  function champEditable(nomChamp: string): boolean {
+    return champModifiable({ nomChamp, classification, ligneExistante: row !== null, entreeSignee, sortieSignee });
+  }
+
+  // Bug remonté en test manuel (revue 2026-10-26) : envoyer `description`
+  // systématiquement (même vide) faisait échouer à tort toute soumission
+  // de sortie sur une pièce dont la description d'entrée est NULL en
+  // base — "" (valeur par défaut du champ contrôlé) != null pour
+  // valeursEquivalentes, donc vu comme une tentative de modification d'un
+  // champ figé. Seuls les champs réellement éditables (selon le même
+  // verrou que l'affichage, champEditable ci-dessus) sont maintenant
+  // inclus dans le payload — un champ figé n'est plus jamais envoyé, quel
+  // que soit son contenu.
   async function handleSave(): Promise<void> {
     setError(null);
     setIsSaving(true);
@@ -195,25 +236,37 @@ export function PieceCard({
         if (!champs) {
           continue;
         }
-        const elementPayload: Record<string, unknown> = { description: champs.description };
-        if (champs.etatEntree) {
+        const elementPayload: Record<string, unknown> = {};
+        if (champEditable(`${el.prefix}Description`)) {
+          elementPayload.description = champs.description;
+        }
+        if (champs.etatEntree && champEditable(`${el.prefix}EtatEntree`)) {
           elementPayload.etatEntree = champs.etatEntree;
         }
-        if (champs.etatSortie) {
+        if (champs.etatSortie && champEditable(`${el.prefix}EtatSortie`)) {
           elementPayload.etatSortie = champs.etatSortie;
         }
-        if (el.avecNombre && champs.nombre !== "") {
+        if (el.avecNombre && champs.nombre !== "" && champEditable(`${el.prefix}Nombre`)) {
           elementPayload.nombre = Number(champs.nombre);
         }
-        payload[el.prefix] = elementPayload;
+        if (Object.keys(elementPayload).length > 0) {
+          payload[el.prefix] = elementPayload;
+        }
       }
       await onSave(payload);
-    } catch {
-      setError("Impossible d'enregistrer cette pièce");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cette pièce");
     } finally {
       setIsSaving(false);
     }
   }
+
+  // Rien n'est jamais éditable une fois la sortie signée (document
+  // définitivement clos) — désactiver "Enregistrer" dans ce seul cas.
+  // Une pièce jamais créée après l'entrée signée n'est PAS dans ce cas :
+  // ses champs "sortie" restent éditables (voir champEditable ci-dessus),
+  // il ne faut donc pas désactiver le bouton pour elle.
+  const toutFige = sortieSignee;
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
@@ -222,7 +275,7 @@ export function PieceCard({
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={isSaving}
+          disabled={isSaving || toutFige}
           className="shrink-0 rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
         >
           {isSaving ? "Enregistrement…" : "Enregistrer"}
@@ -247,40 +300,55 @@ export function PieceCard({
           </tr>
         </thead>
         <tbody>
-          {elements.map((el) => (
-            <tr key={el.prefix} className="border-b border-slate-100">
-              <td className="py-1 pr-2 align-top">
-                {el.label}
-                {el.avecNombre && (
+          {elements.map((el) => {
+            const descriptionEditable = champEditable(`${el.prefix}Description`);
+            const etatEntreeEditable = champEditable(`${el.prefix}EtatEntree`);
+            const etatSortieEditable = champEditable(`${el.prefix}EtatSortie`);
+            const nombreEditable = el.avecNombre ? champEditable(`${el.prefix}Nombre`) : false;
+
+            return (
+              <tr key={el.prefix} className="border-b border-slate-100">
+                <td className="py-1 pr-2 align-top">
+                  {el.label}
+                  {el.avecNombre && (
+                    <input
+                      value={valeurs[el.prefix]?.nombre ?? ""}
+                      onChange={(e) => setChamp(el.prefix, "nombre", e.target.value)}
+                      placeholder="Nb"
+                      readOnly={!nombreEditable}
+                      className={`ml-2 w-12 rounded border px-1 py-0.5 text-xs ${
+                        nombreEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+                      }`}
+                    />
+                  )}
+                </td>
+                <td className="py-1 pr-2">
                   <input
-                    value={valeurs[el.prefix]?.nombre ?? ""}
-                    onChange={(e) => setChamp(el.prefix, "nombre", e.target.value)}
-                    placeholder="Nb"
-                    className="ml-2 w-12 rounded border border-slate-300 px-1 py-0.5 text-xs"
+                    value={valeurs[el.prefix]?.description ?? ""}
+                    onChange={(e) => setChamp(el.prefix, "description", e.target.value)}
+                    readOnly={!descriptionEditable}
+                    className={`w-full rounded border px-2 py-1 text-sm ${
+                      descriptionEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+                    }`}
                   />
-                )}
-              </td>
-              <td className="py-1 pr-2">
-                <input
-                  value={valeurs[el.prefix]?.description ?? ""}
-                  onChange={(e) => setChamp(el.prefix, "description", e.target.value)}
-                  className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                />
-              </td>
-              <td className="py-1 pr-2">
-                <EtatSelect
-                  value={valeurs[el.prefix]?.etatEntree ?? ""}
-                  onChange={(v) => setChamp(el.prefix, "etatEntree", v)}
-                />
-              </td>
-              <td className="py-1">
-                <EtatSelect
-                  value={valeurs[el.prefix]?.etatSortie ?? ""}
-                  onChange={(v) => setChamp(el.prefix, "etatSortie", v)}
-                />
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="py-1 pr-2">
+                  <EtatSelect
+                    value={valeurs[el.prefix]?.etatEntree ?? ""}
+                    onChange={(v) => setChamp(el.prefix, "etatEntree", v)}
+                    disabled={!etatEntreeEditable}
+                  />
+                </td>
+                <td className="py-1">
+                  <EtatSelect
+                    value={valeurs[el.prefix]?.etatSortie ?? ""}
+                    onChange={(v) => setChamp(el.prefix, "etatSortie", v)}
+                    disabled={!etatSortieEditable}
+                  />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -298,26 +366,36 @@ export function PieceCard({
 export function MultiPieceSection({
   titrePrefixe,
   elements,
+  classification,
   rows,
   max,
   photosParNumero,
+  entreeSignee,
+  sortieSignee,
   onSave
 }: {
   titrePrefixe: string;
   elements: ElementDef[];
+  classification: Record<string, ClassificationChamp>;
   rows: PieceRow[];
   max: number;
   photosParNumero?: Map<number, DocumentMetier[]>;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const numerosExistants = rows.map((r) => r.numero ?? 0);
   const prochainNumero = numerosExistants.length > 0 ? Math.max(...numerosExistants) + 1 : 1;
   const [ajoutEnCours, setAjoutEnCours] = useState(false);
+  const [erreurAjout, setErreurAjout] = useState<string | null>(null);
 
   async function handleAjouter(): Promise<void> {
+    setErreurAjout(null);
     setAjoutEnCours(true);
     try {
       await onSave(prochainNumero, {});
+    } catch (err) {
+      setErreurAjout(err instanceof ApiError ? err.message : "Impossible d'ajouter cette pièce");
     } finally {
       setAjoutEnCours(false);
     }
@@ -333,12 +411,25 @@ export function MultiPieceSection({
             key={row.id}
             titre={`${titrePrefixe} ${row.numero}`}
             elements={elements}
+            classification={classification}
             row={row}
             photos={photosParNumero?.get(row.numero ?? 0) ?? []}
+            entreeSignee={entreeSignee}
+            sortieSignee={sortieSignee}
             onSave={(payload) => onSave(row.numero ?? 0, payload)}
           />
         ))}
-      {numerosExistants.length < max && (
+      {erreurAjout && (
+        <p role="alert" className="text-xs text-red-600">
+          {erreurAjout}
+        </p>
+      )}
+      {/* Une nouvelle pièce découverte seulement à la sortie reste
+          autorisée entre les deux signatures (ses champs "sortie" seuls
+          restent ensuite éditables, comme une ligne neuve de clés/
+          équipements divers) — plus aucune création possible une fois la
+          sortie signée, document définitivement clos. */}
+      {numerosExistants.length < max && !sortieSignee && (
         <button
           type="button"
           onClick={() => void handleAjouter()}

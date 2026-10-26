@@ -13,6 +13,13 @@ export class EtatsDesLieuxSignatureController {
     return this.etatsDesLieuxSignatureService.obtenirSignatairesAttendus(id);
   }
 
+  // Relecture desktop (SignaturesCard) : signatures déjà posées, toutes
+  // phases confondues.
+  @Get(":id/signatures")
+  obtenirSignaturesPosees(@Param("id") id: string) {
+    return this.etatsDesLieuxSignatureService.obtenirSignaturesPosees(id);
+  }
+
   @Post(":id/signer-entree")
   signerEntree(@Param("id") id: string, @Body() dto: SignerEtatDesLieuxDto) {
     return this.etatsDesLieuxSignatureService.signerEntree(id, dto);

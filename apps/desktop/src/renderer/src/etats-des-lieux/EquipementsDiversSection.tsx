@@ -1,5 +1,7 @@
+import { champModifiable, CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS, CLASSIFICATION_EQUIPEMENTS_DIVERS } from "core";
 import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
 import type { EtatInventaire, LigneEquipementDivers, LigneEquipementDiversInput } from "./api";
 
 const ETATS_INVENTAIRE: { valeur: EtatInventaire; label: string }[] = [
@@ -10,16 +12,19 @@ const ETATS_INVENTAIRE: { valeur: EtatInventaire; label: string }[] = [
 
 function EtatInventaireSelect({
   value,
-  onChange
+  onChange,
+  disabled = false
 }: {
   value: string;
   onChange: (valeur: string) => void;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-slate-300 px-1 py-0.5 text-sm"
+      disabled={disabled}
+      className="rounded border border-slate-300 px-1 py-0.5 text-sm disabled:bg-slate-50 disabled:text-slate-500"
     >
       <option value="">—</option>
       {ETATS_INVENTAIRE.map(({ valeur, label }) => (
@@ -34,12 +39,19 @@ function EtatInventaireSelect({
 // Liste extensible, libellé saisi librement — section "ÉQUIPEMENTS
 // DIVERS" du modèle réel, applicable à tout bail (vide ou meublé),
 // distincte de l'inventaire meublé (catalogue fixe).
+//
+// entreeSignee/sortieSignee : même classification que ClesSection (core,
+// CLASSIFICATION_EQUIPEMENTS_DIVERS/CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS).
 export function EquipementsDiversSection({
   lignes,
+  entreeSignee,
+  sortieSignee,
   onSaveLigne,
   onArchiver
 }: {
   lignes: LigneEquipementDivers[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSaveLigne: (ligne: LigneEquipementDiversInput) => Promise<void>;
   onArchiver: (id: string) => Promise<void>;
 }): React.JSX.Element {
@@ -63,7 +75,14 @@ export function EquipementsDiversSection({
         </thead>
         <tbody>
           {actives.map((ligne) => (
-            <LigneEquipementRow key={ligne.id} ligne={ligne} onSave={onSaveLigne} onArchiver={onArchiver} />
+            <LigneEquipementRow
+              key={ligne.id}
+              ligne={ligne}
+              entreeSignee={entreeSignee}
+              sortieSignee={sortieSignee}
+              onSave={onSaveLigne}
+              onArchiver={onArchiver}
+            />
           ))}
           {archivees.map((ligne) => (
             <tr key={ligne.id} className={`border-b border-slate-100 ${ARCHIVED_ROW_CLASSNAME}`}>
@@ -81,17 +100,21 @@ export function EquipementsDiversSection({
           ))}
         </tbody>
       </table>
-      <NouvelEquipementForm onSave={onSaveLigne} />
+      {!sortieSignee && <NouvelEquipementForm onSave={onSaveLigne} />}
     </div>
   );
 }
 
 function LigneEquipementRow({
   ligne,
+  entreeSignee,
+  sortieSignee,
   onSave,
   onArchiver
 }: {
   ligne: LigneEquipementDivers;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (ligne: LigneEquipementDiversInput) => Promise<void>;
   onArchiver: (id: string) => Promise<void>;
 }): React.JSX.Element {
@@ -102,8 +125,24 @@ function LigneEquipementRow({
   const [etatSortie, setEtatSortie] = useState(ligne.etatSortie ?? "");
   const [commentaire, setCommentaire] = useState(ligne.commentaire ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const champParams = {
+    ligneExistante: true,
+    entreeSignee,
+    sortieSignee,
+    champsIdentite: CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
+    classification: CLASSIFICATION_EQUIPEMENTS_DIVERS
+  };
+  const libelleEditable = champModifiable({ ...champParams, nomChamp: "libelle" });
+  const nombreEntreeEditable = champModifiable({ ...champParams, nomChamp: "nombreEntree" });
+  const etatEntreeEditable = champModifiable({ ...champParams, nomChamp: "etatEntree" });
+  const nombreSortieEditable = champModifiable({ ...champParams, nomChamp: "nombreSortie" });
+  const etatSortieEditable = champModifiable({ ...champParams, nomChamp: "etatSortie" });
+  const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
 
   async function handleSave(): Promise<void> {
+    setError(null);
     setIsSaving(true);
     try {
       await onSave({
@@ -115,8 +154,19 @@ function LigneEquipementRow({
         ...(etatSortie && { etatSortie: etatSortie as EtatInventaire }),
         ...(commentaire && { commentaire })
       });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cet équipement");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleArchiver(): Promise<void> {
+    setError(null);
+    try {
+      await onArchiver(ligne.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'archiver cet équipement");
     }
   }
 
@@ -126,34 +176,46 @@ function LigneEquipementRow({
         <input
           value={libelle}
           onChange={(e) => setLibelle(e.target.value)}
-          className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!libelleEditable}
+          className={`w-32 rounded border px-2 py-1 text-sm ${
+            libelleEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
         <input
           value={nombreEntree}
           onChange={(e) => setNombreEntree(e.target.value)}
-          className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreEntreeEditable}
+          className={`w-14 rounded border px-2 py-1 text-sm ${
+            nombreEntreeEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
-        <EtatInventaireSelect value={etatEntree} onChange={setEtatEntree} />
+        <EtatInventaireSelect value={etatEntree} onChange={setEtatEntree} disabled={!etatEntreeEditable} />
       </td>
       <td className="py-1 pr-2">
         <input
           value={nombreSortie}
           onChange={(e) => setNombreSortie(e.target.value)}
-          className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreSortieEditable}
+          className={`w-14 rounded border px-2 py-1 text-sm ${
+            nombreSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
-        <EtatInventaireSelect value={etatSortie} onChange={setEtatSortie} />
+        <EtatInventaireSelect value={etatSortie} onChange={setEtatSortie} disabled={!etatSortieEditable} />
       </td>
       <td className="py-1 pr-2">
         <input
           value={commentaire}
           onChange={(e) => setCommentaire(e.target.value)}
-          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!commentaireEditable}
+          className={`w-full rounded border px-2 py-1 text-sm ${
+            commentaireEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 text-right whitespace-nowrap">
@@ -165,13 +227,16 @@ function LigneEquipementRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        <button
-          type="button"
-          onClick={() => void onArchiver(ligne.id)}
-          className="text-xs text-slate-500 hover:text-red-600"
-        >
-          Archiver
-        </button>
+        {!entreeSignee && (
+          <button
+            type="button"
+            onClick={() => void handleArchiver()}
+            className="text-xs text-slate-500 hover:text-red-600"
+          >
+            Archiver
+          </button>
+        )}
+        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </td>
     </tr>
   );
@@ -184,36 +249,43 @@ function NouvelEquipementForm({
 }): React.JSX.Element {
   const [libelle, setLibelle] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleAjouter(): Promise<void> {
     if (!libelle.trim()) {
       return;
     }
+    setError(null);
     setIsSaving(true);
     try {
       await onSave({ libelle: libelle.trim() });
       setLibelle("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'ajouter cet équipement");
     } finally {
       setIsSaving(false);
     }
   }
 
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <input
-        value={libelle}
-        onChange={(e) => setLibelle(e.target.value)}
-        placeholder="Nouvel équipement (ex. Store banne)"
-        className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-      />
-      <button
-        type="button"
-        onClick={() => void handleAjouter()}
-        disabled={isSaving || !libelle.trim()}
-        className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-      >
-        {isSaving ? "Ajout…" : "+ Ajouter"}
-      </button>
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <input
+          value={libelle}
+          onChange={(e) => setLibelle(e.target.value)}
+          placeholder="Nouvel équipement (ex. Store banne)"
+          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => void handleAjouter()}
+          disabled={isSaving || !libelle.trim()}
+          className="text-sm text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+        >
+          {isSaving ? "Ajout…" : "+ Ajouter"}
+        </button>
+      </div>
+      {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

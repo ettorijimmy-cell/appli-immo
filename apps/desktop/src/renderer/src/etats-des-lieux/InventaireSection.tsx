@@ -1,5 +1,7 @@
+import { champModifiable, CLASSIFICATION_INVENTAIRE } from "core";
 import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
+import { ApiError } from "../lib/authenticated-fetch";
 import type {
   CategorieInventaire,
   ElementInventaireMeuble,
@@ -22,16 +24,19 @@ const LABEL_CATEGORIE: Record<CategorieInventaire, string> = {
 
 function EtatInventaireSelect({
   value,
-  onChange
+  onChange,
+  disabled = false
 }: {
   value: string;
   onChange: (valeur: string) => void;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-slate-300 px-1 py-0.5 text-sm"
+      disabled={disabled}
+      className="rounded border border-slate-300 px-1 py-0.5 text-sm disabled:bg-slate-50 disabled:text-slate-500"
     >
       <option value="">—</option>
       {ETATS_INVENTAIRE.map(({ valeur, label }) => (
@@ -50,11 +55,15 @@ function EtatInventaireSelect({
 export function InventaireSection({
   catalogue,
   lignes,
+  entreeSignee,
+  sortieSignee,
   onSaveLigne,
   onArchiver
 }: {
   catalogue: ElementInventaireMeuble[];
   lignes: LigneInventaire[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSaveLigne: (ligne: LigneInventaireInput) => Promise<void>;
   onArchiver: (elementId: string) => Promise<void>;
 }): React.JSX.Element {
@@ -95,6 +104,8 @@ export function InventaireSection({
                     key={element.id}
                     element={element}
                     ligne={parElementId.get(element.id) ?? null}
+                    entreeSignee={entreeSignee}
+                    sortieSignee={sortieSignee}
                     onSave={onSaveLigne}
                     onArchiver={onArchiver}
                   />
@@ -131,14 +142,24 @@ export function InventaireSection({
   );
 }
 
+// entreeSignee/sortieSignee : même règle que ClesSection/
+// EquipementsDiversSection — pas d'identité ici (elementId est une
+// colonne structurelle, jamais une clé de `champs`, voir
+// classification-champs-etat-des-lieux.ts côté "core") : seuls etat/nombre
+// de sortie restent éditables sur une ligne jamais vue à l'entrée,
+// commentaire jamais éditable une fois l'entrée signée.
 function LigneInventaireRow({
   element,
   ligne,
+  entreeSignee,
+  sortieSignee,
   onSave,
   onArchiver
 }: {
   element: ElementInventaireMeuble;
   ligne: LigneInventaire | null;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (ligne: LigneInventaireInput) => Promise<void>;
   onArchiver: (elementId: string) => Promise<void>;
 }): React.JSX.Element {
@@ -148,8 +169,22 @@ function LigneInventaireRow({
   const [etatSortie, setEtatSortie] = useState(ligne?.etatSortie ?? "");
   const [commentaire, setCommentaire] = useState(ligne?.commentaire ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const champParams = {
+    ligneExistante: ligne !== null,
+    entreeSignee,
+    sortieSignee,
+    classification: CLASSIFICATION_INVENTAIRE
+  };
+  const nombreEntreeEditable = champModifiable({ ...champParams, nomChamp: "nombreEntree" });
+  const etatEntreeEditable = champModifiable({ ...champParams, nomChamp: "etatEntree" });
+  const nombreSortieEditable = champModifiable({ ...champParams, nomChamp: "nombreSortie" });
+  const etatSortieEditable = champModifiable({ ...champParams, nomChamp: "etatSortie" });
+  const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
 
   async function handleSave(): Promise<void> {
+    setError(null);
     setIsSaving(true);
     try {
       await onSave({
@@ -160,8 +195,19 @@ function LigneInventaireRow({
         ...(etatSortie && { etatSortie: etatSortie as EtatInventaire }),
         ...(commentaire && { commentaire })
       });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cet élément");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRetirer(): Promise<void> {
+    setError(null);
+    try {
+      await onArchiver(element.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible de retirer cet élément");
     }
   }
 
@@ -172,27 +218,36 @@ function LigneInventaireRow({
         <input
           value={nombreEntree}
           onChange={(e) => setNombreEntree(e.target.value)}
-          className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreEntreeEditable}
+          className={`w-14 rounded border px-2 py-1 text-sm ${
+            nombreEntreeEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
-        <EtatInventaireSelect value={etatEntree} onChange={setEtatEntree} />
+        <EtatInventaireSelect value={etatEntree} onChange={setEtatEntree} disabled={!etatEntreeEditable} />
       </td>
       <td className="py-1 pr-2">
         <input
           value={nombreSortie}
           onChange={(e) => setNombreSortie(e.target.value)}
-          className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!nombreSortieEditable}
+          className={`w-14 rounded border px-2 py-1 text-sm ${
+            nombreSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 pr-2">
-        <EtatInventaireSelect value={etatSortie} onChange={setEtatSortie} />
+        <EtatInventaireSelect value={etatSortie} onChange={setEtatSortie} disabled={!etatSortieEditable} />
       </td>
       <td className="py-1 pr-2">
         <input
           value={commentaire}
           onChange={(e) => setCommentaire(e.target.value)}
-          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!commentaireEditable}
+          className={`w-full rounded border px-2 py-1 text-sm ${
+            commentaireEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
         />
       </td>
       <td className="py-1 text-right whitespace-nowrap">
@@ -204,15 +259,16 @@ function LigneInventaireRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        {ligne && (
+        {ligne && !entreeSignee && (
           <button
             type="button"
-            onClick={() => void onArchiver(element.id)}
+            onClick={() => void handleRetirer()}
             className="text-xs text-slate-500 hover:text-red-600"
           >
             Retirer
           </button>
         )}
+        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </td>
     </tr>
   );

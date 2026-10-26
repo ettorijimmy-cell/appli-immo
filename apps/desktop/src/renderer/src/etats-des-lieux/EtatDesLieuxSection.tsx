@@ -1,3 +1,14 @@
+import {
+  champModifiable,
+  CLASSIFICATION_ETATS_DES_LIEUX,
+  CLASSIFICATION_PIECE_AUTRE,
+  CLASSIFICATION_PIECE_CHAMBRE,
+  CLASSIFICATION_PIECE_CUISINE,
+  CLASSIFICATION_PIECE_ENTREE,
+  CLASSIFICATION_PIECE_SALLE_DE_BAIN,
+  CLASSIFICATION_PIECE_SEJOUR,
+  CLASSIFICATION_PIECE_WC
+} from "core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArchiveToggle } from "../components/ArchiveFilter";
@@ -41,6 +52,7 @@ import {
   ELEMENTS_SEJOUR,
   ELEMENTS_WC
 } from "./pieces-config";
+import { SignaturesCard } from "./SignaturesCard";
 
 // Regroupe les photos par pièce (voir documents/api.ts,
 // etatDesLieuxPieceType/Numero) — pièces à instance unique (numero null)
@@ -174,9 +186,19 @@ export function EtatDesLieuxSection({
     );
   }
 
+  const { entreeSigneeParTous: entreeSignee, sortieSigneeParTous: sortieSignee } = etatDesLieux;
+
   return (
     <div className="space-y-4">
       <EnTeteEtatDesLieux etatDesLieux={etatDesLieux} onSaved={refresh} />
+
+      <SignaturesCard
+        etatDesLieuxId={etatDesLieux.id}
+        entreeSigneeParTous={entreeSignee}
+        sortieSigneeParTous={sortieSignee}
+        lieuEntree={etatDesLieux.lieuEntree}
+        lieuSortie={etatDesLieux.lieuSortie}
+      />
 
       <div className="flex justify-end">
         <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
@@ -185,8 +207,11 @@ export function EtatDesLieuxSection({
       <PieceCard
         titre="Entrée"
         elements={ELEMENTS_ENTREE}
+        classification={CLASSIFICATION_PIECE_ENTREE}
         row={etatDesLieux.entree}
         photos={photosPieceUnique(photos, "entree")}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSave={async (payload) => {
           await submitPieceEntree(etatDesLieux.id, payload);
           await refresh();
@@ -195,8 +220,11 @@ export function EtatDesLieuxSection({
       <PieceCard
         titre="Séjour"
         elements={ELEMENTS_SEJOUR}
+        classification={CLASSIFICATION_PIECE_SEJOUR}
         row={etatDesLieux.sejour}
         photos={photosPieceUnique(photos, "sejour")}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSave={async (payload) => {
           await submitPieceSejour(etatDesLieux.id, payload);
           await refresh();
@@ -205,8 +233,11 @@ export function EtatDesLieuxSection({
       <PieceCard
         titre="Cuisine"
         elements={ELEMENTS_CUISINE}
+        classification={CLASSIFICATION_PIECE_CUISINE}
         row={etatDesLieux.cuisine}
         photos={photosPieceUnique(photos, "cuisine")}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSave={async (payload) => {
           await submitPieceCuisine(etatDesLieux.id, payload);
           await refresh();
@@ -218,9 +249,12 @@ export function EtatDesLieuxSection({
         <MultiPieceSection
           titrePrefixe="Chambre"
           elements={ELEMENTS_CHAMBRE}
+          classification={CLASSIFICATION_PIECE_CHAMBRE}
           rows={etatDesLieux.chambres}
           max={appartement.nombreChambres ?? 3}
           photosParNumero={photosParNumero(photos, "chambre")}
+          entreeSignee={entreeSignee}
+          sortieSignee={sortieSignee}
           onSave={async (numero, payload) => {
             await submitPieceChambre(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -233,9 +267,12 @@ export function EtatDesLieuxSection({
         <MultiPieceSection
           titrePrefixe="Salle de bain"
           elements={ELEMENTS_SALLE_DE_BAIN}
+          classification={CLASSIFICATION_PIECE_SALLE_DE_BAIN}
           rows={etatDesLieux.sallesDeBain}
           max={appartement.nombreSallesDeBain ?? 2}
           photosParNumero={photosParNumero(photos, "salle_de_bain")}
+          entreeSignee={entreeSignee}
+          sortieSignee={sortieSignee}
           onSave={async (numero, payload) => {
             await submitPieceSalleDeBain(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -248,9 +285,12 @@ export function EtatDesLieuxSection({
         <MultiPieceSection
           titrePrefixe="WC"
           elements={ELEMENTS_WC}
+          classification={CLASSIFICATION_PIECE_WC}
           rows={etatDesLieux.wc}
           max={appartement.nombreWc ?? 2}
           photosParNumero={photosParNumero(photos, "wc")}
+          entreeSignee={entreeSignee}
+          sortieSignee={sortieSignee}
           onSave={async (numero, payload) => {
             await submitPieceWc(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -262,6 +302,8 @@ export function EtatDesLieuxSection({
         appartement={appartement}
         rows={etatDesLieux.autres}
         photosParNumero={photosParNumero(photos, "autre")}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSave={async (numero, payload) => {
           await submitPieceAutre(etatDesLieux.id, { numero, ...payload });
           await refresh();
@@ -280,6 +322,8 @@ export function EtatDesLieuxSection({
 
       <ClesSection
         lignes={etatDesLieux.cles}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSaveLigne={async (ligne) => {
           await submitCles(etatDesLieux.id, [ligne]);
           await refresh();
@@ -292,6 +336,8 @@ export function EtatDesLieuxSection({
 
       <EquipementsDiversSection
         lignes={etatDesLieux.equipementsDivers}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSaveLigne={async (ligne) => {
           await submitEquipementsDivers(etatDesLieux.id, [ligne]);
           await refresh();
@@ -306,6 +352,8 @@ export function EtatDesLieuxSection({
         <InventaireSection
           catalogue={catalogue}
           lignes={etatDesLieux.inventaire}
+          entreeSignee={entreeSignee}
+          sortieSignee={sortieSignee}
           onSaveLigne={async (ligne) => {
             await submitInventaire(etatDesLieux.id, [ligne]);
             await refresh();
@@ -398,14 +446,19 @@ function AutresPiecesSection({
   appartement,
   rows,
   photosParNumero,
+  entreeSignee,
+  sortieSignee,
   onSave
 }: {
   appartement: Appartement;
   rows: PieceRow[];
   photosParNumero?: Map<number, DocumentMetier[]>;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element | null {
   const [ajoutEnCours, setAjoutEnCours] = useState<number | null>(null);
+  const [erreurAjout, setErreurAjout] = useState<string | null>(null);
 
   const slots: { numero: number; libelle: string }[] = [];
   if (appartement.autrePiece1) {
@@ -423,9 +476,12 @@ function AutresPiecesSection({
   }
 
   async function handleAjouter(numero: number, libelle: string): Promise<void> {
+    setErreurAjout(null);
     setAjoutEnCours(numero);
     try {
       await onSave(numero, { libelle });
+    } catch (err) {
+      setErreurAjout(err instanceof ApiError ? err.message : "Impossible d'ajouter cette pièce");
     } finally {
       setAjoutEnCours(null);
     }
@@ -449,11 +505,22 @@ function AutresPiecesSection({
                 key={numero}
                 titre={row.libelle || libelle}
                 elements={ELEMENTS_AUTRE}
+                classification={CLASSIFICATION_PIECE_AUTRE}
                 row={row}
                 photos={photosParNumero?.get(numero) ?? []}
+                entreeSignee={entreeSignee}
+                sortieSignee={sortieSignee}
                 onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
               />
             );
+          }
+          // Une "autre pièce" neuve envoie toujours `libelle` (champ
+          // "commune") à sa création — jamais exemptée comme les lignes
+          // neuves de clés/équipements divers (pas de notion d'identité
+          // ici) : création bloquée dès l'entrée signée, pas seulement à
+          // la sortie.
+          if (entreeSignee) {
+            return null;
           }
           return (
             <button
@@ -468,6 +535,11 @@ function AutresPiecesSection({
           );
         })}
       </div>
+      {erreurAjout && (
+        <p role="alert" className="mt-2 text-xs text-red-600">
+          {erreurAjout}
+        </p>
+      )}
     </div>
   );
 }
@@ -490,19 +562,42 @@ function EnTeteEtatDesLieux({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
 
+  // Même classification que le verrou backend (CLASSIFICATION_ETATS_DES_LIEUX,
+  // "core") : dateEntree se fige dès la signature d'entrée, dateSortie et
+  // nouvelleAdresseLocataire seulement à la signature de sortie. Masquer
+  // ces champs plutôt que simplement désactiver le bouton "Enregistrer" :
+  // aucun moyen, même visuel, de donner l'impression qu'on peut encore les
+  // poser à la main une fois la phase correspondante signée.
+  const champParams = { ligneExistante: true, entreeSignee: etatDesLieux.entreeSigneeParTous, sortieSignee: etatDesLieux.sortieSigneeParTous };
+  const dateEntreeEditable = champModifiable({
+    nomChamp: "dateEntree",
+    classification: CLASSIFICATION_ETATS_DES_LIEUX,
+    ...champParams
+  });
+  const dateSortieEditable = champModifiable({
+    nomChamp: "dateSortie",
+    classification: CLASSIFICATION_ETATS_DES_LIEUX,
+    ...champParams
+  });
+  const nouvelleAdresseEditable = champModifiable({
+    nomChamp: "nouvelleAdresseLocataire",
+    classification: CLASSIFICATION_ETATS_DES_LIEUX,
+    ...champParams
+  });
+
   async function handleSave(): Promise<void> {
     setError(null);
     setIsSaving(true);
     try {
       await updateEtatDesLieuxHeader(etatDesLieux.id, {
-        ...(dateEntree && { dateEntree }),
-        ...(dateSortie && { dateSortie }),
-        ...(nouvelleAdresseLocataire && { nouvelleAdresseLocataire })
+        ...(dateEntreeEditable && dateEntree && { dateEntree }),
+        ...(dateSortieEditable && dateSortie && { dateSortie }),
+        ...(nouvelleAdresseEditable && nouvelleAdresseLocataire && { nouvelleAdresseLocataire })
       });
       setShowEditForm(false);
       await onSaved();
-    } catch {
-      setError("Impossible d'enregistrer");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer");
     } finally {
       setIsSaving(false);
     }
@@ -538,6 +633,16 @@ function EnTeteEtatDesLieux({
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
             {LABEL_STATUT[etatDesLieux.statut]}
           </span>
+          {etatDesLieux.entreeSigneeParTous && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Entrée signée
+            </span>
+          )}
+          {etatDesLieux.sortieSigneeParTous && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Sortie signée
+            </span>
+          )}
           <button
             type="button"
             onClick={() => void handleGenerer()}
@@ -569,36 +674,54 @@ function EnTeteEtatDesLieux({
             <label htmlFor="edl-date-entree" className="text-sm font-medium text-slate-700">
               Date d'entrée
             </label>
-            <input
-              id="edl-date-entree"
-              type="date"
-              value={dateEntree}
-              onChange={(e) => setDateEntree(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
+            {dateEntreeEditable ? (
+              <input
+                id="edl-date-entree"
+                type="date"
+                value={dateEntree}
+                onChange={(e) => setDateEntree(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            ) : (
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                {etatDesLieux.dateEntree ?? "—"} (figée par la signature d'entrée)
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label htmlFor="edl-date-sortie" className="text-sm font-medium text-slate-700">
               Date de sortie
             </label>
-            <input
-              id="edl-date-sortie"
-              type="date"
-              value={dateSortie}
-              onChange={(e) => setDateSortie(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
+            {dateSortieEditable ? (
+              <input
+                id="edl-date-sortie"
+                type="date"
+                value={dateSortie}
+                onChange={(e) => setDateSortie(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            ) : (
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                {etatDesLieux.dateSortie ?? "—"} (figée par la signature de sortie)
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label htmlFor="edl-nouvelle-adresse" className="text-sm font-medium text-slate-700">
               Nouvelle adresse du locataire
             </label>
-            <input
-              id="edl-nouvelle-adresse"
-              value={nouvelleAdresseLocataire}
-              onChange={(e) => setNouvelleAdresseLocataire(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
+            {nouvelleAdresseEditable ? (
+              <input
+                id="edl-nouvelle-adresse"
+                value={nouvelleAdresseLocataire}
+                onChange={(e) => setNouvelleAdresseLocataire(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            ) : (
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                {etatDesLieux.nouvelleAdresseLocataire ?? "—"} (figée par la signature de sortie)
+              </p>
+            )}
           </div>
           {error && (
             <p role="alert" className="col-span-3 text-sm text-red-600">

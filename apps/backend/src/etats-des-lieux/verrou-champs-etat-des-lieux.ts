@@ -7,6 +7,12 @@ export interface PhasesSigneesEtatDesLieux {
   sortieSignee: boolean;
 }
 
+// `null`/`undefined`/chaîne vide ou blanche : une même absence de valeur,
+// quelle que soit sa représentation (voir valeursEquivalentes ci-dessous).
+function estVide(valeur: unknown): boolean {
+  return valeur === null || valeur === undefined || (typeof valeur === "string" && valeur.trim() === "");
+}
+
 // Comparaison normalisée pour la détection de "resoumission à l'identique"
 // (voir plus bas) : une valeur réellement inchangée ne doit jamais être vue
 // comme une modification, même quand sa représentation diffère entre la
@@ -18,15 +24,18 @@ export interface PhasesSigneesEtatDesLieux {
 // - date (etats_des_lieux.date_entree/date_sortie) : chaîne "YYYY-MM-DD"
 //   des deux côtés en pratique, mais comparée par timestamp au cas où
 //   l'une des deux parvenait comme objet Date (défensif).
-// - `null`/`undefined` : équivalents entre eux (un champ "non renseigné"
-//   ne doit jamais être vu comme différent selon qu'il est représenté par
-//   l'un ou l'autre).
+// - `null`/`undefined`/"" (ou espaces seuls) : tous équivalents entre eux
+//   (un champ "non renseigné" ne doit jamais être vu comme différent selon
+//   sa représentation — bug remonté en test manuel 2026-10-26 : une
+//   description NULL en base, renvoyée "" par un champ contrôlé qui n'a
+//   jamais été touché, était à tort vue comme une modification d'un champ
+//   figé par la signature d'entrée).
 function valeursEquivalentes(valeurActuelle: unknown, valeurSoumise: unknown): boolean {
   if (valeurActuelle === valeurSoumise) {
     return true;
   }
-  const actuelleVide = valeurActuelle === null || valeurActuelle === undefined;
-  const soumiseVide = valeurSoumise === null || valeurSoumise === undefined;
+  const actuelleVide = estVide(valeurActuelle);
+  const soumiseVide = estVide(valeurSoumise);
   if (actuelleVide || soumiseVide) {
     return actuelleVide && soumiseVide;
   }

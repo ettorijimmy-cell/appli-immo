@@ -85,6 +85,44 @@ export class EtatsDesLieuxSignatureService {
     };
   }
 
+  // Relecture desktop (EtatDesLieuxSection, chantier Signatures) : liste à
+  // plat des signatures déjà posées, toutes phases confondues — le front
+  // groupe lui-même par phase (SignaturesCard). `documentId` seul est
+  // renvoyé pour l'image : jamais les octets eux-mêmes ici, le front les
+  // récupère via le point d'accès générique déjà existant
+  // GET /documents/:id/contenu (même mécanisme que les photos de pièce,
+  // CLAUDE.md — un seul point de déchiffrement). Réutilise chargerContexte()
+  // pour l'appartenance organisation, même règle "refuse en cas de doute"
+  // que signerEntree/signerSortie/obtenirSignatairesAttendus : une
+  // signature reste une donnée à valeur légale même en lecture.
+  async obtenirSignaturesPosees(etatDesLieuxId: string): Promise<
+    {
+      phase: Phase;
+      role: Role;
+      locataireId: string | null;
+      nomAffiche: string;
+      luEtApprouve: boolean;
+      documentId: string;
+      signeLe: Date;
+    }[]
+  > {
+    await this.chargerContexte(etatDesLieuxId);
+    const lignes = await this.db
+      .select()
+      .from(etatDesLieuxSignature)
+      .where(and(eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId), isNull(etatDesLieuxSignature.archivedAt)))
+      .orderBy(etatDesLieuxSignature.signeLe);
+    return lignes.map((ligne) => ({
+      phase: ligne.phase,
+      role: ligne.role,
+      locataireId: ligne.locataireId,
+      nomAffiche: ligne.nomAffiche,
+      luEtApprouve: ligne.luEtApprouve,
+      documentId: ligne.documentId,
+      signeLe: ligne.signeLe
+    }));
+  }
+
   async signerEntree(etatDesLieuxId: string, dto: SignerEtatDesLieuxDto) {
     return this.signerPhase(etatDesLieuxId, "entree", dto);
   }

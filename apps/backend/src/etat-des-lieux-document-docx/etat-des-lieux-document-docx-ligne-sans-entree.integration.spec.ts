@@ -236,4 +236,85 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
     expect(texte).not.toMatch(/\bnull\b/);
     expect(texte).not.toMatch(/\bundefined\b/);
   });
+
+  // Même point que le test ci-dessus, pour une PIÈCE (ajouterElement/
+  // ajouterSocle, etat-des-lieux-document-docx.service.ts) plutôt qu'une
+  // ligne de liste : une pièce jamais créée à l'entrée, créée après coup
+  // avec ses seuls champs de sortie (desktop/backend, revue 2026-10-26)
+  // doit elle aussi s'afficher sans "null"/"undefined" littéral — ses
+  // champs d'entrée (murDescription/murEtatEntree...) restent NULL en base.
+  it("affiche une pièce (Séjour) sans valeurs d'entrée (case Entrée vide, valeur de sortie présente)", async () => {
+    const sci = await scisService.create(userId, {
+      nom: "SCI Docx Pièce Sans Entree",
+      regimeFiscal: "IR",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris"
+    });
+    const bien = await bienService.create(userId, {
+      type: "immeuble",
+      proprietaireType: "sci",
+      sciId: sci.id,
+      nom: "Immeuble Docx Pièce Sans Entree",
+      adresse: "1 rue de Test",
+      codePostal: "75001",
+      ville: "Paris",
+      typeHabitat: "collectif",
+      regimeJuridique: "copropriete"
+    });
+    const appartement = await appartementsService.create({
+      bienId: bien.id,
+      numero: "1",
+      type: "T2",
+      nombrePiecesPrincipales: 3,
+      modeChauffage: "individuel",
+      modeEauChaude: "individuel"
+    });
+    await appartementsService.update(appartement.id, { nombreChambres: 1, nombreSallesDeBain: 1, nombreWc: 1 });
+    const titulaire = await locatairesService.create(userId, { nom: "Dupont", prenom: "Jean" });
+    const bail = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2026-08-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: titulaire.id, role: "titulaire" });
+    const etatDesLieux = await etatsDesLieuxService.create({ bailId: bail.id });
+
+    // Une pièce d'entrée "normale" pour ne pas tester un document vide.
+    await avecContexte(() =>
+      etatsDesLieuxService.submitPieceEntree(etatDesLieux.id, { mur: { description: "RAS", etatEntree: "B" } })
+    );
+
+    const dtoSignature = (overrides: Record<string, unknown> = {}) => ({
+      bailleur: { nomAffiche: "Jimmy Ettori", luEtApprouve: true, imagePng: PNG_1X1_BASE64 },
+      locataires: [{ locataireId: titulaire.id, luEtApprouve: true, imagePng: PNG_1X1_BASE64 }],
+      ...overrides
+    });
+    await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieux.id, dtoSignature()));
+
+    // Séjour jamais créé à l'entrée : créé après coup avec son seul champ
+    // de sortie (élément absent/omis à l'entrée, découvert avant la sortie).
+    const sejour = await avecContexte(() =>
+      etatsDesLieuxService.submitPieceSejour(etatDesLieux.id, { mur: { etatSortie: "B" } })
+    );
+    expect(sejour.murEtatEntree).toBeNull();
+    expect(sejour.murDescription).toBeNull();
+
+    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieux.id, dtoSignature()));
+
+    const buffer = await avecContexte(() =>
+      etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
+    );
+    expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");
+
+    const texte = texteDuDocx(buffer);
+    // Jamais de rendu brut d'une valeur absente, même pour une pièce dont
+    // aucun champ d'entrée n'a jamais été renseigné.
+    expect(texte).not.toMatch(/\bnull\b/);
+    expect(texte).not.toMatch(/\bundefined\b/);
+  });
 });
