@@ -293,6 +293,8 @@ function renderEtape(
           ref={ref}
           lignes={donnees.cles}
           mode={mode}
+          entreeSignee={donnees.entreeSigneeParTous}
+          sortieSignee={donnees.sortieSigneeParTous}
           onSubmit={(lignes) => submitCles(donnees.id, lignes).then(() => undefined)}
         />
       );
@@ -303,6 +305,8 @@ function renderEtape(
           ref={ref}
           lignes={donnees.equipementsDivers}
           mode={mode}
+          entreeSignee={donnees.entreeSigneeParTous}
+          sortieSignee={donnees.sortieSigneeParTous}
           onSubmit={(lignes) => submitEquipementsDivers(donnees.id, lignes).then(() => undefined)}
         />
       );
@@ -314,6 +318,8 @@ function renderEtape(
           catalogue={catalogue}
           lignes={donnees.inventaire}
           mode={mode}
+          entreeSignee={donnees.entreeSigneeParTous}
+          sortieSignee={donnees.sortieSigneeParTous}
           onSubmit={(lignes) => submitInventaire(donnees.id, lignes).then(() => undefined)}
         />
       );

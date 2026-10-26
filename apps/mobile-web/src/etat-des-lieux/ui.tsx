@@ -41,10 +41,12 @@ export function BoutonsEtatPiece({
 
 export function BoutonsEtatInventaire({
   value,
-  onChange
+  onChange,
+  disabled = false
 }: {
   value: string;
   onChange: (valeur: EtatInventaire) => void;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -53,7 +55,8 @@ export function BoutonsEtatInventaire({
           key={valeur}
           type="button"
           onClick={() => onChange(valeur)}
-          className={`rounded-md border py-2 text-sm font-semibold ${
+          disabled={disabled}
+          className={`rounded-md border py-2 text-sm font-semibold disabled:opacity-50 ${
             value === valeur
               ? "border-indigo-700 bg-indigo-700 text-white"
               : "border-slate-300 bg-white text-slate-700"
@@ -68,19 +71,24 @@ export function BoutonsEtatInventaire({
 
 // Commentaire replié par défaut, un tap pour l'ouvrir (décision actée) —
 // garde chaque étape courte à l'écran, le détail reste disponible sans
-// jamais s'imposer visuellement.
+// jamais s'imposer visuellement. `readOnly` (chantier Signatures, champ
+// commun figé dès l'entrée signée) : toujours ouvert dès qu'il y a une
+// valeur à montrer, jamais replié derrière un bouton qu'on ne peut plus
+// de toute façon utiliser pour éditer.
 export function ChampReplie({
   label,
   value,
   onChange,
-  placeholder
+  placeholder,
+  readOnly = false
 }: {
   label: string;
   value: string;
   onChange: (valeur: string) => void;
   placeholder?: string;
+  readOnly?: boolean;
 }): React.JSX.Element {
-  const [ouvert, setOuvert] = useState(value !== "");
+  const [ouvert, setOuvert] = useState(value !== "" || readOnly);
 
   if (!ouvert) {
     return (
@@ -101,7 +109,10 @@ export function ChampReplie({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+        readOnly={readOnly}
+        className={`w-full rounded-md border px-3 py-2 text-base ${
+          readOnly ? "border-slate-200 bg-slate-50 text-slate-500" : "border-slate-300"
+        }`}
       />
     </div>
   );

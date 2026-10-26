@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <!-- Harnais Playwright uniquement — voir signature.html pour le même
+         principe (jamais construit en production, __CSP__ nécessaire
+         uniquement parce que cspPlugin transforme tout .html servi par
+         le serveur de dev). -->
+    <meta http-equiv="Content-Security-Policy" content="__CSP__" />
+    <title>Harnais de test — Verrou champs communs</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./verrou-champs-main.tsx"></script>
+  </body>
+</html>
