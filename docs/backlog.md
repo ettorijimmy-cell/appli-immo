@@ -2080,6 +2080,102 @@ actées après audit de conception en lecture seule :
   *.ts`, déjà protégé par un retrait explicite de `\r` mais seulement
   documenté en commentaire jusqu'ici, jamais vérifié par un test).
 
+**Signatures de l'état des lieux — chantier terminé (2026-10-26).** Fait
+suite à l'entrée ci-dessus (modèle de données, commit 1/7). Livré :
+signature tactile du bailleur et de chaque locataire actif, en deux temps
+(entrée puis sortie), avec verrou d'écriture serveur, relecture figée
+desktop, et retrait encadré des lignes/pièces ajoutées après l'entrée.
+
+- **Verrou en deux temps, décision centrale.** Un champ est classé
+  `entree` (figé dès l'entrée signée), `sortie` (figé seulement à la
+  sortie) ou `commune` (sans notion d'entrée/sortie propre — description,
+  libellé, commentaire — figé dès l'ENTRÉE, pas seulement à la sortie :
+  ces champs décrivent le logement tel que constaté à l'entrée, ils n'ont
+  plus de raison de bouger même si la sortie reste loin dans le temps).
+  Classification source unique dans `packages/core/src/etat-des-lieux/
+  classification-champs-etat-des-lieux.ts` (`champModifiable`/
+  `champFigeParSignature`), réexportée à l'identique côté backend
+  (`classification-colonnes-etat-des-lieux.ts`, qui y ajoute uniquement
+  l'association à une table Drizzle concrète, un concept Postgres-only) et
+  consommée directement côté desktop (`ClesSection`/
+  `EquipementsDiversSection`/`InventaireSection`/`PieceGrid`) et côté
+  mobile (`ClesStepScreen`/`EquipementsDiversStepScreen`/
+  `InventaireStepScreen`, bascule du 2026-10-26) — jamais recopiée à la
+  main. Garde-fou fermé par défaut côté backend
+  (`verifierChampsAutorises`) : une colonne Drizzle ni classée ni listée
+  comme structurelle fait échouer l'appel (erreur de configuration), pas
+  un passage silencieux.
+- **Lignes neuves (clés, équipements divers, inventaire) et pièces neuves
+  ajoutées APRÈS la signature d'entrée** (ex. une clé remise en cours de
+  bail, une pièce omise à l'entrée) **restent créables avec leurs seuls
+  champs de sortie** — leurs champs `entree`/`commune` (description,
+  identité hors `typeCle`/`libelleAutre`/`libelle`) restent vides et non
+  éditables. Décision symétrique à la précédente : ces lignes/pièces ne
+  décrivent rien qui ait été constaté à l'entrée, leur figer les champs
+  déjà vides ne protège rien.
+- **Retrait d'une ligne (clés/équipements divers/inventaire) possible
+  jusqu'à la signature de sortie, mais UNIQUEMENT pour une ligne ajoutée
+  après l'entrée** — une ligne qui existait déjà à l'entrée signée ne
+  l'est plus. Distingué par un booléen posé par le serveur à l'écriture
+  (`ajoutee_apres_signature_entree`, migration `0068`), jamais déduit
+  après coup : deux approches par comparaison ont été tentées et rejetées
+  en cours de route — horodatage (`now()` Postgres renvoie l'heure de
+  **début de transaction**, pas celle de l'instruction : inopérant sous le
+  harnais de test, une transaction unique par test) puis id UUID v7
+  (deux id générés à quelques microsecondes d'écart peuvent tomber dans la
+  même milliseconde, ordre lexicographique alors non significatif) — d'où
+  le choix d'un drapeau explicite, immun aux deux. Pas de retrait pour les
+  pièces (pas de notion de ligne à archiver, un seul enregistrement par
+  pièce/numéro).
+- **GET `/etats-des-lieux/:id/signatures`** : relit les signatures déjà
+  posées (phase, rôle, nom affiché, `lu_et_approuve`, `signe_le`), affichées
+  côté desktop (`SignaturesCard`) — l'image de chacune reste récupérée
+  séparément via `/documents/:id/contenu` (point d'accès générique), jamais
+  renvoyée en bloc ici.
+- **Bug réel corrigé en cours de route** : `valeursEquivalentes` (détection
+  de "resoumission à l'identique", condition pour ne pas bloquer à tort un
+  champ figé) ne traitait que `null`/`undefined` comme équivalents entre
+  eux — une description `NULL` en base, renvoyée `""` par un champ
+  contrôlé jamais touché, était à tort vue comme une tentative de
+  modification d'un champ figé par la signature d'entrée (remonté en test
+  manuel desktop). `""`/espaces seuls désormais traités comme la même
+  absence de valeur.
+
+**Limites connues, assumées :**
+- **Colocataire ajouté après la signature d'entrée mais avant la sortie**
+  (déjà noté dans l'entrée ci-dessus) : son `bail_locataires` n'existait
+  pas encore à l'entrée, donc jamais signée — aucun garde-fou bloquant,
+  rien dans le schéma actuel ne permet de documenter une signature
+  d'entrée rétroactive proprement.
+- **Playwright (`apps/mobile-web`, test-harness/) hors CI** : 5 tests
+  (signature tactile + verrou des champs communs) rejoués manuellement à
+  chaque changement pertinent, jamais exécutés par le pipeline GitHub
+  Actions — aucune étape `playwright test` dans `.github/workflows/`.
+  Risque de régression silencieuse si un changement futur n'y pense pas.
+- **Harnais de test mobile (`test-harness/verrou-champs-main.tsx`)** :
+  monte directement les 3 écrans avec des fixtures en dur (pas d'appel
+  réseau, ces écrans sont de purs composants contrôlés par props) — toute
+  évolution de leurs props (ex. nouveau champ classifié) doit être
+  répercutée à la main dans ce fichier, rien ne le detecte automatiquement.
+
+**Pour le déploiement (aucune de ces trois migrations n'est encore
+passée en production à ce jour) :**
+- Migrations Drizzle `0066` (table `etat_des_lieux_signature`,
+  `documents.etat_des_lieux_phase`), `0067` (`etats_des_lieux.lieu_entree`/
+  `lieu_sortie`), `0068` (`ajoutee_apres_signature_entree` sur
+  `etat_des_lieux_cles`/`equipements_divers`/`inventaire`) — à appliquer
+  dans cet ordre.
+- Streams PowerSync à redéployer dans le dashboard (voir
+  `docs/powersync-sync-streams.yaml`, en-tête "État du déploiement") :
+  `documents` (colonne `etat_des_lieux_phase`, 2026-10-24) et
+  `etat_des_lieux_cles`/`etat_des_lieux_equipements_divers`/
+  `etat_des_lieux_inventaire` (colonne `ajoutee_apres_signature_entree`,
+  2026-10-26).
+- Nouvel installeur desktop à reconstruire et tester en conditions
+  réelles (lecture seule signée, badges, champs figés, retrait des lignes
+  — voir "État de la production" pour le gabarit de ce type de
+  vérification).
+
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos
 intégrées dans le document imprimé") implique un module d'insertion
