@@ -14,7 +14,8 @@ export type EtapeType =
   | "cles"
   | "equipements-divers"
   | "inventaire"
-  | "recap";
+  | "recap"
+  | "signature";
 
 export interface Etape {
   type: EtapeType;
@@ -73,7 +74,12 @@ export function construireEtapes(appartement: Appartement, typeBail: BailTypeBai
   if (typeBail === "meuble") {
     etapes.push({ type: "inventaire", titre: "Inventaire meublé" });
   }
-  etapes.push({ type: "recap", titre: "Terminer" });
+  // "recap" reste purement informatif (plus de date posée ici — voir
+  // SignatureStepScreen) ; "signature" devient la véritable dernière
+  // étape, celle dont le bouton affiche "Terminer" (EtatDesLieuxStepper,
+  // index === etapes.length - 1).
+  etapes.push({ type: "recap", titre: "Récapitulatif" });
+  etapes.push({ type: "signature", titre: "Signature" });
 
   return etapes;
 }

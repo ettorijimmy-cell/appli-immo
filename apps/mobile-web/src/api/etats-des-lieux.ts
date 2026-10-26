@@ -11,9 +11,16 @@ export interface EtatDesLieux {
   bailId: string;
   dateEntree: string | null;
   dateSortie: string | null;
+  lieuEntree: string | null;
+  lieuSortie: string | null;
   nouvelleAdresseLocataire: string | null;
   statut: StatutEtatDesLieux;
   archivedAt: string | null;
+  // Dérivés de l'existence d'une signature bailleur pour la phase (jamais
+  // de date_entree/date_sortie seules, qui peuvent être posées sans
+  // signature) — voir EtatsDesLieuxService.versDto côté backend.
+  entreeSigneeParTous: boolean;
+  sortieSigneeParTous: boolean;
 }
 
 // Ligne de pièce brute renvoyée par l'API (colonnes plates : prefix +
@@ -215,4 +222,50 @@ export function submitInventaire(
 
 export function getCatalogueInventaire(): Promise<ElementInventaireMeuble[]> {
   return authenticatedFetch<ElementInventaireMeuble[]>("/etats-des-lieux/catalogue-inventaire");
+}
+
+export interface SignataireAttendu {
+  locataireId: string;
+  nomAffiche: string;
+}
+
+export interface SignatairesAttendus {
+  villeLogement: string;
+  // Nom proposé (résolu depuis le bien/la SCI), modifiable à l'écran —
+  // jamais imposé : un mandataire peut signer sous un autre nom.
+  bailleurNomPropose: string;
+  locataires: SignataireAttendu[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
+}
+
+export function getSignatairesAttendus(etatDesLieuxId: string): Promise<SignatairesAttendus> {
+  return authenticatedFetch<SignatairesAttendus>(`/etats-des-lieux/${etatDesLieuxId}/signataires`);
+}
+
+export interface SignatureSignataireInput {
+  luEtApprouve: boolean;
+  // PNG encodé en base64 brut (sans préfixe data:), même contrat que
+  // SignerEtatDesLieuxDto côté backend.
+  imagePng: string;
+}
+
+export interface SignerEtatDesLieuxInput {
+  bailleur: SignatureSignataireInput & { nomAffiche: string };
+  locataires: (SignatureSignataireInput & { locataireId: string })[];
+  lieu?: string;
+}
+
+export function signerEntree(etatDesLieuxId: string, input: SignerEtatDesLieuxInput): Promise<EtatDesLieuxComplet> {
+  return authenticatedFetch<EtatDesLieuxComplet>(`/etats-des-lieux/${etatDesLieuxId}/signer-entree`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function signerSortie(etatDesLieuxId: string, input: SignerEtatDesLieuxInput): Promise<EtatDesLieuxComplet> {
+  return authenticatedFetch<EtatDesLieuxComplet>(`/etats-des-lieux/${etatDesLieuxId}/signer-sortie`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }

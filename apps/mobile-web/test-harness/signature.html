@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <!-- Harnais Playwright uniquement (jamais construit en production —
+         vite.config.ts ne liste pas ce fichier dans build.rollupOptions.input,
+         et il n'existe aucun lien vers lui depuis l'app réelle). Le
+         placeholder __CSP__ reste nécessaire : cspPlugin (vite.config.ts)
+         transforme TOUT fichier .html servi par le serveur de dev, y
+         compris celui-ci — son absence ferait échouer le serveur dev, pas
+         seulement ce harnais. -->
+    <meta http-equiv="Content-Security-Policy" content="__CSP__" />
+    <title>Harnais de test — Signature</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./signature-main.tsx"></script>
+  </body>
+</html>

@@ -13,6 +13,7 @@ import {
 } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
+import { BienService } from "../bien/bien.service";
 import { dateDuJourParis } from "../common/date-paris";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -55,8 +56,34 @@ export class EtatsDesLieuxSignatureService {
     private readonly storage: DocumentStorageService,
     private readonly requestContext: RequestContextService,
     private readonly etatsDesLieuxService: EtatsDesLieuxService,
-    private readonly organisationResolution: OrganisationResolutionService
+    private readonly organisationResolution: OrganisationResolutionService,
+    private readonly bienService: BienService
   ) {}
+
+  // Signataires attendus (mobile-web, écran de signature) : bailleur
+  // pré-rempli (BienService.resoudreNomBailleur, modifiable côté client —
+  // peut différer du nom légal exact pour un mandataire) + locataires
+  // actifs du bail, et l'état déjà signé de chaque phase pour permettre à
+  // l'écran d'afficher le badge "Entrée signée" sans un second appel.
+  // Réutilise chargerContexte() : mêmes règles d'appartenance organisation
+  // (refuse en cas de doute) que signerEntree/signerSortie.
+  async obtenirSignatairesAttendus(etatDesLieuxId: string): Promise<{
+    villeLogement: string;
+    bailleurNomPropose: string;
+    locataires: { locataireId: string; nomAffiche: string }[];
+    entreeSignee: boolean;
+    sortieSignee: boolean;
+  }> {
+    const contexte = await this.chargerContexte(etatDesLieuxId);
+    const bailleurNomPropose = (await this.bienService.resoudreNomBailleur(contexte.bienId)) ?? "";
+    return {
+      villeLogement: contexte.villeLogement,
+      bailleurNomPropose,
+      locataires: contexte.locatairesActifs,
+      entreeSignee: contexte.phasesSigneesParBailleur.has("entree"),
+      sortieSignee: contexte.phasesSigneesParBailleur.has("sortie")
+    };
+  }
 
   async signerEntree(etatDesLieuxId: string, dto: SignerEtatDesLieuxDto) {
     return this.signerPhase(etatDesLieuxId, "entree", dto);
@@ -275,7 +302,7 @@ export class EtatsDesLieuxSignatureService {
     }
 
     const [jointure] = await this.db
-      .select({ ville: bien.ville })
+      .select({ ville: bien.ville, bienId: bien.id })
       .from(baux)
       .innerJoin(appartements, eq(appartements.id, baux.appartementId))
       .innerJoin(bien, eq(bien.id, appartements.bienId))
@@ -304,6 +331,7 @@ export class EtatsDesLieuxSignatureService {
 
     return {
       villeLogement: jointure.ville,
+      bienId: jointure.bienId,
       locatairesActifs: liensLocataires.map((l) => ({ locataireId: l.locataireId, nomAffiche: `${l.prenom} ${l.nom}` })),
       phasesSigneesParBailleur: new Set(signaturesBailleur.map((s) => s.phase))
     };

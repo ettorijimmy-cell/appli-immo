@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Appartement } from "../api/patrimoine";
 import {
+  signerEntree,
+  signerSortie,
   submitCles,
   submitCompteurs,
   submitEquipementsDivers,
@@ -12,7 +14,6 @@ import {
   submitPieceSalleDeBain,
   submitPieceSejour,
   submitPieceWc,
-  updateEtatDesLieuxHeader,
   type ElementInventaireMeuble,
   type EtatDesLieuxComplet
 } from "../api/etats-des-lieux";
@@ -34,6 +35,7 @@ import {
 } from "./pieces-config";
 import { PieceStepScreen } from "./PieceStepScreen";
 import { RecapStepScreen } from "./RecapStepScreen";
+import { SignatureStepScreen } from "./SignatureStepScreen";
 import { construireEtapes, pieceTypePourEtape, type Etape } from "./stepper-config";
 
 // Le vrai outil de capture (parcours pas-à-pas, décisions actées) :
@@ -63,7 +65,17 @@ export function EtatDesLieuxStepper({
   const [donnees, setDonnees] = useState(etatDesLieux);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Seule l'étape signature se signale "non prête" (tant que toutes les
+  // cartes ne sont pas complètes) — valeur par défaut true pour toutes
+  // les autres étapes, jamais bloquantes. Remise à true à chaque
+  // changement d'étape : une signature inachevée ne doit jamais geler le
+  // bouton d'une étape précédente/suivante sans rapport.
+  const [etapeEstPrete, setEtapeEstPrete] = useState(true);
   const handleRef = useRef<EtapeHandle>(null);
+
+  useEffect(() => {
+    setEtapeEstPrete(true);
+  }, [index]);
 
   const etape = etapes[index];
   if (!etape) {
@@ -99,9 +111,16 @@ export function EtatDesLieuxStepper({
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          {etape.titre} {index + 1}/{etapes.length}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            {etape.titre} {index + 1}/{etapes.length}
+          </p>
+          {donnees.entreeSigneeParTous && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Entrée signée
+            </span>
+          )}
+        </div>
         <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100">
           <div
             className="h-1.5 rounded-full bg-indigo-700 transition-all"
@@ -121,7 +140,7 @@ export function EtatDesLieuxStepper({
           </div>
         )}
 
-        {renderEtape(etape, donnees, mode, catalogue, handleRef)}
+        {renderEtape(etape, donnees, mode, catalogue, handleRef, setEtapeEstPrete)}
 
         {error && (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
@@ -144,7 +163,7 @@ export function EtatDesLieuxStepper({
         <button
           type="button"
           onClick={() => void handleSuivant()}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !etapeEstPrete}
           className="flex-1 rounded-md bg-indigo-700 py-3 text-base font-medium text-white disabled:opacity-50"
         >
           {isSubmitting ? "Envoi…" : error ? "Réessayer" : index === etapes.length - 1 ? "Terminer" : "Suivant"}
@@ -159,7 +178,8 @@ function renderEtape(
   donnees: EtatDesLieuxComplet,
   mode: "entree" | "sortie",
   catalogue: ElementInventaireMeuble[],
-  ref: React.RefObject<EtapeHandle>
+  ref: React.RefObject<EtapeHandle>,
+  onEtapeEstPreteChange: (pret: boolean) => void
 ): React.JSX.Element {
   const key = `${etape.type}-${etape.numero ?? ""}`;
 
@@ -298,15 +318,19 @@ function renderEtape(
         />
       );
     case "recap":
+      return <RecapStepScreen key={key} ref={ref} mode={mode} />;
+    case "signature":
       return (
-        <RecapStepScreen
+        <SignatureStepScreen
           key={key}
           ref={ref}
+          etatDesLieuxId={donnees.id}
           mode={mode}
-          onSubmit={() =>
-            updateEtatDesLieuxHeader(donnees.id, {
-              [mode === "entree" ? "dateEntree" : "dateSortie"]: new Date().toISOString().slice(0, 10)
-            }).then(() => undefined)
+          onPretChange={onEtapeEstPreteChange}
+          onSubmit={(input) =>
+            (mode === "entree" ? signerEntree(donnees.id, input) : signerSortie(donnees.id, input)).then(
+              () => undefined
+            )
           }
         />
       );

@@ -233,6 +233,57 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     expect(resultat.sortieSigneeParTous).toBe(false);
   });
 
+  describe("obtenirSignatairesAttendus (GET :id/signataires — écran mobile)", () => {
+    it("propose le nom du bailleur (bien en SCI), la ville du logement, 1 locataire actif, aucune phase signée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId)
+      );
+      expect(resultat.villeLogement).toBe("Lyon");
+      expect(resultat.bailleurNomPropose).toBe("SCI Signatures Test");
+      expect(resultat.locataires).toEqual([{ locataireId: titulaire.id, nomAffiche: "Jean Dupont" }]);
+      expect(resultat.entreeSignee).toBe(false);
+      expect(resultat.sortieSignee).toBe(false);
+    });
+
+    it("liste bien les 2 locataires actifs d'une colocation, jamais un locataire archivé du bail", async () => {
+      const { etatDesLieuxId, titulaire, colocataires } = await creerDossier(userId, { nombreColocataires: 1 });
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId)
+      );
+      expect(resultat.locataires.map((l) => l.locataireId).sort()).toEqual(
+        [titulaire.id, colocataires[0]!.id].sort()
+      );
+    });
+
+    it("entreeSignee/sortieSignee reflètent l'état réel après signature", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId)
+      );
+      expect(resultat.entreeSignee).toBe(true);
+      expect(resultat.sortieSignee).toBe(false);
+    });
+
+    it("refuse (404) un état des lieux d'une autre organisation, même règle que signerEntree", async () => {
+      const autre = await creerOrganisationEtUtilisateur("Organisation Signatures Test — Autre (signataires)");
+      const { etatDesLieuxId } = await creerDossier(autre.userId);
+      await expect(
+        avecContexte(() => etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId))
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("refuse (404) en l'absence de tout contexte organisation", async () => {
+      const { etatDesLieuxId } = await creerDossier(userId);
+      await expect(
+        requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+          etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId)
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   it("signerEntree : pose dateEntree (date de Paris) + lieuEntree (défaut ville du logement), crée les signatures et les documents attendus", async () => {
     const { etatDesLieuxId, titulaire } = await creerDossier(userId);
 

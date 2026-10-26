@@ -53,7 +53,11 @@ export const PieceStepScreen = forwardRef<
         if (!champs) {
           continue;
         }
-        const elementPayload: Record<string, unknown> = { description: champs.description };
+        // description : champ commun figé dès la signature d'entrée (voir
+        // ci-dessous, rendu lecture seule) — jamais renvoyé à la sortie,
+        // simplement omis (aplatirElement, backend, ne touche que les
+        // clés effectivement fournies).
+        const elementPayload: Record<string, unknown> = mode === "entree" ? { description: champs.description } : {};
         if (champs.etat) {
           elementPayload[mode === "entree" ? "etatEntree" : "etatSortie"] = champs.etat;
         }
@@ -110,12 +114,18 @@ export const PieceStepScreen = forwardRef<
               </div>
             )}
 
-            <ChampReplie
-              label="+ Commentaire"
-              value={champs.description}
-              onChange={(v) => setChamp(el.prefix, "description", v)}
-              placeholder="Description / détails"
-            />
+            {/* description : champ commun (pas de suffixe Entrée/Sortie),
+                figé dès la signature d'entrée — jamais réédité à la
+                sortie, déjà affiché en lecture seule ci-dessus via la
+                ligne "Entrée : …". */}
+            {mode === "entree" && (
+              <ChampReplie
+                label="+ Commentaire"
+                value={champs.description}
+                onChange={(v) => setChamp(el.prefix, "description", v)}
+                placeholder="Description / détails"
+              />
+            )}
           </div>
         );
       })}

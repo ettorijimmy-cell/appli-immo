@@ -5,6 +5,14 @@ build/
 .turbo/
 *.tsbuildinfo
 
+# Playwright (apps/mobile-web, test-harness/ — harnais de navigateur réel
+# pour SignatureStepScreen) : rapports/traces d'exécution, jamais des
+# sources.
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # Icône source du packaging desktop (apps/desktop/build/, convention
 # electron-builder) — même pattern que tmp/ ci-dessous : "build/" reste
 # ignoré partout (sorties de build), sauf ce fichier précis, qui est un

@@ -1,10 +1,17 @@
-import { Body, Controller, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import { SignerEtatDesLieuxDto } from "./dto/signer-etat-des-lieux.dto";
 import { EtatsDesLieuxSignatureService } from "./etats-des-lieux-signature.service";
 
 @Controller("etats-des-lieux")
 export class EtatsDesLieuxSignatureController {
   constructor(private readonly etatsDesLieuxSignatureService: EtatsDesLieuxSignatureService) {}
+
+  // Mobile-web, écran de signature : bailleur pré-rempli + locataires
+  // actifs, avant même d'afficher les cartes signataires.
+  @Get(":id/signataires")
+  obtenirSignataires(@Param("id") id: string) {
+    return this.etatsDesLieuxSignatureService.obtenirSignatairesAttendus(id);
+  }
 
   @Post(":id/signer-entree")
   signerEntree(@Param("id") id: string, @Body() dto: SignerEtatDesLieuxDto) {
