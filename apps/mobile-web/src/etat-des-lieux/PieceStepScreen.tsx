@@ -61,7 +61,11 @@ export const PieceStepScreen = forwardRef<
         if (champs.etat) {
           elementPayload[mode === "entree" ? "etatEntree" : "etatSortie"] = champs.etat;
         }
-        if (el.avecNombre && champs.nombre !== "") {
+        // nombre (prisesNombre) : champ commun comme description, figé dès
+        // la signature d'entrée — jamais renvoyé à la sortie, même
+        // raisonnement que description ci-dessus (omis, pas resoumis à
+        // l'identique).
+        if (el.avecNombre && mode === "entree" && champs.nombre !== "") {
           elementPayload.nombre = Number(champs.nombre);
         }
         payload[el.prefix] = elementPayload;
@@ -109,7 +113,10 @@ export const PieceStepScreen = forwardRef<
                   min={0}
                   value={champs.nombre}
                   onChange={(e) => setChamp(el.prefix, "nombre", e.target.value)}
-                  className="w-20 rounded-md border border-slate-300 px-2 py-2 text-base"
+                  readOnly={mode === "sortie"}
+                  className={`w-20 rounded-md border px-2 py-2 text-base ${
+                    mode === "sortie" ? "border-slate-200 bg-slate-50 text-slate-500" : "border-slate-300"
+                  }`}
                 />
               </div>
             )}

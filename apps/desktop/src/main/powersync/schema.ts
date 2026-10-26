@@ -599,12 +599,18 @@ const etat_des_lieux_pieces_autre = new Table({
 // id explicite côté service). commentaire volontairement absent — EXCLU
 // du Sync Stream (texte libre annexe, même motif que
 // versements.reference_rapprochement/remboursements.commentaire).
+// ajoutee_apres_signature_entree (boolean côté Postgres, colonne du
+// 2026-10-26) mappée en column.integer, même convention que
+// diagnostics.risque_present ci-dessus — nécessaire à l'étape (a) pour
+// savoir si une ligne reste retirable (verrou de signature) sans
+// redemander le serveur.
 const etat_des_lieux_cles = new Table({
   etat_des_lieux_id: column.text,
   type_cle: column.text,
   libelle_autre: column.text,
   nombre_entree: column.integer,
   nombre_sortie: column.integer,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -612,6 +618,8 @@ const etat_des_lieux_cles = new Table({
 
 // Multi-instance, AUCUNE contrainte d'unicité côté Postgres (même
 // situation que cles). commentaire EXCLU (même motif).
+// ajoutee_apres_signature_entree : voir commentaire sur etat_des_lieux_cles
+// ci-dessus.
 const etat_des_lieux_equipements_divers = new Table({
   etat_des_lieux_id: column.text,
   libelle: column.text,
@@ -619,6 +627,7 @@ const etat_des_lieux_equipements_divers = new Table({
   etat_entree: column.text,
   nombre_sortie: column.integer,
   etat_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -627,7 +636,8 @@ const etat_des_lieux_equipements_divers = new Table({
 // Multi-instance, unique sur (etat_des_lieux_id, element_id) côté
 // Postgres — contrairement à cles/equipements_divers, cette table a bien
 // une contrainte d'unicité DB. commentaire EXCLU (même motif que
-// cles/equipements_divers).
+// cles/equipements_divers). ajoutee_apres_signature_entree : voir
+// commentaire sur etat_des_lieux_cles ci-dessus.
 const etat_des_lieux_inventaire = new Table({
   etat_des_lieux_id: column.text,
   element_id: column.text,
@@ -635,6 +645,7 @@ const etat_des_lieux_inventaire = new Table({
   etat_entree: column.text,
   nombre_sortie: column.integer,
   etat_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text

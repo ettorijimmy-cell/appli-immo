@@ -42,6 +42,17 @@
 #     du domaine État des lieux (etats_des_lieux et ses tables satellites).
 #     À vérifier quand des données réelles existeront pour ces domaines —
 #     voir docs/backlog.md, entrée "PowerSync — suite".
+#   - Streams MODIFIÉS EN CODE depuis ce déploiement confirmé, PAS ENCORE
+#     redéployés dans le dashboard PowerSync — à coller/redéployer au
+#     prochain déploiement, sans quoi la colonne reste absente côté client
+#     malgré sa présence ici :
+#       - documents : colonne etat_des_lieux_phase ajoutée le 2026-10-24
+#         (chantier Signatures, commit 277e9b5).
+#       - etat_des_lieux_cles, etat_des_lieux_equipements_divers,
+#         etat_des_lieux_inventaire : colonne
+#         ajoutee_apres_signature_entree ajoutée le 2026-10-26 (chantier
+#         Signatures, verrou de retrait des lignes ajoutées après l'entrée
+#         signée).
 #
 # indices_irl a longtemps été considérée comme jamais confirmée
 # fonctionnelle (voir son historique de bug de backfill plus bas dans ce
@@ -1002,11 +1013,14 @@ streams:
   # ce filtre, qui ne fait que lire par hiérarchie (décision du
   # 2026-08-20). commentaire EXCLU (texte libre annexe, même motif que
   # versements.reference_rapprochement/remboursements.commentaire, décision
-  # du 2026-08-21). libelle_autre inclus.
+  # du 2026-08-21). libelle_autre inclus. ajoutee_apres_signature_entree
+  # ajoutée le 2026-10-26 (voir schema.ts) — nécessaire côté client pour
+  # savoir si une ligne reste retirable une fois l'entrée signée.
   etat_des_lieux_cles:
     query: >
       SELECT id, etat_des_lieux_id, type_cle, libelle_autre, nombre_entree,
-      nombre_sortie, archived_at, version, updated_at FROM etat_des_lieux_cles
+      nombre_sortie, ajoutee_apres_signature_entree, archived_at, version,
+      updated_at FROM etat_des_lieux_cles
       WHERE etat_des_lieux_cles.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -1022,10 +1036,12 @@ streams:
 
   # Multi-instance, AUCUNE contrainte d'unicité DB (même situation que
   # cles). commentaire EXCLU (même motif). libelle inclus.
+  # ajoutee_apres_signature_entree : voir etat_des_lieux_cles ci-dessus.
   etat_des_lieux_equipements_divers:
     query: >
       SELECT id, etat_des_lieux_id, libelle, nombre_entree, etat_entree,
-      nombre_sortie, etat_sortie, archived_at, version, updated_at FROM etat_des_lieux_equipements_divers
+      nombre_sortie, etat_sortie, ajoutee_apres_signature_entree, archived_at,
+      version, updated_at FROM etat_des_lieux_equipements_divers
       WHERE etat_des_lieux_equipements_divers.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (
@@ -1044,11 +1060,13 @@ streams:
   # contrainte d'unicité DB (corrigé une prémisse inexacte du 2026-08-21).
   # Pertinent uniquement si bail.type_bail = 'meuble' (règle applicative,
   # pas une contrainte de schéma). commentaire EXCLU (même motif que
-  # cles/equipements_divers).
+  # cles/equipements_divers). ajoutee_apres_signature_entree : voir
+  # etat_des_lieux_cles ci-dessus.
   etat_des_lieux_inventaire:
     query: >
       SELECT id, etat_des_lieux_id, element_id, nombre_entree, etat_entree,
-      nombre_sortie, etat_sortie, archived_at, version, updated_at FROM etat_des_lieux_inventaire
+      nombre_sortie, etat_sortie, ajoutee_apres_signature_entree, archived_at,
+      version, updated_at FROM etat_des_lieux_inventaire
       WHERE etat_des_lieux_inventaire.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (

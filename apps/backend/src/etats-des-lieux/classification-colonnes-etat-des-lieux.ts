@@ -71,7 +71,11 @@ export const COLONNES_STRUCTURELLES_IGNOREES = new Set([
   "etatDesLieuxId",
   "numero",
   "elementId",
-  "bailId"
+  "bailId",
+  // Posée par l'application elle-même à l'écriture (jamais soumise par un
+  // DTO client), voir etat-des-lieux-cles.ts — pas un fait métier
+  // entree/sortie/commune, un simple drapeau de traçabilité serveur.
+  "ajouteeApresSignatureEntree"
 ]);
 
 // Registre central table Drizzle -> classification de ses colonnes. Chaque

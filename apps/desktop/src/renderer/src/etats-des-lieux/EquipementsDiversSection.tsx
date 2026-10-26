@@ -42,6 +42,9 @@ function EtatInventaireSelect({
 //
 // entreeSignee/sortieSignee : même classification que ClesSection (core,
 // CLASSIFICATION_EQUIPEMENTS_DIVERS/CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS).
+// Retrait ("Archiver") : même règle que ClesSection — une ligne ajoutée
+// après l'entrée signée reste retirable jusqu'à la sortie signée
+// (ligne.ajouteeApresSignatureEntree, posé par le serveur à l'insertion).
 export function EquipementsDiversSection({
   lignes,
   entreeSignee,
@@ -227,7 +230,7 @@ function LigneEquipementRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        {!entreeSignee && (
+        {(!sortieSignee && (!entreeSignee || ligne.ajouteeApresSignatureEntree)) && (
           <button
             type="button"
             onClick={() => void handleArchiver()}

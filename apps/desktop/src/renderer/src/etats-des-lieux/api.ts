@@ -81,6 +81,10 @@ export interface LigneCle {
   nombreSortie: number | null;
   commentaire: string | null;
   archivedAt: string | null;
+  // Posé par le serveur à l'insertion : une ligne ajoutée après la
+  // signature d'entrée reste retirable jusqu'à la signature de sortie,
+  // contrairement à une ligne qui existait déjà à l'entrée.
+  ajouteeApresSignatureEntree: boolean;
 }
 
 export interface LigneEquipementDivers {
@@ -93,6 +97,7 @@ export interface LigneEquipementDivers {
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
   archivedAt: string | null;
+  ajouteeApresSignatureEntree: boolean;
 }
 
 export interface ElementInventaireMeuble {
@@ -112,6 +117,7 @@ export interface LigneInventaire {
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
   archivedAt: string | null;
+  ajouteeApresSignatureEntree: boolean;
   elementCode: string;
   elementLibelle: string;
   elementCategorie: CategorieInventaire;

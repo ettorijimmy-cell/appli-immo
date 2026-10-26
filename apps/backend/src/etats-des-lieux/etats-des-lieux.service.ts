@@ -16,7 +16,6 @@ import {
   etatDesLieuxPiecesChambre,
   etatDesLieuxPiecesSalleDeBain,
   etatDesLieuxPiecesWc,
-  etatDesLieuxSignature,
   etatsDesLieux,
   mettreAJourAvecAudit,
   type Database
@@ -330,6 +329,7 @@ export class EtatsDesLieuxService {
           etatSortie: etatDesLieuxInventaire.etatSortie,
           commentaire: etatDesLieuxInventaire.commentaire,
           archivedAt: etatDesLieuxInventaire.archivedAt,
+          ajouteeApresSignatureEntree: etatDesLieuxInventaire.ajouteeApresSignatureEntree,
           elementCode: elementsInventaireMeuble.code,
           elementLibelle: elementsInventaireMeuble.libelle,
           elementCategorie: elementsInventaireMeuble.categorie,
@@ -413,22 +413,12 @@ export class EtatsDesLieuxService {
   // (garanti par test, voir
   // etats-des-lieux-signature.integration.spec.ts).
   private async versDto(entete: typeof etatsDesLieux.$inferSelect) {
-    const signaturesBailleur = await this.db
-      .select({ phase: etatDesLieuxSignature.phase })
-      .from(etatDesLieuxSignature)
-      .where(
-        and(
-          eq(etatDesLieuxSignature.etatDesLieuxId, entete.id),
-          eq(etatDesLieuxSignature.role, "bailleur"),
-          isNull(etatDesLieuxSignature.archivedAt)
-        )
-      );
-    const phasesSignees = new Set(signaturesBailleur.map((ligne) => ligne.phase));
+    const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, entete.id);
     return {
       ...entete,
       statut: calculerStatutEtatDesLieux(entete.dateEntree, entete.dateSortie),
-      entreeSigneeParTous: phasesSignees.has("entree"),
-      sortieSigneeParTous: phasesSignees.has("sortie")
+      entreeSigneeParTous: phases.entreeSignee,
+      sortieSigneeParTous: phases.sortieSignee
     };
   }
 
@@ -730,7 +720,8 @@ export class EtatsDesLieuxService {
       libelleAutre: ligne.libelleAutre,
       nombreEntree: ligne.nombreEntree,
       nombreSortie: ligne.nombreSortie,
-      commentaire: ligne.commentaire
+      commentaire: ligne.commentaire,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
 
@@ -750,7 +741,8 @@ export class EtatsDesLieuxService {
       etatEntree: ligne.etatEntree,
       nombreSortie: ligne.nombreSortie,
       etatSortie: ligne.etatSortie,
-      commentaire: ligne.commentaire
+      commentaire: ligne.commentaire,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
 
@@ -773,7 +765,8 @@ export class EtatsDesLieuxService {
       etatEntree: ligne.etatEntree,
       nombreSortie: ligne.nombreSortie,
       etatSortie: ligne.etatSortie,
-      commentaire: ligne.commentaire
+      commentaire: ligne.commentaire,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
 
@@ -1121,7 +1114,15 @@ export class EtatsDesLieuxService {
             // donc normalement gelé comme sur une ligne existante.
             verifierChampsAutorises(phases, table, ligne.champs, identiteSoumise);
           }
-          await tx.insert(table).values({ etatDesLieuxId, ...ligne.champs } as T["$inferInsert"]);
+          // Posé ici, à l'écriture — jamais déduit après coup d'un
+          // horodatage ou d'un id (voir le commentaire sur la colonne,
+          // packages/db/src/schema/etat-des-lieux-cles.ts, pour la
+          // régression de test qui a motivé ce choix).
+          await tx.insert(table).values({
+            etatDesLieuxId,
+            ...ligne.champs,
+            ajouteeApresSignatureEntree: phases.entreeSignee
+          } as T["$inferInsert"]);
         }
       }
 
@@ -1129,10 +1130,23 @@ export class EtatsDesLieuxService {
         if (!idsExistants.has(id)) {
           throw new NotFoundException(`Ligne ${id} introuvable pour cet état des lieux`);
         }
-        // Verrou de signature : une ligne existante ne peut plus être
-        // archivée une fois l'entrée signée — au même titre qu'une
-        // modification de ses champs (même raisonnement que ci-dessus).
-        if (phases.entreeSignee) {
+        // Verrou de signature (revue 2026-10-26) : une ligne qui existait
+        // déjà AU MOMENT de la signature d'entrée ne peut plus être
+        // archivée ensuite — au même titre qu'une modification de ses
+        // champs. En revanche une ligne ajoutée APRÈS cette signature
+        // (ex. une clé remise en cours de bail, cf. le cas symétrique à
+        // l'insertion ci-dessus) reste retirable tant que la sortie n'est
+        // pas signée : elle ne décrit rien qui ait été constaté à l'entrée,
+        // la retirer ne revient pas à corriger un fait déjà acté. Distingué
+        // par le booléen posé à l'écriture (ajouteeApresSignatureEntree),
+        // jamais par un horodatage ou un id — voir le commentaire sur la
+        // colonne (packages/db/src/schema/etat-des-lieux-cles.ts).
+        if (phases.sortieSignee) {
+          throw new ConflictException(
+            `Modification refusée : impossible d'archiver la ligne ${id}, la sortie de cet état des lieux est signée.`
+          );
+        }
+        if (phases.entreeSignee && !parId.get(id)?.["ajouteeApresSignatureEntree"]) {
           throw new ConflictException(
             `Modification refusée : impossible d'archiver la ligne ${id}, l'entrée de cet état des lieux est signée.`
           );
@@ -1191,9 +1205,12 @@ export class EtatsDesLieuxService {
           if (phases.entreeSignee) {
             verifierChampsAutorises(phases, etatDesLieuxInventaire, ligne.champs, null);
           }
-          await tx
-            .insert(etatDesLieuxInventaire)
-            .values({ etatDesLieuxId, elementId: ligne.elementId, ...ligne.champs });
+          await tx.insert(etatDesLieuxInventaire).values({
+            etatDesLieuxId,
+            elementId: ligne.elementId,
+            ...ligne.champs,
+            ajouteeApresSignatureEntree: phases.entreeSignee
+          });
         }
       }
 
@@ -1202,9 +1219,16 @@ export class EtatsDesLieuxService {
         if (!existante) {
           throw new NotFoundException(`Élément ${elementId} introuvable dans l'inventaire de cet état des lieux`);
         }
-        // Même règle que upsertEtArchiverParId ci-dessus : aucune ligne
-        // existante archivable une fois l'entrée signée.
-        if (phases.entreeSignee) {
+        // Même règle que upsertEtArchiverParId ci-dessus : une ligne
+        // ajoutée après la signature d'entrée reste retirable jusqu'à la
+        // signature de sortie ; une ligne qui existait déjà à l'entrée ne
+        // l'est plus une fois celle-ci signée.
+        if (phases.sortieSignee) {
+          throw new ConflictException(
+            `Modification refusée : impossible d'archiver l'élément ${elementId}, la sortie de cet état des lieux est signée.`
+          );
+        }
+        if (phases.entreeSignee && !existante.ajouteeApresSignatureEntree) {
           throw new ConflictException(
             `Modification refusée : impossible d'archiver l'élément ${elementId}, l'entrée de cet état des lieux est signée.`
           );

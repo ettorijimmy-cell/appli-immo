@@ -3092,6 +3092,7 @@ Une ligne par type de clé, pas des colonnes répétées.
 | libelle_autre | text, nullable | Renseigné uniquement si `type_cle = "autre"` |
 | nombre_entree, nombre_sortie | integer, nullable | |
 | commentaire | text, nullable | |
+| ajoutee_apres_signature_entree | boolean, défaut `false` | Posée par l'application à l'insertion d'une ligne NEUVE alors que l'entrée est déjà signée — voir note ci-dessous |
 
 **Écriture (`etat_des_lieux_cles`, `etat_des_lieux_equipements_divers`,
 `etat_des_lieux_inventaire`) — upsert par id explicite, jamais un
@@ -3120,6 +3121,24 @@ faute de tout moyen de la revoir). Vérifié par un test d'intégration réel
 reproduisant exactement ce scénario (entrée préservée après une
 soumission de sortie qui ne la mentionne pas) et un test dédié pour
 `avecArchives`.
+
+**`ajoutee_apres_signature_entree`** (colonne ajoutée le 2026-10-26,
+présente aussi sur `etat_des_lieux_equipements_divers` et
+`etat_des_lieux_inventaire`) : une ligne qui existait déjà à la signature
+d'entrée ne peut plus être archivée ensuite (verrou de signature), mais
+une ligne ajoutée APRÈS cette signature (ex. une clé remise en cours de
+bail) ne décrit rien qui ait été constaté à l'entrée — la retirer reste
+donc autorisé tant que la sortie n'est pas signée. Distingué par ce
+booléen, posé par l'application au moment de l'insertion (jamais déduit
+après coup) : une tentative antérieure de comparer un horodatage
+(`created_at` vs `signe_le`) ou l'id (UUID v7) de la ligne à celui de la
+signature s'est révélée non fiable en test d'intégration — `now()`
+Postgres renvoie l'heure de **début de transaction**, pas celle de
+l'instruction (toutes les lignes insérées dans une même transaction de
+test obtiennent la même valeur), et deux UUID v7 générés à quelques
+dizaines de microsecondes d'écart peuvent tomber dans la même
+milliseconde, rendant leur ordre lexicographique non significatif à ce
+niveau de résolution.
 
 ### Pièces (etat_des_lieux_piece_entree / _sejour / _cuisine / _pieces_chambre / _pieces_salle_de_bain / _pieces_wc / _pieces_autre)
 Chaque élément porte trois colonnes : `..._description` (texte libre,
@@ -3151,6 +3170,7 @@ M/P/B/TB.
 | libelle | text | Saisi librement |
 | nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
 | commentaire | text, nullable | |
+| ajoutee_apres_signature_entree | boolean, défaut `false` | Voir `etat_des_lieux_cles` ci-dessus |
 
 ### elements_inventaire_meuble (catalogue de référence)
 88 postes fixes du modèle réel (section inventaire du bail meublé, bloc
@@ -3179,6 +3199,7 @@ commentaires compense).
 | element_id | uuid | FK vers `elements_inventaire_meuble` |
 | nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
 | commentaire | text, nullable | |
+| ajoutee_apres_signature_entree | boolean, défaut `false` | Voir `etat_des_lieux_cles` ci-dessus |
 
 ### etat_des_lieux_signature
 Signature tactile du bailleur et de chaque locataire, en deux temps

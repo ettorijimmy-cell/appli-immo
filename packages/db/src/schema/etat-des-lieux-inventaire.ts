@@ -1,4 +1,4 @@
-import { integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 import { elementsInventaireMeuble } from "./elements-inventaire-meuble";
 import { etatDesLieuxInventaireEtatEnum, etatsDesLieux } from "./etats-des-lieux";
@@ -20,7 +20,10 @@ export const etatDesLieuxInventaire = pgTable(
     etatEntree: etatDesLieuxInventaireEtatEnum("etat_entree"),
     nombreSortie: integer("nombre_sortie"),
     etatSortie: etatDesLieuxInventaireEtatEnum("etat_sortie"),
-    commentaire: text("commentaire")
+    commentaire: text("commentaire"),
+    // Même principe que etat_des_lieux_cles.ajoutee_apres_signature_entree
+    // — voir ce commentaire pour le détail.
+    ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false)
   },
   (table) => [
     uniqueIndex("etat_des_lieux_inventaire_element_unique").on(table.etatDesLieuxId, table.elementId)

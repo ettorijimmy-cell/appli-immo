@@ -25,6 +25,11 @@ const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
 // une ligne NEUVE (pas encore d'id) n'a que libelleAutre (son identité) et
 // nombreEntree/nombreSortie (sortie, actif selon la colonne) éditables,
 // jamais commentaire. Tout se fige à la sortie signée.
+// Retrait ("Archiver") : une ligne qui existait déjà à la signature
+// d'entrée ne peut plus être archivée ensuite, mais une ligne ajoutée
+// APRÈS cette signature (ligne.ajouteeApresSignatureEntree, posé par le
+// serveur à l'insertion) reste retirable jusqu'à la signature de sortie
+// — même règle que le verrou d'écriture backend (upsertEtArchiverParId).
 export function ClesSection({
   lignes,
   entreeSignee,
@@ -216,15 +221,17 @@ function LigneCleRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        {ligne && !entreeSignee && (
-          <button
-            type="button"
-            onClick={() => void handleArchiver(ligne.id)}
-            className="text-xs text-slate-500 hover:text-red-600"
-          >
-            Archiver
-          </button>
-        )}
+        {ligne &&
+          !sortieSignee &&
+          (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
+            <button
+              type="button"
+              onClick={() => void handleArchiver(ligne.id)}
+              className="text-xs text-slate-500 hover:text-red-600"
+            >
+              Archiver
+            </button>
+          )}
         {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </td>
     </tr>

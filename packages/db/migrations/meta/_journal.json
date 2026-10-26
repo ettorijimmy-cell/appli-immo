@@ -477,6 +477,13 @@
       "when": 1792924783843,
       "tag": "0067_daily_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1793036255087,
+      "tag": "0068_good_barracuda",
+      "breakpoints": true
     }
   ]
 }

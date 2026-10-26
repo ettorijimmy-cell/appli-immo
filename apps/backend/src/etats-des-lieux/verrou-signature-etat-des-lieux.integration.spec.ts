@@ -12,6 +12,7 @@ import {
   elementsInventaireMeuble,
   etatDesLieuxCles,
   etatDesLieuxEquipementsDivers,
+  etatDesLieuxInventaire,
   etatDesLieuxPieceSejour,
   organisations,
   utilisateurs,
@@ -389,6 +390,56 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       expect(enBase?.archivedAt).toBeNull(); // pas d'effet de bord malgré le refus
     });
 
+    it("submitCles : une ligne ajoutée APRÈS la signature d'entrée reste retirable tant que la sortie n'est pas signée, contrairement à une ligne déjà existante à l'entrée (régression, revue 2026-10-26)", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const lignesInitiales = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ typeCle: "cave", nombreEntree: 1 }] })
+      );
+      const ligneExistante = lignesInitiales.find((l) => l.typeCle === "cave");
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const apresAjout = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, {
+          lignes: [{ typeCle: "autre", libelleAutre: "Clé remise en cours de bail", nombreSortie: 1 }]
+        })
+      );
+      // Résultat non ordonné (SELECT sans ORDER BY, plusieurs lignes
+      // actives désormais) — toujours retrouver par un champ discriminant,
+      // jamais par position dans le tableau.
+      const ligneNeuve = apresAjout.find((l) => l.libelleAutre === "Clé remise en cours de bail");
+      expect(ligneExistante!.ajouteeApresSignatureEntree).toBe(false);
+      expect(ligneNeuve!.ajouteeApresSignatureEntree).toBe(true);
+
+      // Toujours interdit sur la ligne qui existait déjà à l'entrée.
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneExistante!.id] })
+        )
+      ).rejects.toThrow(ConflictException);
+
+      // Désormais autorisé sur la ligne ajoutée après coup.
+      const apresRetrait = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneNeuve!.id] })
+      );
+      expect(apresRetrait.find((l) => l.id === ligneNeuve!.id)).toBeUndefined();
+      const [ligneNeuveEnBase] = await db.select().from(etatDesLieuxCles).where(eq(etatDesLieuxCles.id, ligneNeuve!.id));
+      expect(ligneNeuveEnBase?.archivedAt).not.toBeNull();
+
+      // Une AUTRE ligne ajoutée après l'entrée n'est plus retirable une fois la sortie signée.
+      const apresAjout2 = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, {
+          lignes: [{ typeCle: "autre", libelleAutre: "Clé local à vélos", nombreSortie: 1 }]
+        })
+      );
+      const ligneNeuve2 = apresAjout2.find((l) => l.libelleAutre === "Clé local à vélos");
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneNeuve2!.id] })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
     it("submitEquipementsDivers : ligne neuve avec un champ 'entree' interdite, avec seulement identité + 'sortie' autorisée, avec 'commentaire' interdite", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await signerEntree(etatDesLieuxId, titulaire.id);
@@ -444,6 +495,55 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
           etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
             lignes: [{ libelle: "Trop tard", nombreSortie: 1 }]
           })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitEquipementsDivers : une ligne ajoutée APRÈS la signature d'entrée reste retirable tant que la sortie n'est pas signée, contrairement à une ligne déjà existante à l'entrée (régression, revue 2026-10-26)", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const lignesInitiales = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [{ libelle: "Aspirateur" }] })
+      );
+      const ligneExistante = lignesInitiales.find((l) => l.libelle === "Aspirateur");
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const apresAjout = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+          lignes: [{ libelle: "Télécommande portail", nombreSortie: 1, etatSortie: "bon" }]
+        })
+      );
+      // Résultat non ordonné (SELECT sans ORDER BY) — retrouver par un
+      // champ discriminant, jamais par position dans le tableau.
+      const ligneNeuve = apresAjout.find((l) => l.libelle === "Télécommande portail");
+      expect(ligneExistante!.ajouteeApresSignatureEntree).toBe(false);
+      expect(ligneNeuve!.ajouteeApresSignatureEntree).toBe(true);
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneExistante!.id] })
+        )
+      ).rejects.toThrow(ConflictException);
+
+      const apresRetrait = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneNeuve!.id] })
+      );
+      expect(apresRetrait.find((l) => l.id === ligneNeuve!.id)).toBeUndefined();
+      const [ligneNeuveEnBase] = await db
+        .select()
+        .from(etatDesLieuxEquipementsDivers)
+        .where(eq(etatDesLieuxEquipementsDivers.id, ligneNeuve!.id));
+      expect(ligneNeuveEnBase?.archivedAt).not.toBeNull();
+
+      const apresAjout2 = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+          lignes: [{ libelle: "Barbecue", nombreSortie: 1 }]
+        })
+      );
+      const ligneNeuve2 = apresAjout2.find((l) => l.libelle === "Barbecue");
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [], idsASupprimer: [ligneNeuve2!.id] })
         )
       ).rejects.toThrow(ConflictException);
     });
@@ -511,6 +611,65 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
           etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
             lignes: [{ elementId: autreElement!.id, etatSortie: "dusage" }]
           })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("submitInventaire : une ligne ajoutée APRÈS la signature d'entrée reste retirable tant que la sortie n'est pas signée, contrairement à une ligne déjà existante à l'entrée (régression, revue 2026-10-26)", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const elementsCatalogue = await db
+        .select({ id: elementsInventaireMeuble.id })
+        .from(elementsInventaireMeuble)
+        .limit(3);
+      if (elementsCatalogue.length < 3) {
+        throw new Error("Catalogue elements_inventaire_meuble insuffisant sur ce Postgres de test");
+      }
+      const [elementExistant, elementNeuf, elementNeuf2] = elementsCatalogue;
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementExistant!.id, nombreEntree: 1, etatEntree: "bon" }]
+        })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const resultatApresAjout = await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementNeuf!.id, etatSortie: "dusage" }]
+        })
+      );
+      expect(resultatApresAjout.find((l) => l.elementId === elementNeuf!.id)?.ajouteeApresSignatureEntree).toBe(true);
+      expect(resultatApresAjout.find((l) => l.elementId === elementExistant!.id)?.ajouteeApresSignatureEntree).toBe(
+        false
+      );
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+            lignes: [],
+            elementsASupprimer: [elementExistant!.id]
+          })
+        )
+      ).rejects.toThrow(ConflictException);
+
+      const apresRetrait = await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [], elementsASupprimer: [elementNeuf!.id] })
+      );
+      expect(apresRetrait.find((l) => l.elementId === elementNeuf!.id)).toBeUndefined();
+      const [ligneNeuveEnBase] = await db
+        .select()
+        .from(etatDesLieuxInventaire)
+        .where(and(eq(etatDesLieuxInventaire.etatDesLieuxId, etatDesLieuxId), eq(etatDesLieuxInventaire.elementId, elementNeuf!.id)));
+      expect(ligneNeuveEnBase?.archivedAt).not.toBeNull();
+
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, {
+          lignes: [{ elementId: elementNeuf2!.id, etatSortie: "bon" }]
+        })
+      );
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [], elementsASupprimer: [elementNeuf2!.id] })
         )
       ).rejects.toThrow(ConflictException);
     });

@@ -147,7 +147,10 @@ export function InventaireSection({
 // colonne structurelle, jamais une clé de `champs`, voir
 // classification-champs-etat-des-lieux.ts côté "core") : seuls etat/nombre
 // de sortie restent éditables sur une ligne jamais vue à l'entrée,
-// commentaire jamais éditable une fois l'entrée signée.
+// commentaire jamais éditable une fois l'entrée signée. Retrait : une
+// ligne ajoutée après l'entrée signée reste retirable jusqu'à la sortie
+// signée (ligne.ajouteeApresSignatureEntree, posé par le serveur à
+// l'insertion) — même règle que ClesSection.
 function LigneInventaireRow({
   element,
   ligne,
@@ -259,15 +262,17 @@ function LigneInventaireRow({
         >
           {isSaving ? "…" : "Enregistrer"}
         </button>
-        {ligne && !entreeSignee && (
-          <button
-            type="button"
-            onClick={() => void handleRetirer()}
-            className="text-xs text-slate-500 hover:text-red-600"
-          >
-            Retirer
-          </button>
-        )}
+        {ligne &&
+          !sortieSignee &&
+          (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
+            <button
+              type="button"
+              onClick={() => void handleRetirer()}
+              className="text-xs text-slate-500 hover:text-red-600"
+            >
+              Retirer
+            </button>
+          )}
         {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </td>
     </tr>
