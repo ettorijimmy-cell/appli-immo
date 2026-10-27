@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { readFile, rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -226,6 +226,137 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
     await expect(
       documentsService.remplacerDocument(document.id, { categorie: "signature" }, fichierTest("v2"))
     ).rejects.toThrow(BadRequestException);
+  });
+
+  // Chantier PDF étape 4 (2026-10-27) : .docx figé et PDF de l'état des
+  // lieux — même principe que "signature" ci-dessus, mais ces deux
+  // catégories n'ont pas encore de service de génération dédié à ce stade
+  // (prochain commit) : les lignes de test sont insérées directement en
+  // base (comme le fera ce futur service, en dehors de cette route
+  // générique), jamais via documentsService.upload().
+  describe("catégories réservées 'etat_des_lieux_docx'/'etat_des_lieux_pdf' (chantier PDF étape 4)", () => {
+    it.each(["etat_des_lieux_docx", "etat_des_lieux_pdf"] as const)(
+      "upload() : refuse (400) la catégorie '%s' — réservée au service de génération PDF",
+      async (categorie) => {
+        await expect(
+          documentsService.upload({ entiteType: "appartement", entiteId: appartementId, categorie }, fichierTest("peu importe"))
+        ).rejects.toThrow(BadRequestException);
+      }
+    );
+
+    it.each(["etat_des_lieux_docx", "etat_des_lieux_pdf"] as const)(
+      "update()/remplacerDocument() : refusent (400) de reclasser un document existant en catégorie '%s'",
+      async (categorie) => {
+        const document = await documentsService.upload(
+          { entiteType: "appartement", entiteId: appartementId, categorie: "bail" },
+          fichierTest("peu importe")
+        );
+        await expect(documentsService.update(document.id, { categorie })).rejects.toThrow(BadRequestException);
+        await expect(documentsService.remplacerDocument(document.id, { categorie }, fichierTest("v2"))).rejects.toThrow(
+          BadRequestException
+        );
+      }
+    );
+
+    // Ligne insérée directement en base (categorie déjà réservée) : simule
+    // ce que fera le futur service de génération, pour tester le verrou
+    // côté lecture/écriture existante (update/archiver), pas seulement la
+    // création.
+    async function creerLigneFigee(categorie: "etat_des_lieux_docx" | "etat_des_lieux_pdf", phase: "entree" | "sortie") {
+      const [ligne] = await db
+        .insert(documents)
+        .values({
+          entiteType: "appartement",
+          entiteId: appartementId,
+          categorie,
+          nomFichier: `${categorie}.bin`,
+          mimeType: "application/octet-stream",
+          tailleOctets: 1,
+          cheminStockage: `documents/appartement/${appartementId}/${randomUUID()}.enc`,
+          etatDesLieuxPhase: phase,
+          estEtatDesLieuxFige: true
+        })
+        .returning();
+      if (!ligne) {
+        throw new Error("Échec de l'insertion de la ligne figée de test");
+      }
+      return ligne;
+    }
+
+    it.each(["etat_des_lieux_docx", "etat_des_lieux_pdf"] as const)(
+      "update() : refuse (409) de modifier un document existant déjà en catégorie '%s'",
+      async (categorie) => {
+        const ligne = await creerLigneFigee(categorie, "entree");
+        await expect(documentsService.update(ligne.id, { dateExpiration: "2030-01-01" })).rejects.toThrow(
+          ConflictException
+        );
+      }
+    );
+
+    it.each(["etat_des_lieux_docx", "etat_des_lieux_pdf"] as const)(
+      "archiver() : refuse (409) d'archiver un document existant déjà en catégorie '%s'",
+      async (categorie) => {
+        const ligne = await creerLigneFigee(categorie, "sortie");
+        await expect(documentsService.archiver(ligne.id)).rejects.toThrow(ConflictException);
+      }
+    );
+
+    // Index unique partiel documents_etat_des_lieux_fige_unique
+    // (packages/db/src/schema/documents.ts) : au plus une ligne par
+    // (entite_id, categorie, etat_des_lieux_phase) quand
+    // est_etat_des_lieux_fige=true. Vérifié directement contre Postgres
+    // (insertion brute), pas via un service applicatif — c'est la base qui
+    // doit trancher la course entre génération immédiate/relance/bouton,
+    // jamais un SELECT préalable (voir le commentaire de l'index).
+    it("index unique partiel : une deuxième ligne figée pour le même (entité, catégorie, phase) est rejetée par Postgres", async () => {
+      await creerLigneFigee("etat_des_lieux_docx", "entree");
+      await expect(creerLigneFigee("etat_des_lieux_docx", "entree")).rejects.toThrow(/duplicate key value|unique constraint/i);
+    });
+
+    it("index unique partiel : une ligne de phase différente pour la même entité/catégorie est acceptée", async () => {
+      await creerLigneFigee("etat_des_lieux_docx", "entree");
+      await expect(creerLigneFigee("etat_des_lieux_docx", "sortie")).resolves.toBeTruthy();
+    });
+
+    it("index unique partiel : une ligne de catégorie différente pour la même entité/phase est acceptée", async () => {
+      await creerLigneFigee("etat_des_lieux_docx", "entree");
+      await expect(creerLigneFigee("etat_des_lieux_pdf", "entree")).resolves.toBeTruthy();
+    });
+
+    // CHECK documents_est_etat_des_lieux_fige_coherent
+    // (packages/db/src/schema/documents.ts) : coûte-que-coûte cohérent
+    // même en cas de bug applicatif futur contournant DocumentsService —
+    // les deux sens de l'incohérence sont testés.
+    it("CHECK : rejette une catégorie réservée (docx/pdf) avec est_etat_des_lieux_fige=false", async () => {
+      await expect(
+        db.insert(documents).values({
+          entiteType: "appartement",
+          entiteId: appartementId,
+          categorie: "etat_des_lieux_docx",
+          nomFichier: "test.bin",
+          mimeType: "application/octet-stream",
+          tailleOctets: 1,
+          cheminStockage: `documents/appartement/${appartementId}/${randomUUID()}.enc`,
+          etatDesLieuxPhase: "entree",
+          estEtatDesLieuxFige: false
+        })
+      ).rejects.toThrow(/violates check constraint|documents_est_etat_des_lieux_fige_coherent/i);
+    });
+
+    it("CHECK : rejette une catégorie non réservée (ex. 'bail') avec est_etat_des_lieux_fige=true", async () => {
+      await expect(
+        db.insert(documents).values({
+          entiteType: "appartement",
+          entiteId: appartementId,
+          categorie: "bail",
+          nomFichier: "test.bin",
+          mimeType: "application/octet-stream",
+          tailleOctets: 1,
+          cheminStockage: `documents/appartement/${appartementId}/${randomUUID()}.enc`,
+          estEtatDesLieuxFige: true
+        })
+      ).rejects.toThrow(/violates check constraint|documents_est_etat_des_lieux_fige_coherent/i);
+    });
   });
 
   it("statut expire : calculé à la lecture, sans jamais réécrire la colonne stockée (Module 6 s'en chargera)", async () => {

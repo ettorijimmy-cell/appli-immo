@@ -59,7 +59,16 @@ export const DOCUMENT_CATEGORIES = [
   // plutôt que de compter implicitement sur son absence de cette liste.
   // Seul EtatsDesLieuxSignatureService crée ces documents, par un insert
   // direct dans sa propre transaction de signature.
-  "signature"
+  "signature",
+  // .docx figé et PDF de l'état des lieux (chantier PDF, étape 4,
+  // 2026-10-27) — valeurs RÉELLES de documents.categorie, mais jamais des
+  // valeurs que cette route générique doit accepter : listées ici
+  // uniquement pour que DocumentsService puisse les refuser explicitement
+  // (creerDepuisBuffer/update/remplacerDocument/archiver), même principe
+  // que "signature" ci-dessus. Seul le service de génération PDF de
+  // l'état des lieux crée/archive ces documents.
+  "etat_des_lieux_docx",
+  "etat_des_lieux_pdf"
 ] as const;
 export type DocumentCategorie = (typeof DOCUMENT_CATEGORIES)[number];
 

@@ -65,7 +65,8 @@ const EXCLUSIONS: Record<string, Record<string, string>> = {
     piece_justificative_chemin: "même motif que documents.chemin_stockage — chemin du blob chiffré sur disque, jamais exposable (déjà documenté dans le yaml)"
   },
   documents: {
-    chemin_stockage: "chemin/clé du blob chiffré sur disque — ne doit jamais apparaître en clair dans la base SQLite locale (schema.ts)"
+    chemin_stockage: "chemin/clé du blob chiffré sur disque — ne doit jamais apparaître en clair dans la base SQLite locale (schema.ts)",
+    est_etat_des_lieux_fige: "bookkeeping interne purement serveur (chantier PDF étape 4, 2026-10-27) — pilote uniquement l'index unique partiel Postgres (documents_etat_des_lieux_fige_unique), aucune lecture ni décision d'UI côté desktop ne s'appuie sur ce booléen, contrairement à ajoutee_apres_signature_entree (celle-ci pilote un bouton réel)"
   },
   alertes: {
     derniere_condition_vraie: "champ interne, jamais exposé à l'utilisateur (schema.ts, packages/db/src/schema/alertes.ts)"

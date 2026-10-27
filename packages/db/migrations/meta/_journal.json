@@ -484,6 +484,13 @@
       "when": 1793036255087,
       "tag": "0068_good_barracuda",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1793112075201,
+      "tag": "0069_bored_legion",
+      "breakpoints": true
     }
   ]
 }

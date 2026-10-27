@@ -1,4 +1,5 @@
-import { date, integer, pgEnum, pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, date, integer, pgEnum, pgTable, text, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 import { etatDesLieuxPhaseEnum } from "./etats-des-lieux";
 
@@ -79,7 +80,17 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   // référencée par etat_des_lieux_signature.document_id, jamais affichée
   // en dehors de ce mécanisme (pas de carte "Documents" dédiée côté desktop
   // pour cette catégorie).
-  "signature"
+  "signature",
+  // Chantier PDF de l'état des lieux (étape 4, 2026-10-27) : le .docx FIGÉ
+  // généré juste après le commit de signerEntree/signerSortie (jamais
+  // régénéré depuis l'état courant par la suite) et le PDF converti à
+  // partir de ce .docx figé — toujours entiteType='etat_des_lieux',
+  // etat_des_lieux_phase renseignée, jamais affichés en dehors de ce
+  // mécanisme (pas de carte "Documents" dédiée). Au plus une ligne par
+  // (entite_id, categorie, etat_des_lieux_phase) — voir l'index unique
+  // partiel ci-dessous.
+  "etat_des_lieux_docx",
+  "etat_des_lieux_pdf"
 ]);
 
 // 'valide'/'expire' sont calculés à la lecture (packages/core,
@@ -113,51 +124,99 @@ export const documentEtatDesLieuxPieceTypeEnum = pgEnum("document_etat_des_lieux
 // (extension checklist candidat, 2026-09-15).
 export const documentCandidatRoleEnum = pgEnum("document_candidat_role", ["candidat", "garant"]);
 
-export const documents = pgTable("documents", {
-  ...auditColumns,
-  // Lien polymorphe : pas de contrainte de clé étrangère possible (5 tables
-  // cibles), la cohérence entiteType/entiteId est vérifiée applicativement
-  // (DocumentsService) à la création.
-  entiteType: documentEntiteTypeEnum("entite_type").notNull(),
-  entiteId: uuid("entite_id").notNull(),
-  categorie: documentCategorieEnum("categorie").notNull(),
-  statut: documentStatutEnum("statut").notNull().default("valide"),
-  dateExpiration: date("date_expiration"),
-  nomFichier: text("nom_fichier").notNull(),
-  mimeType: text("mime_type").notNull(),
-  tailleOctets: integer("taille_octets").notNull(),
-  // Clé/chemin du blob chiffré sur disque (repli local temporaire, voir
-  // docs/data-dictionary.md) — jamais exposé au frontend.
-  cheminStockage: text("chemin_stockage").notNull(),
-  // Nullables : identifient la pièce précise pour une photo d'état des
-  // lieux (numero seulement pour chambre/salle_de_bain/wc/autre, null pour
-  // entrée/séjour/cuisine à instance unique) — jamais renseignés pour les
-  // 5 autres entiteType.
-  etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
-  etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero"),
-  // Chantier signatures (2026-10-24) : distingue une photo prise pendant
-  // la visite d'entrée de celle prise à la sortie — nécessaire pour que le
-  // verrou posé par la signature d'entrée (EtatsDesLieuxService) puisse
-  // bloquer l'ajout/la suppression des photos de la partie entrée sans
-  // bloquer celles de la sortie, alors qu'aucune des deux n'était
-  // distinguée avant ce chantier (toutes les photos d'une pièce étaient
-  // mélangées dans la même balise {#photos}, quelle que soit leur phase
-  // de prise — voir EtatDesLieuxDocumentDocxService.idsPhotos). Posée
-  // automatiquement à l'upload selon la phase en cours (jamais transmise
-  // par le client) ; nullable pour les lignes historiques déjà en base
-  // (aucune migration de données rétroactive) et pour les 10 autres
-  // entiteType, où elle n'a pas de sens.
-  etatDesLieuxPhase: etatDesLieuxPhaseEnum("etat_des_lieux_phase"),
-  // Nullable, exigé uniquement quand entiteType = 'candidat' (vérifié
-  // applicativement, voir DocumentsService.verifierPieceValideSelonEntiteType) —
-  // jamais renseigné pour les 6 autres entiteType.
-  candidatRole: documentCandidatRoleEnum("candidat_role"),
-  // Versioning (docs/backlog.md, dette technique) : auto-référence vers la
-  // ligne que ce document remplace. La version courante d'une chaîne est
-  // celle qu'aucune autre ligne ne référence ici. DocumentsService
-  // .remplacerDocument() archive automatiquement l'ancienne version dans
-  // la même transaction que la création de la nouvelle — jamais de
-  // suppression physique (CLAUDE.md), jamais deux versions 'valide'
-  // simultanées dans une même chaîne.
-  documentPrecedentId: uuid("document_precedent_id").references((): AnyPgColumn => documents.id)
-});
+export const documents = pgTable(
+  "documents",
+  {
+    ...auditColumns,
+    // Lien polymorphe : pas de contrainte de clé étrangère possible (5 tables
+    // cibles), la cohérence entiteType/entiteId est vérifiée applicativement
+    // (DocumentsService) à la création.
+    entiteType: documentEntiteTypeEnum("entite_type").notNull(),
+    entiteId: uuid("entite_id").notNull(),
+    categorie: documentCategorieEnum("categorie").notNull(),
+    statut: documentStatutEnum("statut").notNull().default("valide"),
+    dateExpiration: date("date_expiration"),
+    nomFichier: text("nom_fichier").notNull(),
+    mimeType: text("mime_type").notNull(),
+    tailleOctets: integer("taille_octets").notNull(),
+    // Clé/chemin du blob chiffré sur disque (repli local temporaire, voir
+    // docs/data-dictionary.md) — jamais exposé au frontend.
+    cheminStockage: text("chemin_stockage").notNull(),
+    // Nullables : identifient la pièce précise pour une photo d'état des
+    // lieux (numero seulement pour chambre/salle_de_bain/wc/autre, null pour
+    // entrée/séjour/cuisine à instance unique) — jamais renseignés pour les
+    // 5 autres entiteType.
+    etatDesLieuxPieceType: documentEtatDesLieuxPieceTypeEnum("etat_des_lieux_piece_type"),
+    etatDesLieuxPieceNumero: integer("etat_des_lieux_piece_numero"),
+    // Chantier signatures (2026-10-24) : distingue une photo prise pendant
+    // la visite d'entrée de celle prise à la sortie — nécessaire pour que le
+    // verrou posé par la signature d'entrée (EtatsDesLieuxService) puisse
+    // bloquer l'ajout/la suppression des photos de la partie entrée sans
+    // bloquer celles de la sortie, alors qu'aucune des deux n'était
+    // distinguée avant ce chantier (toutes les photos d'une pièce étaient
+    // mélangées dans la même balise {#photos}, quelle que soit leur phase
+    // de prise — voir EtatDesLieuxDocumentDocxService.idsPhotos). Posée
+    // automatiquement à l'upload selon la phase en cours (jamais transmise
+    // par le client) ; nullable pour les lignes historiques déjà en base
+    // (aucune migration de données rétroactive) et pour les 10 autres
+    // entiteType, où elle n'a pas de sens. Également renseignée pour le
+    // .docx figé et le PDF (categorie='etat_des_lieux_docx'/'etat_des_lieux_pdf',
+    // chantier PDF étape 4, 2026-10-27) — voir l'index unique partiel
+    // ci-dessous.
+    etatDesLieuxPhase: etatDesLieuxPhaseEnum("etat_des_lieux_phase"),
+    // Nullable, exigé uniquement quand entiteType = 'candidat' (vérifié
+    // applicativement, voir DocumentsService.verifierPieceValideSelonEntiteType) —
+    // jamais renseigné pour les 6 autres entiteType.
+    candidatRole: documentCandidatRoleEnum("candidat_role"),
+    // Versioning (docs/backlog.md, dette technique) : auto-référence vers la
+    // ligne que ce document remplace. La version courante d'une chaîne est
+    // celle qu'aucune autre ligne ne référence ici. DocumentsService
+    // .remplacerDocument() archive automatiquement l'ancienne version dans
+    // la même transaction que la création de la nouvelle — jamais de
+    // suppression physique (CLAUDE.md), jamais deux versions 'valide'
+    // simultanées dans une même chaîne.
+    documentPrecedentId: uuid("document_precedent_id").references((): AnyPgColumn => documents.id),
+    // Chantier PDF étape 4 (2026-10-27) : posé par l'application (jamais
+    // dérivé de `categorie` dans l'index ci-dessous) — `true` uniquement
+    // pour categorie='etat_des_lieux_docx'/'etat_des_lieux_pdf'. Nécessaire
+    // parce que Postgres interdit toute comparaison typée (même ::text)
+    // sur une valeur d'enum ajoutée dans la même migration qui l'a créée
+    // ("unsafe use of new value"/"functions in index predicate must be
+    // marked IMMUTABLE", constaté en lançant la suite d'intégration) — un
+    // prédicat d'index partiel ne peut donc pas comparer directement
+    // `categorie` à ces 2 valeurs tout juste ajoutées. Un booléen simple
+    // n'a pas ce problème.
+    estEtatDesLieuxFige: boolean("est_etat_des_lieux_fige").notNull().default(false)
+  },
+  (table) => [
+    // Chantier PDF étape 4 (2026-10-27) : au plus UNE ligne par (état des
+    // lieux, phase) pour le .docx figé et pour le PDF — la génération
+    // immédiate (après signature), la relance (job + lecture GET) et le
+    // bouton manuel peuvent courir en concurrence ; c'est cet index qui
+    // tranche (violation = conflit = no-op applicatif), jamais un SELECT
+    // préalable (fenêtre de course sinon). Partiel : ne contraint que ces
+    // deux catégories, aucun effet sur les 15 autres valeurs de
+    // document_categorie. Prédicat sur le booléen est_etat_des_lieux_fige
+    // (voir sa définition ci-dessus), jamais sur categorie directement —
+    // voir son commentaire pour la contrainte Postgres qui impose ce
+    // détour.
+    uniqueIndex("documents_etat_des_lieux_fige_unique")
+      .on(table.entiteId, table.categorie, table.etatDesLieuxPhase)
+      .where(sql`${table.estEtatDesLieuxFige}`),
+    // Garantit par la base, pas seulement par applicatif, que le booléen
+    // ci-dessus reste cohérent avec categorie — sans cette CHECK, un bug
+    // futur pourrait poser est_etat_des_lieux_fige=true sur une catégorie
+    // quelconque (contournant l'index unique partiel pour n'importe quelle
+    // catégorie) ou l'inverse (deux docx figés pour la même phase passant
+    // sous le radar de l'index parce que le booléen n'a pas été posé).
+    // Comparaison en texte (categorie::text), jamais une comparaison typée
+    // sur l'enum : seule forme qui passe dans la même transaction que les
+    // deux ALTER TYPE ADD VALUE ci-dessus (une CHECK n'exige pas
+    // IMMUTABLE, contrairement à un prédicat d'index — vérifié par la
+    // suite d'intégration, migrations rejouées de zéro).
+    check(
+      "documents_est_etat_des_lieux_fige_coherent",
+      sql`${table.estEtatDesLieuxFige} = (${table.categorie}::text IN ('etat_des_lieux_docx', 'etat_des_lieux_pdf'))`
+    )
+  ]
+);
