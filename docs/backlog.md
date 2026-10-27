@@ -2158,23 +2158,51 @@ desktop, et retrait encadré des lignes/pièces ajoutées après l'entrée.
   évolution de leurs props (ex. nouveau champ classifié) doit être
   répercutée à la main dans ce fichier, rien ne le detecte automatiquement.
 
-**Pour le déploiement (aucune de ces trois migrations n'est encore
-passée en production à ce jour) :**
+**Déployé en production le 2026-10-27** (image `d0de4e1`, migrations
+`0066`-`0068` appliquées, config PowerSync redéployée, installeur
+`d0de4e1`) :
 - Migrations Drizzle `0066` (table `etat_des_lieux_signature`,
   `documents.etat_des_lieux_phase`), `0067` (`etats_des_lieux.lieu_entree`/
   `lieu_sortie`), `0068` (`ajoutee_apres_signature_entree` sur
-  `etat_des_lieux_cles`/`equipements_divers`/`inventaire`) — à appliquer
+  `etat_des_lieux_cles`/`equipements_divers`/`inventaire`) — appliquées
   dans cet ordre.
-- Streams PowerSync à redéployer dans le dashboard (voir
+- Streams PowerSync redéployés dans le dashboard (voir
   `docs/powersync-sync-streams.yaml`, en-tête "État du déploiement") :
-  `documents` (colonne `etat_des_lieux_phase`, 2026-10-24) et
-  `etat_des_lieux_cles`/`etat_des_lieux_equipements_divers`/
+  **5** streams — `documents` (colonne `etat_des_lieux_phase`,
+  2026-10-24), `etats_des_lieux` (colonnes `lieu_entree`/`lieu_sortie`,
+  2026-10-25) et `etat_des_lieux_cles`/`etat_des_lieux_equipements_divers`/
   `etat_des_lieux_inventaire` (colonne `ajoutee_apres_signature_entree`,
   2026-10-26).
-- Nouvel installeur desktop à reconstruire et tester en conditions
-  réelles (lecture seule signée, badges, champs figés, retrait des lignes
-  — voir "État de la production" pour le gabarit de ce type de
-  vérification).
+- Nouvel installeur desktop installé le 2026-10-27. Comportements signés
+  (lecture seule, badges, champs figés, retrait des lignes) validés en
+  dev sur le scénario TEST VISUEL, non vérifiés en production faute
+  d'état des lieux réel signé : à vérifier lors du premier vrai état des
+  lieux.
+
+**À faire — Confirmation et abandon d'un état des lieux (2026-10-27).**
+Aujourd'hui, "Démarrer l'état des lieux" (mobile) / "Créer l'état des
+lieux" (desktop) crée l'en-tête `etats_des_lieux` sans aucune étape de
+confirmation, et rien ne permet ensuite d'abandonner ce brouillon :
+`etats_des_lieux.bail_id` porte une contrainte `unique()` stricte (un
+seul EDL par bail, jamais plus), et la table n'a pas de colonne
+`archived_at` (contrairement aux lignes clés/équipements/inventaire, qui
+en ont une). Contexte : un brouillon vide créé par erreur en production
+le 2026-10-27, conservé volontairement (voir entrée suivante). Piste
+retenue : confirmation avant création côté UI + `archived_at` sur
+`etats_des_lieux` + remplacement de `unique(bail_id)` par un index
+unique partiel `WHERE archived_at IS NULL` (pour permettre de recréer un
+EDL après abandon du brouillon) + bouton "Abandonner le brouillon" (même
+mécanisme d'archivage que les lignes clés/équipements/inventaire).
+
+**À faire — Reprise d'une entrée papier (2026-10-27).** Pour les baux
+en cours dont l'état des lieux d'entrée a été signé sur papier (avant la
+mise en place de la signature numérique), permettre de saisir dans
+l'appli les états relevés sur le papier, d'y joindre le scan signé, et
+de verrouiller l'entrée avec la mention "signée sur papier le …" — sans
+signature numérique : le bailleur ne signe jamais à la place du
+locataire. La sortie se déroule ensuite normalement dans l'appli
+(signature numérique bailleur + locataires). Prérequis pour pouvoir
+utiliser l'appli à la sortie de tous les locataires actuels.
 
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos

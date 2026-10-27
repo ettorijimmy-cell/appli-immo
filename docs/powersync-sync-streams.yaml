@@ -42,12 +42,13 @@
 #     du domaine État des lieux (etats_des_lieux et ses tables satellites).
 #     À vérifier quand des données réelles existeront pour ces domaines —
 #     voir docs/backlog.md, entrée "PowerSync — suite".
-#   - Streams MODIFIÉS EN CODE depuis ce déploiement confirmé, PAS ENCORE
-#     redéployés dans le dashboard PowerSync — à coller/redéployer au
-#     prochain déploiement, sans quoi la colonne reste absente côté client
-#     malgré sa présence ici :
+#   - Streams MODIFIÉS EN CODE depuis le déploiement confirmé du
+#     2026-10-22, redéployés dans le dashboard PowerSync le 2026-10-27
+#     (5 streams) :
 #       - documents : colonne etat_des_lieux_phase ajoutée le 2026-10-24
 #         (chantier Signatures, commit 277e9b5).
+#       - etats_des_lieux : colonnes lieu_entree/lieu_sortie ajoutées le
+#         2026-10-25 (chantier Signatures, commit 4c507f8).
 #       - etat_des_lieux_cles, etat_des_lieux_equipements_divers,
 #         etat_des_lieux_inventaire : colonne
 #         ajoutee_apres_signature_entree ajoutée le 2026-10-26 (chantier
