@@ -87,10 +87,13 @@ function creerSimulateurGotenberg(): Promise<{
         return;
       }
       appels++;
-      for await (const _chunk of req) {
-        // Corps multipart reçu mais pas parsé : seul le comportement de
-        // réponse configuré par le test importe ici.
-      }
+      // Corps multipart reçu (drainé, jamais parsé — seul le comportement
+      // de réponse configuré par le test importe ici) : attend la fin du
+      // flux avant de répondre, comme le ferait un vrai appel réseau.
+      await new Promise<void>((resolve) => {
+        req.resume();
+        req.once("end", resolve);
+      });
       const c = comportement;
       if (c.type === "attendre") {
         await c.porte;
