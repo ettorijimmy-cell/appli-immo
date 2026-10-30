@@ -6,12 +6,17 @@ import { GotenbergModule } from "../gotenberg/gotenberg.module";
 import { OrganisationResolutionModule } from "../organisation-resolution/organisation-resolution.module";
 import { StorageModule } from "../storage/storage.module";
 import { EtatDesLieuxPdfController } from "./etat-des-lieux-pdf.controller";
+import { EtatDesLieuxPdfJobService } from "./etat-des-lieux-pdf-job.service";
 import { EtatDesLieuxPdfService } from "./etat-des-lieux-pdf.service";
 
 @Module({
   imports: [StorageModule, DocumentsModule, EtatDesLieuxDocumentDocxModule, EtatsDesLieuxModule, GotenbergModule, OrganisationResolutionModule],
   controllers: [EtatDesLieuxPdfController],
-  providers: [EtatDesLieuxPdfService],
+  // EtatDesLieuxPdfJobService jamais exporté (même principe que
+  // IndicesIrlJobService/ImapSyncJobService) : @Cron s'enregistre tout
+  // seul via ScheduleModule.forRoot() (global, AppModule), aucun autre
+  // module n'a besoin d'y référencer cette classe.
+  providers: [EtatDesLieuxPdfService, EtatDesLieuxPdfJobService],
   // Consommé par EtatsDesLieuxSignatureModule (génération juste après
   // signature) — voir EtatsDesLieuxSignatureService.
   exports: [EtatDesLieuxPdfService]

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import path from "path";
-import { NotFoundException } from "@nestjs/common";
+import { Logger, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, documents, organisations, utilisateurs, type Database } from "db";
@@ -29,12 +29,15 @@ import { EtatsDesLieuxSignatureModule } from "../etats-des-lieux-signature/etats
 import { EtatsDesLieuxSignatureService } from "../etats-des-lieux-signature/etats-des-lieux-signature.service";
 import { EtatsDesLieuxModule } from "../etats-des-lieux/etats-des-lieux.module";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
+import { GotenbergIndisponibleError } from "../gotenberg/gotenberg.errors";
+import { GotenbergService } from "../gotenberg/gotenberg.service";
 import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
+import { EtatDesLieuxPdfJobService } from "./etat-des-lieux-pdf-job.service";
 import { EtatDesLieuxPdfModule } from "./etat-des-lieux-pdf.module";
 import { EtatDesLieuxPdfService } from "./etat-des-lieux-pdf.service";
 
@@ -178,6 +181,8 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
   let etatsDesLieuxService: EtatsDesLieuxService;
   let etatsDesLieuxSignatureService: EtatsDesLieuxSignatureService;
   let etatDesLieuxPdfService: EtatDesLieuxPdfService;
+  let etatDesLieuxPdfJobService: EtatDesLieuxPdfJobService;
+  let gotenbergService: GotenbergService;
   let documentsService: DocumentsService;
   let requestContextService: RequestContextService;
 
@@ -309,6 +314,8 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
     etatsDesLieuxService = moduleRef.get(EtatsDesLieuxService);
     etatsDesLieuxSignatureService = moduleRef.get(EtatsDesLieuxSignatureService);
     etatDesLieuxPdfService = moduleRef.get(EtatDesLieuxPdfService);
+    etatDesLieuxPdfJobService = moduleRef.get(EtatDesLieuxPdfJobService);
+    gotenbergService = moduleRef.get(GotenbergService);
     documentsService = moduleRef.get(DocumentsService);
     requestContextService = moduleRef.get(RequestContextService);
   });
@@ -323,6 +330,15 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
     await etatDesLieuxPdfService.attendreTachesEnCours();
     await moduleRef?.close();
     await rollback();
+    // Restaure tout vi.spyOn posé par un test (Logger.prototype.warn/error,
+    // gotenbergService.estConfigure/convertirDocxEnPdf) — Logger.prototype
+    // est un prototype PARTAGÉ par tout le process, jamais réinitialisé
+    // par moduleRef.close() : sans cette restauration, un espion posé par
+    // un test fuirait vers tous les tests suivants, y compris dans
+    // d'autres fichiers exécutés par le même worker Vitest (même risque
+    // que la fuite de GOTENBERG_URL via process.env, voir afterAll
+    // ci-dessous).
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -544,6 +560,219 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
     expect(entree.pdf).not.toBeNull();
     expect(sortie.docx).toBeNull();
     expect(sortie.pdf).toBeNull();
+  });
+
+  describe("relance (job planifié + relance à la lecture, chantier PDF étape 4b)", () => {
+    it("trouverPhasesSigneesIncompletes : retrouve une phase signée dont un document figé manque, ignore une phase non signée ou déjà complète", async () => {
+      const orgA = await creerFixtureOrganisation("J1");
+      const orgB = await creerFixtureOrganisation("J2");
+
+      // orgA : signature d'entrée avec Gotenberg en échec -> .docx présent, PDF absent (candidate).
+      // Attend explicitement que l'appel Gotenberg ait eu lieu ET échoué (pas seulement le .docx,
+      // local et plus rapide) avant de rebasculer le simulateur en succès pour orgB ci-dessous :
+      // sinon la tentative PDF d'orgA, encore en vol, pourrait réussir sur le comportement devenu
+      // "succès" (simulateur partagé pour tout le fichier, voir creerSimulateurGotenberg) et fausser
+      // ce test — même raison que le délai de grâce du test "simulateur en erreur" plus haut.
+      simulateur.definirComportement({ type: "erreur", statut: 500 });
+      await avecContexte(orgA, () => etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId])));
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+
+      // orgB : signature d'entrée avec Gotenberg sain -> phase complète, jamais candidate. Sa phase
+      // sortie n'est, elle, jamais signée -> pas candidate non plus (aucune signature bailleur).
+      simulateur.reinitialiser();
+      simulateur.definirComportement({ type: "succes" });
+      await avecContexte(orgB, () => etatsDesLieuxSignatureService.signerEntree(orgB.etatDesLieuxId, dtoSignature([orgB.titulaireId])));
+      await attendreCondition(async () => (await docFige(orgB.etatDesLieuxId, "entree", "etat_des_lieux_pdf")) !== null);
+
+      // Égalité stricte sur le tableau entier, pas une simple inclusion : cette requête est
+      // volontairement système (toutes organisations, voir son commentaire), mais sous
+      // pnpm test:integration:clean — seule façon sanctionnée de lancer cette suite, voir
+      // CLAUDE.md et scripts/test-integration-clean.mjs (down -v puis up -d avant ET après,
+      // DATABASE_URL forcée sur localhost:5434, jamais 5433) — la base est entièrement vide à
+      // chaque lancement, puis remise à zéro par ROLLBACK entre chaque test
+      // (createTransactionalTestHooks) : aucune autre signature bailleur ne peut exister au
+      // moment de cet appel que celles créées ci-dessus. Lancer ce fichier directement contre
+      // le Postgres de dev (pnpm --filter backend test:integration, sans :clean — possible via
+      // le repli DEFAULT_DEV_DATABASE_URL, voir packages/db/src/client.ts) sortirait de ce
+      // contrat ; ce n'est jamais le cas en CI ni dans le pipeline attendu avant un commit.
+      const incomplets = await etatDesLieuxPdfService.trouverPhasesSigneesIncompletes();
+      expect(incomplets).toEqual([{ etatDesLieuxId: orgA.etatDesLieuxId, phase: "entree" }]);
+    });
+
+    it("le job planifié (EtatDesLieuxPdfJobService) rattrape le PDF manquant d'une phase signée", async () => {
+      const orgA = await creerFixtureOrganisation("J3");
+      simulateur.definirComportement({ type: "erreur", statut: 500 });
+      await avecContexte(orgA, () => etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId])));
+      // Attend que la tentative PDF ait réellement eu lieu ET échoué (pas seulement le .docx) avant
+      // de rebasculer le simulateur en succès ci-dessous — même raison que le test précédent.
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+
+      simulateur.reinitialiser();
+      simulateur.definirComportement({ type: "succes" });
+
+      // Appel réel de bout en bout, requête système trouverPhasesSigneesIncompletes comprise
+      // (jamais simulée) : sûr uniquement sous pnpm test:integration:clean, qui recrée la base
+      // entièrement vide à chaque lancement (voir le commentaire du test précédent) — aucun
+      // autre état des lieux réel ne peut s'y trouver mêlé.
+      await etatDesLieuxPdfJobService.rattraperDocumentsManquants();
+
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).not.toBeNull();
+    });
+
+    it("listerDocumentsFiges déclenche un rattrapage en arrière-plan pour une phase signée incomplète, sans bloquer la lecture", async () => {
+      const orgA = await creerFixtureOrganisation("J4");
+      simulateur.definirComportement({ type: "erreur", statut: 500 });
+      await avecContexte(orgA, () => etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId])));
+      // Attend que la tentative PDF ait réellement eu lieu ET échoué (pas seulement le .docx) avant
+      // de rebasculer le simulateur en succès ci-dessous — même raison que les deux tests précédents.
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+
+      simulateur.reinitialiser();
+      simulateur.definirComportement({ type: "succes" });
+      const avant = await avecContexte(orgA, () => etatDesLieuxPdfService.listerDocumentsFiges(orgA.etatDesLieuxId));
+      // La lecture elle-même reflète encore l'état constaté à cet instant (PDF absent) — c'est le
+      // rattrapage qu'elle vient de déclencher en arrière-plan qui le produira, jamais la lecture
+      // elle-même (même preuve de non-blocage que pour signerEntree, voir plus haut).
+      expect(avant.find((l) => l.phase === "entree")?.pdf).toBeNull();
+
+      await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")) !== null);
+    });
+
+    it("pas de double lancement : deux déclencheurs concurrents pour le même (état des lieux, phase) rejoignent la même tâche", async () => {
+      const orgA = await creerFixtureOrganisation("D1");
+      let libererPorte!: () => void;
+      const porte = new Promise<void>((resolve) => {
+        libererPorte = resolve;
+      });
+      simulateur.definirComportement({ type: "attendre", porte });
+
+      try {
+        await avecContexte(orgA, () =>
+          etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+        );
+        // La chaîne de signature est en cours, bloquée à l'étape PDF par la porte — le .docx
+        // (local, sans réseau) est déjà là.
+        await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")) !== null);
+
+        // Deux autres déclencheurs pour EXACTEMENT le même couple pendant que la première chaîne
+        // tourne encore (job planifié, relance à la lecture) : doivent rejoindre la MÊME
+        // promesse que celle déjà posée par signerEntree, jamais en lancer une nouvelle.
+        const rattrapage = etatDesLieuxPdfService.rattraperDocumentsManquantsEnArrierePlan(orgA.etatDesLieuxId, "entree");
+        const secondAppelSignature = etatDesLieuxPdfService.produireDocumentsFigesEnArrierePlan(orgA.etatDesLieuxId, "entree");
+        expect(rattrapage).toBe(secondAppelSignature);
+
+        libererPorte();
+        await rattrapage;
+      } finally {
+        libererPorte();
+      }
+
+      // Un seul appel Gotenberg au total, malgré 3 déclencheurs pour le même couple.
+      expect(simulateur.nombreAppels()).toBe(1);
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).not.toBeNull();
+    });
+
+    it("endpoint manuel : rejoint une chaîne déjà en cours pour le même (état des lieux, phase) plutôt que d'en lancer une seconde", async () => {
+      const orgA = await creerFixtureOrganisation("D2");
+      let libererPorte!: () => void;
+      const porte = new Promise<void>((resolve) => {
+        libererPorte = resolve;
+      });
+      simulateur.definirComportement({ type: "attendre", porte });
+
+      try {
+        await avecContexte(orgA, () =>
+          etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+        );
+        await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")) !== null);
+
+        // Appel manuel PENDANT que la chaîne de signature est encore bloquée à l'étape PDF
+        // (porte non libérée) : doit la rejoindre, jamais lancer sa propre tentative concurrente
+        // de conversion.
+        const appelManuel = avecContexte(orgA, () => etatDesLieuxPdfService.produireManuellement(orgA.etatDesLieuxId, "entree"));
+        libererPorte();
+        await appelManuel;
+      } finally {
+        libererPorte();
+      }
+
+      expect(simulateur.nombreAppels()).toBe(1);
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).not.toBeNull();
+    });
+
+    it("Gotenberg non configuré : le .docx figé est quand même produit, aucun log répété à chaque relance", async () => {
+      const orgA = await creerFixtureOrganisation("L1");
+      // GOTENBERG_URL reste définie (process.env, voir beforeAll) — on simule directement
+      // "non configuré" via estConfigure(), sans recompiler tout le module pour une variable
+      // d'environnement : GotenbergService journalise déjà lui-même un WARN unique à son
+      // propre démarrage dans ce cas (voir gotenberg.service.ts) — rien à répéter ici.
+      vi.spyOn(gotenbergService, "estConfigure").mockReturnValue(false);
+      vi.spyOn(gotenbergService, "convertirDocxEnPdf").mockRejectedValue(new GotenbergIndisponibleError());
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")) !== null);
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")).not.toBeNull();
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      // Rattrapage immédiat (job planifié ou relance à la lecture) : toujours aucun log, même à
+      // la seconde tentative — jamais une répétition du warning à chaque passage.
+      await etatDesLieuxPdfService.rattraperDocumentsManquantsEnArrierePlan(orgA.etatDesLieuxId, "entree");
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it("Gotenberg configuré mais transitoirement indisponible (502/503/504 ou réseau) : WARN, jamais ERROR", async () => {
+      const orgA = await creerFixtureOrganisation("L2");
+      simulateur.definirComportement({ type: "erreur", statut: 503 });
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(orgA.etatDesLieuxId));
+    });
+
+    it("GotenbergConversionError (échec non transitoire) : ERROR visible dans Cockpit, avec l'id de l'état des lieux et la phase", async () => {
+      const orgA = await creerFixtureOrganisation("L3");
+      // 500 n'est pas dans CODES_HTTP_RELANCABLES (gotenberg.service.ts) -> GotenbergConversionError,
+      // jamais GotenbergIndisponibleError (voir aussi le test "simulateur en erreur" plus haut).
+      simulateur.definirComportement({ type: "erreur", statut: 500 });
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`(entree) pour l'état des lieux ${orgA.etatDesLieuxId}`));
+    });
   });
 
   describe("contrôle d'organisation (fail-closed)", () => {

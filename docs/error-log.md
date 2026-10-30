@@ -33,6 +33,63 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-10-30] Violation de contrainte unique "sans risque" qui casse pourtant toute la suite d'intégration — transaction explicite partagée des tests, pas la logique applicative
+
+**Symptôme** : un test d'intégration nouvellement écrit (chantier PDF étape
+4b, rattrapage des documents figés manquants) échouait avec
+`PostgresError: current transaction is aborted, commands ignored until
+end of transaction block`, une erreur Postgres générique sans point
+d'entrée applicatif clair dans la stack. Les logs du conteneur Postgres de
+test (`tmp/test-integration-postgres-*.log`) ont révélé la vraie séquence :
+un `duplicate key value violates unique constraint
+"documents_etat_des_lieux_fige_unique"`, suivi immédiatement par plusieurs
+`current transaction is aborted` sur les requêtes suivantes.
+
+**Contexte** : `EtatDesLieuxPdfService.produireDocumentsFigesEnArrierePlan`
+(chantier PDF étape 4) attrape déjà le code Postgres `23505` et continue
+silencieusement — un design jugé sûr car la violation ne devait être
+qu'un filet contre une vraie course concurrente, jamais le chemin normal.
+Le nouveau job planifié/relance à la lecture réutilisait cette même
+méthode, qui regénère et retente TOUJOURS l'insertion du `.docx`, même
+quand il existe déjà (cas normal d'une relance : un seul des deux
+documents manque).
+
+**Cause** : en Postgres, une instruction en échec avorte TOUJOURS la
+transaction en cours, même si l'exception JS est attrapée et absorbée par
+l'application — attraper l'erreur ne restaure pas l'état de la
+transaction. En production, chaque requête HTTP a sa propre
+transaction/connexion (effectivement autocommit par appel), donc ce
+"filet" ne coûte jamais qu'une insertion perdue, sans effet sur le reste
+de la requête. Mais `createTransactionalTestHooks` enveloppe tout un
+fichier de test dans UNE SEULE transaction Postgres explicite partagée
+(`BEGIN ... ROLLBACK` en fin de test) — toute violation réellement
+exécutée dans ce cadre avorte cette transaction partagée, et absolument
+toute requête suivante dans le même test (voire le test suivant si la
+récupération échoue) échoue à son tour, quel que soit le soin apporté à
+l'attraper côté application.
+
+**Solution** : ne jamais retenter une insertion déjà satisfaite — vérifier
+la présence du document AVANT de le (re)produire, pas seulement après
+coup via l'index unique comme filet de course. Nouvelle méthode
+`rattraperDocumentsManquantsEnArrierePlan` (vérifie, puis produit
+seulement ce qui manque) distincte de `produireDocumentsFigesEnArrierePlan`
+(toujours une première tentative, rien n'existe encore à ce stade —
+légitime de s'appuyer uniquement sur l'index unique). Le job planifié et
+la relance à la lecture utilisent la première ; seule la réponse de
+signature utilise la seconde.
+
+**Fichiers concernés** : `apps/backend/src/etat-des-lieux-pdf/etat-des-lieux-pdf.service.ts`,
+`apps/backend/src/etat-des-lieux-pdf/etat-des-lieux-pdf-job.service.ts`.
+
+**À surveiller** : tout nouveau code qui s'appuie sur "l'erreur Postgres
+est attrapée donc c'est sans risque" à l'intérieur d'un test utilisant
+`createTransactionalTestHooks` — le risque réel n'est jamais pour la
+donnée (le ROLLBACK final nettoie tout), mais pour la fiabilité du test
+lui-même. Vérifier l'existence avant toute tentative d'insertion dont la
+violation est un cas attendu et fréquent (relances), pas seulement un cas
+de course rare — l'index unique reste le filet pour la course rare, jamais
+le mécanisme normal.
+
 ### [2026-09-27] Connexion en production systématiquement rejetée ("Identifiants invalides") — cause réelle : 500 masqué, pas un problème d'identifiants
 
 **Symptôme** : l'app installée (build electron-builder) affichait
