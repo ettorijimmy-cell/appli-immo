@@ -231,7 +231,14 @@ export class EtatDesLieuxDocumentDocxService {
     }
   }
 
-  async genererDocumentEtatDesLieuxDocx(etatDesLieuxId: string): Promise<Buffer> {
+  // `phaseFigee` (chantier PDF étape 4, 2026-10-27) : fige explicitement
+  // avecSortie ci-dessous — "entree" force les champs de sortie vierges
+  // QUEL QUE SOIT l'état courant de date_sortie ou des valeurs de sortie
+  // déjà saisies (EtatDesLieuxPdfService, juste après signerEntree,
+  // jamais régénéré ensuite), "sortie" force le document complet.
+  // Omis (appel existant, bouton "Générer le document" du desktop) :
+  // comportement inchangé, dérivé de date_sortie comme avant.
+  async genererDocumentEtatDesLieuxDocx(etatDesLieuxId: string, phaseFigee?: "entree" | "sortie"): Promise<Buffer> {
     // Garde-fou avant toute génération : un modèle Word édité à la main
     // par le propriétaire peut perdre une balise de boucle par
     // inadvertance (déjà arrivé en pratique — {/meublé} disparu lors
@@ -327,7 +334,7 @@ export class EtatDesLieuxDocumentDocxService {
       });
     }
 
-    const avecSortie = donnees.dateSortie !== null;
+    const avecSortie = phaseFigee ? phaseFigee === "sortie" : donnees.dateSortie !== null;
 
     // Photos : réutilise DocumentsService (jamais de déchiffrement en
     // dehors du point unique déjà en place, CLAUDE.md) — chaque

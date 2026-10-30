@@ -6,7 +6,7 @@ import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
 import PizZip from "pizzip";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -22,6 +22,7 @@ import { RequestContextService } from "../common/request-context";
 import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
+import { EtatDesLieuxPdfService } from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
 import { EtatsDesLieuxSignatureModule } from "../etats-des-lieux-signature/etats-des-lieux-signature.module";
 import { EtatsDesLieuxSignatureService } from "../etats-des-lieux-signature/etats-des-lieux-signature.service";
 import { EtatsDesLieuxModule } from "../etats-des-lieux/etats-des-lieux.module";
@@ -38,6 +39,19 @@ import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.
 // Même fixture committée que etat-des-lieux-document-docx.integration.spec.ts.
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-etat-des-lieux-test.docx");
 process.env["ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
+
+// Chantier PDF étape 4 (2026-10-30) : signerEntree/signerSortie lancent
+// désormais une chaîne de documents figés en ARRIÈRE-PLAN (jamais
+// attendue par leur réponse). Mais ce fichier réutilise UNE SEULE
+// connexion/transaction Postgres pour tout le test (createTransactionalTestHooks)
+// — cette chaîne tourne donc sur la MÊME connexion que l'appel direct à
+// genererDocumentEtatDesLieuxDocx fait plus bas par ce test, et
+// postgres.js sérialise les requêtes d'une même connexion : les
+// 2 générations d'arrière-plan (entrée + sortie) et celle du test
+// s'exécutent l'une après l'autre, pas en parallèle comme en production
+// (connexions distinctes là-bas). Dépassait le défaut Vitest (5000ms)
+// sous charge de suite complète — relevé localement.
+vi.setConfig({ testTimeout: 20000 });
 
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -76,6 +90,7 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
   let etatsDesLieuxService: EtatsDesLieuxService;
   let etatsDesLieuxSignatureService: EtatsDesLieuxSignatureService;
   let etatDesLieuxDocumentDocxService: EtatDesLieuxDocumentDocxService;
+  let etatDesLieuxPdfService: EtatDesLieuxPdfService;
   let requestContextService: RequestContextService;
   let organisationId: string;
   let userId: string;
@@ -117,6 +132,7 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
     etatsDesLieuxService = moduleRef.get(EtatsDesLieuxService);
     etatsDesLieuxSignatureService = moduleRef.get(EtatsDesLieuxSignatureService);
     etatDesLieuxDocumentDocxService = moduleRef.get(EtatDesLieuxDocumentDocxService);
+    etatDesLieuxPdfService = moduleRef.get(EtatDesLieuxPdfService);
     requestContextService = moduleRef.get(RequestContextService);
 
     const [organisation] = await db
@@ -145,6 +161,17 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
   });
 
   afterEach(async () => {
+    // Chantier PDF étape 4 (2026-10-27) : signerEntree/signerSortie
+    // lancent désormais une chaîne de documents figés en arrière-plan
+    // (jamais attendue — EtatDesLieuxPdfService.
+    // produireDocumentsFigesEnArrierePlan). Ce fichier réutilise une
+    // seule connexion/transaction Postgres pour tous ses tests
+    // (createTransactionalTestHooks) : si cette chaîne est encore en vol
+    // au moment du ROLLBACK ci-dessous, sa requête suivante s'exécuterait
+    // sur la transaction du test SUIVANT plutôt que d'échouer proprement.
+    // Attente déterministe (jamais un délai fixe arbitraire) via le
+    // suivi interne du service.
+    await etatDesLieuxPdfService.attendreTachesEnCours();
     await moduleRef?.close();
     await rollback();
   });

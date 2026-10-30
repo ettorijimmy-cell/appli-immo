@@ -9,6 +9,9 @@ import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.
 @Module({
   imports: [DatabaseModule, DocumentsModule, EtatsDesLieuxModule, BienModule],
   controllers: [EtatDesLieuxDocumentDocxController],
-  providers: [EtatDesLieuxDocumentDocxService]
+  providers: [EtatDesLieuxDocumentDocxService],
+  // Chantier PDF étape 4 (2026-10-27) : premier consommateur externe,
+  // EtatDesLieuxPdfModule (génération du .docx figé juste après signature).
+  exports: [EtatDesLieuxDocumentDocxService]
 })
 export class EtatDesLieuxDocumentDocxModule {}

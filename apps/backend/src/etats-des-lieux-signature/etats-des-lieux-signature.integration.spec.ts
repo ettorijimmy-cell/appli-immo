@@ -33,6 +33,7 @@ import { EncryptionModule } from "../crypto/encryption.module";
 import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { DocumentsService } from "../documents/documents.service";
+import { EtatDesLieuxPdfService } from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
 import { EtatsDesLieuxModule } from "../etats-des-lieux/etats-des-lieux.module";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
 import { LocatairesModule } from "../locataires/locataires.module";
@@ -71,6 +72,7 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
   let etatsDesLieuxService: EtatsDesLieuxService;
   let documentsService: DocumentsService;
   let etatsDesLieuxSignatureService: EtatsDesLieuxSignatureService;
+  let etatDesLieuxPdfService: EtatDesLieuxPdfService;
   let requestContextService: RequestContextService;
   let organisationId: string;
   let userId: string;
@@ -209,6 +211,7 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     etatsDesLieuxService = moduleRef.get(EtatsDesLieuxService);
     documentsService = moduleRef.get(DocumentsService);
     etatsDesLieuxSignatureService = moduleRef.get(EtatsDesLieuxSignatureService);
+    etatDesLieuxPdfService = moduleRef.get(EtatDesLieuxPdfService);
     requestContextService = moduleRef.get(RequestContextService);
 
     const organisationEtUser = await creerOrganisationEtUtilisateur("Organisation Signatures Test");
@@ -217,6 +220,17 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
   });
 
   afterEach(async () => {
+    // Chantier PDF étape 4 (2026-10-27) : signerEntree/signerSortie
+    // lancent désormais une chaîne de documents figés en arrière-plan
+    // (jamais attendue — EtatDesLieuxPdfService.
+    // produireDocumentsFigesEnArrierePlan). Ce fichier réutilise UNE
+    // SEULE connexion/transaction Postgres pour tous ses tests
+    // (createTransactionalTestHooks) : si cette chaîne est encore en vol
+    // au moment du ROLLBACK ci-dessous, sa requête suivante s'exécuterait
+    // sur la transaction du test SUIVANT plutôt que d'échouer proprement.
+    // Attente déterministe (jamais un délai fixe arbitraire) via le
+    // suivi interne du service.
+    await etatDesLieuxPdfService.attendreTachesEnCours();
     await moduleRef?.close();
     await rollback();
   });
@@ -356,6 +370,13 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     expect(signatures.map((s) => s.role).sort()).toEqual(["bailleur", "locataire"]);
     expect(signatures.every((s) => s.phase === "entree" && s.luEtApprouve === true)).toBe(true);
 
+    // Le .docx figé (chantier PDF étape 4, 2026-10-27) est produit en
+    // arrière-plan APRÈS cette réponse (jamais attendu, voir
+    // produireDocumentsFigesEnArrierePlan) — immédiatement après
+    // signerEntree, seules les 2 images de signature existent encore ;
+    // voir etat-des-lieux-pdf.integration.spec.ts pour la vérification du
+    // .docx/PDF figés eux-mêmes (avec Gotenberg simulé et l'attente de
+    // leur apparition).
     const lignesDocuments = await db
       .select()
       .from(documents)

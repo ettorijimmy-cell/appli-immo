@@ -18,6 +18,7 @@ import { dateDuJourParis } from "../common/date-paris";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { construireCheminStockage } from "../documents/storage/construire-chemin-stockage";
+import { EtatDesLieuxPdfService } from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { DocumentStorageService } from "../storage/document-storage.service";
@@ -57,7 +58,8 @@ export class EtatsDesLieuxSignatureService {
     private readonly requestContext: RequestContextService,
     private readonly etatsDesLieuxService: EtatsDesLieuxService,
     private readonly organisationResolution: OrganisationResolutionService,
-    private readonly bienService: BienService
+    private readonly bienService: BienService,
+    private readonly etatDesLieuxPdfService: EtatDesLieuxPdfService
   ) {}
 
   // Signataires attendus (mobile-web, écran de signature) : bailleur
@@ -285,6 +287,15 @@ export class EtatsDesLieuxSignatureService {
       }
       throw erreur;
     }
+
+    // Documents figés (chantier PDF étape 4, 2026-10-27), HORS de la
+    // transaction de signature ci-dessus (déjà commitée), et HORS de la
+    // réponse elle-même : une seule chaîne en arrière-plan (.docx PUIS
+    // PDF), jamais attendue, jamais remontée — jamais un échec ou une
+    // lenteur de génération ne doit annuler ou retarder la signature, qui
+    // est l'acte juridique. La chaîne ne rejette jamais (voir son propre
+    // commentaire) : `void` est sûr ici, sans .catch() nécessaire.
+    void this.etatDesLieuxPdfService.produireDocumentsFigesEnArrierePlan(etatDesLieuxId, phase);
 
     return this.etatsDesLieuxService.findById(etatDesLieuxId);
   }

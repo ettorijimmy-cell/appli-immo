@@ -21,11 +21,13 @@ import { DepensesModule } from "./depenses/depenses.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
+import { EtatDesLieuxPdfModule } from "./etat-des-lieux-pdf/etat-des-lieux-pdf.module";
 import { EtatsDesLieuxSignatureModule } from "./etats-des-lieux-signature/etats-des-lieux-signature.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux/etats-des-lieux.module";
 import { EvenementsCalendrierModule } from "./evenements-calendrier/evenements-calendrier.module";
 import { FiscaliteModule } from "./fiscalite/fiscalite.module";
 import { GarantsModule } from "./garants/garants.module";
+import { GotenbergModule } from "./gotenberg/gotenberg.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
@@ -85,6 +87,8 @@ import { VersementsModule } from "./versements/versements.module";
     EtatsDesLieuxModule,
     EtatsDesLieuxSignatureModule,
     EtatDesLieuxDocumentDocxModule,
+    GotenbergModule,
+    EtatDesLieuxPdfModule,
     QuittanceDocumentDocxModule,
     // GoogleOAuthModule désactivé (pas supprimé), décision actée avec
     // Jimmy le 2026-09-22 — voir docs/data-dictionary.md, section "Gmail".
