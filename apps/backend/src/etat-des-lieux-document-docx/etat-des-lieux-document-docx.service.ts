@@ -39,6 +39,7 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
+import { SignatureIllisibleError } from "./signature-illisible.error";
 
 // Vide si non renseigné — même convention que BailDocumentDocxService,
 // jamais "undefined"/"null" littéral dans le document final.
@@ -388,7 +389,20 @@ export class EtatDesLieuxDocumentDocxService {
       .orderBy(etatDesLieuxSignature.signeLe);
     await Promise.all(
       signatures.map(async (s) => {
-        const { contenu } = await this.documentsService.telecharger(s.documentId);
+        let contenu: Buffer;
+        try {
+          ({ contenu } = await this.documentsService.telecharger(s.documentId));
+        } catch (erreur) {
+          // Jamais la trace brute du système de fichiers ou de
+          // déchiffrement ici (chemin de stockage, taille, etc.) — le nom
+          // de la classe suffit à l'appelant pour la journaliser lui-même
+          // avec l'id de l'état des lieux et la phase (voir
+          // EtatDesLieuxPdfService.produireManuellement), jamais de secret.
+          throw new SignatureIllisibleError(
+            `Image de signature illisible (documentId=${s.documentId})`,
+            { cause: erreur }
+          );
+        }
         const meta = await sharp(contenu).metadata();
         images.set(s.documentId, {
           buffer: contenu,

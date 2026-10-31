@@ -40,6 +40,7 @@ import {
 } from "./api";
 import { ClesSection } from "./ClesSection";
 import { CompteursCard } from "./CompteursCard";
+import { DocumentsFigesCard } from "./DocumentsFigesCard";
 import { EquipementsDiversSection } from "./EquipementsDiversSection";
 import { InventaireSection } from "./InventaireSection";
 import { MultiPieceSection, PieceCard } from "./PieceGrid";
@@ -198,6 +199,12 @@ export function EtatDesLieuxSection({
         sortieSigneeParTous={sortieSignee}
         lieuEntree={etatDesLieux.lieuEntree}
         lieuSortie={etatDesLieux.lieuSortie}
+      />
+
+      <DocumentsFigesCard
+        etatDesLieuxId={etatDesLieux.id}
+        entreeSigneeParTous={entreeSignee}
+        sortieSigneeParTous={sortieSignee}
       />
 
       <div className="flex justify-end">

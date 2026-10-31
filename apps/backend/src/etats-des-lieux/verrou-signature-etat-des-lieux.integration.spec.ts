@@ -916,6 +916,11 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
   });
 
   describe("fermé par défaut — exhaustivité réelle des 11 submitX()/updateHeader() (régression)", () => {
+    // Délai élargi (défaut 5000ms trop serré) : 11 appels submitX()/
+    // updateHeader() séquentiels, chacun une requête Postgres réelle —
+    // confirmé par isolation (2026-10-31, docs/backlog.md) que la marge
+    // par défaut est seule en cause sous charge système, jamais une
+    // régression de ce test lui-même.
     it("une soumission intégralement remplie, après signature de sortie, refuse CHAQUE méthode avec ConflictException — jamais une Error générique (qui révélerait un champ non classé)", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       const [elementInventaire] = await db
@@ -1168,7 +1173,7 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       for (const { nom, appel } of appels) {
         await expect(appel(), nom).rejects.toThrow(ConflictException);
       }
-    });
+    }, 15000);
   });
 
   describe("comparaison normalisée — relevé de compteur décimal (régression réelle, pas seulement unitaire)", () => {

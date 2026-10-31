@@ -264,6 +264,32 @@ export function getSignaturesPosees(id: string): Promise<SignaturePosee[]> {
   return authenticatedFetch<SignaturePosee[]>(`/etats-des-lieux/${id}/signatures`);
 }
 
+export interface StatutDocumentsFigesPhase {
+  phase: "entree" | "sortie";
+  docx: { documentId: string; createdAt: string } | null;
+  pdf: { documentId: string; createdAt: string } | null;
+}
+
+// Chantier PDF étape 4 (DocumentsFigesCard) : présence/absence du .docx et
+// du PDF figés, par phase — jamais leur contenu (voir /pdf/:phase/contenu,
+// use-etat-des-lieux-pdf-apercu.ts). Déclenche aussi, côté backend, un
+// rattrapage en arrière-plan pour toute phase signée incomplète (jamais
+// attendu par cette lecture) — revenir lire cette route plus tard suffit à
+// voir le résultat, inutile de la redéclencher soi-même.
+export function listerDocumentsFigesEtatDesLieux(id: string): Promise<StatutDocumentsFigesPhase[]> {
+  return authenticatedFetch<StatutDocumentsFigesPhase[]>(`/etats-des-lieux/${id}/pdf`);
+}
+
+// Bouton "Produire le PDF" (DocumentsFigesCard) : idempotent côté backend,
+// ne produit que ce qui manque pour cette phase — 409 si la phase n'est
+// pas signée (jamais affiché dans ce cas, mais l'appelant relaie quand
+// même le message ApiError si la course a changé l'état entre deux
+// lectures). Réponse 204 ; l'appelant relit ensuite via
+// listerDocumentsFigesEtatDesLieux plutôt que de supposer le résultat.
+export function produirePdfEtatDesLieux(id: string, phase: "entree" | "sortie"): Promise<void> {
+  return authenticatedFetch<void>(`/etats-des-lieux/${id}/pdf/${phase}`, { method: "POST" });
+}
+
 // Récupère le .docx généré côté backend et l'ouvre directement avec
 // l'application par défaut du système, via le canal IPC
 // documents:ouvrirTemporaire (main/documents-temp.ts) — plus de

@@ -1,13 +1,22 @@
 import { join } from "node:path";
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
-import { NestFactory } from "@nestjs/core";
+import { HttpAdapterHost, NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { AllExceptionsFilter } from "./common/all-exceptions.filter";
 import { monterMobileWeb } from "./mobile-web/mobile-web";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Journalise explicitement la cause et la pile de toute exception
+  // inattendue avant la réponse 500 générique (voir all-exceptions.filter.ts,
+  // docs/error-log.md [2026-10-31]) — ne change jamais le comportement HTTP
+  // (délègue à BaseExceptionFilter). app.get(HttpAdapterHost) : seul moyen
+  // de fournir ce que BaseExceptionFilter attend, non disponible avant que
+  // l'application soit créée (recette officielle NestJS).
+  const { httpAdapter } = app.get(HttpAdapterHost);
+  app.useGlobalFilters(new AllExceptionsFilter(httpAdapter));
   // Seul appelant : l'app Electron (origine file:// ou serveur de dev Vite,
   // jamais fixe) — pas un frontend public, d'où une politique permissive.
   // exposedHeaders : Content-Disposition n'est pas dans la liste par défaut

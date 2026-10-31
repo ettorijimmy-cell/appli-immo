@@ -1,9 +1,12 @@
 import {
+  BadGatewayException,
   ConflictException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
   type OnApplicationShutdown
 } from "@nestjs/common";
 import { documents, etatDesLieuxSignature, type Database } from "db";
@@ -14,8 +17,9 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
 import { construireCheminStockage } from "../documents/storage/construire-chemin-stockage";
 import { EtatDesLieuxDocumentDocxService } from "../etat-des-lieux-document-docx/etat-des-lieux-document-docx.service";
+import { SignatureIllisibleError } from "../etat-des-lieux-document-docx/signature-illisible.error";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
-import { GotenbergIndisponibleError } from "../gotenberg/gotenberg.errors";
+import { GotenbergConversionError, GotenbergIndisponibleError } from "../gotenberg/gotenberg.errors";
 import { GotenbergService } from "../gotenberg/gotenberg.service";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { DocumentStorageService } from "../storage/document-storage.service";
@@ -417,18 +421,67 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
       await tacheExistante;
     }
 
-    // Produit ce qui manque encore, propage toute erreur (endpoint
-    // manuel — contrairement à la chaîne en arrière-plan ci-dessus, un
-    // échec ici doit remonter comme une erreur HTTP, jamais être avalé,
-    // même si la chaîne rejointe au-dessus a déjà tenté et échoué).
-    const docxExistant = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_docx");
-    if (!docxExistant) {
-      await this.assurerDocxFige(etatDesLieuxId, phase);
+    // Produit ce qui manque encore (endpoint manuel — contrairement à la
+    // chaîne en arrière-plan ci-dessus, un échec ici doit remonter comme
+    // une erreur HTTP compréhensible, jamais être avalé, même si la
+    // chaîne rejointe au-dessus a déjà tenté et échoué). Toute erreur est
+    // traduite par traduireEchecProductionEnHttp ci-dessous, jamais
+    // laissée brute : un 500 générique ("Internal server error") sans
+    // cause visible côté desktop n'est jamais acceptable pour un échec
+    // attendu (signature illisible, Gotenberg absent/en panne) — voir
+    // docs/error-log.md, [2026-10-31].
+    try {
+      const docxExistant = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_docx");
+      if (!docxExistant) {
+        await this.assurerDocxFige(etatDesLieuxId, phase);
+      }
+      const pdfExistant = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_pdf");
+      if (!pdfExistant) {
+        await this.assurerPdfFige(etatDesLieuxId, phase);
+      }
+    } catch (erreur) {
+      throw this.traduireEchecProductionEnHttp(etatDesLieuxId, phase, erreur);
     }
-    const pdfExistant = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_pdf");
-    if (!pdfExistant) {
-      await this.assurerPdfFige(etatDesLieuxId, phase);
+  }
+
+  // Traduit un échec de production (endpoint manuel uniquement — la
+  // chaîne en arrière-plan et le rattrapage, eux, avalent et journalisent
+  // déjà leurs propres erreurs, voir executerChaineDocumentsFiges/
+  // executerRattrapage) en exception HTTP compréhensible, en français,
+  // sans jamais exposer de détail technique au client — chaque cas
+  // journalise ici sa cause réelle (classe, message, id de l'état des
+  // lieux, phase), jamais de secret (identifiants, en-tête Authorization
+  // — déjà garanti par GotenbergService). Tout le reste (erreur
+  // vraiment inattendue, jamais classée ici) est relancé tel quel : le
+  // filtre d'exceptions global (AllExceptionsFilter, common/) journalise
+  // alors lui-même la cause et la pile avant la réponse 500 générique —
+  // jamais ce service qui dupliquerait cette responsabilité.
+  private traduireEchecProductionEnHttp(etatDesLieuxId: string, phase: PhaseEtatDesLieux, erreur: unknown): Error {
+    if (erreur instanceof SignatureIllisibleError) {
+      this.logger.error(
+        `Échec de production (${phase}) pour l'état des lieux ${etatDesLieuxId} : image de signature illisible — ${erreur.message}`
+      );
+      return new UnprocessableEntityException("Impossible de produire le document : une image de signature est introuvable.");
     }
+    if (erreur instanceof GotenbergIndisponibleError) {
+      if (!this.gotenbergService.estConfigure()) {
+        this.logger.warn(
+          `Production manuelle du PDF (${phase}) demandée pour l'état des lieux ${etatDesLieuxId} alors que Gotenberg n'est pas configuré — le .docx figé est conservé.`
+        );
+        return new ServiceUnavailableException("La conversion PDF n'est pas configurée. Le document Word figé a été conservé.");
+      }
+      this.logger.warn(
+        `Gotenberg momentanément indisponible pour la production manuelle (${phase}), état des lieux ${etatDesLieuxId} : ${erreur.message}`
+      );
+      return new ServiceUnavailableException("Le service de conversion est momentanément indisponible, réessayez dans quelques minutes.");
+    }
+    if (erreur instanceof GotenbergConversionError) {
+      this.logger.error(
+        `Échec de la conversion PDF pour la production manuelle (${phase}), état des lieux ${etatDesLieuxId} : ${erreur.message}`
+      );
+      return new BadGatewayException("La conversion du document a échoué.");
+    }
+    return erreur instanceof Error ? erreur : new Error(String(erreur));
   }
 
   // Lecture (chaque phase, présence/absence de chaque catégorie figée) —

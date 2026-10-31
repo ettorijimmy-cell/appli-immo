@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import path from "path";
-import { Logger, NotFoundException } from "@nestjs/common";
+import { BadGatewayException, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, documents, organisations, utilisateurs, type Database } from "db";
@@ -130,7 +130,12 @@ function creerSimulateurGotenberg(): Promise<{
   });
 }
 
-async function attendreCondition(predicat: () => Promise<boolean>, timeoutMs = 3000): Promise<void> {
+// Délai par défaut élargi de 3000 à 10000ms (2026-10-31, docs/backlog.md) :
+// confirmé par isolation que 3000ms est seul en cause sous charge système
+// (conteneur gotenberg-dev actif en parallèle), jamais une régression de
+// la chaîne elle-même — testTimeout du fichier (20000ms, ligne 60) laisse
+// largement la marge pour ce nouveau plafond.
+async function attendreCondition(predicat: () => Promise<boolean>, timeoutMs = 10000): Promise<void> {
   const debut = Date.now();
   while (Date.now() - debut < timeoutMs) {
     if (await predicat()) {
@@ -772,6 +777,131 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
       expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
       expect(warnSpy).not.toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`(entree) pour l'état des lieux ${orgA.etatDesLieuxId}`));
+    });
+  });
+
+  describe("endpoint manuel : erreurs typées et journalisées (correction 2026-10-31)", () => {
+    it("fichier de signature illisible → 422, message français dédié, ERROR journalisé avec l'id et la phase", async () => {
+      const orgA = await creerFixtureOrganisation("E1");
+      // Simule un fichier de signature absent/illisible sur le stockage,
+      // sans dépendre d'un vrai chemin disque — ce test tourne aussi
+      // contre le Postgres de dev sous test:integration:clean (toujours
+      // vide, voir le commentaire plus haut sur l'isolation), mais jamais
+      // contre un disque partagé dont le contenu serait incertain.
+      vi.spyOn(documentsService, "telecharger").mockRejectedValue(new Error("ENOENT: no such file or directory"));
+
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      // La chaîne automatique déclenchée par la signature échoue déjà en
+      // silence ici (même mock) — attendue avant l'appel manuel pour que
+      // celui-ci parte d'un état stable (aucun .docx produit).
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")).toBeNull();
+
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      let erreurRecue: unknown;
+      try {
+        await avecContexte(orgA, () => etatDesLieuxPdfService.produireManuellement(orgA.etatDesLieuxId, "entree"));
+      } catch (err) {
+        erreurRecue = err;
+      }
+
+      expect(erreurRecue).toBeInstanceOf(UnprocessableEntityException);
+      expect((erreurRecue as Error).message).toBe(
+        "Impossible de produire le document : une image de signature est introuvable."
+      );
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`pour l'état des lieux ${orgA.etatDesLieuxId}`));
+    });
+
+    it("Gotenberg non configuré → 503, message français dédié, WARN journalisé (jamais ERROR)", async () => {
+      const orgA = await creerFixtureOrganisation("E2");
+      vi.spyOn(gotenbergService, "estConfigure").mockReturnValue(false);
+      vi.spyOn(gotenbergService, "convertirDocxEnPdf").mockRejectedValue(new GotenbergIndisponibleError());
+
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_docx")) !== null);
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      let erreurRecue: unknown;
+      try {
+        await avecContexte(orgA, () => etatDesLieuxPdfService.produireManuellement(orgA.etatDesLieuxId, "entree"));
+      } catch (err) {
+        erreurRecue = err;
+      }
+
+      expect(erreurRecue).toBeInstanceOf(ServiceUnavailableException);
+      expect((erreurRecue as Error).message).toBe(
+        "La conversion PDF n'est pas configurée. Le document Word figé a été conservé."
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(orgA.etatDesLieuxId));
+    });
+
+    it("Gotenberg configuré mais transitoirement indisponible (502/503/504) → 503, message distinct, WARN journalisé", async () => {
+      const orgA = await creerFixtureOrganisation("E3");
+      simulateur.definirComportement({ type: "erreur", statut: 503 });
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      // Attend que la tentative automatique ait réellement eu lieu ET
+      // échoué avant l'appel manuel — même raison que les tests de la
+      // section "relance" plus haut (simulateur partagé pour tout le
+      // fichier).
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await new Promise((r) => setTimeout(r, 100));
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      let erreurRecue: unknown;
+      try {
+        await avecContexte(orgA, () => etatDesLieuxPdfService.produireManuellement(orgA.etatDesLieuxId, "entree"));
+      } catch (err) {
+        erreurRecue = err;
+      }
+
+      expect(erreurRecue).toBeInstanceOf(ServiceUnavailableException);
+      expect((erreurRecue as Error).message).toBe(
+        "Le service de conversion est momentanément indisponible, réessayez dans quelques minutes."
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(orgA.etatDesLieuxId));
+    });
+
+    it("GotenbergConversionError (échec non transitoire) → 502, message français dédié, ERROR journalisé", async () => {
+      const orgA = await creerFixtureOrganisation("E4");
+      simulateur.definirComportement({ type: "erreur", statut: 500 });
+      await avecContexte(orgA, () =>
+        etatsDesLieuxSignatureService.signerEntree(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId]))
+      );
+      await attendreCondition(async () => simulateur.nombreAppels() >= 1);
+      await new Promise((r) => setTimeout(r, 100));
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+      expect(await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")).toBeNull();
+
+      const warnSpy = vi.spyOn(Logger.prototype, "warn");
+      const errorSpy = vi.spyOn(Logger.prototype, "error");
+
+      let erreurRecue: unknown;
+      try {
+        await avecContexte(orgA, () => etatDesLieuxPdfService.produireManuellement(orgA.etatDesLieuxId, "entree"));
+      } catch (err) {
+        erreurRecue = err;
+      }
+
+      expect(erreurRecue).toBeInstanceOf(BadGatewayException);
+      expect((erreurRecue as Error).message).toBe("La conversion du document a échoué.");
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(orgA.etatDesLieuxId));
     });
   });
 

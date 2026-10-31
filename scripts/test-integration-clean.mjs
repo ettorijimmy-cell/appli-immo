@@ -39,7 +39,25 @@ function assertUrlEstLocalhost5434(url) {
 }
 assertUrlEstLocalhost5434(DATABASE_URL);
 
-const envEtapes = { ...process.env, DATABASE_URL, VITE_API_URL };
+// GOTENBERG_URL forcée vide (jamais retirée du tout — voir plus bas
+// pourquoi une valeur vide précisément) : @nestjs/config n'applique une
+// variable de apps/backend/.env que si process.env ne la définit pas
+// déjà (voir node_modules/@nestjs/config/dist/config.module.js,
+// `!(key in process.env)`) — si ce fichier contient GOTENBERG_URL (cas
+// réel du 2026-10-31, ajoutée pour un test visuel manuel contre un
+// Gotenberg local), tout fichier de test d'intégration qui ne simule pas
+// lui-même Gotenberg (la plupart — seul etat-des-lieux-pdf.integration.
+// spec.ts le fait, voir creerSimulateurGotenberg) appellerait alors
+// réellement ce Gotenberg local à chaque signature (chaîne en
+// arrière-plan, chantier PDF étape 4) : latence réelle (réseau +
+// LibreOffice) au lieu d'un échec "non configuré" quasi instantané,
+// cause réelle d'instabilité observée ce jour-là (voir docs/backlog.md,
+// Dette technique, entrée gotenberg-dev). Chaîne vide plutôt qu'absente
+// de l'objet : une clé explicitement vide est bien "déjà définie" pour
+// @nestjs/config (`"" in process.env` est vrai), ce qui suffit à ignorer
+// la valeur du fichier .env — resoudreConfigGotenberg (gotenberg-config.ts)
+// traite déjà une chaîne vide comme absente (`if (!url)`).
+const envEtapes = { ...process.env, DATABASE_URL, VITE_API_URL, GOTENBERG_URL: "" };
 
 function executer(commande, args, { cwd = rootDir, env = process.env } = {}) {
   console.log(`$ ${commande} ${args.join(" ")}`);
