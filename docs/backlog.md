@@ -1081,6 +1081,167 @@ les trois parcours ci-dessus).
   correction ci-dessus s'applique dans tous les cas, qu'il s'agisse ou non
   du même scénario exact.
 
+- **Tests d'intégration instables (timeouts non déterministes, plusieurs
+  fichiers) — cause réelle identifiée le 2026-10-31 : conteneur
+  `gotenberg-dev` tournant en arrière-plan.** Premier symptôme observé le
+  2026-10-30 (voir ci-dessous, `auth-login-throttling`, initialement
+  attribué à bcrypt) ; cause réelle confirmée le lendemain pendant la
+  vérification du correctif d'erreurs typées (chantier PDF étape 4b) :
+  plusieurs lancements consécutifs de `pnpm test:integration:clean`
+  échouaient de façon non déterministe (12 à 13 tests en échec, répartis
+  sur 3 à 5 fichiers différents selon le lancement — toujours des
+  dépassements de délai purs, jamais une assertion fausse, jamais dans
+  les fichiers réellement modifiés par ce chantier) — durée totale
+  ~387-390s. Un conteneur `gotenberg-dev` (démarré plus tôt la veille
+  pour un test visuel manuel, voir docs/error-log.md non applicable ici —
+  jamais arrêté depuis, resté actif en arrière-plan ~16h) tournait en
+  parallèle à chaque lancement.
+
+  **Confirmé par test contrôlé** : `docker stop gotenberg-dev` puis
+  relance de la suite → **1027/1027, 0 échec, ~344s** (deux lancements
+  consécutifs, tous deux verts). `docker start gotenberg-dev` puis
+  relance immédiate, sans aucun autre changement → **12 échecs, ~386s**,
+  réparti différemment des lancements précédents mais même profil
+  (timeouts purs). Cause confirmée, pas seulement une coïncidence :
+  reproduit dans les deux sens, à l'identique.
+
+  **Mécanisme** : la suite d'intégration backend n'appelle jamais le
+  vrai Gotenberg (elle simule intégralement l'appel HTTP, voir
+  `creerSimulateurGotenberg` dans `etat-des-lieux-pdf.integration.spec.ts`)
+  — `gotenberg-dev` est donc une charge CPU/mémoire pure, sans aucun
+  bénéfice pour ces tests, qui vient s'ajouter aux 3 autres conteneurs
+  Docker déjà actifs en continu sur cette machine (Postgres de dev 5433,
+  et deux conteneurs d'un autre projet, Redis + pgvector) plus le
+  Postgres jetable 5434 que le script lui-même démarre. Pousse par-dessus
+  bord des délais déjà marginaux (`hookTimeout` 10000ms jamais surchargé,
+  `testTimeout` 5000ms par défaut dans les fichiers qui n'ont pas eu
+  besoin jusqu'ici de l'étendre à 20000ms).
+
+  **Complément le même jour (31/10, plus tard) : une seconde cause, plus
+  précise, a été identifiée et corrigée.** `apps/backend/.env` contenait
+  `GOTENBERG_URL=http://localhost:3050` (ajoutée pour le test visuel
+  manuel ci-dessus). `@nestjs/config` n'applique une valeur de `.env` que
+  pour les clés absentes de `process.env`
+  (`node_modules/@nestjs/config/dist/config.module.js`,
+  `!(key in process.env)`) — `scripts/test-integration-clean.mjs` ne
+  définissait jusqu'alors jamais `GOTENBERG_URL` dans l'environnement
+  transmis à `pnpm --filter backend test:integration`, donc chaque
+  fichier de test qui ne simule pas lui-même Gotenberg (tous sauf
+  `etat-des-lieux-pdf.integration.spec.ts`) appelait réellement
+  `gotenberg-dev` à chaque signature déclenchant la chaîne de documents
+  figés en arrière-plan — latence réseau réelle au lieu d'un échec
+  « non configuré » quasi instantané. **Corrigé** : le script force
+  désormais `GOTENBERG_URL: ""` dans l'environnement qu'il transmet
+  (chaîne vide, pas absente — `"" in process.env` est vrai, ce qui
+  suffit à faire ignorer la valeur du `.env` ; `resoudreConfigGotenberg`
+  traite déjà une chaîne vide comme absente). Sans effet sur la CI
+  (aucun fichier `.env` n'y existe, `GOTENBERG_URL` n'y est jamais
+  définie).
+
+  **Vérifié après correction, `gotenberg-dev` délibérément actif** : deux
+  lancements complets consécutifs de `pnpm test:integration:clean` →
+  1029/1031 à chaque fois, toujours les deux mêmes tests en échec
+  (jamais un profil différent comme avant correction) :
+  `etat-des-lieux-pdf.integration.spec.ts` (`attendreCondition`, délai
+  3000ms) et `verrou-signature-etat-des-lieux.integration.spec.ts` (11
+  `submitX()` séquentiels sous le délai par défaut 5000ms). Donc la fuite
+  `GOTENBERG_URL` était bien la cause dominante (12-13 tests
+  imprévisibles → 2 tests déterministes).
+
+  **Cause 2, réelle (hypothèse initiale de contention CPU de
+  `gotenberg-dev` réfutée) : le serveur backend de dev laissé en marche
+  en parallèle.** `pnpm --filter backend dev` (`nest start --watch`)
+  avait été démarré pour créer une fixture de test visuel et jamais
+  arrêté. Preuve que `gotenberg-dev` lui-même n'était pas en cause :
+  `docker logs gotenberg-dev --since <début de la suite>` → **vide,
+  zéro requête de conversion** pendant tout le lancement (le correctif
+  `GOTENBERG_URL` tient, aucune fuite résiduelle) ; un conteneur
+  Gotenberg au repos ne consomme presque rien, contrairement à un
+  process Node en compilation TypeScript incrémentale avec watcher de
+  fichiers (`nest start --watch`), bien plus lourd. Confirmé par A/B,
+  backend de dev arrêté : **65/65 fichiers, 1031/1031 tests, 0 échec**,
+  à l'identique avec `gotenberg-dev` actif (360s) ET avec `gotenberg-dev`
+  arrêté (357s) — plus aucune différence entre les deux.
+
+  **À faire avant tout lancement de `pnpm test:integration:clean`** :
+  vérifier qu'aucun backend de dev (`pnpm --filter backend dev` /
+  `pnpm dev`) ne tourne en parallèle — c'est lui, pas `gotenberg-dev`,
+  qui cause les dépassements de délai sous charge. `gotenberg-dev` peut
+  rester actif sans arrêt ni précaution particulière (confirmé
+  ci-dessus : 1031/1031 des deux côtés). Marges des deux tests ci-dessus
+  élargies en complément (`attendreCondition` 3000→10000ms, délai du
+  test à 11 appels 5000→15000ms) — robustesse générale, pas une
+  correction de ce mécanisme précis.
+
+  **Rétrospective sur l'entrée initiale (2026-10-30, ci-dessous)** :
+  l'hypothèse "bcrypt + aucun testTimeout étendu" reste une explication
+  plausible en soi, mais `gotenberg-dev` tournait déjà en arrière-plan au
+  moment de cette toute première observation (démarré plus tôt dans la
+  même session) — très probablement la même cause, non identifiée à
+  l'époque. Entrée conservée ci-dessous pour l'historique, mais la cause
+  probable est désormais celle-ci.
+
+- **Test `auth-login-throttling` instable en intégration, dépassement de
+  délai (5000ms) — observé le 2026-10-30.** Constaté pendant la
+  vérification du chantier PDF étape 4 (relance) : sur plusieurs
+  lancements consécutifs de `pnpm test:integration:clean` (Postgres
+  jetable), « AuthController — limitation des tentatives de connexion >
+  une connexion réussie remet à zéro le compteur IP (nouvel échec non
+  bloquant juste après) »
+  (`apps/backend/src/auth/auth-login-throttling.integration.spec.ts:107`)
+  a échoué une fois sur trois avec `Test timed out in 5000ms` — jamais la
+  même erreur aux deux autres lancements (tous verts). Aucune occurrence
+  trouvée dans l'historique CI avant cette date.
+
+  **Piste à l'époque, probable aujourd'hui (voir l'entrée ci-dessus)** :
+  ce test enchaîne `SEUIL_ECHECS_IP + 1` tentatives de connexion
+  séquentielles, chacune passant par un vrai hash bcrypt
+  (`AuthService.validateUser`, volontairement coûteux en CPU) contre un
+  Postgres réel — aucun `vi.setConfig({ testTimeout })` ne surcharge le
+  délai par défaut de Vitest (5000ms) pour ce fichier. Sous charge
+  système (voir l'entrée `gotenberg-dev` ci-dessus, très probablement déjà
+  active à cette date), l'enchaînement de plusieurs hash bcrypt réels
+  peut dépasser 5000ms. Jamais reproduit en CI à ce jour.
+
+- **Chemin de stockage local doublé (`storage/documents/documents/...`)
+  — constaté le 2026-10-31, sur tous les dossiers d'essai réels.**
+  `DocumentStorageService` résout le dossier local en repli avec
+  `DOCUMENTS_STORAGE_DIR ?? path.join(process.cwd(), "storage", "documents")`,
+  puis joint `chemin_stockage` tel qu'enregistré en base — qui commence
+  déjà lui-même par `documents/...` (ex.
+  `documents/etat_des_lieux/<id>/<documentId>.enc`). Résultat observé sur
+  disque pour deux dossiers d'essai distincts (chantier PDF étape 4b,
+  "Immeuble Essai PDF Gotenberg" et "Immeuble Essai PDF Option B") :
+  `apps/backend/storage/documents/documents/etat_des_lieux/<id>/...` — un
+  niveau `documents/` répété, jamais corrigé jusqu'ici car sans effet
+  fonctionnel (la même jonction est utilisée symétriquement à l'écriture
+  et à la lecture, donc toujours cohérente avec elle-même). Juste le
+  constat pour l'instant, aucune correction proposée dans ce chantier —
+  un changement du chemin casserait la lecture des documents déjà
+  enregistrés sur les bases existantes sans migration dédiée.
+
+- **Limite acceptée : Word figé produit tardivement relit les données
+  au moment de la génération, pas au moment de la signature** (chantier
+  PDF étape 4, voir `apps/backend/src/etat-des-lieux-pdf/
+  etat-des-lieux-pdf.service.ts:133-145`, commentaire `assurerDocxFige`).
+  Si la tentative immédiate après signature échoue et que c'est la
+  relance planifiée (`@Cron(EVERY_10_MINUTES)`,
+  `etat-des-lieux-pdf-job.service.ts`) ou le bouton manuel qui produit
+  le `.docx` figé plus tard, le document relit le bail/bien/bailleur
+  tels qu'ils sont AU MOMENT de cette génération tardive, pas tels
+  qu'ils étaient au moment de la signature. Seuls les champs verrouillés
+  par la signature de cette phase
+  (`classification-champs-etat-des-lieux.ts`) sont garantis inchangés
+  entre les deux instants ; un nom de bailleur ou une adresse modifiée
+  dans l'intervalle apparaîtrait mise à jour sur le document. Décision
+  actée dès l'étape 4 : la fenêtre entre signature et génération réussie
+  est censée rester courte (secondes à minutes), ce risque est jugé
+  acceptable plutôt que de figer une copie complète de toutes les
+  données au moment de la signature. Cohérent avec le seuil desktop
+  "En préparation" (< 30 min) / "Échec de la conversion" (≥ 30 min) de
+  ce même chantier — un dépassement notable de cette fenêtre est déjà
+  signalé à l'utilisateur, pas silencieux.
+
 - **Garant Visale/autre dans la génération du bail — non résolu, cause
   identifiée (2026-10-13).** `packages/core/src/baux/valider-completude-
   generation-bail.ts:161-172` exige `dateNaissance`/`lieuNaissance`/
@@ -1224,6 +1385,76 @@ les trois parcours ci-dessus).
     à 100 % faute de stack trace complète. À surveiller.
 
 ---
+
+## Déploiement de l'étape 4
+
+Checklist de déploiement du chantier PDF étape 4/4b (génération et
+production des documents figés de l'état des lieux — docx + PDF via
+Gotenberg). Pas encore exécutée, pas encore confirmée en production —
+voir "État de la production" ci-dessous pour la mise à jour après coup,
+une fois chaque point réellement fait.
+
+1. **Migration Drizzle `0069_bored_legion.sql`** — catégories dédiées
+   `etat_des_lieux_docx`/`etat_des_lieux_pdf`, colonne
+   `est_etat_des_lieux_fige`, index unique partiel
+   (`documents_etat_des_lieux_fige_unique`), contrainte de cohérence
+   `documents_est_etat_des_lieux_fige_coherent`. À appliquer sur la base
+   de production avant le déploiement de la nouvelle image backend (le
+   code de ce chantier dépend de ces colonnes dès le démarrage).
+2. **Image Gotenberg à copier vers le Container Registry Scaleway** —
+   `gotenberg/gotenberg:8.39.0`, digest relevé le 2026-10-31 :
+   `sha256:13672f317b443c793e972b1bd2155ec62a3e7b6891b411e8196442cc053ee5f5`.
+   Copier ce digest précis (pas seulement le tag `8.39.0`, qui peut être
+   réécrit côté Docker Hub) pour garantir que l'image déployée est
+   exactement celle testée.
+3. **Conteneur Gotenberg (Serverless Container Scaleway)** — sur le
+   Réseau Privé du backend, **point d'accès public fermé** (jamais
+   exposé à Internet — seul le backend, sur le même Réseau Privé, y
+   accède) ; ressources : **1 Go** de mémoire ; scaling **min 0 / max 1**
+   (scale-to-zero accepté — `GOTENBERG_TIMEOUT_MS` côté backend, défaut
+   60000ms, couvre déjà le réveil d'un conteneur à 0 instance). Port à
+   déclarer : **3000** (`--api-port`/`API_PORT`, défaut Gotenberg,
+   confirmé contre l'image pinnée via
+   `docker run --rm gotenberg/gotenberg:8.39.0 gotenberg --help`).
+   **Basic Auth** activée **sur le conteneur Gotenberg lui-même** (noms
+   exacts, vérifiés contre la documentation officielle — gotenberg.dev/docs/
+   configuration — et contre `--help` de l'image pinnée, aucun écart) :
+   - `API_ENABLE_BASIC_AUTH=true` — variable d'environnement du
+     conteneur Gotenberg (pas de préfixe `GOTENBERG_` sur celle-ci,
+     contrairement aux deux suivantes — asymétrie documentée telle
+     quelle).
+   - `GOTENBERG_API_BASIC_AUTH_USERNAME` — **Secret**.
+   - `GOTENBERG_API_BASIC_AUTH_PASSWORD` — **Secret**.
+4. **Variables à ajouter au backend** (noms exacts, voir `.env.example`,
+   section "Conversion PDF de l'état des lieux" — DISTINCTES des
+   variables du conteneur Gotenberg ci-dessus, même si les deux paires
+   d'identifiants doivent correspondre aux mêmes valeurs username/
+   password) :
+   - `GOTENBERG_URL` — variable d'environnement (pas un secret) : URL du
+     point de terminaison privé du conteneur ci-dessus (Réseau Privé,
+     port 3000), sans `/` final, sans le chemin
+     `/forms/libreoffice/convert` (ajouté par le client, voir
+     `.env.example`).
+   - `GOTENBERG_BASIC_AUTH_USERNAME` — **Secret** (même valeur que
+     `GOTENBERG_API_BASIC_AUTH_USERNAME` côté conteneur ; nom de
+     variable différent côté backend, voir
+     `src/gotenberg/gotenberg-config.ts`).
+   - `GOTENBERG_BASIC_AUTH_PASSWORD` — **Secret** (même valeur que
+     `GOTENBERG_API_BASIC_AUTH_PASSWORD` côté conteneur).
+   - `GOTENBERG_TIMEOUT_MS` — variable d'environnement, **optionnelle**
+     (défaut 60000, déjà adapté au scale-to-zero ci-dessus — à ne
+     renseigner que pour l'augmenter explicitement).
+   Aucune autre variable backend introduite par ce chantier (`.env.example`
+   vérifié à jour le 2026-10-31 — ces 4 variables existaient déjà depuis
+   l'étape 2).
+5. **Nouvelle image backend** — construite sur le HEAD de `main` au
+   moment du déploiement (tag = hash complet de ce commit), build et
+   push vers le Container Registry Scaleway (inclut le client Gotenberg,
+   la génération/stockage découplés des documents figés, la relance
+   planifiée, les erreurs typées et `AllExceptionsFilter`).
+6. **Nouvel installeur desktop** — reconstruit sur le même HEAD de `main`
+   au moment du déploiement (carte Documents PDF par phase dans la
+   section État des lieux).
 
 ## Maintenance
 
