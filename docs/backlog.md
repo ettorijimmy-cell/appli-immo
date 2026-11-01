@@ -1384,15 +1384,44 @@ les trois parcours ci-dessus).
     SDK, voir `AbstractStreamingSyncImplementation.js`), mais non confirmé
     à 100 % faute de stack trace complète. À surveiller.
 
+- **`GET /diagnostic/gotenberg` ouverte à tout utilisateur authentifié
+  (chantier PDF étape 4b, 2026-11-01).** Protégée uniquement par le
+  `JwtAuthGuard` global habituel (voir `apps/backend/src/diagnostic/`) —
+  comme toute autre route de ce backend, sans restriction de rôle
+  supplémentaire (aucun système de rôles n'existe encore dans ce projet,
+  usage personnel mono-utilisateur actuel). Elle ne renvoie aucun secret
+  ni URL complète, mais révèle tout de même si Gotenberg est configuré,
+  son état de santé, si l'authentification y est exigée, et le résultat
+  d'une conversion test — des informations qu'un utilisateur non-
+  administrateur n'a normalement pas à consulter. **À traiter avant toute
+  commercialisation (évolution SaaS) : réserver cette route (et plus
+  généralement toute route de diagnostic/infrastructure) à un rôle
+  administrateur**, une fois qu'un tel rôle existera (voir
+  docs/app-spec.md pour l'évolution SaaS envisagée).
+
+- **Échanges backend → Gotenberg en HTTP, à l'intérieur du Réseau Privé
+  Scaleway (chantier PDF étape 4, 2026-10-27).** `GOTENBERG_URL` est une
+  URL `http://` (voir `.env.example`, `gotenberg.service.ts`) — jamais
+  exposée publiquement (Réseau Privé, point d'accès public fermé, voir
+  "Déploiement de l'étape 4" ci-dessous), mais le trafic entre le
+  conteneur backend et le conteneur Gotenberg circule en clair sur ce
+  réseau privé. Passage en HTTPS possible : Scaleway attribue un
+  certificat TLS au point de terminaison privé de chaque Serverless
+  Container ; côté backend, il faudrait alors `GOTENBERG_URL=https://...`
+  et ajouter le certificat (CA) correspondant via `NODE_EXTRA_CA_CERTS` si
+  ce certificat n'est pas signé par une autorité déjà reconnue par
+  Node.js. Non fait à ce jour — accepté pour le MVP (réseau privé, trafic
+  non routable publiquement), à revoir si un futur audit de sécurité ou
+  l'évolution SaaS l'exige.
+
 ---
 
 ## Déploiement de l'étape 4
 
 Checklist de déploiement du chantier PDF étape 4/4b (génération et
 production des documents figés de l'état des lieux — docx + PDF via
-Gotenberg). Pas encore exécutée, pas encore confirmée en production —
-voir "État de la production" ci-dessous pour la mise à jour après coup,
-une fois chaque point réellement fait.
+Gotenberg). **Déployée en production le 2026-11-01** — voir "État de la
+production" ci-dessous pour le détail confirmé de chaque point.
 
 1. **Migration Drizzle `0069_bored_legion.sql`** — catégories dédiées
    `etat_des_lieux_docx`/`etat_des_lieux_pdf`, colonne
@@ -1467,7 +1496,7 @@ une fois chaque point réellement fait.
 
 ## État de la production
 
-**Dernière mise à jour confirmée : 2026-10-12.**
+**Dernière mise à jour confirmée : 2026-11-01.**
 
 - Migrations Drizzle `0058` à `0065` appliquées en base de production
   (confirmé par Jimmy après test manuel réel).
@@ -1485,6 +1514,26 @@ une fois chaque point réellement fait.
 - Runbook de déploiement (commande exacte des migrations, build/push de
   l'image, reconstruction de l'installeur) : conservé dans le projet
   Claude (claude.ai), pas dans ce dépôt.
+
+**Chantier PDF étape 4/4b (voir "Déploiement de l'étape 4" ci-dessus) —
+déployé le 2026-11-01 :**
+
+- Image backend déployée : tag `e8a7402` (commit `e8a7402`, hash complet
+  = tag), construite et poussée vers le Container Registry Scaleway.
+- Migration Drizzle `0069_bored_legion.sql` appliquée en base de
+  production.
+- Conteneur Gotenberg `8.39.0` créé sur le Réseau Privé du backend, accès
+  public désactivé, Basic Auth activée.
+- Variables `GOTENBERG_*` posées sur le backend de production.
+- Nouvel installeur desktop reconstruit sur le même HEAD de `main`.
+- Diagnostic de production (`GET /diagnostic/gotenberg`) entièrement
+  vert juste après déploiement : `configure` ok, santé 200,
+  `authExigee` true, conversion `pdfValide` true (14,5 s à froid, réveil
+  du conteneur à 0 instance). **À vérifier au premier état des lieux réel
+  signé** — le diagnostic confirme que le circuit Gotenberg fonctionne,
+  pas que la génération du PDF figé d'état des lieux en conditions
+  réelles (signatures, vraies données) produit un résultat correct de
+  bout en bout.
 
 ---
 
