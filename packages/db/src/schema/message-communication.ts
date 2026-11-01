@@ -54,10 +54,9 @@ export const messageCommunication = pgTable(
     dateMessage: timestamp("date_message", { withTimezone: true }).notNull(),
     // En-tête RFC 5322/2822 'Message-ID', exposé par imapflow — sert au
     // dédoublonnage à la synchronisation (ImapSyncJobService), jamais
-    // renseigné pour direction='envoye' : un message composé depuis cette
-    // application n'a pas encore d'identifiant côté serveur IMAP au moment
-    // de l'insertion (SmtpEnvoiService journalise avant tout aller-retour
-    // avec le serveur). Nullable + index unique partiel plutôt qu'un
+    // renseigné pour direction='envoye' : l'identifiant renvoyé par le
+    // serveur SMTP n'est pas celui d'une synchronisation IMAP.
+    // Nullable + index unique partiel plutôt qu'un
     // identifiant synthétique inventé — un message envoyé n'a rien à
     // dédoublonner, un identifiant de substitution laisserait croire au
     // contraire (ajustement au schéma cible fourni, décision actée avec

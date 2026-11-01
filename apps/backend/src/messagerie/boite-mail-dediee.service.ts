@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { boiteMailDediee, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
@@ -6,6 +6,7 @@ import { RequestContextService } from "../common/request-context";
 import { EncryptionService } from "../crypto/encryption.service";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
+import { BoiteMailIllisibleException } from "./boite-mail-illisible.exception";
 import { BoiteMailNonConfigureeException } from "./boite-mail-non-configuree.exception";
 import type { ConfigurerBoiteMailDedieeDto } from "./dto/configurer-boite-mail-dediee.dto";
 
@@ -25,6 +26,8 @@ type BoiteMailDedieeRow = typeof boiteMailDediee.$inferSelect;
  */
 @Injectable()
 export class BoiteMailDedieeService {
+  private readonly logger = new Logger(BoiteMailDedieeService.name);
+
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly encryptionService: EncryptionService,
@@ -82,7 +85,21 @@ export class BoiteMailDedieeService {
         utilisateurId
       });
     }
-    return { email: boite.email, motDePasseApp: this.encryptionService.decrypt(boite.motDePasseAppChiffre) };
+    return { email: boite.email, motDePasseApp: this.dechiffrerMotDePasse(boite) };
+  }
+
+  // La cause technique reste dans les journaux, où elle sert au diagnostic
+  // (une clé de chiffrement différente, voir docs/data-dictionary.md,
+  // décision ENCRYPTION_KEY dev/prod). Elle ne contient aucun secret.
+  private dechiffrerMotDePasse(boite: BoiteMailDedieeRow): string {
+    try {
+      return this.encryptionService.decrypt(boite.motDePasseAppChiffre);
+    } catch (erreur) {
+      this.logger.error(
+        `Mot de passe de la boîte ${boite.id} indéchiffrable : ${erreur instanceof Error ? erreur.message : String(erreur)}`
+      );
+      throw new BoiteMailIllisibleException();
+    }
   }
 
   async trouverActive(organisationId: string): Promise<BoiteMailDedieeRow | null> {

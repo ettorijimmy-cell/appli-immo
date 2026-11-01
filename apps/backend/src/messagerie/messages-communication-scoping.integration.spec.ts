@@ -665,7 +665,7 @@ describe("MessagesCommunicationService.composer — contrôle d'appartenance sur
   beforeEach(async () => {
     db = await begin();
     sendMailMock.mockReset();
-    sendMailMock.mockResolvedValue(undefined);
+    sendMailMock.mockResolvedValue({ messageId: "<message@test>", response: "250 2.0.0 OK" });
 
     moduleRef = await Test.createTestingModule({
       imports: [

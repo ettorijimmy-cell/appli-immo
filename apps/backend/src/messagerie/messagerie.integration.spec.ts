@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { mkdir, rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { BadGatewayException, BadRequestException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, InternalServerErrorException, Logger } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -38,11 +38,14 @@ import { GarantsModule } from "../garants/garants.module";
 import { GarantsService } from "../garants/garants.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
+import { DocumentStorageService } from "../storage/document-storage.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { BoiteMailDedieeService } from "./boite-mail-dediee.service";
+import { BoiteMailIllisibleException } from "./boite-mail-illisible.exception";
 import { BoiteMailNonConfigureeException } from "./boite-mail-non-configuree.exception";
 import { ClassificationMessageService } from "./classification-message.service";
+import { EnvoiSmtpEchoueException } from "./envoi-smtp-echoue.exception";
 import { ImapSyncJobService } from "./imap-sync-job.service";
 import { MessagerieModule } from "./messagerie.module";
 import { MessagesCommunicationService } from "./messages-communication.service";
@@ -53,9 +56,12 @@ import { SmtpEnvoiService } from "./smtp-envoi.service";
 // voir google-oauth.service.integration.spec.ts). Mockés au niveau du module,
 // seule option viable pour ces deux bibliothèques (contrairement à fetch,
 // leur API n'est pas un simple appel réseau substituable en une ligne).
-const sendMailMock = vi.hoisted(() => vi.fn());
+const { sendMailMock, createTransportMock } = vi.hoisted(() => {
+  const sendMail = vi.fn();
+  return { sendMailMock: sendMail, createTransportMock: vi.fn(() => ({ sendMail })) };
+});
 vi.mock("nodemailer", () => ({
-  default: { createTransport: vi.fn(() => ({ sendMail: sendMailMock })) }
+  default: { createTransport: createTransportMock }
 }));
 
 interface FausseImapFlowInstance {
@@ -216,7 +222,7 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
   beforeEach(async () => {
     db = await begin();
     sendMailMock.mockReset();
-    sendMailMock.mockResolvedValue(undefined);
+    sendMailMock.mockResolvedValue({ messageId: "<message@test>", response: "250 2.0.0 OK" });
     imapFlowConstructeurMock.mockClear();
     imapFlowInstances.length = 0;
     messagesImapAFournir.valeur = [];
@@ -484,6 +490,7 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         "Rappel de loyer",
         "Bonjour Ilan, votre loyer est en retard."
       );
+      if (!messageId) throw new Error("Message non journalisé");
 
       expect(sendMailMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -514,6 +521,7 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         "Voici votre quittance.",
         { nomFichier: "quittance.docx", contenu, mimeType: "application/pdf" }
       );
+      if (!messageId) throw new Error("Message non journalisé");
 
       expect(sendMailMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -530,6 +538,128 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         smtpEnvoiService.envoyerEmail(organisationId, "x@example.com", "Objet", "Corps")
       ).rejects.toThrow(BoiteMailNonConfigureeException);
       expect(sendMailMock).not.toHaveBeenCalled();
+    });
+
+    it("passe par smtp.gmail.com:587 en STARTTLS obligatoire, avec délais bornés", async () => {
+      await configurerBoite();
+      createTransportMock.mockClear();
+
+      await smtpEnvoiService.envoyerEmail(organisationId, "x@example.com", "Objet", "Corps");
+
+      expect(createTransportMock).toHaveBeenCalledWith({
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        requireTLS: true,
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 60_000,
+        dnsTimeout: 10_000,
+        auth: { user: "boite-dediee@example.com", pass: "abcdefghijklmnop" }
+      });
+    });
+
+    it("envoyerAvecAccuse renvoie l'accusé du serveur et l'id du message journalisé", async () => {
+      await configurerBoite();
+
+      const accuse = await smtpEnvoiService.envoyerAvecAccuse(organisationId, "x@example.com", "Objet", "Corps");
+
+      expect(accuse).toEqual({
+        expediteur: "boite-dediee@example.com",
+        smtpMessageId: "<message@test>",
+        reponseServeur: "250 2.0.0 OK",
+        messageCommunicationId: expect.any(String)
+      });
+      const [ligne] = await db
+        .select()
+        .from(messageCommunication)
+        .where(eq(messageCommunication.id, accuse.messageCommunicationId ?? ""));
+      expect(ligne?.emailDestinataire).toBe("x@example.com");
+    });
+
+    it("mail parti mais journalisation en échec : accusé conservé, jamais d'erreur", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      vi.spyOn(classificationMessageService, "resoudre").mockRejectedValueOnce(new Error("Base indisponible"));
+
+      const accuse = await smtpEnvoiService.envoyerAvecAccuse(organisationId, "x@example.com", "Objet", "Corps");
+
+      expect(sendMailMock).toHaveBeenCalledTimes(1);
+      expect(accuse.smtpMessageId).toBe("<message@test>");
+      expect(accuse.messageCommunicationId).toBeNull();
+    });
+
+    it("envoyerEmail renvoie null, sans rejeter, si le mail parti n'a pas pu être journalisé", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      vi.spyOn(classificationMessageService, "resoudre").mockRejectedValueOnce(new Error("Base indisponible"));
+
+      await expect(smtpEnvoiService.envoyerEmail(organisationId, "x@example.com", "Objet", "Corps")).resolves.toBeNull();
+    });
+
+    it("mail parti mais copie de pièce jointe en échec : message journalisé quand même", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      vi.spyOn(moduleRef.get(DocumentStorageService), "enregistrer").mockRejectedValueOnce(new Error("Stockage indisponible"));
+
+      const accuse = await smtpEnvoiService.envoyerAvecAccuse(organisationId, "x@example.com", "Objet", "Corps", {
+        nomFichier: "etat-des-lieux-sortie.pdf",
+        contenu: Buffer.from("%PDF-1.4"),
+        mimeType: "application/pdf"
+      });
+
+      expect(accuse.messageCommunicationId).toEqual(expect.any(String));
+      const pieces = await db
+        .select()
+        .from(pieceJointeMessage)
+        .where(eq(pieceJointeMessage.messageId, accuse.messageCommunicationId ?? ""));
+      expect(pieces).toHaveLength(0);
+    });
+
+    it("mot de passe indéchiffrable : BoiteMailIllisibleException, jamais d'appel à nodemailer", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      await db
+        .update(boiteMailDediee)
+        .set({ motDePasseAppChiffre: "ZmF1eA==:ZmF1eC10YWctZmF1eC10YQ==:ZmF1eA==" })
+        .where(eq(boiteMailDediee.organisationId, organisationId));
+
+      await expect(smtpEnvoiService.envoyerEmail(organisationId, "x@example.com", "Objet", "Corps")).rejects.toThrow(
+        BoiteMailIllisibleException
+      );
+      expect(sendMailMock).not.toHaveBeenCalled();
+    });
+
+    it("composer : mail parti mais non journalisé, message explicite pour ne pas le renvoyer", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      vi.spyOn(classificationMessageService, "resoudre").mockRejectedValueOnce(new Error("Base indisponible"));
+
+      const promesse = messagesCommunicationService.composer(userId, {
+        destinataire: "x@example.com",
+        objet: "Objet",
+        corps: "Corps"
+      });
+
+      await expect(promesse).rejects.toThrow(InternalServerErrorException);
+      await expect(promesse).rejects.toThrow("Ne le renvoyez pas");
+      expect(sendMailMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("échec d'authentification : exception typée, texte du serveur jamais exposé", async () => {
+      await configurerBoite();
+      vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+      sendMailMock.mockRejectedValueOnce(
+        Object.assign(new Error("535 refus pour boite-dediee@example.com"), { code: "EAUTH", responseCode: 535 })
+      );
+
+      const erreur = await smtpEnvoiService
+        .envoyerEmail(organisationId, "x@example.com", "Objet", "Corps")
+        .catch((e: unknown) => e);
+
+      expect(erreur).toBeInstanceOf(EnvoiSmtpEchoueException);
+      expect((erreur as EnvoiSmtpEchoueException).categorie).toBe("authentification");
+      expect(JSON.stringify((erreur as EnvoiSmtpEchoueException).getResponse())).not.toContain("boite-dediee@example.com");
     });
 
     it("un échec SMTP lève BadGatewayException, jamais de ligne message_communication créée", async () => {
@@ -946,7 +1076,7 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         contenu,
         mimeType: "application/pdf"
       });
-      const [piece] = await db.select().from(pieceJointeMessage).where(eq(pieceJointeMessage.messageId, messageId));
+      const [piece] = await db.select().from(pieceJointeMessage).where(eq(pieceJointeMessage.messageId, messageId ?? ""));
 
       const resultat = await messagesCommunicationService.obtenirContenuPieceJointe(piece!.id);
       expect(resultat.contenu.equals(contenu)).toBe(true);
@@ -966,7 +1096,7 @@ describe("Module Messagerie (intégration Postgres réelle, SMTP/IMAP mockés)",
         contenu,
         mimeType: "application/pdf"
       });
-      const [piece] = await db.select().from(pieceJointeMessage).where(eq(pieceJointeMessage.messageId, messageId));
+      const [piece] = await db.select().from(pieceJointeMessage).where(eq(pieceJointeMessage.messageId, messageId ?? ""));
 
       const document = await messagesCommunicationService.classerDansDocuments(piece!.id, {
         entiteType: "locataire",

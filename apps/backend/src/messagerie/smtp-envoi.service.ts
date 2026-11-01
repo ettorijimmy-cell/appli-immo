@@ -1,4 +1,4 @@
-import { BadGatewayException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { messageCommunication, pieceJointeMessage, type Database } from "db";
 import type { ResultatClassification } from "core";
 import { uuidv7 } from "uuidv7";
@@ -7,16 +7,36 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentStorageService } from "../storage/document-storage.service";
 import { BoiteMailDedieeService } from "./boite-mail-dediee.service";
 import { ClassificationMessageService } from "./classification-message.service";
+import { EnvoiSmtpEchoueException } from "./envoi-smtp-echoue.exception";
 
 // Gmail SMTP (mot de passe d'application, PAS OAuth — voir
 // packages/db/src/schema/boite-mail-dediee.ts pour la décision technique).
 export const SMTP_HOST = "smtp.gmail.com";
-const SMTP_PORT = 465;
+// 587 en STARTTLS obligatoire : Scaleway bloque le 465 en sortie des
+// Serverless Containers (GET /diagnostic/smtp en production, 2026-11-01 :
+// 465 en échec ESOCKET, 587 entièrement fonctionnel).
+const SMTP_PORT = 587;
+const DELAI_CONNEXION_MS = 15_000;
+const DELAI_ACCUEIL_MS = 15_000;
+const DELAI_DNS_MS = 10_000;
+// Inactivité, pas durée totale : l'envoi d'une pièce jointe lourde reste
+// possible tant que le serveur répond.
+const DELAI_SOCKET_MS = 60_000;
 
 export interface PieceJointeEmail {
   nomFichier: string;
   contenu: Buffer;
   mimeType: string;
+}
+
+// Preuve d'un envoi accepté par le serveur SMTP, pas d'une réception par le
+// destinataire : un rebond éventuel arrive plus tard dans la boîte dédiée.
+export interface AccuseEnvoiSmtp {
+  expediteur: string;
+  smtpMessageId: string | null;
+  reponseServeur: string | null;
+  // null si le mail est parti mais que sa journalisation a échoué.
+  messageCommunicationId: string | null;
 }
 
 /**
@@ -33,6 +53,8 @@ export interface PieceJointeEmail {
  */
 @Injectable()
 export class SmtpEnvoiService {
+  private readonly logger = new Logger(SmtpEnvoiService.name);
+
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly boiteMailDedieeService: BoiteMailDedieeService,
@@ -40,16 +62,11 @@ export class SmtpEnvoiService {
     private readonly documentStorageService: DocumentStorageService
   ) {}
 
-  // Renvoie l'id du message_communication journalisé — jamais lu par
+  // Renvoie l'id du message_communication journalisé, ou null si le mail est
+  // parti sans pouvoir être journalisé — jamais lu par
   // TachesService.envoyerNotification (seul appelant historique, qui
   // ignore la valeur de retour), utilisé uniquement par
   // MessagesCommunicationService.composer() pour renvoyer le message créé.
-  //
-  // classificationChoisie (optionnel) : classification déjà connue de
-  // l'appelant (destinataire choisi depuis le Carnet de contacts,
-  // sélecteur desktop 2026-09-16) — bypass la résolution par adresse email
-  // (ClassificationMessageService.resoudre), jamais utilisée en même
-  // temps que cette résolution automatique.
   async envoyerEmail(
     organisationId: string,
     destinataire: string,
@@ -57,18 +74,47 @@ export class SmtpEnvoiService {
     corps: string,
     pieceJointe?: PieceJointeEmail,
     classificationChoisie?: ResultatClassification
-  ): Promise<string> {
+  ): Promise<string | null> {
+    const accuse = await this.envoyerAvecAccuse(organisationId, destinataire, objet, corps, pieceJointe, classificationChoisie);
+    return accuse.messageCommunicationId;
+  }
+
+  // Rejette uniquement si le mail n'est PAS parti. Une fois le serveur SMTP
+  // d'accord, plus rien ne peut transformer cet envoi en erreur : un échec
+  // de journalisation laisserait croire à un échec d'envoi et pousserait à
+  // renvoyer le même mail.
+  //
+  // classificationChoisie (optionnel) : classification déjà connue de
+  // l'appelant (destinataire choisi depuis le Carnet de contacts,
+  // sélecteur desktop 2026-09-16) — bypass la résolution par adresse email
+  // (ClassificationMessageService.resoudre), jamais utilisée en même
+  // temps que cette résolution automatique.
+  async envoyerAvecAccuse(
+    organisationId: string,
+    destinataire: string,
+    objet: string,
+    corps: string,
+    pieceJointe?: PieceJointeEmail,
+    classificationChoisie?: ResultatClassification
+  ): Promise<AccuseEnvoiSmtp> {
     const { email, motDePasseApp } = await this.boiteMailDedieeService.obtenirIdentifiants(organisationId);
 
     const transporteur = nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
-      secure: true,
+      secure: false,
+      // Refuse tout envoi, et toute authentification, sans STARTTLS réussi.
+      requireTLS: true,
+      connectionTimeout: DELAI_CONNEXION_MS,
+      greetingTimeout: DELAI_ACCUEIL_MS,
+      socketTimeout: DELAI_SOCKET_MS,
+      dnsTimeout: DELAI_DNS_MS,
       auth: { user: email, pass: motDePasseApp }
     });
 
+    let accuseServeur: { messageId?: string | undefined; response?: string | undefined };
     try {
-      await transporteur.sendMail({
+      accuseServeur = await transporteur.sendMail({
         from: email,
         to: destinataire,
         subject: objet,
@@ -78,13 +124,40 @@ export class SmtpEnvoiService {
         })
       });
     } catch (err) {
-      // Jamais motDePasseApp dans ce message (CLAUDE.md) — seul le message
-      // d'erreur SMTP lui-même, qui ne contient aucun secret.
-      const messageErreur = err instanceof Error ? err.message : String(err);
-      throw new BadGatewayException(`Échec de l'envoi via la boîte mail dédiée (SMTP) : ${messageErreur}`);
+      // Codes seulement : jamais motDePasseApp (CLAUDE.md), ni le texte du
+      // serveur, qui peut reprendre l'adresse de la boîte.
+      const exception = new EnvoiSmtpEchoueException(err);
+      this.logger.warn(
+        `Échec SMTP (organisation ${organisationId}) : ${exception.categorie}, code ${exception.codeTechnique ?? "aucun"}, réponse ${exception.codeSmtp ?? "aucune"}`
+      );
+      throw exception;
     }
 
-    return this.journaliserEnvoi(organisationId, email, destinataire, objet, corps, pieceJointe, classificationChoisie);
+    const smtpMessageId = accuseServeur.messageId ?? null;
+    let messageCommunicationId: string | null = null;
+    try {
+      messageCommunicationId = await this.journaliserEnvoi(
+        organisationId,
+        email,
+        destinataire,
+        objet,
+        corps,
+        pieceJointe,
+        classificationChoisie
+      );
+    } catch (err) {
+      this.logger.error(
+        `Mail parti (${smtpMessageId ?? "identifiant inconnu"}) mais non journalisé pour l'organisation ${organisationId}`,
+        err instanceof Error ? err.stack : String(err)
+      );
+    }
+
+    return {
+      expediteur: email,
+      smtpMessageId,
+      reponseServeur: accuseServeur.response ?? null,
+      messageCommunicationId
+    };
   }
 
   private async journaliserEnvoi(
@@ -118,19 +191,35 @@ export class SmtpEnvoiService {
     }
 
     if (pieceJointe) {
-      const pieceJointeId = uuidv7();
-      const chemin = `messages/${ligne.id}/${pieceJointeId}.enc`;
-      await this.documentStorageService.enregistrer(pieceJointe.contenu, chemin);
-      await this.db.insert(pieceJointeMessage).values({
-        id: pieceJointeId,
-        messageId: ligne.id,
-        nomFichier: pieceJointe.nomFichier,
-        cheminStockage: chemin,
-        typeMime: pieceJointe.mimeType,
-        organisationId
-      });
+      // Le message reste journalisé même si sa copie de pièce jointe échoue.
+      try {
+        await this.journaliserPieceJointe(ligne.id, organisationId, pieceJointe);
+      } catch (err) {
+        this.logger.error(
+          `Pièce jointe non journalisée pour le message ${ligne.id}`,
+          err instanceof Error ? err.stack : String(err)
+        );
+      }
     }
 
     return ligne.id;
+  }
+
+  private async journaliserPieceJointe(
+    messageId: string,
+    organisationId: string,
+    pieceJointe: PieceJointeEmail
+  ): Promise<void> {
+    const pieceJointeId = uuidv7();
+    const chemin = `messages/${messageId}/${pieceJointeId}.enc`;
+    await this.documentStorageService.enregistrer(pieceJointe.contenu, chemin);
+    await this.db.insert(pieceJointeMessage).values({
+      id: pieceJointeId,
+      messageId,
+      nomFichier: pieceJointe.nomFichier,
+      cheminStockage: chemin,
+      typeMime: pieceJointe.mimeType,
+      organisationId
+    });
   }
 }

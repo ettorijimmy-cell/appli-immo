@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { candidat, contact, garants, locataires, messageCommunication, mettreAJourAvecAudit, pieceJointeMessage, type Database } from "db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { CreateDocumentDto } from "../documents/dto/create-document.dto";
@@ -128,6 +128,11 @@ export class MessagesCommunicationService {
         ? { type: dto.classificationType, id: dto.classificationId }
         : undefined
     );
+    if (!messageId) {
+      throw new InternalServerErrorException(
+        "Le message a bien été envoyé, mais il n'a pas pu être enregistré dans la messagerie. Ne le renvoyez pas."
+      );
+    }
     return this.findById(messageId);
   }
 
