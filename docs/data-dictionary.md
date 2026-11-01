@@ -3072,7 +3072,7 @@ stocké, toujours dérivé de `date_entree`/`date_sortie`
 | bail_id | uuid, unique | Le bail concerné |
 | date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie |
 | lieu_entree, lieu_sortie | text, nullable | Lieu de signature de chaque phase (décret, art. 2 — mention "Fait à ..."). Posé par `EtatsDesLieuxSignatureService` au moment de la signature bailleur : valeur fournie par le signataire, sinon la ville du logement par défaut. Ajouté le 2026-10-25 (chantier Signatures, migration 0067) |
-| nouvelle_adresse_locataire | text, nullable | Seul champ "domicile" du locataire porté par ce document (décret, art. 2, 2° a) — connu uniquement à la sortie. Texte libre, décision assumée |
+| nouvelle_adresse_locataire | text, nullable | Seul champ "domicile" du locataire porté par ce document (décret, art. 2, 2° a) — connu uniquement à la sortie. Texte libre, décision assumée. Imprimé dans le document de sortie via la balise `{nouvelleAdresseSortie}`, jamais dans le document d'entrée (`viderChampsSortie`) |
 
 ### etat_des_lieux_compteurs (1:1 avec etats_des_lieux)
 Relevés (décret, art. 2, 1° f — "le cas échéant"). Colonne Internet

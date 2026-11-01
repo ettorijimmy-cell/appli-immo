@@ -603,6 +603,10 @@ export class EtatDesLieuxDocumentDocxService {
 
       "Date début bail": donnees.dateEntree ?? VIDE,
       "Date de résiliation": donnees.dateSortie ?? VIDE,
+      // Décret n° 2016-382, art. 2, 2° a). Nom contenant "Sortie" à dessein :
+      // viderChampsSortie le vide sur tout document d'entrée, même si une
+      // adresse a déjà été saisie entre-temps.
+      nouvelleAdresseSortie: donnees.nouvelleAdresseLocataire ?? VIDE,
 
       "mode chauffage collectif ou individuel": appartement.modeChauffage ?? VIDE,
       "mode eau chaude collectif ou individuel": appartement.modeEauChaude ?? VIDE,

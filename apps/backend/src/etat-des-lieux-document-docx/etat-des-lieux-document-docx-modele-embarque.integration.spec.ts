@@ -205,5 +205,14 @@ describe("EtatDesLieuxDocumentDocxService — génération avec le modèle embar
     expect(texte).toContain("12 rue des Lilas");
     expect(texte).toContain("Bois");
     expect(balisesResiduelles(buffer)).toEqual([]);
+
+    // Le vrai modèle, pas seulement la fixture, doit porter la balise :
+    // sans elle, l'adresse n'apparaîtrait jamais dans le PDF de sortie.
+    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { nouvelleAdresseLocataire: "9 rue du Départ, 69001 Lyon" });
+    const bufferSortie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id, "sortie")
+    );
+    expect(texteDuDocx(bufferSortie)).toContain("Nouvelle adresse 9 rue du Départ, 69001 Lyon");
+    expect(balisesResiduelles(bufferSortie)).toEqual([]);
   });
 });

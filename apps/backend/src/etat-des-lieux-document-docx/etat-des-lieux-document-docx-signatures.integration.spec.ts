@@ -283,6 +283,60 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
     expect(balisesResiduelles(buffer)).toEqual([]);
   });
 
+  describe("nouvelle adresse du locataire (décret n° 2016-382, art. 2, 2° a)", () => {
+    const ADRESSE = "12 rue du Départ, 69001 Lyon";
+
+    async function signerLesDeuxPhases(nouvelleAdresseLocataire?: string): Promise<string> {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
+      if (nouvelleAdresseLocataire !== undefined) {
+        await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire });
+      }
+      await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature([titulaire.id])));
+      return etatDesLieuxId;
+    }
+
+    function genererPhase(etatDesLieuxId: string, phase: "entree" | "sortie"): Promise<Buffer> {
+      return avecContexte(() => etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId, phase));
+    }
+
+    it("document de sortie : l'adresse suit immédiatement le libellé « Nouvelle adresse »", async () => {
+      const etatDesLieuxId = await signerLesDeuxPhases(ADRESSE);
+
+      const buffer = await genererPhase(etatDesLieuxId, "sortie");
+
+      expect(texteDuDocx(buffer)).toContain("Nouvelle adresse|" + ADRESSE);
+      expect(balisesResiduelles(buffer)).toEqual([]);
+    });
+
+    it("document d'entrée : jamais l'adresse, même déjà saisie, cellule vide sans balise résiduelle", async () => {
+      const etatDesLieuxId = await signerLesDeuxPhases(ADRESSE);
+
+      const buffer = await genererPhase(etatDesLieuxId, "entree");
+
+      expect(texteDuDocx(buffer)).not.toContain(ADRESSE);
+      expect(balisesResiduelles(buffer)).toEqual([]);
+    });
+
+    it("sortie sans adresse saisie : cellule vide, jamais de valeur littérale null/undefined", async () => {
+      const etatDesLieuxId = await signerLesDeuxPhases();
+
+      const buffer = await genererPhase(etatDesLieuxId, "sortie");
+
+      expect(texteDuDocx(buffer)).not.toMatch(/null|undefined/);
+      expect(balisesResiduelles(buffer)).toEqual([]);
+    });
+
+    it("colocataires : chaque ligne reste séparée et les caractères XML sont échappés", async () => {
+      const etatDesLieuxId = await signerLesDeuxPhases("Jean Dupont : 1 rue A & B\nAlex Martin : 2 rue <C>");
+
+      const buffer = await genererPhase(etatDesLieuxId, "sortie");
+      const xml = new PizZip(buffer).files["word/document.xml"]?.asText() ?? "";
+
+      expect(xml).toMatch(/1 rue A &amp; B<\/w:t>.*?<w:br\/>.*?Alex Martin : 2 rue &lt;C&gt;/s);
+    });
+  });
+
   it("entrée et sortie signées, 2 locataires (colocation) : les deux noms apparaissent pour chaque phase", async () => {
     const { etatDesLieuxId, titulaire, colocataires } = await creerDossier(1);
     const colocataire = colocataires[0]!;
