@@ -3254,6 +3254,52 @@ sur fond uni) pèse normalement quelques dizaines de Ko.
 décision explicite (voir `docs/backlog.md`, section "PowerSync — suite",
 liste "à traiter avec (a)"), pas un oubli.
 
+### etat_des_lieux_envoi
+Preuve de remise de l'état des lieux par mail (décret n° 2016-382, art. 3,
+3°), étape 5, migration 0070. Une ligne par tentative et par destinataire.
+Les valeurs sont copiées au moment de l'envoi, jamais relues : la preuve reste
+juste si la fiche locataire change ensuite.
+| Champ | Type | Description |
+|---|---|---|
+| etat_des_lieux_id | uuid, FK `etats_des_lieux` | |
+| phase | enum | `entree` \| `sortie` (`etat_des_lieux_phase`) |
+| locataire_id | uuid, FK `locataires` | Destinataire, signataire de la phase |
+| document_id | uuid, FK `documents` | PDF figé exact de la phase |
+| pdf_sha256 | text | Empreinte du PDF envoyé, pour prouver quel contenu est parti |
+| demande_id | uuid | Une par confirmation à l'écran. La rejouer renvoie le résultat existant plutôt qu'un second mail (double clic, réponse réseau perdue) |
+| nom_destinataire | text | Copie au moment de l'envoi |
+| adresse_utilisee | text | **Donnée personnelle**, copie de l'adresse utilisée. Voir "Conservation" ci-dessous |
+| adresse_expediteur | text, nullable | Boîte dédiée, connue une fois ses identifiants lus |
+| objet | text | Objet du mail |
+| statut | enum | `en_cours` \| `envoye` \| `echec` \| `indetermine` (`etat_des_lieux_envoi_statut`). `en_cours` est écrit avant l'appel SMTP, `indetermine` marque une ligne `en_cours` abandonnée : le mail a pu partir ou non. **`envoye` signifie accepté par le serveur SMTP, pas reçu par le destinataire** |
+| tente_le | timestamp with time zone | Début de la tentative |
+| envoye_le | timestamp with time zone, nullable | Renseigné si et seulement si `statut = 'envoye'` (contrainte `etat_des_lieux_envoi_envoye_coherent`) |
+| smtp_message_id | text, nullable | `Message-ID` renvoyé par le serveur |
+| smtp_reponse | text, nullable | Réponse brute du serveur à l'acceptation |
+| code_erreur | text, nullable | Requis si `statut = 'echec'` (contrainte `etat_des_lieux_envoi_echec_coherent`) |
+| message_erreur | text, nullable | Message français affiché, jamais le texte du serveur |
+| message_communication_id | uuid, FK `message_communication`, nullable | `NULL` si le mail est parti sans pouvoir être journalisé dans la messagerie |
+| organisation_id | uuid, FK `organisations` | |
+
+**Unicité** : `(demande_id, locataire_id)`, et au plus une ligne `en_cours`
+par `(etat_des_lieux_id, phase, locataire_id)`, tous appareils confondus. Un
+renvoi volontaire crée une nouvelle ligne.
+
+**Jamais de suppression** : `archived_at` n'est pas utilisé. Les triggers
+`etat_des_lieux_envoi_sans_suppression` et `etat_des_lieux_envoi_sans_vidage`
+refusent `DELETE` et `TRUNCATE` dans la base elle-même (`23001`), quel que
+soit le code appelant. Ils sont posés à la main dans la migration, drizzle-kit
+ne les voit pas. Les clés étrangères empêchent aussi de supprimer un locataire,
+un document ou un état des lieux référencé.
+
+**Conservation (RGPD)** : `adresse_utilisee` et `nom_destinataire` conservent
+des données personnelles, y compris après le départ du locataire. Durée de
+conservation et anonymisation restent à décider au chantier RGPD (voir
+docs/backlog.md) ; `UPDATE` reste permis pour cela.
+
+**PowerSync** : table **hors publication et hors Sync Streams**, décision
+explicite. Lecture REST uniquement via `apps/backend`.
+
 **Accès mobile** : page web légère, API REST directe sur `apps/backend`,
 pas de SDK PowerSync web — voir `docs/app-spec.md`, section 3, pour le
 raisonnement complet. Chaque pièce se soumet indépendamment à la

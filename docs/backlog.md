@@ -704,6 +704,15 @@ les trois parcours ci-dessus).
   des lieux et Alertes se sont tous déployés et testés sans problème
   similaire jusqu'à la clôture complète du chantier.
 
+- **Adresses e-mail conservées dans `etat_des_lieux_envoi` — à traiter au
+  chantier RGPD (noté le 2026-11-01).** La preuve de remise garde
+  `adresse_utilisee` et `nom_destinataire`, y compris après le départ du
+  locataire, et la table refuse toute suppression (trigger). À décider avec
+  un avis juridique : durée de conservation, et anonymisation par `UPDATE`
+  de ces deux colonnes (`message_communication.email_destinataire` et
+  `piece_jointe_message` sont concernés de la même façon). Même réouverture
+  que `locataires.anonymise_le` ci-dessous.
+
 - **`locataires.anonymise_le` — promesse documentaire retirée, colonne
   conservée (audit 2026-09-22).** Colonne présente depuis la création de
   la table (2026-07-27, `feat: Module 3 — Locataires & Baux`), documentée
