@@ -10,7 +10,7 @@ import { ClassificationMessageService } from "./classification-message.service";
 
 // Gmail SMTP (mot de passe d'application, PAS OAuth — voir
 // packages/db/src/schema/boite-mail-dediee.ts pour la décision technique).
-const SMTP_HOST = "smtp.gmail.com";
+export const SMTP_HOST = "smtp.gmail.com";
 const SMTP_PORT = 465;
 
 export interface PieceJointeEmail {
