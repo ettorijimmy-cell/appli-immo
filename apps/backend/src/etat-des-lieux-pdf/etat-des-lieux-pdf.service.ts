@@ -555,6 +555,20 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
     return incomplets;
   }
 
+  // Pour l'envoi au locataire, qui a besoin de l'identifiant exact du document
+  // et traite lui-même son absence. L'appelant fait le contrôle d'organisation.
+  async lirePdfFige(
+    etatDesLieuxId: string,
+    phase: PhaseEtatDesLieux
+  ): Promise<{ documentId: string; nomFichier: string; contenu: Buffer } | null> {
+    const pdf = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_pdf");
+    if (!pdf) {
+      return null;
+    }
+    const { contenu } = await this.documentsService.telecharger(pdf.id);
+    return { documentId: pdf.id, nomFichier: pdf.nomFichier, contenu };
+  }
+
   async telechargerPdf(etatDesLieuxId: string, phase: PhaseEtatDesLieux): Promise<{ contenu: Buffer; nomFichier: string }> {
     await this.verifierAppartenanceFailClosed(etatDesLieuxId);
     const pdf = await this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_pdf");

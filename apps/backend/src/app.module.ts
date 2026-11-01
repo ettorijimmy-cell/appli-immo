@@ -32,6 +32,7 @@ import { GotenbergModule } from "./gotenberg/gotenberg.module";
 import { ImmeublesModule } from "./immeubles/immeubles.module";
 import { IndicesIrlModule } from "./indices-irl/indices-irl.module";
 import { LocatairesModule } from "./locataires/locataires.module";
+import { EtatDesLieuxEnvoiModule } from "./etat-des-lieux-envoi/etat-des-lieux-envoi.module";
 import { MessagerieModule } from "./messagerie/messagerie.module";
 import { ModelesCourrierModule } from "./modeles-courrier/modeles-courrier.module";
 import { PaiementsModule } from "./paiements/paiements.module";
@@ -105,6 +106,7 @@ import { VersementsModule } from "./versements/versements.module";
     // le dépôt — réactivation = réintroduire cette ligne, geste
     // délibéré et visible, jamais un flag de configuration à retrouver.
     MessagerieModule,
+    EtatDesLieuxEnvoiModule,
     PowerSyncModule
   ]
 })

@@ -4,7 +4,7 @@ import { EtatDesLieuxPdfService, type PhaseEtatDesLieux } from "./etat-des-lieux
 
 const MIME_PDF = "application/pdf";
 
-function phaseValide(phase: string): phase is PhaseEtatDesLieux {
+export function phaseValide(phase: string): phase is PhaseEtatDesLieux {
   return phase === "entree" || phase === "sortie";
 }
 

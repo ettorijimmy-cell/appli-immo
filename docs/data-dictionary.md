@@ -3297,6 +3297,24 @@ des données personnelles, y compris après le départ du locataire. Durée de
 conservation et anonymisation restent à décider au chantier RGPD (voir
 docs/backlog.md) ; `UPDATE` reste permis pour cela.
 
+**Envoi** (`EtatDesLieuxEnvoiService`, toujours sur action explicite) :
+`POST /etats-des-lieux/:id/envois/:phase`, avec `GET .../envois` (historique)
+et `GET .../envois/:phase/destinataires` (écran de confirmation). Contrôle
+d'organisation fail-closed sur les trois routes. Refus avant tout mail, pour
+tous les destinataires, si la phase n'est pas signée, si le PDF figé manque ou
+dépasse 18 Mo, si un destinataire n'a pas signé cette phase, si une adresse est
+invalide (une seule adresse, ni virgule ni point-virgule) ou diffère de la
+fiche. Rejouer un `demande_id` renvoie les résultats existants sans aucun
+mail. Une panne d'envoi est tracée en `echec` et n'empêche pas d'essayer les
+autres destinataires. Texte du mail : `construireMailRemiseEtatDesLieux`
+(`packages/core`).
+
+**Envois abandonnés** : une ligne `en_cours` de plus de 10 minutes passe à
+`indetermine`, à chaque lecture ou envoi de cet état des lieux, et par un job
+toutes les 10 minutes pour toutes les organisations, soit entre 10 et 20
+minutes après la tentative. Elle libère alors l'index `en_cours`, donc un
+nouvel envoi. Le mail a pu partir ou non.
+
 **PowerSync** : table **hors publication et hors Sync Streams**, décision
 explicite. Lecture REST uniquement via `apps/backend`.
 
