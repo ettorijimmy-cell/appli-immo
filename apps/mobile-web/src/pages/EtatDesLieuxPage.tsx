@@ -6,10 +6,42 @@ import {
   getCatalogueInventaire,
   getEtatDesLieuxParBail,
   type ElementInventaireMeuble,
-  type EtatDesLieuxComplet
+  type EtatDesLieuxComplet,
+  type PhaseEtatDesLieux
 } from "../api/etats-des-lieux";
 import { EtatDesLieuxStepper } from "../etat-des-lieux/EtatDesLieuxStepper";
+import { RemiseEtatDesLieuxPanel } from "../etat-des-lieux/RemiseEtatDesLieuxPanel";
 import { ApiError } from "../lib/authenticated-fetch";
+
+function BoutonsRemise({
+  etatDesLieux,
+  onOuvrir
+}: {
+  etatDesLieux: EtatDesLieuxComplet;
+  onOuvrir: (phase: PhaseEtatDesLieux) => void;
+}): React.JSX.Element | null {
+  const phases: { phase: PhaseEtatDesLieux; libelle: string }[] = [
+    ...(etatDesLieux.entreeSigneeParTous ? [{ phase: "entree" as const, libelle: "d'entrée" }] : []),
+    ...(etatDesLieux.sortieSigneeParTous ? [{ phase: "sortie" as const, libelle: "de sortie" }] : [])
+  ];
+  if (phases.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mx-auto max-w-md space-y-2 px-4 pt-4">
+      {phases.map(({ phase, libelle }) => (
+        <button
+          key={phase}
+          type="button"
+          onClick={() => onOuvrir(phase)}
+          className="w-full rounded-md border border-indigo-700 py-3 text-base font-medium text-indigo-700"
+        >
+          Envoyer l'état des lieux {libelle}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // Résout bail + appartement + état des lieux existant (ou propose sa
 // création, bloquée côté backend si la composition de l'appartement est
@@ -27,6 +59,7 @@ export function EtatDesLieuxPage(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [termine, setTermine] = useState(false);
+  const [phaseRemise, setPhaseRemise] = useState<PhaseEtatDesLieux | null>(null);
 
   const charger = useCallback(async () => {
     if (!bailId) {
@@ -65,6 +98,14 @@ export function EtatDesLieuxPage(): React.JSX.Element {
     } finally {
       setIsCreating(false);
     }
+  }
+
+  // Le panneau de remise n'a pas besoin de ce rechargement : son échec
+  // éventuel ne doit jamais masquer une signature déjà acquise.
+  function handleTermine(phase: PhaseEtatDesLieux): void {
+    setTermine(true);
+    setPhaseRemise(phase);
+    charger().catch(() => undefined);
   }
 
   if (isLoading) {
@@ -115,12 +156,25 @@ export function EtatDesLieuxPage(): React.JSX.Element {
     );
   }
 
+  const panneauRemise = phaseRemise ? (
+    <RemiseEtatDesLieuxPanel
+      key={phaseRemise}
+      etatDesLieuxId={etatDesLieux.id}
+      phase={phaseRemise}
+      onRetour={() => setPhaseRemise(null)}
+    />
+  ) : null;
+
   if (etatDesLieux.statut === "complet" || termine) {
+    if (panneauRemise) {
+      return panneauRemise;
+    }
     return (
       <div className="mx-auto max-w-md space-y-4 p-4 text-center">
         <p className="text-base text-slate-700">
           {termine ? "Visite enregistrée." : "Cet état des lieux est déjà complet (entrée et sortie renseignées)."}
         </p>
+        <BoutonsRemise etatDesLieux={etatDesLieux} onOuvrir={setPhaseRemise} />
         <p className="text-sm text-slate-500">
           Les corrections se font depuis l'application desktop, vue de relecture.
         </p>
@@ -135,14 +189,22 @@ export function EtatDesLieuxPage(): React.JSX.Element {
     );
   }
 
+  // Le parcours reste monté pendant la remise : y revenir ne perd ni l'étape
+  // en cours ni la saisie non validée.
   return (
-    <EtatDesLieuxStepper
-      etatDesLieux={etatDesLieux}
-      appartement={appartement}
-      typeBail={bail.typeBail}
-      catalogue={catalogue}
-      onSubmitted={charger}
-      onTermine={() => setTermine(true)}
-    />
+    <>
+      {panneauRemise}
+      <div hidden={panneauRemise !== null}>
+        <BoutonsRemise etatDesLieux={etatDesLieux} onOuvrir={setPhaseRemise} />
+        <EtatDesLieuxStepper
+          etatDesLieux={etatDesLieux}
+          appartement={appartement}
+          typeBail={bail.typeBail}
+          catalogue={catalogue}
+          onSubmitted={charger}
+          onTermine={handleTermine}
+        />
+      </div>
+    </>
   );
 }

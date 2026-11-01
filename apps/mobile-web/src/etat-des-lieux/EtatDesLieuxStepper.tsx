@@ -57,7 +57,7 @@ export function EtatDesLieuxStepper({
   typeBail: "vide" | "meuble";
   catalogue: ElementInventaireMeuble[];
   onSubmitted: () => Promise<EtatDesLieuxComplet | null>;
-  onTermine: () => void;
+  onTermine: (phase: "entree" | "sortie") => void;
 }): React.JSX.Element {
   const etapes = construireEtapes(appartement, typeBail);
   const mode: "entree" | "sortie" = etatDesLieux.statut === "entree_terminee" ? "sortie" : "entree";
@@ -82,21 +82,38 @@ export function EtatDesLieuxStepper({
     return <p className="p-4 text-sm text-red-600">Erreur : étape introuvable.</p>;
   }
 
+  // Réponse de signature perdue en route : la signature a pu être enregistrée.
+  // « Réessayer » reçoit alors un 409, qui n'est pas un échec.
+  async function signatureDejaAcquise(): Promise<boolean> {
+    try {
+      const fraiches = await onSubmitted();
+      return Boolean(mode === "entree" ? fraiches?.entreeSigneeParTous : fraiches?.sortieSigneeParTous);
+    } catch {
+      return false;
+    }
+  }
+
   async function handleSuivant(): Promise<void> {
     setError(null);
     setIsSubmitting(true);
     try {
       await handleRef.current?.submit();
+      if (index === etapes.length - 1) {
+        // La signature est acquise : un rechargement en échec ne doit
+        // jamais laisser croire le contraire ni la faire rejouer.
+        onTermine(mode);
+        return;
+      }
       const fraiches = await onSubmitted();
       if (fraiches) {
         setDonnees(fraiches);
       }
-      if (index === etapes.length - 1) {
-        onTermine();
-        return;
-      }
       setIndex((i) => i + 1);
     } catch (err) {
+      if (index === etapes.length - 1 && (await signatureDejaAcquise())) {
+        onTermine(mode);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Envoi impossible — vérifiez votre connexion");
     } finally {
       setIsSubmitting(false);

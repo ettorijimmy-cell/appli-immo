@@ -259,6 +259,63 @@ export interface SignerEtatDesLieuxInput {
   nouvelleAdresseLocataire?: string;
 }
 
+export type PhaseEtatDesLieux = "entree" | "sortie";
+export type StatutEnvoi = "en_cours" | "envoye" | "echec" | "indetermine";
+
+export interface ResultatEnvoi {
+  locataireId: string;
+  nomDestinataire: string;
+  adresseUtilisee: string;
+  statut: StatutEnvoi;
+  tenteLe: string;
+  envoyeLe: string | null;
+  codeErreur: string | null;
+  messageErreur: string | null;
+}
+
+export interface DestinataireEnvoi {
+  locataireId: string;
+  nomAffiche: string;
+  email: string | null;
+  dernierEnvoi: ResultatEnvoi | null;
+}
+
+export interface DestinatairesEnvoi {
+  pdfDisponible: boolean;
+  destinataires: DestinataireEnvoi[];
+}
+
+export interface DemandeEnvoi {
+  demandeId: string;
+  destinataires: { locataireId: string; email: string }[];
+}
+
+export function getDestinatairesEnvoi(etatDesLieuxId: string, phase: PhaseEtatDesLieux): Promise<DestinatairesEnvoi> {
+  return authenticatedFetch<DestinatairesEnvoi>(`/etats-des-lieux/${etatDesLieuxId}/envois/${phase}/destinataires`);
+}
+
+export function envoyerEtatDesLieux(
+  etatDesLieuxId: string,
+  phase: PhaseEtatDesLieux,
+  demande: DemandeEnvoi
+): Promise<{ resultats: ResultatEnvoi[] }> {
+  return authenticatedFetch<{ resultats: ResultatEnvoi[] }>(`/etats-des-lieux/${etatDesLieuxId}/envois/${phase}`, {
+    method: "POST",
+    body: JSON.stringify(demande)
+  });
+}
+
+export function produirePdfEtatDesLieux(etatDesLieuxId: string, phase: PhaseEtatDesLieux): Promise<void> {
+  return authenticatedFetch<void>(`/etats-des-lieux/${etatDesLieuxId}/pdf/${phase}`, { method: "POST" });
+}
+
+export function enregistrerEmailLocataire(locataireId: string, email: string): Promise<void> {
+  return authenticatedFetch<unknown>(`/locataires/${locataireId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ email })
+  }).then(() => undefined);
+}
+
 export function signerEntree(etatDesLieuxId: string, input: SignerEtatDesLieuxInput): Promise<EtatDesLieuxComplet> {
   return authenticatedFetch<EtatDesLieuxComplet>(`/etats-des-lieux/${etatDesLieuxId}/signer-entree`, {
     method: "POST",
