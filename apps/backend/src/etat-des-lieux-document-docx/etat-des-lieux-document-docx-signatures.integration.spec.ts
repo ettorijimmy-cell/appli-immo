@@ -267,7 +267,7 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
       etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id], { lieu: "Marseille" }))
     );
     await avecContexte(() =>
-      etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature([titulaire.id], { lieu: "Lyon" }))
+      etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature([titulaire.id], { lieu: "Lyon", nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" }))
     );
 
     const buffer = await avecContexte(() =>
@@ -286,13 +286,12 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
   describe("nouvelle adresse du locataire (décret n° 2016-382, art. 2, 2° a)", () => {
     const ADRESSE = "12 rue du Départ, 69001 Lyon";
 
-    async function signerLesDeuxPhases(nouvelleAdresseLocataire?: string): Promise<string> {
+    async function signerLesDeuxPhases(nouvelleAdresseLocataire: string): Promise<string> {
       const { etatDesLieuxId, titulaire } = await creerDossier(0);
       await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
-      if (nouvelleAdresseLocataire !== undefined) {
-        await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire });
-      }
-      await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature([titulaire.id])));
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature([titulaire.id], { nouvelleAdresseLocataire }))
+      );
       return etatDesLieuxId;
     }
 
@@ -318,8 +317,10 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
       expect(balisesResiduelles(buffer)).toEqual([]);
     });
 
-    it("sortie sans adresse saisie : cellule vide, jamais de valeur littérale null/undefined", async () => {
-      const etatDesLieuxId = await signerLesDeuxPhases();
+    it("sortie non signée sans adresse saisie : cellule vide, jamais de valeur littérale null/undefined", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
+      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateSortie: "2026-10-01" });
 
       const buffer = await genererPhase(etatDesLieuxId, "sortie");
 
@@ -343,7 +344,7 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
     const idsLocataires = [titulaire.id, colocataire.id];
 
     await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature(idsLocataires)));
-    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature(idsLocataires)));
+    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature(idsLocataires, { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" })));
 
     const buffer = await avecContexte(() =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId)

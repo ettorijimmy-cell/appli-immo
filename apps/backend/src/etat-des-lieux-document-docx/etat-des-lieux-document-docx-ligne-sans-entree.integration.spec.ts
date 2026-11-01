@@ -249,7 +249,7 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
       })
     );
 
-    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieux.id, dtoSignature()));
+    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieux.id, { ...dtoSignature(), nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" }));
 
     const buffer = await avecContexte(() =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -331,7 +331,7 @@ describe("Génération docx — ligne ajoutée après l'entrée, sans valeurs d'
     expect(sejour.murEtatEntree).toBeNull();
     expect(sejour.murDescription).toBeNull();
 
-    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieux.id, dtoSignature()));
+    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieux.id, { ...dtoSignature(), nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" }));
 
     const buffer = await avecContexte(() =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)

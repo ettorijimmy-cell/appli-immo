@@ -1,3 +1,4 @@
+import { LONGUEUR_MAX_NOUVELLE_ADRESSE, resoudreNouvelleAdresseSortie } from "core";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   getSignatairesAttendus,
@@ -62,6 +63,7 @@ export const SignatureStepScreen = forwardRef<
   const [chargement, setChargement] = useState(true);
   const [erreurChargement, setErreurChargement] = useState<string | null>(null);
   const [lieu, setLieu] = useState("");
+  const [nouvelleAdresse, setNouvelleAdresse] = useState("");
   const [cartes, setCartes] = useState<CarteSignataire[]>([]);
   const zonesRef = useRef<Record<number, ZoneSignatureHandle | null>>({});
 
@@ -75,6 +77,7 @@ export const SignatureStepScreen = forwardRef<
           return;
         }
         setLieu(donnees.villeLogement);
+        setNouvelleAdresse(donnees.nouvelleAdresseLocataire ?? "");
         setCartes([
           {
             role: "bailleur",
@@ -103,8 +106,11 @@ export const SignatureStepScreen = forwardRef<
     };
   }, [etatDesLieuxId]);
 
+  const adresseSortie = resoudreNouvelleAdresseSortie(nouvelleAdresse, null);
   const estComplet =
-    cartes.length > 0 && cartes.every((c) => c.luEtApprouve && c.dataUrlPng !== null && c.nom.trim() !== "");
+    cartes.length > 0 &&
+    cartes.every((c) => c.luEtApprouve && c.dataUrlPng !== null && c.nom.trim() !== "") &&
+    (mode === "entree" || adresseSortie !== null);
 
   useEffect(() => {
     onPretChange(estComplet);
@@ -139,7 +145,8 @@ export const SignatureStepScreen = forwardRef<
             luEtApprouve: c.luEtApprouve,
             imagePng: extraireBase64(c.dataUrlPng!)
           })),
-        lieu: lieu.trim()
+        lieu: lieu.trim(),
+        ...(mode === "sortie" && adresseSortie !== null && { nouvelleAdresseLocataire: adresseSortie })
       };
       await onSubmit(input);
     }
@@ -177,6 +184,26 @@ export const SignatureStepScreen = forwardRef<
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-base"
         />
       </div>
+
+      {mode === "sortie" && (
+        <div className="space-y-2 rounded-md bg-slate-50 p-3">
+          <label htmlFor="nouvelle-adresse" className="block text-sm font-medium text-slate-700">
+            Nouvelle adresse du locataire
+          </label>
+          <textarea
+            id="nouvelle-adresse"
+            value={nouvelleAdresse}
+            onChange={(e) => setNouvelleAdresse(e.target.value)}
+            maxLength={LONGUEUR_MAX_NOUVELLE_ADRESSE}
+            rows={3}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+          />
+          <p className="text-xs text-slate-500">
+            Colocataires : le nom devant chaque adresse. Si elle n'est pas connue, indiquez « Non communiquée par le
+            locataire ».
+          </p>
+        </div>
+      )}
 
       {cartes.map((carte, index) => (
         <div key={carte.locataireId ?? "bailleur"} className="space-y-3 rounded-md border border-slate-200 p-3">

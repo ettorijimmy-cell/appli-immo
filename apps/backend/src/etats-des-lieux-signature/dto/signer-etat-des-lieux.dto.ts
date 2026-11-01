@@ -9,8 +9,10 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   ValidateNested
 } from "class-validator";
+import { LONGUEUR_MAX_NOUVELLE_ADRESSE } from "core";
 
 // Nom du bailleur modifiable (cas du mandataire) : toujours reçu dans la
 // requête, jamais résolu côté serveur depuis scis.nom_gerant/
@@ -53,6 +55,14 @@ export class SignerEtatDesLieuxDto {
   @IsString()
   @IsNotEmpty()
   lieu?: string;
+
+  // Obligatoire pour signer la sortie, refusée à l'entrée — contrôle métier
+  // dans EtatsDesLieuxSignatureService, seul à connaître la phase et la
+  // valeur déjà enregistrée.
+  @IsOptional()
+  @IsString()
+  @MaxLength(LONGUEUR_MAX_NOUVELLE_ADRESSE)
+  nouvelleAdresseLocataire?: string;
 
   @IsDefined()
   @ValidateNested()

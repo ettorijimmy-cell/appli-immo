@@ -156,7 +156,7 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
   }
 
   async function signerSortie(etatDesLieuxId: string, locataireId: string) {
-    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature(locataireId)));
+    await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoSignature(locataireId, { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" })));
   }
 
   beforeEach(async () => {

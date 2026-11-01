@@ -32,6 +32,18 @@ describe("SignerEtatDesLieuxDto", () => {
     expect(erreurs).toHaveLength(0);
   });
 
+  it("accepte une nouvelle adresse de 500 caractères, refuse au-delà", async () => {
+    const accepte = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, nouvelleAdresseLocataire: "a".repeat(500) });
+    const refuse = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, nouvelleAdresseLocataire: "a".repeat(501) });
+    expect(await validate(accepte)).toHaveLength(0);
+    expect((await validate(refuse)).map((e) => e.property)).toEqual(["nouvelleAdresseLocataire"]);
+  });
+
+  it("refuse une nouvelle adresse qui n'est pas du texte", async () => {
+    const dto = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, nouvelleAdresseLocataire: 12 });
+    expect((await validate(dto)).map((e) => e.property)).toEqual(["nouvelleAdresseLocataire"]);
+  });
+
   it("accepte une liste de locataires vide (bail sans locataire actif)", async () => {
     const dto = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, locataires: [] });
     const erreurs = await validate(dto);

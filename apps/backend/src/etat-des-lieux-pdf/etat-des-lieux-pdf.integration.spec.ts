@@ -436,7 +436,7 @@ describe("EtatDesLieuxPdfService — génération et stockage découplés après
     await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf")) !== null);
     const pdfEntreeAvant = await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf");
 
-    await avecContexte(orgA, () => etatsDesLieuxSignatureService.signerSortie(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId])));
+    await avecContexte(orgA, () => etatsDesLieuxSignatureService.signerSortie(orgA.etatDesLieuxId, dtoSignature([orgA.titulaireId], { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" })));
     await attendreCondition(async () => (await docFige(orgA.etatDesLieuxId, "sortie", "etat_des_lieux_pdf")) !== null);
 
     const pdfEntreeApres = await docFige(orgA.etatDesLieuxId, "entree", "etat_des_lieux_pdf");

@@ -33,7 +33,7 @@ function trajetDiagonal(boite: { x: number; y: number; width: number; height: nu
   return points;
 }
 
-async function mockSignataires(page: Page): Promise<void> {
+async function mockSignataires(page: Page, nouvelleAdresseLocataire: string | null = null): Promise<void> {
   await page.route("**/etats-des-lieux/edl-test-harnais/signataires", async (route) => {
     await route.fulfill({
       status: 200,
@@ -42,6 +42,7 @@ async function mockSignataires(page: Page): Promise<void> {
       body: JSON.stringify({
         villeLogement: "Lyon",
         bailleurNomPropose: "Jimmy Ettori",
+        nouvelleAdresseLocataire,
         locataires: [{ locataireId: "loc-1", nomAffiche: "Jean Dupont" }],
         entreeSignee: false,
         sortieSignee: false
@@ -120,6 +121,94 @@ test("écran de signature : zone inactive avant la case cochée, tracé tactile 
   expect(envoye.lieu).toBe("Lyon");
   expect(envoye.locataires).toEqual([{ id: "loc-1", lu: true, imgLen: expect.any(Number) }]);
   expect(envoye.locataires[0].imgLen).toBeGreaterThan(0);
+});
+
+async function signerLesDeuxCartes(page: Page, client: CDPSession): Promise<void> {
+  const cases = page.getByRole("checkbox");
+  await cases.nth(0).check();
+  await cases.nth(1).check();
+  for (const rang of [0, 1]) {
+    const canvas = page.getByRole("img", { name: "Zone de signature" }).nth(rang);
+    await canvas.scrollIntoViewIfNeeded();
+    const boite = await canvas.boundingBox();
+    if (!boite) {
+      throw new Error("Zone de signature introuvable");
+    }
+    await tracerAuDoigt(client, trajetDiagonal(boite));
+  }
+}
+
+test("entrée : aucun champ de nouvelle adresse, jamais envoyée", async ({ page }) => {
+  await mockSignataires(page, "Valeur inattendue");
+  const client = await page.context().newCDPSession(page);
+  await page.goto("/test-harness/signature.html");
+
+  await expect(page.getByPlaceholder("Nom du bailleur")).toBeVisible();
+  await expect(page.getByLabel("Nouvelle adresse du locataire")).toHaveCount(0);
+
+  await signerLesDeuxCartes(page, client);
+  await expect(page.getByTestId("pret")).toHaveText("pret");
+  await page.getByTestId("terminer").click();
+  await expect(page.getByTestId("statut-envoi")).toHaveText("ok");
+  const envoye = JSON.parse((await page.getByTestId("dernier-envoi").textContent()) ?? "{}");
+  expect(envoye.nouvelleAdresseLocataire).toBeUndefined();
+});
+
+test("sortie : signature impossible sans adresse, champ visible avant les signatures, valeur nettoyée à l'envoi", async ({
+  page
+}) => {
+  await mockSignataires(page);
+  const client = await page.context().newCDPSession(page);
+  await page.goto("/test-harness/signature.html?mode=sortie");
+
+  const champ = page.getByLabel("Nouvelle adresse du locataire");
+  await expect(champ).toHaveValue("");
+
+  const boiteChamp = await champ.boundingBox();
+  const boiteSignature = await page.getByRole("img", { name: "Zone de signature" }).first().boundingBox();
+  if (!boiteChamp || !boiteSignature) {
+    throw new Error("Champ ou zone de signature introuvable");
+  }
+  expect(boiteChamp.y).toBeLessThan(boiteSignature.y);
+
+  await signerLesDeuxCartes(page, client);
+  await expect(page.getByTestId("pret")).toHaveText("non-pret");
+
+  await champ.fill("   ");
+  await expect(page.getByTestId("pret")).toHaveText("non-pret");
+
+  await champ.fill("  Non communiquée par le locataire  ");
+  await expect(page.getByTestId("pret")).toHaveText("pret");
+
+  await page.getByTestId("terminer").click();
+  await expect(page.getByTestId("statut-envoi")).toHaveText("ok");
+  const envoye = JSON.parse((await page.getByTestId("dernier-envoi").textContent()) ?? "{}");
+  expect(envoye.nouvelleAdresseLocataire).toBe("Non communiquée par le locataire");
+});
+
+test("sortie : l'adresse déjà enregistrée est proposée, l'effacer bloque la signature", async ({ page }) => {
+  await mockSignataires(page, "12 rue du Départ, 69001 Lyon");
+  const client = await page.context().newCDPSession(page);
+  await page.goto("/test-harness/signature.html?mode=sortie");
+
+  const champ = page.getByLabel("Nouvelle adresse du locataire");
+  await expect(champ).toHaveValue("12 rue du Départ, 69001 Lyon");
+
+  await signerLesDeuxCartes(page, client);
+  await expect(page.getByTestId("pret")).toHaveText("pret");
+
+  await champ.fill("");
+  await expect(page.getByTestId("pret")).toHaveText("non-pret");
+});
+
+test("sortie : plusieurs lignes acceptées, longueur plafonnée", async ({ page }) => {
+  await mockSignataires(page);
+  await page.goto("/test-harness/signature.html?mode=sortie");
+
+  const champ = page.getByLabel("Nouvelle adresse du locataire");
+  await champ.fill("Jean Dupont : 1 rue A\nAlex Martin : 2 rue B");
+  await expect(champ).toHaveValue("Jean Dupont : 1 rue A\nAlex Martin : 2 rue B");
+  await expect(champ).toHaveAttribute("maxlength", "500");
 });
 
 test("le lieu proposé (ville du logement) reste modifiable", async ({ page }) => {

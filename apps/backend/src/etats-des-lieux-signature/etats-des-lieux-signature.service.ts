@@ -11,6 +11,7 @@ import {
   mettreAJourAvecAudit,
   type Database
 } from "db";
+import { resoudreNouvelleAdresseSortie } from "core";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { BienService } from "../bien/bien.service";
@@ -72,6 +73,7 @@ export class EtatsDesLieuxSignatureService {
   async obtenirSignatairesAttendus(etatDesLieuxId: string): Promise<{
     villeLogement: string;
     bailleurNomPropose: string;
+    nouvelleAdresseLocataire: string | null;
     locataires: { locataireId: string; nomAffiche: string }[];
     entreeSignee: boolean;
     sortieSignee: boolean;
@@ -81,6 +83,7 @@ export class EtatsDesLieuxSignatureService {
     return {
       villeLogement: contexte.villeLogement,
       bailleurNomPropose,
+      nouvelleAdresseLocataire: contexte.nouvelleAdresseLocataire,
       locataires: contexte.locatairesActifs,
       entreeSignee: contexte.phasesSigneesParBailleur.has("entree"),
       sortieSignee: contexte.phasesSigneesParBailleur.has("sortie")
@@ -193,6 +196,9 @@ export class EtatsDesLieuxSignatureService {
 
     const lieu = dto.lieu?.trim() || contexte.villeLogement;
 
+    // Avant toute écriture : une sortie refusée ne laisse ni blob ni ligne.
+    const nouvelleAdresse = this.resoudreNouvelleAdresse(phase, dto, contexte.nouvelleAdresseLocataire);
+
     const signataires: SignataireResolu[] = [
       {
         role: "bailleur",
@@ -272,7 +278,9 @@ export class EtatsDesLieuxSignatureService {
           tx,
           etatsDesLieux,
           etatDesLieuxId,
-          phase === "entree" ? { dateEntree: aujourdHui, lieuEntree: lieu } : { dateSortie: aujourdHui, lieuSortie: lieu },
+          phase === "entree"
+            ? { dateEntree: aujourdHui, lieuEntree: lieu }
+            : { dateSortie: aujourdHui, lieuSortie: lieu, nouvelleAdresseLocataire: nouvelleAdresse },
           utilisateurId
         );
       });
@@ -298,6 +306,26 @@ export class EtatsDesLieuxSignatureService {
     void this.etatDesLieuxPdfService.produireDocumentsFigesEnArrierePlan(etatDesLieuxId, phase);
 
     return this.etatsDesLieuxService.findById(etatDesLieuxId);
+  }
+
+  // Décret n° 2016-382, art. 2, 2° a) : écrite dans la même transaction que
+  // les signatures de sortie, pour que le document signé la porte toujours.
+  private resoudreNouvelleAdresse(
+    phase: Phase,
+    dto: SignerEtatDesLieuxDto,
+    enregistree: string | null
+  ): string | null {
+    if (phase === "entree") {
+      if (dto.nouvelleAdresseLocataire) {
+        throw new BadRequestException("La nouvelle adresse du locataire se renseigne uniquement à la sortie.");
+      }
+      return null;
+    }
+    const adresse = resoudreNouvelleAdresseSortie(dto.nouvelleAdresseLocataire, enregistree);
+    if (!adresse) {
+      throw new BadRequestException("La nouvelle adresse du locataire est obligatoire pour signer la sortie.");
+    }
+    return adresse;
   }
 
   private async nettoyerBlobsOrphelins(blobs: BlobEcrit[]): Promise<void> {
@@ -381,6 +409,7 @@ export class EtatsDesLieuxSignatureService {
     return {
       villeLogement: jointure.ville,
       bienId: jointure.bienId,
+      nouvelleAdresseLocataire: entete.nouvelleAdresseLocataire,
       locatairesActifs: liensLocataires.map((l) => ({ locataireId: l.locataireId, nomAffiche: `${l.prenom} ${l.nom}` })),
       phasesSigneesParBailleur: new Set(signaturesBailleur.map((s) => s.phase))
     };

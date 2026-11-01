@@ -13,6 +13,8 @@ import { SignatureStepScreen } from "../src/etat-des-lieux/SignatureStepScreen";
 import type { SignerEtatDesLieuxInput } from "../src/api/etats-des-lieux";
 import "../src/index.css";
 
+const mode = new URLSearchParams(window.location.search).get("mode") === "sortie" ? "sortie" : "entree";
+
 function Harnais(): React.JSX.Element {
   const ref = useRef<EtapeHandle>(null);
   const [pret, setPret] = useState(false);
@@ -36,6 +38,7 @@ function Harnais(): React.JSX.Element {
         bailleurLu: input.bailleur.luEtApprouve,
         bailleurImageLongueur: input.bailleur.imagePng.length,
         lieu: input.lieu,
+        nouvelleAdresseLocataire: input.nouvelleAdresseLocataire,
         locataires: input.locataires.map((l) => ({ id: l.locataireId, lu: l.luEtApprouve, imgLen: l.imagePng.length }))
       })
     );
@@ -51,7 +54,7 @@ function Harnais(): React.JSX.Element {
       <SignatureStepScreen
         ref={ref}
         etatDesLieuxId="edl-test-harnais"
-        mode="entree"
+        mode={mode}
         onPretChange={setPret}
         onSubmit={onSubmit}
       />

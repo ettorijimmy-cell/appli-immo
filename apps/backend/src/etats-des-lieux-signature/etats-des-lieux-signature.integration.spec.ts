@@ -325,7 +325,9 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     it("après entrée ET sortie signées : 4 lignes, 2 par phase", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
-      await avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id])));
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id], { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" }))
+      );
 
       const resultat = await avecContexte(() => etatsDesLieuxSignatureService.obtenirSignaturesPosees(etatDesLieuxId));
 
@@ -463,7 +465,9 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
   it("rejette la signature de sortie avant celle de l'entrée", async () => {
     const { etatDesLieuxId, titulaire } = await creerDossier(userId);
     await expect(
-      avecContexte(() => etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id])))
+      avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id], { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" }))
+      )
     ).rejects.toThrow(ConflictException);
   });
 
@@ -472,7 +476,10 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
 
     const resultat = await avecContexte(() =>
-      etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([titulaire.id], { lieu: "Lyon" }))
+      etatsDesLieuxSignatureService.signerSortie(
+        etatDesLieuxId,
+        dtoValide([titulaire.id], { lieu: "Lyon", nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" })
+      )
     );
 
     expect(resultat.dateSortie).toBe(dateDuJourParis());
@@ -485,6 +492,104 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
       .from(etatDesLieuxSignature)
       .where(eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId));
     expect(signatures).toHaveLength(4); // 2 (entrée) + 2 (sortie)
+  });
+
+  describe("nouvelle adresse du locataire (décret n° 2016-382, art. 2, 2° a)", () => {
+    async function dossierEntreeSignee() {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+      return { etatDesLieuxId, titulaire };
+    }
+
+    function signerSortie(etatDesLieuxId: string, locataireId: string, overrides: Record<string, unknown> = {}) {
+      return avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(etatDesLieuxId, dtoValide([locataireId], overrides))
+      );
+    }
+
+    async function nombreSignaturesSortie(etatDesLieuxId: string): Promise<number> {
+      const lignes = await db
+        .select()
+        .from(etatDesLieuxSignature)
+        .where(and(eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId), eq(etatDesLieuxSignature.phase, "sortie")));
+      return lignes.length;
+    }
+
+    it("refuse la sortie sans adresse, sans rien écrire", async () => {
+      const { etatDesLieuxId, titulaire } = await dossierEntreeSignee();
+
+      await expect(signerSortie(etatDesLieuxId, titulaire.id)).rejects.toThrow(
+        new BadRequestException("La nouvelle adresse du locataire est obligatoire pour signer la sortie.")
+      );
+
+      expect(await nombreSignaturesSortie(etatDesLieuxId)).toBe(0);
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.dateSortie).toBeNull();
+      expect(etat.sortieSigneeParTous).toBe(false);
+    });
+
+    it("refuse une adresse vide, même si une valeur est déjà enregistrée", async () => {
+      const { etatDesLieuxId, titulaire } = await dossierEntreeSignee();
+      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "Ancienne valeur" });
+
+      await expect(signerSortie(etatDesLieuxId, titulaire.id, { nouvelleAdresseLocataire: "   " })).rejects.toThrow(
+        BadRequestException
+      );
+      expect(await nombreSignaturesSortie(etatDesLieuxId)).toBe(0);
+    });
+
+    it("écrit l'adresse saisie, nettoyée, avec les signatures", async () => {
+      const { etatDesLieuxId, titulaire } = await dossierEntreeSignee();
+
+      const resultat = await signerSortie(etatDesLieuxId, titulaire.id, {
+        nouvelleAdresseLocataire: "  Non communiquée par le locataire  "
+      });
+
+      expect(resultat.nouvelleAdresseLocataire).toBe("Non communiquée par le locataire");
+      expect(resultat.sortieSigneeParTous).toBe(true);
+    });
+
+    it("sans saisie, reprend l'adresse déjà enregistrée", async () => {
+      const { etatDesLieuxId, titulaire } = await dossierEntreeSignee();
+      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "Valeur enregistrée" });
+
+      const resultat = await signerSortie(etatDesLieuxId, titulaire.id);
+
+      expect(resultat.nouvelleAdresseLocataire).toBe("Valeur enregistrée");
+    });
+
+    it("la saisie remplace la valeur déjà enregistrée", async () => {
+      const { etatDesLieuxId, titulaire } = await dossierEntreeSignee();
+      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "Ancienne valeur" });
+
+      const resultat = await signerSortie(etatDesLieuxId, titulaire.id, { nouvelleAdresseLocataire: "Nouvelle saisie" });
+
+      expect(resultat.nouvelleAdresseLocataire).toBe("Nouvelle saisie");
+    });
+
+    it("refuse l'adresse à l'entrée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxSignatureService.signerEntree(
+            etatDesLieuxId,
+            dtoValide([titulaire.id], { nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon" })
+          )
+        )
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("GET signataires renvoie l'adresse enregistrée, pour le pré-remplissage de l'écran", async () => {
+      const { etatDesLieuxId } = await dossierEntreeSignee();
+      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "Valeur enregistrée" });
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.obtenirSignatairesAttendus(etatDesLieuxId)
+      );
+
+      expect(resultat.nouvelleAdresseLocataire).toBe("Valeur enregistrée");
+    });
   });
 
   it("upload de photo d'état des lieux : phase 'entree' tant que l'entrée n'est pas signée, 'sortie' ensuite", async () => {

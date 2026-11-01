@@ -234,6 +234,7 @@ export interface SignatairesAttendus {
   // Nom proposé (résolu depuis le bien/la SCI), modifiable à l'écran —
   // jamais imposé : un mandataire peut signer sous un autre nom.
   bailleurNomPropose: string;
+  nouvelleAdresseLocataire: string | null;
   locataires: SignataireAttendu[];
   entreeSignee: boolean;
   sortieSignee: boolean;
@@ -254,6 +255,8 @@ export interface SignerEtatDesLieuxInput {
   bailleur: SignatureSignataireInput & { nomAffiche: string };
   locataires: (SignatureSignataireInput & { locataireId: string })[];
   lieu?: string;
+  // Sortie uniquement (décret n° 2016-382, art. 2, 2° a).
+  nouvelleAdresseLocataire?: string;
 }
 
 export function signerEntree(etatDesLieuxId: string, input: SignerEtatDesLieuxInput): Promise<EtatDesLieuxComplet> {
