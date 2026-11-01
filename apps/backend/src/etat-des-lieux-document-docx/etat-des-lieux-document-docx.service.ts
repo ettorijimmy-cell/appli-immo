@@ -39,6 +39,7 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
+import { corrigerMediasJpeg, reencoderPhotoPourDocument } from "./medias-photo-document";
 import { SignatureIllisibleError } from "./signature-illisible.error";
 
 // Vide si non renseigné — même convention que BailDocumentDocxService,
@@ -340,10 +341,8 @@ export class EtatDesLieuxDocumentDocxService {
     // Photos : réutilise DocumentsService (jamais de déchiffrement en
     // dehors du point unique déjà en place, CLAUDE.md) — chaque
     // téléchargement consigne déjà son propre accès dans journal_audit
-    // (DocumentsService.telecharger). Redressement EXIF + réencodage en
-    // PNG (bug connu du module gratuit : nom de fichier généré toujours
-    // "image_generated_N.png" quel que soit le contenu réel — voir
-    // docs/backlog.md, test du 2026-08-02).
+    // (DocumentsService.telecharger). Redressement EXIF, retrait des
+    // métadonnées et réencodage JPEG : voir reencoderPhotoPourDocument.
     const photosMeta = await this.documentsService.findAll({
       entiteType: "etat_des_lieux",
       entiteId: etatDesLieuxId,
@@ -353,11 +352,7 @@ export class EtatDesLieuxDocumentDocxService {
     await Promise.all(
       photosMeta.map(async (doc) => {
         const { contenu } = await this.documentsService.telecharger(doc.id);
-        const reencode = await sharp(contenu)
-          .rotate()
-          .resize({ width: 1600, withoutEnlargement: true })
-          .png()
-          .toBuffer();
+        const reencode = await reencoderPhotoPourDocument(contenu);
         const meta = await sharp(reencode).metadata();
         images.set(doc.id, {
           buffer: reencode,
@@ -767,6 +762,8 @@ export class EtatDesLieuxDocumentDocxService {
       nullGetter: () => VIDE
     });
     document.render(donneesBalises);
-    return document.getZip().generate({ type: "nodebuffer" }) as Buffer;
+    const zipRendu = document.getZip();
+    corrigerMediasJpeg(zipRendu);
+    return zipRendu.generate({ type: "nodebuffer" }) as Buffer;
   }
 }

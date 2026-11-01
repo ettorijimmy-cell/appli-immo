@@ -537,6 +537,46 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     // corrigé sur les balises {#photosEntree}/{#photosSejour}/{#photosCuisine}
     // — voir le rapport de vérification de tmp/Modèle état des lieux.docx).
     expect(mediaGenerees).toHaveLength(3);
+    expect(mediaGenerees.every((f) => f.endsWith(".jpg"))).toBe(true);
+    expect(zip.files["[Content_Types].xml"]?.asText()).toContain('<Default Extension="jpg" ContentType="image/jpeg"/>');
+    const relations = zip.files["word/_rels/document.xml.rels"]?.asText() ?? "";
+    for (const media of mediaGenerees) {
+      expect(relations).toContain(`Target="${media.replace("word/", "")}"`);
+    }
+  });
+
+  it("une photo de téléphone arrive redressée, sans EXIF ni GPS, dans le document", async () => {
+    const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
+    await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
+    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    const photo = await sharp({ create: { width: 40, height: 20, channels: 3, background: { r: 200, g: 50, b: 50 } } })
+      .withExif({ IFD0: { Make: "MarqueTelephoneTest" }, IFD3: { GPSLatitudeRef: "N", GPSLatitude: "48/1 51/1 24/1" } })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toBuffer();
+    await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      documentsService.upload(
+        { entiteType: "etat_des_lieux", entiteId: etatDesLieux.id, categorie: "photo", etatDesLieuxPieceType: "entree" },
+        fauxFichierMulter(photo, "telephone.jpg", "image/jpeg")
+      )
+    );
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
+    );
+
+    const zip = new PizZip(buffer);
+    const [nomMedia] = Object.keys(zip.files).filter((f) => f.startsWith("word/media/image_generated_"));
+    const media = zip.file(nomMedia ?? "")?.asNodeBuffer();
+    if (!media) {
+      throw new Error("Photo introuvable dans le document généré");
+    }
+    const meta = await sharp(media).metadata();
+    expect(meta.format).toBe("jpeg");
+    expect([meta.width, meta.height]).toEqual([20, 40]);
+    expect(meta.exif).toBeUndefined();
+    expect(meta.orientation).toBeUndefined();
+    expect(media.includes("MarqueTelephoneTest")).toBe(false);
   });
 
   it("colonne sortie masquée tant que date_sortie est absente, puis renseignée une fois la sortie faite", async () => {
