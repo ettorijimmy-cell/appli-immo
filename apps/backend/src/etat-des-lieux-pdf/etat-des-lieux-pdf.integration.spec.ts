@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import path from "path";
 import { BadGatewayException, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -35,6 +34,7 @@ import { LocatairesModule } from "../locataires/locataires.module";
 import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
+import { creerSimulateurGotenberg } from "../test-utils/gotenberg-simulateur";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { EtatDesLieuxPdfJobService } from "./etat-des-lieux-pdf-job.service";
@@ -61,74 +61,6 @@ vi.setConfig({ testTimeout: 20000 });
 
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-
-type ComportementSimulateur =
-  | { type: "succes" }
-  | { type: "erreur"; statut: number }
-  | { type: "attendre"; porte: Promise<void> };
-
-// Simulateur Gotenberg minimal (chantier PDF étape 4, 2026-10-27) : un
-// vrai serveur HTTP local, jamais un mock de fetch — exerce tout le
-// chemin réel de GotenbergService (multipart, Basic Auth absent ici,
-// Content-Type/signature de la réponse). Comportement mutable entre les
-// tests (succès/erreur/attente contrôlée), un seul process pour tout le
-// fichier (démarré une fois, réutilisé par chaque TestingModule compilé
-// dans beforeEach).
-function creerSimulateurGotenberg(): Promise<{
-  url: string;
-  fermer: () => Promise<void>;
-  definirComportement: (c: ComportementSimulateur) => void;
-  nombreAppels: () => number;
-  reinitialiser: () => void;
-}> {
-  let comportement: ComportementSimulateur = { type: "succes" };
-  let appels = 0;
-  const serveur: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    void (async () => {
-      if (req.method !== "POST" || req.url !== "/forms/libreoffice/convert") {
-        res.writeHead(404).end();
-        return;
-      }
-      appels++;
-      // Corps multipart reçu (drainé, jamais parsé — seul le comportement
-      // de réponse configuré par le test importe ici) : attend la fin du
-      // flux avant de répondre, comme le ferait un vrai appel réseau.
-      await new Promise<void>((resolve) => {
-        req.resume();
-        req.once("end", resolve);
-      });
-      const c = comportement;
-      if (c.type === "attendre") {
-        await c.porte;
-      }
-      if (c.type === "erreur") {
-        res.writeHead(c.statut, { "content-type": "text/plain" }).end("erreur simulée");
-        return;
-      }
-      const pdf = Buffer.concat([Buffer.from("%PDF-1.4 "), Buffer.from(`pdf-simule-${appels}`)]);
-      res.writeHead(200, { "content-type": "application/pdf" }).end(pdf);
-    })();
-  });
-  return new Promise((resolve) => {
-    serveur.listen(0, "127.0.0.1", () => {
-      const adresse = serveur.address();
-      if (!adresse || typeof adresse === "string") {
-        throw new Error("Échec du démarrage du simulateur Gotenberg");
-      }
-      resolve({
-        url: `http://127.0.0.1:${adresse.port}`,
-        fermer: () => new Promise((r) => serveur.close(() => r())),
-        definirComportement: (c) => {
-          comportement = c;
-        },
-        nombreAppels: () => appels,
-        reinitialiser: () => {
-          appels = 0;
-        }
-      });
-    });
-  });
-}
 
 // Délai par défaut élargi de 3000 à 10000ms (2026-10-31, docs/backlog.md) :
 // confirmé par isolation que 3000ms est seul en cause sous charge système

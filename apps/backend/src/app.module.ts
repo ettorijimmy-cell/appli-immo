@@ -18,6 +18,7 @@ import { ContactsModule } from "./contacts/contacts.module";
 import { EncryptionModule } from "./crypto/encryption.module";
 import { DatabaseModule } from "./database/database.module";
 import { DepensesModule } from "./depenses/depenses.module";
+import { DiagnosticModule } from "./diagnostic/diagnostic.module";
 import { DocumentsModule } from "./documents/documents.module";
 import { EquipementsModule } from "./equipements/equipements.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx/etat-des-lieux-document-docx.module";
@@ -75,6 +76,7 @@ import { VersementsModule } from "./versements/versements.module";
     RemboursementsModule,
     ReglesCategorisationModule,
     DepensesModule,
+    DiagnosticModule,
     DocumentsModule,
     ReferencesModule,
     AlertesModule,
