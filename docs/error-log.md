@@ -33,6 +33,22 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-11-01] Port SMTP 465 bloqué en sortie des Serverless Containers Scaleway
+
+**Symptôme** : `GET /diagnostic/smtp` en production : port 465 en échec `ESOCKET` à la connexion, port 587 entièrement fonctionnel (connexion, EHLO, STARTTLS, authentification, `SIZE 35882577`). Tout envoi passant par `smtp.gmail.com:465` ne pouvait pas partir.
+
+**Contexte** : audit de l'étape 5 (remise de l'état des lieux par mail). `SmtpEnvoiService` avait été écrit et testé uniquement avec nodemailer simulé ; IMAP (port 993) fonctionnait, ce qui masquait le problème, et rien ne prouvait qu'un envoi ait jamais réussi en production.
+
+**Cause** : Scaleway interdit le trafic sortant vers les ports 25 et 465 depuis les Serverless Containers, sauf vers son service Transactional Email.
+
+**Solution** : passage sur le port 587 avec STARTTLS obligatoire (`requireTLS`), délais bornés (commit `9279fe3`). Route `GET /diagnostic/smtp` conservée : elle teste les deux ports sans envoyer de mail.
+
+**Fichiers concernés** : `apps/backend/src/messagerie/smtp-envoi.service.ts`, `apps/backend/src/diagnostic/diagnostic-smtp.service.ts`
+
+**À surveiller** : un service sortant ne se valide pas avec un simulateur seul. Avant de dépendre d'un port sortant en production, le vérifier depuis l'hébergement réel. Le diagnostic prouve la connexion, pas la livraison d'un message.
+
+---
+
 ### [2026-10-30] Violation de contrainte unique "sans risque" qui casse pourtant toute la suite d'intégration — transaction explicite partagée des tests, pas la logique applicative
 
 **Symptôme** : un test d'intégration nouvellement écrit (chantier PDF étape

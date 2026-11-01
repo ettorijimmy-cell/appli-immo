@@ -704,6 +704,12 @@ les trois parcours ci-dessus).
   des lieux et Alertes se sont tous déployés et testés sans problème
   similaire jusqu'à la clôture complète du chantier.
 
+- **Photos d'origine stockées avec leurs métadonnées, dont le GPS — à traiter
+  au chantier RGPD (noté le 2026-11-01).** Seules les images insérées dans les
+  documents sont nettoyées. Les fichiers d'origine, chiffrés dans le stockage,
+  gardent leur EXIF. Piste : nettoyage à l'upload, à arbitrer avec la perte de
+  l'original.
+
 - **Adresses e-mail conservées dans `etat_des_lieux_envoi` — à traiter au
   chantier RGPD (noté le 2026-11-01).** La preuve de remise garde
   `adresse_utilisee` et `nom_destinataire`, y compris après le départ du
@@ -1543,6 +1549,24 @@ déployé le 2026-11-01 :**
   pas que la génération du PDF figé d'état des lieux en conditions
   réelles (signatures, vraies données) produit un résultat correct de
   bout en bout.
+
+**Étape 5 (remise de l'état des lieux par mail) — code terminé le 2026-11-01,
+non déployé.** Ordre impératif :
+
+1. Appliquer la migration `0070_condemned_abomination.sql` en production. Elle
+   est purement additive, mais elle crée les premiers trigger et fonction du
+   projet : à vérifier avec le rôle de production.
+2. Déployer l'image backend, qui embarque aussi le mobile. L'inverse casserait
+   les routes d'envoi et le job des 10 minutes.
+3. Reconstruire l'installeur desktop.
+4. Envoyer un vrai mail de test depuis la Messagerie : le diagnostic du
+   2026-11-01 prouve la connexion et l'authentification sur le port 587
+   (`GET /diagnostic/smtp`), pas la livraison. Jusqu'au déploiement du commit
+   `9279fe3`, l'envoi reste sur le 465, bloqué par Scaleway : Tâches et Messagerie
+   ne peuvent pas envoyer en production.
+5. Au premier état des lieux réel : vérifier le PDF signé, sa taille, le délai
+   de préparation, puis la réception par le locataire. `envoye` signifie accepté
+   par le serveur d'envoi, un rebond arrive ensuite dans la Messagerie.
 
 ---
 
@@ -2538,6 +2562,12 @@ notre code avant la conception du schéma État des lieux :**
    détection du format par les octets plutôt que par l'extension
    déclarée) — **non vérifié dans Microsoft Word réel**, seul rendu
    disponible dans cet environnement.
+
+**Décision d'origine, jamais implémentée telle quelle (constat du
+2026-11-01).** Les photos ne sont pas réencodées à l'upload : elles le sont à
+la génération du document, en JPEG 1600 px qualité 80, orientation appliquée et
+sans métadonnées (`medias-photo-document.ts`). Le texte ci-dessous reste comme
+trace de la décision initiale.
 
 **Décision : redressement + réencodage fait une seule fois, à l'upload
 de la photo (Module 4, Documents), pas à chaque génération/régénération

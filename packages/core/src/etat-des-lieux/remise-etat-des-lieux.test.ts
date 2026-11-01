@@ -1,33 +1,35 @@
 import { describe, expect, it } from "vitest";
-import type { DestinataireEnvoi, ResultatEnvoi } from "../api/etats-des-lieux";
-import { ApiError } from "../lib/authenticated-fetch";
 import {
   adresseEmailPlausible,
-  aRenvoyer,
+  construireDemandeId,
   demandeARejouer,
-  genererDemandeId,
-  libelleResultat,
-  lignesResultat,
-  selectionInitiale,
-  type DestinataireDemande
+  destinatairesARenvoyer,
+  libelleResultatRemise,
+  lignesResultatRemise,
+  selectionInitialeRemise,
+  type DestinataireDemande,
+  type DestinataireRemise,
+  type ResultatEnvoiRemise,
+  type StatutEnvoiRemise
 } from "./remise-etat-des-lieux";
 
-function resultat(locataireId: string, statut: ResultatEnvoi["statut"], surcharge: Partial<ResultatEnvoi> = {}): ResultatEnvoi {
+function resultat(
+  locataireId: string,
+  statut: StatutEnvoiRemise,
+  surcharge: Partial<ResultatEnvoiRemise> = {}
+): ResultatEnvoiRemise {
   return {
     locataireId,
-    nomDestinataire: locataireId,
-    adresseUtilisee: `${locataireId}@example.com`,
     statut,
     tenteLe: "2026-11-03T13:30:00.000Z",
     envoyeLe: statut === "envoye" ? "2026-11-03T13:30:02.000Z" : null,
-    codeErreur: null,
     messageErreur: null,
     ...surcharge
   };
 }
 
-function destinataire(locataireId: string, email: string | null, dernierEnvoi: ResultatEnvoi | null = null): DestinataireEnvoi {
-  return { locataireId, nomAffiche: locataireId, email, dernierEnvoi };
+function destinataire(locataireId: string, email: string | null, dernierEnvoi: ResultatEnvoiRemise | null = null): DestinataireRemise {
+  return { locataireId, email, dernierEnvoi };
 }
 
 const JEAN: DestinataireDemande = { locataireId: "jean", nomAffiche: "Jean", email: "jean@example.com" };
@@ -46,19 +48,28 @@ describe("adresseEmailPlausible", () => {
   );
 });
 
-describe("genererDemandeId", () => {
-  it("produit un UUID v4 valide, différent à chaque appel", () => {
-    const a = genererDemandeId();
+describe("construireDemandeId", () => {
+  it("produit un UUID v4 valide quels que soient les octets reçus", () => {
+    for (const octet of [0x00, 0xff, 0x5a]) {
+      expect(construireDemandeId(new Uint8Array(16).fill(octet))).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+    }
+  });
 
-    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    expect(genererDemandeId()).not.toBe(a);
+  it("ne modifie pas les octets fournis", () => {
+    const octets = new Uint8Array(16).fill(0xff);
+
+    construireDemandeId(octets);
+
+    expect([...octets].every((o) => o === 0xff)).toBe(true);
   });
 });
 
-describe("selectionInitiale", () => {
+describe("selectionInitialeRemise", () => {
   it("coche les destinataires avec adresse, jamais ceux déjà envoyés ou sans adresse exploitable", () => {
     expect(
-      selectionInitiale([
+      selectionInitialeRemise([
         destinataire("a", "a@example.com"),
         destinataire("b", null),
         destinataire("c", "invalide"),
@@ -69,51 +80,53 @@ describe("selectionInitiale", () => {
   });
 });
 
-describe("lignesResultat et aRenvoyer", () => {
+describe("lignesResultatRemise et destinatairesARenvoyer", () => {
   it("un destinataire sans résultat apparaît avec resultat null et reste à renvoyer", () => {
-    const lignes = lignesResultat([JEAN, ALEX], [resultat("jean", "envoye")]);
+    const lignes = lignesResultatRemise([JEAN, ALEX], [resultat("jean", "envoye")]);
 
     expect(lignes[1]).toEqual({ destinataire: ALEX, resultat: null });
-    expect(aRenvoyer(lignes)).toEqual(["alex"]);
+    expect(destinatairesARenvoyer(lignes)).toEqual(["alex"]);
   });
 
   it("à renvoyer : échec, résultat inconnu et sans résultat, jamais envoyé ni en cours", () => {
-    const lignes = lignesResultat(
+    const lignes = lignesResultatRemise(
       [JEAN, ALEX, { ...ALEX, locataireId: "eva" }, { ...ALEX, locataireId: "luc" }, { ...ALEX, locataireId: "zoe" }],
       [resultat("jean", "envoye"), resultat("alex", "echec"), resultat("eva", "indetermine"), resultat("zoe", "en_cours")]
     );
 
-    expect(aRenvoyer(lignes)).toEqual(["alex", "eva", "luc"]);
+    expect(destinatairesARenvoyer(lignes)).toEqual(["alex", "eva", "luc"]);
   });
 });
 
 describe("demandeARejouer", () => {
   it("réseau coupé ou 5xx : la même demande doit être rejouée", () => {
-    expect(demandeARejouer(new TypeError("Failed to fetch"))).toBe(true);
-    expect(demandeARejouer(new ApiError(502))).toBe(true);
+    expect(demandeARejouer(undefined)).toBe(true);
+    expect(demandeARejouer(502)).toBe(true);
   });
 
   it("refus 4xx : rien n'est parti, la demande est abandonnée", () => {
-    expect(demandeARejouer(new ApiError(409))).toBe(false);
-    expect(demandeARejouer(new ApiError(400))).toBe(false);
+    expect(demandeARejouer(409)).toBe(false);
+    expect(demandeARejouer(400)).toBe(false);
   });
 });
 
-describe("libelleResultat", () => {
+describe("libelleResultatRemise", () => {
   it("n'annonce jamais une réception, seulement l'acceptation par le serveur", () => {
-    const libelle = libelleResultat(resultat("jean", "envoye"));
+    const libelle = libelleResultatRemise(resultat("jean", "envoye"));
 
     expect(libelle).toContain("Accepté par le serveur d'envoi le 3 novembre 2026");
     expect(libelle).toContain("14:30");
     expect(libelle).not.toMatch(/reçu/i);
   });
 
-  it("reprend le message français de l'échec", () => {
-    expect(libelleResultat(resultat("jean", "echec", { messageErreur: "Réessayez." }))).toBe("Réessayez.");
+  it("reprend le message français de l'échec, avec un repli", () => {
+    expect(libelleResultatRemise(resultat("jean", "echec", { messageErreur: "Réessayez." }))).toBe("Réessayez.");
+    expect(libelleResultatRemise(resultat("jean", "echec"))).toBe("L'envoi a échoué.");
   });
 
-  it("sans résultat et résultat inconnu ont leur propre message", () => {
-    expect(libelleResultat(null)).toContain("interrompu");
-    expect(libelleResultat(resultat("jean", "indetermine"))).toContain("a pu partir");
+  it("sans résultat, résultat inconnu et en cours ont leur propre message", () => {
+    expect(libelleResultatRemise(null)).toContain("interrompu");
+    expect(libelleResultatRemise(resultat("jean", "indetermine"))).toContain("a pu partir");
+    expect(libelleResultatRemise(resultat("jean", "en_cours"))).toContain("déjà en cours");
   });
 });

@@ -290,6 +290,57 @@ export function produirePdfEtatDesLieux(id: string, phase: "entree" | "sortie"):
   return authenticatedFetch<void>(`/etats-des-lieux/${id}/pdf/${phase}`, { method: "POST" });
 }
 
+export type PhaseEtatDesLieux = "entree" | "sortie";
+
+export interface ResultatEnvoi {
+  locataireId: string;
+  nomDestinataire: string;
+  adresseUtilisee: string;
+  statut: "en_cours" | "envoye" | "echec" | "indetermine";
+  tenteLe: string;
+  envoyeLe: string | null;
+  codeErreur: string | null;
+  messageErreur: string | null;
+}
+
+export interface EnvoiHistorique extends ResultatEnvoi {
+  id: string;
+  phase: PhaseEtatDesLieux;
+  adresseExpediteur: string | null;
+  objet: string;
+  smtpMessageId: string | null;
+  pdfSha256: string;
+}
+
+export interface DestinataireEnvoi {
+  locataireId: string;
+  nomAffiche: string;
+  email: string | null;
+  dernierEnvoi: ResultatEnvoi | null;
+}
+
+export function getDestinatairesEnvoi(
+  id: string,
+  phase: PhaseEtatDesLieux
+): Promise<{ pdfDisponible: boolean; destinataires: DestinataireEnvoi[] }> {
+  return authenticatedFetch(`/etats-des-lieux/${id}/envois/${phase}/destinataires`);
+}
+
+export function getHistoriqueEnvois(id: string): Promise<EnvoiHistorique[]> {
+  return authenticatedFetch<EnvoiHistorique[]>(`/etats-des-lieux/${id}/envois`);
+}
+
+export function envoyerEtatDesLieux(
+  id: string,
+  phase: PhaseEtatDesLieux,
+  demande: { demandeId: string; destinataires: { locataireId: string; email: string }[] }
+): Promise<{ resultats: ResultatEnvoi[] }> {
+  return authenticatedFetch<{ resultats: ResultatEnvoi[] }>(`/etats-des-lieux/${id}/envois/${phase}`, {
+    method: "POST",
+    body: JSON.stringify(demande)
+  });
+}
+
 // Récupère le .docx généré côté backend et l'ouvre directement avec
 // l'application par défaut du système, via le canal IPC
 // documents:ouvrirTemporaire (main/documents-temp.ts) — plus de

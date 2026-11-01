@@ -187,12 +187,14 @@ async function confirmer(page: Page): Promise<void> {
 // Parcourt réellement les étapes jusqu'à la signature.
 async function allerALaSignature(page: Page): Promise<void> {
   await page.goto("/test-harness/remise.html");
+  // Le libellé du bouton dit où en est le parcours : aucune attente fixe.
+  const bouton = page.getByRole("button", { name: /^(Suivant|Terminer)$/ });
   for (let i = 0; i < 10; i++) {
-    if (await page.getByText("Signature de la sortie").isVisible()) {
-      return;
+    await expect(bouton).toBeVisible();
+    if ((await bouton.textContent()) === "Terminer") {
+      break;
     }
-    await page.getByRole("button", { name: "Suivant" }).click();
-    await page.waitForTimeout(150);
+    await bouton.click();
   }
   await expect(page.getByText("Signature de la sortie")).toBeVisible();
 }
@@ -257,8 +259,8 @@ test("page : aucune phase signée, aucun bouton d'envoi", async ({ page }) => {
 });
 
 test("après signature : le panneau s'ouvre seul, PDF en préparation puis prêt, rien ne part sans confirmation", async ({ page }) => {
-  // StrictMode lit deux fois au montage : le PDF arrive à la troisième lecture.
-  const etat = etatInitial({ pdfPretApres: 2 });
+  // Le test décide lui-même quand le PDF arrive : aucune fenêtre de temps à viser.
+  const etat = etatInitial({ pdfPretApres: 1_000 });
   await simulerBackend(page, etat);
   await allerALaSignature(page);
   await signer(page);
@@ -267,6 +269,7 @@ test("après signature : le panneau s'ouvre seul, PDF en préparation puis prêt
 
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
   await expect(page.getByText("PDF en préparation")).toBeVisible();
+  etat.pdfPretApres = 0;
   await expect(page.getByText("PDF prêt.")).toBeVisible({ timeout: 8000 });
   expect(etat.appelsEnvoi).toHaveLength(0);
 });

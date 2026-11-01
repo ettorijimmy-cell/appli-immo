@@ -3306,7 +3306,10 @@ dépasse 18 Mo, si un destinataire n'a pas signé cette phase, si une adresse es
 invalide (une seule adresse, ni virgule ni point-virgule) ou diffère de la
 fiche. Rejouer un `demande_id` renvoie les résultats existants sans aucun
 mail. Une panne d'envoi est tracée en `echec` et n'empêche pas d'essayer les
-autres destinataires. Texte du mail : `construireMailRemiseEtatDesLieux`
+autres destinataires. Écrans : `RemiseEtatDesLieuxPanel` (mobile, avec saisie
+ou modification confirmée de l'adresse dans la fiche) et
+`EnvoiEtatDesLieuxPanel` avec `HistoriqueEnvoisEtatDesLieux` (desktop), sur les
+règles communes de `packages/core` (`remise-etat-des-lieux.ts`). Texte du mail : `construireMailRemiseEtatDesLieux`
 (`packages/core`).
 
 **Envois abandonnés** : une ligne `en_cours` de plus de 10 minutes passe à

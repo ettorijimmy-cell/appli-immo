@@ -1,3 +1,15 @@
+import {
+  adresseEmailPlausible,
+  construireDemandeId,
+  demandeARejouer,
+  destinatairesARenvoyer,
+  formaterDateHeureRemise,
+  libelleResultatRemise,
+  lignesResultatRemise,
+  selectionInitialeRemise,
+  type DestinataireDemande,
+  type LigneResultatRemise
+} from "core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   enregistrerEmailLocataire,
@@ -5,23 +17,11 @@ import {
   getDestinatairesEnvoi,
   produirePdfEtatDesLieux,
   type DestinataireEnvoi,
-  type PhaseEtatDesLieux
+  type PhaseEtatDesLieux,
+  type ResultatEnvoi
 } from "../api/etats-des-lieux";
 import { ApiError } from "../lib/authenticated-fetch";
-import {
-  adresseEmailPlausible,
-  aRenvoyer,
-  demandeARejouer,
-  formaterDateHeure,
-  genererDemandeId,
-  INTERVALLE_PDF_MS,
-  libelleResultat,
-  lignesResultat,
-  PLAFOND_ATTENTE_PDF_MS,
-  selectionInitiale,
-  type DestinataireDemande,
-  type LigneResultat
-} from "./remise-etat-des-lieux";
+import { INTERVALLE_PDF_MS, PLAFOND_ATTENTE_PDF_MS } from "./remise-etat-des-lieux";
 
 type EtatPdf = "preparation" | "pret" | "delai" | "bloque";
 type Vue = "liste" | "confirmation" | "envoi" | "reprise" | "resultats";
@@ -174,7 +174,7 @@ export function RemiseEtatDesLieuxPanel({
   const [adresseEnEdition, setAdresseEnEdition] = useState<string | null>(null);
   const [vue, setVue] = useState<Vue>("liste");
   const [erreur, setErreur] = useState<string | null>(null);
-  const [resultats, setResultats] = useState<LigneResultat[]>([]);
+  const [resultats, setResultats] = useState<LigneResultatRemise<ResultatEnvoi>[]>([]);
   const demandeRef = useRef<Demande | null>(null);
   const envoiEnCours = useRef(false);
 
@@ -194,7 +194,7 @@ export function RemiseEtatDesLieuxPanel({
           return;
         }
         setDestinataires(donnees.destinataires);
-        setSelection((actuelle) => actuelle ?? selectionInitiale(donnees.destinataires));
+        setSelection((actuelle) => actuelle ?? selectionInitialeRemise(donnees.destinataires));
         if (donnees.pdfDisponible) {
           setEtatPdf("pret");
           return;
@@ -285,11 +285,11 @@ export function RemiseEtatDesLieuxPanel({
         destinataires: demande.destinataires.map(({ locataireId, email }) => ({ locataireId, email }))
       });
       demandeRef.current = null;
-      setResultats(lignesResultat(demande.destinataires, reponse.resultats));
+      setResultats(lignesResultatRemise(demande.destinataires, reponse.resultats));
       setVue("resultats");
       await relire();
     } catch (err) {
-      if (demandeARejouer(err)) {
+      if (demandeARejouer(err instanceof ApiError ? err.status : undefined)) {
         setErreur("Aucune réponse du serveur : le mail a pu partir. Réessayez, il ne sera pas envoyé deux fois.");
         setVue("reprise");
       } else {
@@ -310,13 +310,13 @@ export function RemiseEtatDesLieuxPanel({
   }
 
   function preparerRenvoi(): void {
-    setSelection(aRenvoyer(resultats));
+    setSelection(destinatairesARenvoyer(resultats));
     setErreur(null);
     setVue("confirmation");
   }
 
   const choisis = destinatairesChoisis();
-  const renvoisPossibles = aRenvoyer(resultats).length > 0;
+  const renvoisPossibles = destinatairesARenvoyer(resultats).length > 0;
 
   return (
     <div className="mx-auto max-w-md space-y-4 p-4">
@@ -395,7 +395,7 @@ export function RemiseEtatDesLieuxPanel({
                     />
                   </>
                 )}
-                {d.dernierEnvoi && <p className="mt-2 text-sm text-slate-500">{libelleResultat(d.dernierEnvoi)}</p>}
+                {d.dernierEnvoi && <p className="mt-2 text-sm text-slate-500">{libelleResultatRemise(d.dernierEnvoi)}</p>}
               </li>
             ))}
           </ul>
@@ -420,7 +420,7 @@ export function RemiseEtatDesLieuxPanel({
                 <li key={d.locataireId} className="text-sm text-slate-700">
                   <span className="font-medium">{d.nomAffiche}</span> — <span className="break-all">{d.email}</span>
                   {dernier?.statut === "envoye" && dernier.envoyeLe && (
-                    <span className="block text-amber-800">Déjà envoyé le {formaterDateHeure(dernier.envoyeLe)}.</span>
+                    <span className="block text-amber-800">Déjà envoyé le {formaterDateHeureRemise(dernier.envoyeLe)}.</span>
                   )}
                 </li>
               );
@@ -428,7 +428,7 @@ export function RemiseEtatDesLieuxPanel({
           </ul>
           <button
             type="button"
-            onClick={() => void executerDemande({ demandeId: genererDemandeId(), destinataires: choisis })}
+            onClick={() => void executerDemande({ demandeId: construireDemandeId(crypto.getRandomValues(new Uint8Array(16))), destinataires: choisis })}
             disabled={choisis.length === 0}
             className="w-full rounded-md bg-indigo-700 py-3 text-base font-medium text-white disabled:opacity-50"
           >
@@ -467,7 +467,7 @@ export function RemiseEtatDesLieuxPanel({
               <li key={destinataire.locataireId} className="rounded-md border border-slate-200 p-3">
                 <p className="font-medium text-slate-800">{destinataire.nomAffiche}</p>
                 <p className="break-all text-sm text-slate-600">{destinataire.email}</p>
-                <p className="mt-1 text-sm text-slate-700">{libelleResultat(resultat)}</p>
+                <p className="mt-1 text-sm text-slate-700">{libelleResultatRemise(resultat)}</p>
               </li>
             ))}
           </ul>

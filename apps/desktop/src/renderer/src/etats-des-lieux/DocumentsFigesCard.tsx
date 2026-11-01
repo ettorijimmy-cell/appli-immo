@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { listerDocumentsFigesEtatDesLieux, produirePdfEtatDesLieux, type StatutDocumentsFigesPhase } from "./api";
+import { EnvoiEtatDesLieuxPanel } from "./EnvoiEtatDesLieuxPanel";
+import { HistoriqueEnvoisEtatDesLieux } from "./HistoriqueEnvoisEtatDesLieux";
 import { messageErreurCartePdf } from "./message-erreur-carte-pdf";
 import { libelleStatutPdf } from "./statut-pdf-etat-des-lieux";
 import { useEtatDesLieuxPdfApercu } from "./use-etat-des-lieux-pdf-apercu";
@@ -30,6 +32,8 @@ export function DocumentsFigesCard({
   const [erreur, setErreur] = useState<string | null>(null);
   const [phaseEnCours, setPhaseEnCours] = useState<"entree" | "sortie" | null>(null);
   const [version, setVersion] = useState(0);
+  const [phaseEnvoi, setPhaseEnvoi] = useState<"entree" | "sortie" | null>(null);
+  const [versionEnvois, setVersionEnvois] = useState(0);
   const { apercu, erreur: erreurApercu, ouvrir, fermer } = useEtatDesLieuxPdfApercu(etatDesLieuxId);
 
   useEffect(() => {
@@ -90,35 +94,55 @@ export function DocumentsFigesCard({
         {phasesSignees.map((phase) => {
           const statut = statuts.find((s) => s.phase === phase);
           return (
-            <div key={phase} className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-slate-600">
-                <span className="font-medium text-slate-700">{LABEL_PHASE[phase]}</span> — {libelleStatutPdf(statut)}
-              </span>
-              <div className="flex gap-2">
-                {statut?.pdf && (
-                  <button
-                    type="button"
-                    onClick={() => void ouvrir(phase)}
-                    className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Ouvrir le PDF
-                  </button>
-                )}
-                {!statut?.pdf && (
-                  <button
-                    type="button"
-                    onClick={() => void handleProduire(phase)}
-                    disabled={phaseEnCours === phase}
-                    className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                  >
-                    {phaseEnCours === phase ? "Production…" : "Produire le PDF"}
-                  </button>
-                )}
+            <div key={phase}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">
+                  <span className="font-medium text-slate-700">{LABEL_PHASE[phase]}</span> — {libelleStatutPdf(statut)}
+                </span>
+                <div className="flex gap-2">
+                  {statut?.pdf && (
+                    <button
+                      type="button"
+                      onClick={() => void ouvrir(phase)}
+                      className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Ouvrir le PDF
+                    </button>
+                  )}
+                  {statut?.pdf && (
+                    <button
+                      type="button"
+                      onClick={() => setPhaseEnvoi(phaseEnvoi === phase ? null : phase)}
+                      className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                    >
+                      Envoyer au locataire
+                    </button>
+                  )}
+                  {!statut?.pdf && (
+                    <button
+                      type="button"
+                      onClick={() => void handleProduire(phase)}
+                      disabled={phaseEnCours === phase}
+                      className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                    >
+                      {phaseEnCours === phase ? "Production…" : "Produire le PDF"}
+                    </button>
+                  )}
+                </div>
               </div>
+              {phaseEnvoi === phase && (
+                <EnvoiEtatDesLieuxPanel
+                  etatDesLieuxId={etatDesLieuxId}
+                  phase={phase}
+                  onFermer={() => setPhaseEnvoi(null)}
+                  onEnvoiTermine={() => setVersionEnvois((v) => v + 1)}
+                />
+              )}
             </div>
           );
         })}
       </div>
+      <HistoriqueEnvoisEtatDesLieux etatDesLieuxId={etatDesLieuxId} version={versionEnvois} />
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
     </div>
   );
