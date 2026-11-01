@@ -75,3 +75,35 @@ jobs:
         run: pnpm test:integration
 
       - run: pnpm build
+
+      # Clé liée à la version exacte de Playwright, via le lockfile.
+      - name: Restaurer le navigateur Playwright
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Installer Chromium
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: pnpm --filter mobile-web exec playwright install --with-deps chromium
+
+      # Le cache ne contient que le navigateur, pas ses dépendances système.
+      - name: Installer les dépendances système de Chromium
+        if: steps.cache-playwright.outputs.cache-hit == 'true'
+        run: pnpm --filter mobile-web exec playwright install-deps chromium
+
+      # Après le build : le mobile consomme packages/core compilé. Les harnais
+      # simulent l'API sur localhost:3000, d'où la surcharge de VITE_API_URL.
+      - name: Tests navigateur mobile-web (Playwright)
+        env:
+          VITE_API_URL: http://localhost:3000
+        run: pnpm --filter mobile-web test:e2e
+
+      - name: Conserver les traces Playwright en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/mobile-web/test-results/
+          retention-days: 7

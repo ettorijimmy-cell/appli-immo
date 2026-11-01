@@ -69,6 +69,7 @@ docker compose up -d  démarrer le Postgres de dev local (persistant, port 5433)
 pnpm dev              lancer backend + desktop en parallèle
 pnpm seed:user        créer/mettre à jour son utilisateur de connexion (email + mot de passe)
 pnpm test             exécuter les tests (Vitest) sur tous les packages
+pnpm --filter mobile-web test:e2e  tests navigateur réel mobile-web (Playwright, aussi lancés en CI)
 pnpm lint             linter tout le monorepo
 pnpm build            build de production
 pnpm backup:local     pg_dump du Postgres de dev vers backups/ (horodaté, ignoré par git)
