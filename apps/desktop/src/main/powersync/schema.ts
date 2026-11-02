@@ -498,6 +498,7 @@ const etat_des_lieux_pieces_chambre = new Table({
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
   observations_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -534,6 +535,7 @@ const etat_des_lieux_pieces_salle_de_bain = new Table({
   baignoire_etat_entree: column.text,
   baignoire_etat_sortie: column.text,
   observations_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -570,6 +572,7 @@ const etat_des_lieux_pieces_wc = new Table({
   wc_etat_entree: column.text,
   wc_etat_sortie: column.text,
   observations_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text

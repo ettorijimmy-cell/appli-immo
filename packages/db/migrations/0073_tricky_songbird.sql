@@ -1,0 +1,3 @@
+ALTER TABLE "etat_des_lieux_pieces_chambre" ADD COLUMN "ajoutee_apres_signature_entree" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "etat_des_lieux_pieces_salle_de_bain" ADD COLUMN "ajoutee_apres_signature_entree" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "etat_des_lieux_pieces_wc" ADD COLUMN "ajoutee_apres_signature_entree" boolean DEFAULT false NOT NULL;

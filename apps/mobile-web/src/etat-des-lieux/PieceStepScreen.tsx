@@ -37,9 +37,12 @@ export const PieceStepScreen = forwardRef<
     row: PieceRow | null;
     mode: "entree" | "sortie";
     libelleFixe?: string;
+    // Chambres, salles de bain, WC et autres pièces : absentes de l'entrée si
+    // la composition de l'appartement a changé depuis.
+    ajoutableApresEntree?: boolean;
     onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   }
->(function PieceStepScreen({ elements, row, mode, libelleFixe, onSubmit }, ref) {
+>(function PieceStepScreen({ elements, row, mode, libelleFixe, ajoutableApresEntree = false, onSubmit }, ref) {
   const [valeurs, setValeurs] = useState(() => initialiser(elements, row, mode));
 
   useImperativeHandle(ref, () => ({
@@ -78,7 +81,7 @@ export const PieceStepScreen = forwardRef<
     setValeurs((v) => ({ ...v, [prefix]: { ...(v[prefix] as ChampsElement), [champ]: valeur } }));
   }
 
-  const pieceAjoutee = mode === "sortie" && libelleFixe !== undefined && (!row || row.ajouteeApresSignatureEntree === true);
+  const pieceAjoutee = mode === "sortie" && ajoutableApresEntree && (!row || row.ajouteeApresSignatureEntree === true);
 
   return (
     <div className="space-y-6">

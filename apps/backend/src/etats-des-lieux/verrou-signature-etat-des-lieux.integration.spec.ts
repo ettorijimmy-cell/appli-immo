@@ -1459,6 +1459,68 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       ).rejects.toThrow("aucune nouvelle pièce ne peut être ajoutée");
     });
 
+    describe.each([
+      ["chambre", (id: string, champs: Record<string, unknown>) => etatsDesLieuxService.submitPieceChambre(id, { numero: 2, ...champs })],
+      ["salle de bain", (id: string, champs: Record<string, unknown>) => etatsDesLieuxService.submitPieceSalleDeBain(id, { numero: 2, ...champs })],
+      ["WC", (id: string, champs: Record<string, unknown>) => etatsDesLieuxService.submitPieceWc(id, { numero: 2, ...champs })]
+    ])("%s absente à l'entrée", (_nom, soumettre) => {
+      it("créée avec ses seuls champs de sortie, marquée", async () => {
+        const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+        await signerEntree(etatDesLieuxId, titulaire.id);
+
+        const piece = await avecContexte(() =>
+          soumettre(etatDesLieuxId, { mur: { etatSortie: "B" }, observationsSortie: "Créée pendant le bail" })
+        );
+
+        expect(piece).toMatchObject({
+          murEtatSortie: "B",
+          murEtatEntree: null,
+          murDescription: null,
+          observationsSortie: "Créée pendant le bail",
+          ajouteeApresSignatureEntree: true
+        });
+      });
+
+      it.each([
+        ["état d'entrée", { mur: { etatEntree: "B" } }],
+        ["description", { mur: { description: "Peinture" } }],
+        ["nombre de prises", { prises: { nombre: 2 } }]
+      ])("%s refusé", async (_champ, champs) => {
+        const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+        await signerEntree(etatDesLieuxId, titulaire.id);
+
+        await expect(avecContexte(() => soumettre(etatDesLieuxId, champs))).rejects.toThrow(ConflictException);
+      });
+
+      it("la sortie reste modifiable, sans perdre le marquage", async () => {
+        const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+        await signerEntree(etatDesLieuxId, titulaire.id);
+        await avecContexte(() => soumettre(etatDesLieuxId, {}));
+
+        const piece = await avecContexte(() => soumettre(etatDesLieuxId, { sol: { etatSortie: "M" } }));
+
+        expect(piece).toMatchObject({ solEtatSortie: "M", ajouteeApresSignatureEntree: true });
+      });
+
+      it("aucun ajout une fois la sortie signée, même sans aucun champ", async () => {
+        const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+        await signerEntree(etatDesLieuxId, titulaire.id);
+        await signerSortie(etatDesLieuxId, titulaire.id);
+
+        await expect(avecContexte(() => soumettre(etatDesLieuxId, {}))).rejects.toThrow(
+          "aucune nouvelle pièce ne peut être ajoutée"
+        );
+      });
+
+      it("créée avant la signature d'entrée : non marquée", async () => {
+        const { etatDesLieuxId } = await creerDossier(userId);
+
+        const piece = await avecContexte(() => soumettre(etatDesLieuxId, {}));
+
+        expect(piece).toMatchObject({ ajouteeApresSignatureEntree: false });
+      });
+    });
+
     it("autre pièce présente à l'entrée : la sortie reste enregistrable", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier" }));

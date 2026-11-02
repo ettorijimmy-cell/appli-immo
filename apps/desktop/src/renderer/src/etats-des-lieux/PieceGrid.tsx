@@ -4,6 +4,7 @@ import type { DocumentMetier } from "../documents/api";
 import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
 import type { ElementDef } from "./pieces-config";
+import { MENTION_PIECE_AJOUTEE } from "./piece-autre-affichage";
 
 const ETATS: EtatElement[] = ["M", "P", "B", "TB"];
 
@@ -407,17 +408,19 @@ export function MultiPieceSection({
         .slice()
         .sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0))
         .map((row) => (
-          <PieceCard
-            key={row.id}
-            titre={`${titrePrefixe} ${row.numero}`}
-            elements={elements}
-            classification={classification}
-            row={row}
-            photos={photosParNumero?.get(row.numero ?? 0) ?? []}
-            entreeSignee={entreeSignee}
-            sortieSignee={sortieSignee}
-            onSave={(payload) => onSave(row.numero ?? 0, payload)}
-          />
+          <div key={row.id}>
+            {row.ajouteeApresSignatureEntree && <p className="mb-1 text-xs text-amber-800">{MENTION_PIECE_AJOUTEE}</p>}
+            <PieceCard
+              titre={`${titrePrefixe} ${row.numero}`}
+              elements={elements}
+              classification={classification}
+              row={row}
+              photos={photosParNumero?.get(row.numero ?? 0) ?? []}
+              entreeSignee={entreeSignee}
+              sortieSignee={sortieSignee}
+              onSave={(payload) => onSave(row.numero ?? 0, payload)}
+            />
+          </div>
         ))}
       {erreurAjout && (
         <p role="alert" className="text-xs text-red-600">

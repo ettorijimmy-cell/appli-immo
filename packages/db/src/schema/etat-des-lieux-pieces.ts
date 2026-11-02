@@ -159,7 +159,9 @@ export const etatDesLieuxPiecesChambre = pgTable(
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
-    observationsSortie: text("observations_sortie")
+    observationsSortie: text("observations_sortie"),
+    // Voir etat_des_lieux_pieces_autre.ajoutee_apres_signature_entree.
+    ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false)
   },
   (table) => [uniqueIndex("etat_des_lieux_pieces_chambre_numero_unique").on(table.etatDesLieuxId, table.numero)]
 );
@@ -193,6 +195,8 @@ export const etatDesLieuxPiecesSalleDeBain = pgTable(
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
     observationsSortie: text("observations_sortie"),
+    // Voir etat_des_lieux_pieces_autre.ajoutee_apres_signature_entree.
+    ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false),
     lavaboDescription: text("lavabo_description"),
     lavaboEtatEntree: etatDesLieuxElementEtatEnum("lavabo_etat_entree"),
     lavaboEtatSortie: etatDesLieuxElementEtatEnum("lavabo_etat_sortie"),
@@ -234,6 +238,8 @@ export const etatDesLieuxPiecesWc = pgTable(
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
     observationsSortie: text("observations_sortie"),
+    // Voir etat_des_lieux_pieces_autre.ajoutee_apres_signature_entree.
+    ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false),
     lavaboDescription: text("lavabo_description"),
     lavaboEtatEntree: etatDesLieuxElementEtatEnum("lavabo_etat_entree"),
     lavaboEtatSortie: etatDesLieuxElementEtatEnum("lavabo_etat_sortie"),

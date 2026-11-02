@@ -512,6 +512,13 @@
       "when": 1793623212644,
       "tag": "0072_big_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793625353903,
+      "tag": "0073_tricky_songbird",
+      "breakpoints": true
     }
   ]
 }

@@ -243,6 +243,7 @@ function renderEtape(
           elements={ELEMENTS_CHAMBRE}
           row={row}
           mode={mode}
+          ajoutableApresEntree
           onSubmit={(payload) =>
             submitPieceChambre(donnees.id, { numero: etape.numero, ...payload }).then(() => undefined)
           }
@@ -258,6 +259,7 @@ function renderEtape(
           elements={ELEMENTS_SALLE_DE_BAIN}
           row={row}
           mode={mode}
+          ajoutableApresEntree
           onSubmit={(payload) =>
             submitPieceSalleDeBain(donnees.id, { numero: etape.numero, ...payload }).then(() => undefined)
           }
@@ -273,6 +275,7 @@ function renderEtape(
           elements={ELEMENTS_WC}
           row={row}
           mode={mode}
+          ajoutableApresEntree
           onSubmit={(payload) => submitPieceWc(donnees.id, { numero: etape.numero, ...payload }).then(() => undefined)}
         />
       );
@@ -287,6 +290,7 @@ function renderEtape(
           row={row}
           mode={mode}
           libelleFixe={etape.titre}
+          ajoutableApresEntree
           onSubmit={(payload) =>
             submitPieceAutre(donnees.id, { numero: etape.numero, ...payload }).then(() => undefined)
           }

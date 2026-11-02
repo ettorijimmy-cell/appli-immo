@@ -25,6 +25,9 @@ interface EtatSimule {
   autrePiece1: string | null;
   appelsPieceAutre: Record<string, unknown>[];
   autresPieces: Record<string, unknown>[];
+  composition: { nombreChambres: number; nombreSallesDeBain: number; nombreWc: number };
+  piecesSoumises: { chemin: string; corps: Record<string, unknown> }[];
+  chambres: Record<string, unknown>[];
   statut: "non_commence" | "entree_terminee" | "complet";
   entreeSignee: boolean;
   sortieSignee: boolean;
@@ -63,6 +66,9 @@ function etatInitial(surcharge: Partial<EtatSimule> = {}): EtatSimule {
     autrePiece1: null,
     appelsPieceAutre: [],
     autresPieces: [],
+    composition: { nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0 },
+    piecesSoumises: [],
+    chambres: [],
     statut: "entree_terminee",
     entreeSignee: true,
     sortieSignee: false,
@@ -100,7 +106,7 @@ function etatDesLieuxComplet(etat: EtatSimule) {
     entree: null,
     sejour: null,
     cuisine: null,
-    chambres: [],
+    chambres: etat.chambres,
     sallesDeBain: [],
     wc: [],
     autres: etat.autresPieces,
@@ -124,10 +130,14 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
       return json(route, { id: "bail-test", appartementId: "appt", typeBail: "vide", statut: "actif", dateDebut: "2026-08-01", dateFin: null, archivedAt: null });
     }
     if (pathname === "/appartements/appt") {
-      return json(route, { id: "appt", bienId: "bien", numero: "1", nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0, autrePiece1: etat.autrePiece1, autrePiece2: null });
+      return json(route, { id: "appt", bienId: "bien", numero: "1", ...etat.composition, autrePiece1: etat.autrePiece1, autrePiece2: null });
     }
     if (pathname === "/etats-des-lieux" && search.includes("bailId")) {
       return etat.rechargementEnPanne ? json(route, { message: "Panne" }, 500) : json(route, etatDesLieuxComplet(etat));
+    }
+    if (/\/piece-(chambre|salle-de-bain|wc)$/.test(pathname)) {
+      etat.piecesSoumises.push({ chemin: pathname, corps: requete.postDataJSON() as Record<string, unknown> });
+      return json(route, {});
     }
     if (pathname.endsWith("/piece-autre")) {
       etat.appelsPieceAutre.push(requete.postDataJSON() as Record<string, unknown>);
@@ -781,6 +791,78 @@ test("pièce ajoutée après l'entrée : mention affichée, état de sortie sais
 
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
   expect(etat.appelsSignature).toBe(1);
+});
+
+for (const [nom, composition, titre, chemin] of [
+  ["chambre", { nombreChambres: 1, nombreSallesDeBain: 0, nombreWc: 0 }, /^Chambre 1 \d+\//, "/piece-chambre"],
+  ["salle de bain", { nombreChambres: 0, nombreSallesDeBain: 1, nombreWc: 0 }, /^Salle de bain 1 \d+\//, "/piece-salle-de-bain"],
+  ["WC", { nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 1 }, /^WC 1 \d+\//, "/piece-wc"]
+] as const) {
+  test(`${nom} ajoutée après l'entrée : mention affichée, parcours mené jusqu'à la signature`, async ({ page }) => {
+    const etat = etatInitial({ composition: { ...composition } });
+    await simulerBackend(page, etat);
+    await page.goto("/test-harness/remise.html");
+    const bouton = page.getByRole("button", { name: /^(Suivant|Terminer)$/ });
+
+    for (let i = 0; i < 12; i++) {
+      await expect(bouton).toBeVisible();
+      if (await page.getByText(titre).isVisible()) {
+        break;
+      }
+      await bouton.click();
+    }
+    await expect(page.getByText("Pièce ajoutée après l'état des lieux d'entrée.")).toBeVisible();
+    await page.getByRole("button", { name: "B", exact: true }).first().click();
+    await bouton.click();
+    await expect(page.getByText(titre)).toHaveCount(0);
+
+    const soumise = etat.piecesSoumises.find((p) => p.chemin.endsWith(chemin));
+    expect(soumise?.corps).toMatchObject({ numero: 1, mur: { etatSortie: "B" } });
+    expect(JSON.stringify(soumise?.corps)).not.toContain("etatEntree");
+    expect(JSON.stringify(soumise?.corps)).not.toContain("description");
+
+    for (let i = 0; i < 10; i++) {
+      await expect(bouton).toBeVisible();
+      if ((await bouton.textContent()) === "Terminer") {
+        break;
+      }
+      await bouton.click();
+    }
+    await expect(page.getByText("Signature de la sortie")).toBeVisible();
+    await signer(page);
+    await bouton.click();
+
+    await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+  });
+}
+
+test("chambre présente à l'entrée : aucune mention à la sortie", async ({ page }) => {
+  const etat = etatInitial({
+    composition: { nombreChambres: 1, nombreSallesDeBain: 0, nombreWc: 0 },
+    chambres: [{ numero: 1, ajouteeApresSignatureEntree: false }]
+  });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+  const bouton = page.getByRole("button", { name: "Suivant" });
+
+  for (let i = 0; i < 12; i++) {
+    await expect(bouton).toBeVisible();
+    if (await page.getByText(/^Chambre 1 \d+\//).isVisible()) {
+      break;
+    }
+    await bouton.click();
+  }
+
+  await expect(page.getByText("Pièce ajoutée après l'état des lieux d'entrée.")).toHaveCount(0);
+});
+
+test("pièce fixe sans ligne d'entrée : aucune mention à la sortie", async ({ page }) => {
+  await simulerBackend(page, etatInitial());
+  await page.goto("/test-harness/remise.html");
+
+  await expect(page.getByRole("button", { name: "Suivant" })).toBeVisible();
+  await expect(page.getByText(/^Entrée 1\//)).toBeVisible();
+  await expect(page.getByText("Pièce ajoutée après l'état des lieux d'entrée.")).toHaveCount(0);
 });
 
 test("pièce présente à l'entrée : aucune mention à la sortie", async ({ page }) => {

@@ -3078,7 +3078,7 @@ stocké, toujours dérivé de `date_entree`/`date_sortie`
 
 **Observations de sortie par pièce** : les 7 tables de pièces portent `observations_sortie` (text, nullable, 500 caractères maximum, classé `sortie`, migration 0071), pour les évolutions de la pièce constatées à la sortie (décret n° 2016-382, art. 2, 2° c). Comme les états de sortie, ce champ et les `commentaire_sortie` restent modifiables jusqu'à la signature de sortie, y compris avant celle d'entrée ; le document d'entrée ne les imprime jamais. Une par pièce plutôt qu'une par élément : les `*_description` décrivent l'entrée et se figent avec elle.
 
-**Autre pièce ajoutée après l'entrée** : `etat_des_lieux_pieces_autre.ajoutee_apres_signature_entree` (boolean, défaut `false`, migration 0072), posée à l'écriture, jamais déduite. Après l'entrée signée, une pièce absente se crée avec son seul libellé et ses champs de sortie, comme une ligne de clé. Elle reste absente du document d'entrée, et celui de sortie la signale (`mentionPieceAjoutee`). Plus aucun ajout une fois la sortie signée.
+**Pièce ajoutée après l'entrée** : `ajoutee_apres_signature_entree` (boolean, défaut `false`) sur `etat_des_lieux_pieces_autre` (migration 0072), `etat_des_lieux_pieces_chambre`, `etat_des_lieux_pieces_salle_de_bain` et `etat_des_lieux_pieces_wc` (migration 0073), posée à l'écriture, jamais déduite. Après l'entrée signée, une pièce absente se crée avec ses seuls champs de sortie, plus son libellé pour une autre pièce, comme une ligne de clé. Elle reste absente du document d'entrée, et celui de sortie la signale (`mentionPieceAjoutee`). Plus aucun ajout une fois la sortie signée.
 
 ### etat_des_lieux_compteurs (1:1 avec etats_des_lieux)
 Relevés (décret, art. 2, 1° f — "le cas échéant"). Colonne Internet

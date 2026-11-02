@@ -488,15 +488,27 @@ export class EtatDesLieuxDocumentDocxService {
     champsCuisine["cuisineElectromenagerDescription"] =
       (donnees.cuisine?.["electromenagerDescription"] as string | null) ?? VIDE;
 
-    const chambres = donnees.chambres.map((row) => {
-      const champs: Record<string, unknown> = { titre: `Chambre ${row.numero}` };
+    // Une pièce ajoutée après l'entrée n'existait pas à cette date : absente du
+    // document d'entrée, signalée sur celui de sortie.
+    function piecesDuDocument<T extends { ajouteeApresSignatureEntree: boolean }>(pieces: T[]): T[] {
+      return pieces.filter((piece) => avecSortie || !piece.ajouteeApresSignatureEntree);
+    }
+    function mentionPieceAjoutee(piece: { ajouteeApresSignatureEntree: boolean }): string {
+      return piece.ajouteeApresSignatureEntree ? MENTION_PIECE_AJOUTEE : VIDE;
+    }
+
+    const chambres = piecesDuDocument(donnees.chambres).map((row) => {
+      const champs: Record<string, unknown> = { titre: `Chambre ${row.numero}`, mentionPieceAjoutee: mentionPieceAjoutee(row) };
       ajouterSocle(champs, "", row);
       champs["photos"] = idsPhotos("chambre", row.numero as number);
       return champs;
     });
 
-    const sallesDeBain = donnees.sallesDeBain.map((row) => {
-      const champs: Record<string, unknown> = { titre: `Salle de bain ${row.numero}` };
+    const sallesDeBain = piecesDuDocument(donnees.sallesDeBain).map((row) => {
+      const champs: Record<string, unknown> = {
+        titre: `Salle de bain ${row.numero}`,
+        mentionPieceAjoutee: mentionPieceAjoutee(row)
+      };
       ajouterSocle(champs, "", row);
       ajouterElement(champs, "", "lavabo", row);
       ajouterElement(champs, "", "baignoire", row);
@@ -504,8 +516,8 @@ export class EtatDesLieuxDocumentDocxService {
       return champs;
     });
 
-    const wc = donnees.wc.map((row) => {
-      const champs: Record<string, unknown> = { titre: `WC ${row.numero}` };
+    const wc = piecesDuDocument(donnees.wc).map((row) => {
+      const champs: Record<string, unknown> = { titre: `WC ${row.numero}`, mentionPieceAjoutee: mentionPieceAjoutee(row) };
       ajouterSocle(champs, "", row);
       ajouterElement(champs, "", "lavabo", row);
       ajouterElement(champs, "", "wc", row);
@@ -513,19 +525,15 @@ export class EtatDesLieuxDocumentDocxService {
       return champs;
     });
 
-    // Une pièce ajoutée après l'entrée n'existait pas à cette date : absente du
-    // document d'entrée, signalée sur celui de sortie.
-    const autres = donnees.autres
-      .filter((row) => avecSortie || !row.ajouteeApresSignatureEntree)
-      .map((row) => {
-        const champs: Record<string, unknown> = {
-          titre: (row.libelle as string) ?? VIDE,
-          mentionPieceAjoutee: row.ajouteeApresSignatureEntree ? MENTION_PIECE_AJOUTEE : VIDE
-        };
-        ajouterSocle(champs, "", row);
-        champs["photos"] = idsPhotos("autre", row.numero as number);
-        return champs;
-      });
+    const autres = piecesDuDocument(donnees.autres).map((row) => {
+      const champs: Record<string, unknown> = {
+        titre: (row.libelle as string) ?? VIDE,
+        mentionPieceAjoutee: mentionPieceAjoutee(row)
+      };
+      ajouterSocle(champs, "", row);
+      champs["photos"] = idsPhotos("autre", row.numero as number);
+      return champs;
+    });
 
     const equipementsDivers = donnees.equipementsDivers.map((ligne) => ({
       libelle: ligne.libelle,

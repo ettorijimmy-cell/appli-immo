@@ -289,6 +289,7 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
 
     async function dossierComplet() {
       const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() => etatsDesLieuxService.submitPieceChambre(etatDesLieuxId, { numero: 1 }));
       await avecContexte(() =>
         etatsDesLieuxSignatureService.signerEntree(
           etatDesLieuxId,
@@ -395,6 +396,35 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
         ["Cellier", "Pièce ajoutée après l'état des lieux d'entrée"]
       ]);
       expect(sortie.autres[1]).toMatchObject({ murEtatEntree: "", murDescription: "", murEtatSortie: "B" });
+    });
+
+    it("chambre, salle de bain et WC ajoutés : absents du document d'entrée, signalés sur celui de sortie", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(async () => {
+        await etatsDesLieuxService.submitPieceChambre(etatDesLieuxId, { numero: 1, mur: { etatEntree: "B" } });
+        await etatsDesLieuxService.submitPieceSalleDeBain(etatDesLieuxId, { numero: 1, mur: { etatEntree: "B" } });
+        await etatsDesLieuxService.submitPieceWc(etatDesLieuxId, { numero: 1, mur: { etatEntree: "B" } });
+      });
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
+      await avecContexte(async () => {
+        await etatsDesLieuxService.submitPieceChambre(etatDesLieuxId, { numero: 2, mur: { etatSortie: "B" } });
+        await etatsDesLieuxService.submitPieceSalleDeBain(etatDesLieuxId, { numero: 2, mur: { etatSortie: "B" } });
+        await etatsDesLieuxService.submitPieceWc(etatDesLieuxId, { numero: 2, mur: { etatSortie: "B" } });
+      });
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+      type Donnees = Record<"chambres" | "sallesDeBain" | "wc", Record<string, unknown>[]>;
+
+      const entree = (await donneesDuDocument(etatDesLieuxId, "entree")) as unknown as Donnees;
+      const sortie = (await donneesDuDocument(etatDesLieuxId, "sortie")) as unknown as Donnees;
+
+      const MENTION = "Pièce ajoutée après l'état des lieux d'entrée";
+      expect(entree.chambres.map((p) => p["titre"])).toEqual(["Chambre 1"]);
+      expect(entree.sallesDeBain.map((p) => p["titre"])).toEqual(["Salle de bain 1"]);
+      expect(entree.wc.map((p) => p["titre"])).toEqual(["WC 1"]);
+      for (const pieces of [sortie.chambres, sortie.sallesDeBain, sortie.wc]) {
+        expect(pieces.map((p) => p["mentionPieceAjoutee"])).toEqual(["", MENTION]);
+        expect(pieces[1]).toMatchObject({ murEtatEntree: "", murDescription: "", murEtatSortie: "B" });
+      }
     });
 
     it("le modèle actuel n'imprime encore aucune de ces balises et reste sans balise résiduelle", async () => {

@@ -609,7 +609,8 @@ export class EtatsDesLieuxService {
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
-      observationsSortie: ligne.observationsSortie
+      observationsSortie: ligne.observationsSortie,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
 
@@ -643,6 +644,7 @@ export class EtatsDesLieuxService {
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
       observationsSortie: ligne.observationsSortie,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree,
       lavaboDescription: ligne.lavaboDescription,
       lavaboEtatEntree: ligne.lavaboEtatEntree,
       lavaboEtatSortie: ligne.lavaboEtatSortie,
@@ -682,6 +684,7 @@ export class EtatsDesLieuxService {
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
       observationsSortie: ligne.observationsSortie,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree,
       lavaboDescription: ligne.lavaboDescription,
       lavaboEtatEntree: ligne.lavaboEtatEntree,
       lavaboEtatSortie: ligne.lavaboEtatSortie,
@@ -1046,11 +1049,11 @@ export class EtatsDesLieuxService {
       .from(table)
       .where(and(eq(table.etatDesLieuxId, etatDesLieuxId), eq(table.numero, numero)))
       .limit(1);
-    // Seule l'autre pièce a une identité (son libellé). Absente à l'entrée, elle
-    // suit la règle des lignes ajoutées après coup : identité et champs de
-    // sortie seulement, et plus aucun ajout une fois la sortie signée.
+    // Une pièce absente à l'entrée suit la règle des lignes ajoutées après coup :
+    // champs de sortie seulement (plus le libellé, l'identité d'une autre
+    // pièce), et plus aucun ajout une fois la sortie signée.
     const identite = CHAMPS_IDENTITE_PAR_TABLE.get(table);
-    if (!existant && identite && phases.sortieSignee) {
+    if (!existant && phases.sortieSignee) {
       throw new ConflictException(
         "Modification refusée : aucune nouvelle pièce ne peut être ajoutée, la sortie de cet état des lieux est signée."
       );
@@ -1074,7 +1077,7 @@ export class EtatsDesLieuxService {
         etatDesLieuxId,
         numero,
         ...champs,
-        ...(identite && { ajouteeApresSignatureEntree: phases.entreeSignee })
+        ajouteeApresSignatureEntree: phases.entreeSignee
       } as T["$inferInsert"])
       .returning();
     if (!ligne) {

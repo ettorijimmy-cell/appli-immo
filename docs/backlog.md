@@ -1554,11 +1554,12 @@ déployé le 2026-11-01 :**
 non déployé.** Ordre impératif :
 
 1. Appliquer les migrations `0070_condemned_abomination.sql`,
-   `0071_chemical_sleepwalker.sql` et `0072_big_crusher_hogan.sql` en production. Elles sont purement
+   `0071_chemical_sleepwalker.sql`, `0072_big_crusher_hogan.sql` et
+   `0073_tricky_songbird.sql` en production. Elles sont purement
    additives, mais la 0070 crée les premiers trigger et fonction du projet : à
    vérifier avec le rôle de production. Puis redéployer dans PowerSync les 11
    streams modifiés (liste en tête de `docs/powersync-sync-streams.yaml`),
-   jamais avant la 0072 : ils sélectionnent les colonnes de ces migrations.
+   jamais avant la 0073 : ils sélectionnent les colonnes de ces migrations.
 2. Déployer l'image backend, qui embarque aussi le mobile. L'inverse casserait
    les routes d'envoi et le job des 10 minutes.
 3. Reconstruire l'installeur desktop.
