@@ -50,6 +50,8 @@ vi.setConfig({ testTimeout: 20000 });
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
+const POINTILLES_OBSERVATIONS = "…..…..…..…..…..…..…..…..…";
+
 function texteDuDocx(buffer: Buffer): string {
   const zip = new PizZip(buffer);
   const documentXml = zip.files["word/document.xml"];
@@ -427,15 +429,86 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
       }
     });
 
-    it("le modèle actuel n'imprime encore aucune de ces balises et reste sans balise résiduelle", async () => {
+    async function texteDuDocument(etatDesLieuxId: string, phase: "entree" | "sortie") {
+      const buffer = await avecContexte(() =>
+        etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId, phase)
+      );
+      expect(balisesResiduelles(buffer)).toEqual([]);
+      return texteDuDocx(buffer);
+    }
+
+    it("le document de sortie imprime les blocs libellés et toutes les observations", async () => {
+      const texte = await texteDuDocument(await dossierComplet(), "sortie");
+
+      for (const attendu of [
+        "Observations du bailleur à l'entrée :",
+        "Obs entrée",
+        "Réserves du locataire à l'entrée :",
+        "Rés entrée",
+        "Observations du bailleur à la sortie :",
+        "Obs sortie",
+        "Réserves du locataire à la sortie :",
+        "Rés sortie",
+        "Observations à la sortie :",
+        "Obs pièce entrée",
+        "Obs séjour",
+        "Obs cuisine",
+        "Obs chambre",
+        "Clés d'immeuble, à la sortie : ",
+        "Com clé",
+        "Local vélo, à la sortie : ",
+        "Com clé autre",
+        "Com équipement"
+      ]) {
+        expect(texte).toContain(attendu);
+      }
+      expect(texte).not.toContain("[object Object]");
+    });
+
+    it("le document d'entrée, même régénéré après la sortie, ne porte aucune trace de la sortie", async () => {
       const etatDesLieuxId = await dossierComplet();
 
-      const buffer = await avecContexte(() =>
-        etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId, "sortie")
-      );
+      const texte = await texteDuDocument(etatDesLieuxId, "entree");
+      const donnees = await donneesDuDocument(etatDesLieuxId, "entree");
 
-      expect(texteDuDocx(buffer)).not.toContain("Obs sortie");
-      expect(balisesResiduelles(buffer)).toEqual([]);
+      expect(texte).toContain("Obs entrée");
+      expect(texte).toContain("Rés entrée");
+      for (const absent of ["à la sortie", "Obs sortie", "Rés sortie", "Obs pièce entrée", "Obs chambre", "Com clé", "Com équipement"]) {
+        expect(texte).not.toContain(absent);
+      }
+      expect(donnees).toMatchObject({
+        bailleurSignatureSortie: [],
+        locatairesSignatureSortie: []
+      });
+      expect(String(donnees["lieuSortieAffiche"])).toMatch(/^[….]+$/);
+      expect(String(donnees["dateSortieAnnee"])).toMatch(/^…+$/);
+    });
+
+    it("sans observation : titre et pointillés du modèle, aucun bloc, pas de saut de page", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      const texte = await texteDuDocument(etatDesLieuxId, "entree");
+      const donnees = await donneesDuDocument(etatDesLieuxId, "entree");
+
+      expect(texte.split("|").join("")).toContain("Observations ou réserves");
+      expect(texte).toContain(POINTILLES_OBSERVATIONS);
+      for (const absent of ["Observations du bailleur", "Réserves du locataire", "à la sortie", "Pièce ajoutée"]) {
+        expect(texte).not.toContain(absent);
+      }
+      expect(donnees).toMatchObject({ avecObservationsGenerales: false, sansObservationsGenerales: true });
+    });
+
+    it("avec une observation : blocs à la place du titre et des pointillés, signatures sur une nouvelle page", async () => {
+      const etatDesLieuxId = await dossierComplet();
+
+      const texte = await texteDuDocument(etatDesLieuxId, "sortie");
+      const donnees = await donneesDuDocument(etatDesLieuxId, "sortie");
+
+      expect(texte.split("|").join("")).not.toContain("Observations ou réserves");
+      expect(texte).not.toContain(POINTILLES_OBSERVATIONS);
+      expect(donnees).toMatchObject({ avecObservationsGenerales: true, sansObservationsGenerales: false });
     });
   });
 

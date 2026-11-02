@@ -420,7 +420,11 @@ export class EtatDesLieuxDocumentDocxService {
       };
     }
     const signatureEntree = signatairesPhase("entree");
-    const signatureSortie = signatairesPhase("sortie");
+    // Un document d'entrée ne porte aucune trace de la sortie, même régénéré
+    // après la signature de sortie : ces balises échappent à viderChampsSortie
+    // (voir plus bas), la condition doit donc figurer ici.
+    const signatureSortie = avecSortie ? signatairesPhase("sortie") : { bailleur: [], locataires: [] };
+    const sortieSigneeAffichee = avecSortie && donnees.sortieSigneeParTous;
 
     // Date/lieu de chaque phase : gelés sur les pointillés du modèle papier
     // tant que la phase n'est pas SIGNÉE (entreeSigneeParTous/
@@ -437,11 +441,11 @@ export class EtatDesLieuxDocumentDocxService {
         ? formaterJourMoisAnnee(donnees.dateEntree)
         : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
     const dateSortieAffichee =
-      donnees.sortieSigneeParTous && donnees.dateSortie
+      sortieSigneeAffichee && donnees.dateSortie
         ? formaterJourMoisAnnee(donnees.dateSortie)
         : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
     const lieuEntreeAffiche = donnees.entreeSigneeParTous ? (donnees.lieuEntree ?? VIDE) : POINTILLES_LIEU;
-    const lieuSortieAffiche = donnees.sortieSigneeParTous ? (donnees.lieuSortie ?? VIDE) : POINTILLES_LIEU;
+    const lieuSortieAffiche = sortieSigneeAffichee ? (donnees.lieuSortie ?? VIDE) : POINTILLES_LIEU;
 
     // Nombre réel de chaudières/chauffe-eau déclarés sur la fiche
     // appartement (Module 2) — calculé à chaque génération, jamais
@@ -703,7 +707,24 @@ export class EtatDesLieuxDocumentDocxService {
     // vs "sans valeur" (VIDE) — ces champs gèrent déjà eux-mêmes leur cas
     // non signé (POINTILLES_*, tableaux vides), sur un critère différent
     // (entreeSigneeParTous/sortieSigneeParTous, pas date_sortie).
+    // Lu après viderChampsSortie : un document d'entrée ne compte que les
+    // textes d'entrée.
+    const avecObservationsGenerales = [
+      donneesBalises.observationsBailleurEntree,
+      donneesBalises.reservesLocataireEntree,
+      donneesBalises.observationsBailleurSortie,
+      donneesBalises.reservesLocataireSortie
+    ].some(Boolean);
     Object.assign(donneesBalises, {
+      // Avec un texte : les quatre blocs, puis les signatures sur une nouvelle
+      // page (une section à 3 colonnes ne se garde pas d'un seul tenant, et un
+      // bloc de signature coupé entre deux pages serait illisible). Sans
+      // aucun texte : le titre et les pointillés du modèle, pour une version
+      // papier remplie à la main. Deux balises plutôt qu'un bloc inversé
+      // {^...} : trouverBalisesDesequilibrees ne compte que les {#...}.
+      avecObservationsGenerales,
+      sansObservationsGenerales: !avecObservationsGenerales,
+
       dateEntreeJour: dateEntreeAffichee.jour,
       dateEntreeMois: dateEntreeAffichee.mois,
       dateEntreeAnnee: dateEntreeAffichee.annee,
