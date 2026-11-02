@@ -12,7 +12,8 @@ import {
   MaxLength,
   ValidateNested
 } from "class-validator";
-import { LONGUEUR_MAX_NOUVELLE_ADRESSE } from "core";
+import { LONGUEUR_MAX_NOUVELLE_ADRESSE, LONGUEUR_MAX_OBSERVATIONS_GENERALES } from "core";
+import { TexteObservation } from "../../etats-des-lieux/dto/texte-observation.decorator";
 
 // Nom du bailleur modifiable (cas du mandataire) : toujours reçu dans la
 // requête, jamais résolu côté serveur depuis scis.nom_gerant/
@@ -63,6 +64,20 @@ export class SignerEtatDesLieuxDto {
   @IsString()
   @MaxLength(LONGUEUR_MAX_NOUVELLE_ADRESSE)
   nouvelleAdresseLocataire?: string;
+
+  // Décret n° 2016-382, art. 2, 1° h. Facultatives, propres à la phase signée :
+  // EtatsDesLieuxSignatureService refuse celles de l'autre phase.
+  @TexteObservation(LONGUEUR_MAX_OBSERVATIONS_GENERALES)
+  observationsBailleurEntree?: string | null;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATIONS_GENERALES)
+  reservesLocataireEntree?: string | null;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATIONS_GENERALES)
+  observationsBailleurSortie?: string | null;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATIONS_GENERALES)
+  reservesLocataireSortie?: string | null;
 
   @IsDefined()
   @ValidateNested()

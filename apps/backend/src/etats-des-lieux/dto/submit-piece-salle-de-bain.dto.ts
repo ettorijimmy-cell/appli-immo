@@ -2,6 +2,8 @@ import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min, ValidateNested } from "class-validator";
 import { EtatElementDto } from "./etat-element.dto";
 import { PrisesElectriquesDto } from "./prises-electriques.dto";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 export class SubmitPieceSalleDeBainDto {
   // 1 à 2 (jusqu'à 2 salles de bain dans le modèle réel).
@@ -49,4 +51,8 @@ export class SubmitPieceSalleDeBainDto {
   @ValidateNested()
   @Type(() => EtatElementDto)
   baignoire?: EtatElementDto;
+
+  // Évolutions de la pièce constatées à la sortie (décret n° 2016-382, art. 2, 2° c).
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  observationsSortie?: string | null;
 }

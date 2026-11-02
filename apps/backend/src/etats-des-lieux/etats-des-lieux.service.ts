@@ -71,6 +71,7 @@ interface SocleDto {
   plafond?: EtatElementDto;
   eclairage?: EtatElementDto;
   prises?: EtatElementDto & { nombre?: number };
+  observationsSortie?: string | null;
 }
 
 // Éléments communs à toutes les pièces du modèle réel.
@@ -85,6 +86,9 @@ function aplatirSocle(dto: SocleDto): Record<string, unknown> {
   };
   if (dto.prises?.nombre !== undefined) {
     champs.prisesNombre = dto.prises.nombre;
+  }
+  if (dto.observationsSortie !== undefined) {
+    champs.observationsSortie = dto.observationsSortie;
   }
   return champs;
 }
@@ -328,6 +332,7 @@ export class EtatsDesLieuxService {
           nombreSortie: etatDesLieuxInventaire.nombreSortie,
           etatSortie: etatDesLieuxInventaire.etatSortie,
           commentaire: etatDesLieuxInventaire.commentaire,
+          commentaireSortie: etatDesLieuxInventaire.commentaireSortie,
           archivedAt: etatDesLieuxInventaire.archivedAt,
           ajouteeApresSignatureEntree: etatDesLieuxInventaire.ajouteeApresSignatureEntree,
           elementCode: elementsInventaireMeuble.code,
@@ -455,7 +460,8 @@ export class EtatsDesLieuxService {
       prisesDescription: ligne.prisesDescription,
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
-      prisesNombre: ligne.prisesNombre
+      prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie
     };
   }
 
@@ -486,7 +492,8 @@ export class EtatsDesLieuxService {
       prisesDescription: ligne.prisesDescription,
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
-      prisesNombre: ligne.prisesNombre
+      prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie
     };
   }
 
@@ -518,6 +525,7 @@ export class EtatsDesLieuxService {
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie,
       placardsDescription: ligne.placardsDescription,
       placardsEtatEntree: ligne.placardsEtatEntree,
       placardsEtatSortie: ligne.placardsEtatSortie,
@@ -590,7 +598,8 @@ export class EtatsDesLieuxService {
       prisesDescription: ligne.prisesDescription,
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
-      prisesNombre: ligne.prisesNombre
+      prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie
     };
   }
 
@@ -623,6 +632,7 @@ export class EtatsDesLieuxService {
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie,
       lavaboDescription: ligne.lavaboDescription,
       lavaboEtatEntree: ligne.lavaboEtatEntree,
       lavaboEtatSortie: ligne.lavaboEtatSortie,
@@ -661,6 +671,7 @@ export class EtatsDesLieuxService {
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie,
       lavaboDescription: ligne.lavaboDescription,
       lavaboEtatEntree: ligne.lavaboEtatEntree,
       lavaboEtatSortie: ligne.lavaboEtatSortie,
@@ -699,7 +710,8 @@ export class EtatsDesLieuxService {
       prisesDescription: ligne.prisesDescription,
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
-      prisesNombre: ligne.prisesNombre
+      prisesNombre: ligne.prisesNombre,
+      observationsSortie: ligne.observationsSortie
     };
   }
 
@@ -721,6 +733,7 @@ export class EtatsDesLieuxService {
       nombreEntree: ligne.nombreEntree,
       nombreSortie: ligne.nombreSortie,
       commentaire: ligne.commentaire,
+      commentaireSortie: ligne.commentaireSortie,
       ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
@@ -742,6 +755,7 @@ export class EtatsDesLieuxService {
       nombreSortie: ligne.nombreSortie,
       etatSortie: ligne.etatSortie,
       commentaire: ligne.commentaire,
+      commentaireSortie: ligne.commentaireSortie,
       ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
@@ -766,6 +780,7 @@ export class EtatsDesLieuxService {
       nombreSortie: ligne.nombreSortie,
       etatSortie: ligne.etatSortie,
       commentaire: ligne.commentaire,
+      commentaireSortie: ligne.commentaireSortie,
       ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
@@ -846,7 +861,8 @@ export class EtatsDesLieuxService {
           libelleAutre: ligne.libelleAutre,
           nombreEntree: ligne.nombreEntree,
           nombreSortie: ligne.nombreSortie,
-          commentaire: ligne.commentaire
+          commentaire: ligne.commentaire,
+          commentaireSortie: ligne.commentaireSortie
         })
       })),
       dto.idsASupprimer ?? [],
@@ -867,7 +883,8 @@ export class EtatsDesLieuxService {
           etatEntree: ligne.etatEntree,
           nombreSortie: ligne.nombreSortie,
           etatSortie: ligne.etatSortie,
-          commentaire: ligne.commentaire
+          commentaire: ligne.commentaire,
+          commentaireSortie: ligne.commentaireSortie
         })
       })),
       dto.idsASupprimer ?? [],
@@ -886,7 +903,8 @@ export class EtatsDesLieuxService {
           etatEntree: ligne.etatEntree,
           nombreSortie: ligne.nombreSortie,
           etatSortie: ligne.etatSortie,
-          commentaire: ligne.commentaire
+          commentaire: ligne.commentaire,
+          commentaireSortie: ligne.commentaireSortie
         })
       })),
       dto.elementsASupprimer ?? []

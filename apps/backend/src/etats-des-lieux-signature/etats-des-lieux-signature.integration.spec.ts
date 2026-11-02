@@ -494,6 +494,157 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     expect(signatures).toHaveLength(4); // 2 (entrée) + 2 (sortie)
   });
 
+  describe("observations du bailleur et réserves du locataire (décret n° 2016-382, art. 2, 1° h)", () => {
+    const ADRESSE = "1 rue du Départ, 69001 Lyon";
+
+    it("entrée : écrites avec les signatures, nettoyées, sortie intacte", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], {
+            observationsBailleurEntree: "Peinture refaite en 2025",
+            reservesLocataireEntree: "Robinet qui goutte"
+          })
+        )
+      );
+
+      expect(resultat.observationsBailleurEntree).toBe("Peinture refaite en 2025");
+      expect(resultat.reservesLocataireEntree).toBe("Robinet qui goutte");
+      expect(resultat.observationsBailleurSortie).toBeNull();
+      expect(resultat.reservesLocataireSortie).toBeNull();
+    });
+
+    it("facultatives : absentes, la signature passe et les champs restent vides", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id]))
+      );
+
+      expect(resultat.observationsBailleurEntree).toBeNull();
+      expect(resultat.reservesLocataireEntree).toBeNull();
+    });
+
+    it("sortie : écrites avec les signatures, l'entrée reste intacte", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], { observationsBailleurEntree: "Texte d'entrée" })
+        )
+      );
+
+      const resultat = await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], {
+            nouvelleAdresseLocataire: ADRESSE,
+            observationsBailleurSortie: "Mur du séjour à repeindre",
+            reservesLocataireSortie: "Trace déjà présente à l'entrée"
+          })
+        )
+      );
+
+      expect(resultat.observationsBailleurSortie).toBe("Mur du séjour à repeindre");
+      expect(resultat.reservesLocataireSortie).toBe("Trace déjà présente à l'entrée");
+      expect(resultat.observationsBailleurEntree).toBe("Texte d'entrée");
+    });
+
+    it.each(["observationsBailleurSortie", "reservesLocataireSortie"])("entrée : %s refusé, rien n'est écrit", async (champ) => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+
+      await expect(
+        avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id], { [champ]: "x" })))
+      ).rejects.toThrow(BadRequestException);
+
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.entreeSigneeParTous).toBe(false);
+      expect(etat.dateEntree).toBeNull();
+    });
+
+    it.each(["observationsBailleurEntree", "reservesLocataireEntree"])("sortie : %s refusé, rien n'est écrit", async (champ) => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxSignatureService.signerSortie(
+            etatDesLieuxId,
+            dtoValide([titulaire.id], { nouvelleAdresseLocataire: ADRESSE, [champ]: "x" })
+          )
+        )
+      ).rejects.toThrow(BadRequestException);
+
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.sortieSigneeParTous).toBe(false);
+    });
+
+    it("refus de la signature : aucune observation n'est écrite", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoValide([titulaire.id])));
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxSignatureService.signerSortie(
+            etatDesLieuxId,
+            dtoValide([titulaire.id], { observationsBailleurSortie: "Ne doit pas rester" })
+          )
+        )
+      ).rejects.toThrow(BadRequestException);
+
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.observationsBailleurSortie).toBeNull();
+    });
+
+    it("une seconde signature ne réécrit pas les observations", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], { observationsBailleurEntree: "Texte signé" })
+        )
+      );
+
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxSignatureService.signerEntree(
+            etatDesLieuxId,
+            dtoValide([titulaire.id], { observationsBailleurEntree: "Réécriture" })
+          )
+        )
+      ).rejects.toThrow(ConflictException);
+
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.observationsBailleurEntree).toBe("Texte signé");
+    });
+
+    it("le verrou refuse toute réécriture directe une fois la phase signée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], { reservesLocataireEntree: "Réserve signée" })
+        )
+      );
+      const reecrire = (champs: Record<string, unknown>) =>
+        avecContexte(() => etatsDesLieuxService.updateHeader(etatDesLieuxId, champs as never));
+
+      await expect(reecrire({ reservesLocataireEntree: "Réécriture" })).rejects.toThrow(ConflictException);
+      await expect(reecrire({ observationsBailleurEntree: "Réécriture" })).rejects.toThrow(ConflictException);
+
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(
+          etatDesLieuxId,
+          dtoValide([titulaire.id], { nouvelleAdresseLocataire: ADRESSE, reservesLocataireSortie: "Réserve de sortie" })
+        )
+      );
+      await expect(reecrire({ reservesLocataireSortie: "Réécriture" })).rejects.toThrow(ConflictException);
+      await expect(reecrire({ observationsBailleurSortie: "Réécriture" })).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe("nouvelle adresse du locataire (décret n° 2016-382, art. 2, 2° a)", () => {
     async function dossierEntreeSignee() {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);

@@ -1,5 +1,7 @@
 import { Type } from "class-transformer";
 import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min, MinLength, ValidateNested } from "class-validator";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 export const ETATS_INVENTAIRE = ["bon", "dusage", "mauvais"] as const;
 export type EtatInventaire = (typeof ETATS_INVENTAIRE)[number];
@@ -38,6 +40,9 @@ class LigneEquipementDiversDto {
   @IsOptional()
   @IsString()
   commentaire?: string;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  commentaireSortie?: string | null;
 }
 
 // Liste extensible, libellé saisi librement — pas de catalogue fixe

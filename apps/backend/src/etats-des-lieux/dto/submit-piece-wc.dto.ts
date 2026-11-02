@@ -2,6 +2,8 @@ import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min, ValidateNested } from "class-validator";
 import { EtatElementDto } from "./etat-element.dto";
 import { PrisesElectriquesDto } from "./prises-electriques.dto";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 export class SubmitPieceWcDto {
   // 1 à 2 (jusqu'à 2 WC dans le modèle réel).
@@ -51,4 +53,8 @@ export class SubmitPieceWcDto {
   @ValidateNested()
   @Type(() => EtatElementDto)
   wc?: EtatElementDto;
+
+  // Évolutions de la pièce constatées à la sortie (décret n° 2016-382, art. 2, 2° c).
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  observationsSortie?: string | null;
 }

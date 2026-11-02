@@ -198,6 +198,7 @@ export class EtatsDesLieuxSignatureService {
 
     // Avant toute écriture : une sortie refusée ne laisse ni blob ni ligne.
     const nouvelleAdresse = this.resoudreNouvelleAdresse(phase, dto, contexte.nouvelleAdresseLocataire);
+    const observations = this.resoudreObservations(phase, dto);
 
     const signataires: SignataireResolu[] = [
       {
@@ -279,8 +280,8 @@ export class EtatsDesLieuxSignatureService {
           etatsDesLieux,
           etatDesLieuxId,
           phase === "entree"
-            ? { dateEntree: aujourdHui, lieuEntree: lieu }
-            : { dateSortie: aujourdHui, lieuSortie: lieu, nouvelleAdresseLocataire: nouvelleAdresse },
+            ? { dateEntree: aujourdHui, lieuEntree: lieu, ...observations }
+            : { dateSortie: aujourdHui, lieuSortie: lieu, nouvelleAdresseLocataire: nouvelleAdresse, ...observations },
           utilisateurId
         );
       });
@@ -326,6 +327,27 @@ export class EtatsDesLieuxSignatureService {
       throw new BadRequestException("La nouvelle adresse du locataire est obligatoire pour signer la sortie.");
     }
     return adresse;
+  }
+
+  // Chaque texte appartient à la phase qu'il décrit : celui de l'autre phase est
+  // refusé plutôt qu'ignoré, un auteur ne doit jamais croire sa réserve écrite.
+  private resoudreObservations(phase: Phase, dto: SignerEtatDesLieuxDto) {
+    if (phase === "entree") {
+      if (dto.observationsBailleurSortie || dto.reservesLocataireSortie) {
+        throw new BadRequestException("Les observations et réserves de sortie ne se saisissent pas à l'entrée.");
+      }
+      return {
+        observationsBailleurEntree: dto.observationsBailleurEntree ?? null,
+        reservesLocataireEntree: dto.reservesLocataireEntree ?? null
+      };
+    }
+    if (dto.observationsBailleurEntree || dto.reservesLocataireEntree) {
+      throw new BadRequestException("Les observations et réserves d'entrée ne se saisissent pas à la sortie.");
+    }
+    return {
+      observationsBailleurSortie: dto.observationsBailleurSortie ?? null,
+      reservesLocataireSortie: dto.reservesLocataireSortie ?? null
+    };
   }
 
   private async nettoyerBlobsOrphelins(blobs: BlobEcrit[]): Promise<void> {

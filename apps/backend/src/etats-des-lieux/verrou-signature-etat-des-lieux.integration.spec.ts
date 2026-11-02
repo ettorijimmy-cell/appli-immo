@@ -1264,4 +1264,151 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       ).resolves.toBeTruthy();
     });
   });
+
+  describe("observations de sortie par pièce et commentaires de sortie par ligne", () => {
+    const OBSERVATION = "Trace de meuble sur le mur";
+
+    function soumissionsPieces(id: string, observationsSortie: string | null) {
+      return [
+        () => etatsDesLieuxService.submitPieceEntree(id, { observationsSortie }),
+        () => etatsDesLieuxService.submitPieceSejour(id, { observationsSortie }),
+        () => etatsDesLieuxService.submitPieceCuisine(id, { observationsSortie }),
+        () => etatsDesLieuxService.submitPieceChambre(id, { numero: 1, observationsSortie }),
+        () => etatsDesLieuxService.submitPieceSalleDeBain(id, { numero: 1, observationsSortie }),
+        () => etatsDesLieuxService.submitPieceWc(id, { numero: 1, observationsSortie }),
+        () => etatsDesLieuxService.submitPieceAutre(id, { numero: 1, libelle: "Cellier", observationsSortie })
+      ];
+    }
+
+    it("avant toute signature : modifiable, comme les états de sortie", async () => {
+      const { etatDesLieuxId } = await creerDossier(userId);
+
+      for (const soumettre of soumissionsPieces(etatDesLieuxId, OBSERVATION)) {
+        await avecContexte(soumettre);
+      }
+
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.sejour?.observationsSortie).toBe(OBSERVATION);
+      expect(etat.chambres[0]?.observationsSortie).toBe(OBSERVATION);
+      expect(etat.autres[0]?.observationsSortie).toBe(OBSERVATION);
+    });
+
+    it("entrée signée : les 7 pièces restent modifiables", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier" }));
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      for (const soumettre of soumissionsPieces(etatDesLieuxId, OBSERVATION)) {
+        await expect(avecContexte(soumettre)).resolves.toBeDefined();
+      }
+    });
+
+    it("sortie signée : les 7 pièces refusent une réécriture", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier" }));
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      for (const soumettre of soumissionsPieces(etatDesLieuxId, OBSERVATION)) {
+        await avecContexte(soumettre);
+      }
+      await signerSortie(etatDesLieuxId, titulaire.id);
+
+      for (const soumettre of soumissionsPieces(etatDesLieuxId, "Autre texte")) {
+        await expect(avecContexte(soumettre)).rejects.toThrow(ConflictException);
+      }
+    });
+
+    it("sortie signée : effacer une observation est refusé, la resoumettre à l'identique reste sans effet", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { observationsSortie: OBSERVATION }));
+      await signerSortie(etatDesLieuxId, titulaire.id);
+
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { observationsSortie: null }))
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { observationsSortie: OBSERVATION }))
+      ).resolves.toBeDefined();
+    });
+
+    it("clés : commentaire de sortie modifiable après l'entrée, commentaire d'entrée figé, tout figé après la sortie", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [cle] = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ typeCle: "immeuble", nombreEntree: 2, commentaire: "Neuves" }] })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const ligne = { id: cle!.id, typeCle: "immeuble" as const, commentaire: "Neuves" };
+      const [apres] = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ ...ligne, commentaireSortie: "Une clé tordue" }] })
+      );
+      expect(apres?.commentaireSortie).toBe("Une clé tordue");
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ ...ligne, commentaire: "Changé" }] }))
+      ).rejects.toThrow(ConflictException);
+
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitCles(etatDesLieuxId, { lignes: [{ ...ligne, commentaireSortie: "Changé" }] }))
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("équipements divers : même règle", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [equipement] = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [{ libelle: "Aspirateur", nombreEntree: 1 }] })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      const ligne = { id: equipement!.id, libelle: "Aspirateur" };
+
+      const [apres] = await avecContexte(() =>
+        etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [{ ...ligne, commentaireSortie: "Cordon abîmé" }] })
+      );
+      expect(apres?.commentaireSortie).toBe("Cordon abîmé");
+
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, { lignes: [{ ...ligne, commentaireSortie: "Changé" }] })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("inventaire : même règle, et le commentaire de sortie est relu", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      const [element] = await db.select().from(elementsInventaireMeuble).limit(1);
+      const elementId = element!.id;
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [{ elementId, nombreEntree: 1 }] })
+      );
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      await avecContexte(() =>
+        etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [{ elementId, commentaireSortie: "Pied cassé" }] })
+      );
+      const etat = await avecContexte(() => etatsDesLieuxService.findById(etatDesLieuxId));
+      expect(etat.inventaire[0]?.commentaireSortie).toBe("Pied cassé");
+
+      await signerSortie(etatDesLieuxId, titulaire.id);
+      await expect(
+        avecContexte(() =>
+          etatsDesLieuxService.submitInventaire(etatDesLieuxId, { lignes: [{ elementId, commentaireSortie: "Changé" }] })
+        )
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("une clé ajoutée après l'entrée peut porter un commentaire de sortie", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      const [cle] = await avecContexte(() =>
+        etatsDesLieuxService.submitCles(etatDesLieuxId, {
+          lignes: [{ typeCle: "cave", nombreSortie: 1, commentaireSortie: "Remise en cours de bail" }]
+        })
+      );
+
+      expect(cle?.commentaireSortie).toBe("Remise en cours de bail");
+    });
+  });
+
 });

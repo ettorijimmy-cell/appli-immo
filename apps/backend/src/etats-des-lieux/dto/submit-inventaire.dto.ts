@@ -1,6 +1,8 @@
 import { Type } from "class-transformer";
 import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min, ValidateNested } from "class-validator";
 import { ETATS_INVENTAIRE, type EtatInventaire } from "./submit-equipements-divers.dto";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 class LigneInventaireDto {
   // Contrairement à clés/équipements divers, une clé naturelle stable
@@ -31,6 +33,9 @@ class LigneInventaireDto {
   @IsOptional()
   @IsString()
   commentaire?: string;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  commentaireSortie?: string | null;
 }
 
 // Pertinent uniquement pour un bail meublé — règle applicative (côté

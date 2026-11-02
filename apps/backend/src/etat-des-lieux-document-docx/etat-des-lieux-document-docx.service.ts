@@ -137,6 +137,7 @@ function ajouterSocle(cible: Record<string, unknown>, prefix: string, row: Piece
   for (const nomBase of ELEMENTS_SOCLE) {
     ajouterElement(cible, prefix, nomBase, row);
   }
+  cible[cle(prefix, "observationsSortie", "")] = (row?.["observationsSortie"] as string | null) ?? VIDE;
   ajouterElement(cible, prefix, "prises", row);
   cible[cle(prefix, "prises", "Nombre")] = (row?.["prisesNombre"] as number | null)?.toString() ?? VIDE;
 }
@@ -524,7 +525,8 @@ export class EtatDesLieuxDocumentDocxService {
       ...xmarks(ligne.etatEntree, "Entree"),
       nombreSortie: ligne.nombreSortie?.toString() ?? VIDE,
       ...xmarks(ligne.etatSortie, "Sortie"),
-      commentaire: ligne.commentaire ?? VIDE
+      commentaire: ligne.commentaire ?? VIDE,
+      commentaireSortie: ligne.commentaireSortie ?? VIDE
     }));
 
     // Rupture visuelle entre catégories (MEUBLES / ÉLECTRO-MÉNAGER /
@@ -549,7 +551,8 @@ export class EtatDesLieuxDocumentDocxService {
             ...xmarks(ligne?.etatEntree, "Entree"),
             nombreSortie: ligne?.nombreSortie?.toString() ?? VIDE,
             ...xmarks(ligne?.etatSortie, "Sortie"),
-            commentaire: ligne?.commentaire ?? VIDE
+            commentaire: ligne?.commentaire ?? VIDE,
+            commentaireSortie: ligne?.commentaireSortie ?? VIDE
           };
         })
     })).filter((section) => section.lignes.length > 0);
@@ -571,6 +574,7 @@ export class EtatDesLieuxDocumentDocxService {
       champsCles[`${prefix}NombreEntree`] = ligne?.nombreEntree?.toString() ?? VIDE;
       champsCles[`${prefix}NombreSortie`] = ligne?.nombreSortie?.toString() ?? VIDE;
       champsCles[`${prefix}Commentaire`] = ligne?.commentaire ?? VIDE;
+      champsCles[`${prefix}CommentaireSortie`] = ligne?.commentaireSortie ?? VIDE;
     }
     const clesAutres = donnees.cles
       .filter((c) => c.typeCle === "autre")
@@ -583,6 +587,7 @@ export class EtatDesLieuxDocumentDocxService {
       champsCles[`${prefix}NombreEntree`] = ligne?.nombreEntree?.toString() ?? VIDE;
       champsCles[`${prefix}NombreSortie`] = ligne?.nombreSortie?.toString() ?? VIDE;
       champsCles[`${prefix}Commentaire`] = ligne?.commentaire ?? VIDE;
+      champsCles[`${prefix}CommentaireSortie`] = ligne?.commentaireSortie ?? VIDE;
     }
 
     const donneesBalises: Record<string, unknown> = {
@@ -602,6 +607,11 @@ export class EtatDesLieuxDocumentDocxService {
       // viderChampsSortie le vide sur tout document d'entrée, même si une
       // adresse a déjà été saisie entre-temps.
       nouvelleAdresseSortie: donnees.nouvelleAdresseLocataire ?? VIDE,
+      observationsBailleurEntree: donnees.observationsBailleurEntree ?? VIDE,
+      reservesLocataireEntree: donnees.reservesLocataireEntree ?? VIDE,
+      // Vidés eux aussi par viderChampsSortie sur un document d'entrée.
+      observationsBailleurSortie: donnees.observationsBailleurSortie ?? VIDE,
+      reservesLocataireSortie: donnees.reservesLocataireSortie ?? VIDE,
 
       "mode chauffage collectif ou individuel": appartement.modeChauffage ?? VIDE,
       "mode eau chaude collectif ou individuel": appartement.modeEauChaude ?? VIDE,

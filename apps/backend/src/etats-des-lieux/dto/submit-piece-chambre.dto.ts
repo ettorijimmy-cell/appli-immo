@@ -2,6 +2,8 @@ import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min, ValidateNested } from "class-validator";
 import { EtatElementDto } from "./etat-element.dto";
 import { PrisesElectriquesDto } from "./prises-electriques.dto";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 export class SubmitPieceChambreDto {
   // 1 à 3 (jusqu'à 3 chambres dans le modèle réel) — passé dans le corps
@@ -40,4 +42,8 @@ export class SubmitPieceChambreDto {
   @ValidateNested()
   @Type(() => PrisesElectriquesDto)
   prises?: PrisesElectriquesDto;
+
+  // Évolutions de la pièce constatées à la sortie (décret n° 2016-382, art. 2, 2° c).
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  observationsSortie?: string | null;
 }

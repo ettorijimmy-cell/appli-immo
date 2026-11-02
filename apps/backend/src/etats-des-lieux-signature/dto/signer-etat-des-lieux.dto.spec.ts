@@ -44,6 +44,22 @@ describe("SignerEtatDesLieuxDto", () => {
     expect((await validate(dto)).map((e) => e.property)).toEqual(["nouvelleAdresseLocataire"]);
   });
 
+  it.each([
+    "observationsBailleurEntree",
+    "reservesLocataireEntree",
+    "observationsBailleurSortie",
+    "reservesLocataireSortie"
+  ])("%s : facultatif, 2 000 caractères maximum, nettoyé", async (champ) => {
+    const accepte = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, [champ]: `  ${"a".repeat(2000)}  ` });
+    const refuse = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, [champ]: "a".repeat(2001) });
+    const blanc = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, [champ]: "   " });
+
+    expect(await validate(accepte)).toHaveLength(0);
+    expect(accepte[champ as keyof SignerEtatDesLieuxDto]).toBe("a".repeat(2000));
+    expect((await validate(refuse)).map((e) => e.property)).toEqual([champ]);
+    expect(blanc[champ as keyof SignerEtatDesLieuxDto]).toBeNull();
+  });
+
   it("accepte une liste de locataires vide (bail sans locataire actif)", async () => {
     const dto = plainToInstance(SignerEtatDesLieuxDto, { ...CHAMPS_VALIDES, locataires: [] });
     const erreurs = await validate(dto);

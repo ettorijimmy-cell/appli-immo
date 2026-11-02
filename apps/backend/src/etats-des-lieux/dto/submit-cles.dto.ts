@@ -1,5 +1,7 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min, ValidateNested } from "class-validator";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { TexteObservation } from "./texte-observation.decorator";
 
 export const TYPES_CLE = [
   "immeuble",
@@ -44,6 +46,9 @@ class LigneCleDto {
   @IsOptional()
   @IsString()
   commentaire?: string;
+
+  @TexteObservation(LONGUEUR_MAX_OBSERVATION_SORTIE)
+  commentaireSortie?: string | null;
 }
 
 // Upsert par id explicite (une ligne courte, au plus 8 : 6 types fixes +

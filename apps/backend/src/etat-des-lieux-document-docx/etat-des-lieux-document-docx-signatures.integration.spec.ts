@@ -5,6 +5,7 @@ import path from "path";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
@@ -281,6 +282,106 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
     expect(occurrencesLuEtApprouveImprimees).toBe(4); // (bailleur + 1 locataire) × 2 phases
 
     expect(balisesResiduelles(buffer)).toEqual([]);
+  });
+
+  describe("balises d'observations préparées pour le modèle", () => {
+    const render = () => vi.spyOn(Docxtemplater.prototype, "render");
+
+    async function dossierComplet() {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerEntree(
+          etatDesLieuxId,
+          dtoSignature([titulaire.id], { observationsBailleurEntree: "Obs entrée", reservesLocataireEntree: "Rés entrée" })
+        )
+      );
+      await avecContexte(async () => {
+        await etatsDesLieuxService.submitPieceEntree(etatDesLieuxId, { observationsSortie: "Obs pièce entrée" });
+        await etatsDesLieuxService.submitPieceSejour(etatDesLieuxId, { observationsSortie: "Obs séjour" });
+        await etatsDesLieuxService.submitPieceCuisine(etatDesLieuxId, { observationsSortie: "Obs cuisine" });
+        await etatsDesLieuxService.submitPieceChambre(etatDesLieuxId, { numero: 1, observationsSortie: "Obs chambre" });
+        await etatsDesLieuxService.submitCles(etatDesLieuxId, {
+          lignes: [
+            { typeCle: "immeuble", commentaireSortie: "Com clé" },
+            { typeCle: "autre", libelleAutre: "Local vélo", commentaireSortie: "Com clé autre" }
+          ]
+        });
+        await etatsDesLieuxService.submitEquipementsDivers(etatDesLieuxId, {
+          lignes: [{ libelle: "Aspirateur", commentaireSortie: "Com équipement" }]
+        });
+      });
+      await avecContexte(() =>
+        etatsDesLieuxSignatureService.signerSortie(
+          etatDesLieuxId,
+          dtoSignature([titulaire.id], {
+            nouvelleAdresseLocataire: "1 rue du Départ, 69001 Lyon",
+            observationsBailleurSortie: "Obs sortie",
+            reservesLocataireSortie: "Rés sortie"
+          })
+        )
+      );
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+      return etatDesLieuxId;
+    }
+
+    async function donneesDuDocument(etatDesLieuxId: string, phase: "entree" | "sortie") {
+      const espion = render();
+      espion.mockClear();
+      await avecContexte(() => etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId, phase));
+      const donnees = espion.mock.calls.at(-1)?.[0] as Record<string, unknown> & {
+        chambres: Record<string, unknown>[];
+        equipementsDivers: Record<string, unknown>[];
+      };
+      espion.mockRestore();
+      return donnees;
+    }
+
+    it("document de sortie : toutes les balises sont renseignées", async () => {
+      const donnees = await donneesDuDocument(await dossierComplet(), "sortie");
+
+      expect(donnees).toMatchObject({
+        observationsBailleurEntree: "Obs entrée",
+        reservesLocataireEntree: "Rés entrée",
+        observationsBailleurSortie: "Obs sortie",
+        reservesLocataireSortie: "Rés sortie",
+        entreeObservationsSortie: "Obs pièce entrée",
+        sejourObservationsSortie: "Obs séjour",
+        cuisineObservationsSortie: "Obs cuisine",
+        clesImmeubleCommentaireSortie: "Com clé",
+        clesAutre1CommentaireSortie: "Com clé autre"
+      });
+      expect(donnees.chambres[0]?.["observationsSortie"]).toBe("Obs chambre");
+      expect(donnees.equipementsDivers[0]?.["commentaireSortie"]).toBe("Com équipement");
+    });
+
+    it("document d'entrée : tout ce qui relève de la sortie est vide, l'entrée reste", async () => {
+      const donnees = await donneesDuDocument(await dossierComplet(), "entree");
+
+      expect(donnees).toMatchObject({
+        observationsBailleurEntree: "Obs entrée",
+        reservesLocataireEntree: "Rés entrée",
+        observationsBailleurSortie: "",
+        reservesLocataireSortie: "",
+        entreeObservationsSortie: "",
+        sejourObservationsSortie: "",
+        cuisineObservationsSortie: "",
+        clesImmeubleCommentaireSortie: "",
+        clesAutre1CommentaireSortie: ""
+      });
+      expect(donnees.chambres[0]?.["observationsSortie"]).toBe("");
+      expect(donnees.equipementsDivers[0]?.["commentaireSortie"]).toBe("");
+    });
+
+    it("le modèle actuel n'imprime encore aucune de ces balises et reste sans balise résiduelle", async () => {
+      const etatDesLieuxId = await dossierComplet();
+
+      const buffer = await avecContexte(() =>
+        etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId, "sortie")
+      );
+
+      expect(texteDuDocx(buffer)).not.toContain("Obs sortie");
+      expect(balisesResiduelles(buffer)).toEqual([]);
+    });
   });
 
   describe("nouvelle adresse du locataire (décret n° 2016-382, art. 2, 2° a)", () => {
