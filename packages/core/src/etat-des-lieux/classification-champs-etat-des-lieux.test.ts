@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { champFigeParSignature, champModifiable, CLASSIFICATION_CLES } from "./classification-champs-etat-des-lieux";
+import {
+  champFigeParSignature,
+  champModifiable,
+  CLASSIFICATION_CLES,
+  CLASSIFICATION_EQUIPEMENTS_DIVERS,
+  CLASSIFICATION_ETATS_DES_LIEUX,
+  CLASSIFICATION_INVENTAIRE,
+  CLASSIFICATION_PIECE_AUTRE,
+  CLASSIFICATION_PIECE_CHAMBRE,
+  CLASSIFICATION_PIECE_CUISINE,
+  CLASSIFICATION_PIECE_ENTREE,
+  CLASSIFICATION_PIECE_SALLE_DE_BAIN,
+  CLASSIFICATION_PIECE_SEJOUR,
+  CLASSIFICATION_PIECE_WC
+} from "./classification-champs-etat-des-lieux";
 
 describe("champFigeParSignature", () => {
   it("rien n'est figé tant qu'aucune phase n'est signée", () => {
@@ -68,5 +82,37 @@ describe("champModifiable", () => {
         sortieSignee: false
       })
     ).toBe(false);
+  });
+});
+
+describe("observations et réserves", () => {
+  it("général : chaque champ suit la phase qu'il décrit", () => {
+    expect(CLASSIFICATION_ETATS_DES_LIEUX).toMatchObject({
+      observationsBailleurEntree: "entree",
+      reservesLocataireEntree: "entree",
+      observationsBailleurSortie: "sortie",
+      reservesLocataireSortie: "sortie"
+    });
+  });
+
+  it.each([
+    ["entrée", CLASSIFICATION_PIECE_ENTREE],
+    ["séjour", CLASSIFICATION_PIECE_SEJOUR],
+    ["cuisine", CLASSIFICATION_PIECE_CUISINE],
+    ["chambre", CLASSIFICATION_PIECE_CHAMBRE],
+    ["salle de bain", CLASSIFICATION_PIECE_SALLE_DE_BAIN],
+    ["WC", CLASSIFICATION_PIECE_WC],
+    ["autre", CLASSIFICATION_PIECE_AUTRE]
+  ])("pièce %s : observations de sortie encore modifiables après l'entrée signée", (_nom, classification) => {
+    expect(classification["observationsSortie"]).toBe("sortie");
+  });
+
+  it.each([
+    ["clés", CLASSIFICATION_CLES],
+    ["équipements divers", CLASSIFICATION_EQUIPEMENTS_DIVERS],
+    ["inventaire", CLASSIFICATION_INVENTAIRE]
+  ])("%s : commentaire de sortie distinct du commentaire d'entrée", (_nom, classification) => {
+    expect(classification["commentaireSortie"]).toBe("sortie");
+    expect(classification["commentaire"]).toBe("commune");
   });
 });

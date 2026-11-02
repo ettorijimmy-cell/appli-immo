@@ -21,6 +21,8 @@ export const etatDesLieuxInventaire = pgTable(
     nombreSortie: integer("nombre_sortie"),
     etatSortie: etatDesLieuxInventaireEtatEnum("etat_sortie"),
     commentaire: text("commentaire"),
+    // Commentaire constaté à la sortie, commentaire restant figé à l'entrée.
+    commentaireSortie: text("commentaire_sortie"),
     // Même principe que etat_des_lieux_cles.ajoutee_apres_signature_entree
     // — voir ce commentaire pour le détail.
     ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false)

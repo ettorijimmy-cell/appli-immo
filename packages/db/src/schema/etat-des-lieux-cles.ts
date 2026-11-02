@@ -26,6 +26,8 @@ export const etatDesLieuxCles = pgTable("etat_des_lieux_cles", {
   nombreEntree: integer("nombre_entree"),
   nombreSortie: integer("nombre_sortie"),
   commentaire: text("commentaire"),
+  // Commentaire constaté à la sortie, commentaire restant figé à l'entrée.
+  commentaireSortie: text("commentaire_sortie"),
   // Posée par l'application (jamais recalculée après coup) au moment de
   // l'insertion d'une ligne NEUVE alors que l'entrée est déjà signée (ex.
   // une clé remise en cours de bail) — seules ces lignes restent

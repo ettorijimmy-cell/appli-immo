@@ -1553,9 +1553,12 @@ déployé le 2026-11-01 :**
 **Étape 5 (remise de l'état des lieux par mail) — code terminé le 2026-11-01,
 non déployé.** Ordre impératif :
 
-1. Appliquer la migration `0070_condemned_abomination.sql` en production. Elle
-   est purement additive, mais elle crée les premiers trigger et fonction du
-   projet : à vérifier avec le rôle de production.
+1. Appliquer les migrations `0070_condemned_abomination.sql` et
+   `0071_chemical_sleepwalker.sql` en production. Elles sont purement
+   additives, mais la 0070 crée les premiers trigger et fonction du projet : à
+   vérifier avec le rôle de production. Puis redéployer dans PowerSync les 11
+   streams modifiés (liste en tête de `docs/powersync-sync-streams.yaml`),
+   jamais avant la 0071 : ils sélectionnent ses colonnes.
 2. Déployer l'image backend, qui embarque aussi le mobile. L'inverse casserait
    les routes d'envoi et le job des 10 minutes.
 3. Reconstruire l'installeur desktop.

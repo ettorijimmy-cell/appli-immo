@@ -19,6 +19,10 @@ import { etatDesLieuxElementEtatEnum, etatsDesLieux } from "./etats-des-lieux";
  * Chambres/Salles de bain/WC/Autres pièces : une ligne par instance
  * réelle (numero 1, 2, 3...), pas des colonnes répétées — contrainte
  * d'unicité (etat_des_lieux_id, numero) pour empêcher un doublon.
+ *
+ * observations_sortie : évolutions de la pièce constatées à la sortie
+ * (décret n° 2016-382, art. 2, 2° c), une par pièce plutôt qu'une par
+ * élément. Les *_description, elles, décrivent l'entrée et se figent avec elle.
  */
 
 export const etatDesLieuxPieceEntree = pgTable("etat_des_lieux_piece_entree", {
@@ -51,7 +55,8 @@ export const etatDesLieuxPieceEntree = pgTable("etat_des_lieux_piece_entree", {
   prisesDescription: text("prises_description"),
   prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
   prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
-  prisesNombre: integer("prises_nombre")
+  prisesNombre: integer("prises_nombre"),
+  observationsSortie: text("observations_sortie")
 });
 
 export const etatDesLieuxPieceSejour = pgTable("etat_des_lieux_piece_sejour", {
@@ -78,7 +83,8 @@ export const etatDesLieuxPieceSejour = pgTable("etat_des_lieux_piece_sejour", {
   prisesDescription: text("prises_description"),
   prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
   prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
-  prisesNombre: integer("prises_nombre")
+  prisesNombre: integer("prises_nombre"),
+  observationsSortie: text("observations_sortie")
 });
 
 export const etatDesLieuxPieceCuisine = pgTable("etat_des_lieux_piece_cuisine", {
@@ -106,6 +112,7 @@ export const etatDesLieuxPieceCuisine = pgTable("etat_des_lieux_piece_cuisine", 
   prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
   prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
   prisesNombre: integer("prises_nombre"),
+  observationsSortie: text("observations_sortie"),
   placardsDescription: text("placards_description"),
   placardsEtatEntree: etatDesLieuxElementEtatEnum("placards_etat_entree"),
   placardsEtatSortie: etatDesLieuxElementEtatEnum("placards_etat_sortie"),
@@ -151,7 +158,8 @@ export const etatDesLieuxPiecesChambre = pgTable(
     prisesDescription: text("prises_description"),
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
-    prisesNombre: integer("prises_nombre")
+    prisesNombre: integer("prises_nombre"),
+    observationsSortie: text("observations_sortie")
   },
   (table) => [uniqueIndex("etat_des_lieux_pieces_chambre_numero_unique").on(table.etatDesLieuxId, table.numero)]
 );
@@ -184,6 +192,7 @@ export const etatDesLieuxPiecesSalleDeBain = pgTable(
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
+    observationsSortie: text("observations_sortie"),
     lavaboDescription: text("lavabo_description"),
     lavaboEtatEntree: etatDesLieuxElementEtatEnum("lavabo_etat_entree"),
     lavaboEtatSortie: etatDesLieuxElementEtatEnum("lavabo_etat_sortie"),
@@ -224,6 +233,7 @@ export const etatDesLieuxPiecesWc = pgTable(
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
+    observationsSortie: text("observations_sortie"),
     lavaboDescription: text("lavabo_description"),
     lavaboEtatEntree: etatDesLieuxElementEtatEnum("lavabo_etat_entree"),
     lavaboEtatSortie: etatDesLieuxElementEtatEnum("lavabo_etat_sortie"),
@@ -266,7 +276,8 @@ export const etatDesLieuxPiecesAutre = pgTable(
     prisesDescription: text("prises_description"),
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
-    prisesNombre: integer("prises_nombre")
+    prisesNombre: integer("prises_nombre"),
+    observationsSortie: text("observations_sortie")
   },
   (table) => [uniqueIndex("etat_des_lieux_pieces_autre_numero_unique").on(table.etatDesLieuxId, table.numero)]
 );

@@ -333,6 +333,10 @@ const etats_des_lieux = new Table({
   // lieu_entree/lieu_sortie ajoutées le 2026-10-25 (chantier Signatures).
   lieu_entree: column.text,
   lieu_sortie: column.text,
+  observations_bailleur_entree: column.text,
+  reserves_locataire_entree: column.text,
+  observations_bailleur_sortie: column.text,
+  reserves_locataire_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -368,6 +372,7 @@ const etat_des_lieux_piece_entree = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -395,6 +400,7 @@ const etat_des_lieux_piece_sejour = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -436,6 +442,7 @@ const etat_des_lieux_piece_cuisine = new Table({
   hotte_etat_entree: column.text,
   hotte_etat_sortie: column.text,
   electromenager_description: column.text,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -490,6 +497,7 @@ const etat_des_lieux_pieces_chambre = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -525,6 +533,7 @@ const etat_des_lieux_pieces_salle_de_bain = new Table({
   baignoire_description: column.text,
   baignoire_etat_entree: column.text,
   baignoire_etat_sortie: column.text,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -560,6 +569,7 @@ const etat_des_lieux_pieces_wc = new Table({
   wc_description: column.text,
   wc_etat_entree: column.text,
   wc_etat_sortie: column.text,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -590,6 +600,7 @@ const etat_des_lieux_pieces_autre = new Table({
   prises_etat_entree: column.text,
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
+  observations_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -611,6 +622,7 @@ const etat_des_lieux_cles = new Table({
   nombre_entree: column.integer,
   nombre_sortie: column.integer,
   ajoutee_apres_signature_entree: column.integer,
+  commentaire_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -628,6 +640,7 @@ const etat_des_lieux_equipements_divers = new Table({
   nombre_sortie: column.integer,
   etat_sortie: column.text,
   ajoutee_apres_signature_entree: column.integer,
+  commentaire_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -646,6 +659,7 @@ const etat_des_lieux_inventaire = new Table({
   nombre_sortie: column.integer,
   etat_sortie: column.text,
   ajoutee_apres_signature_entree: column.integer,
+  commentaire_sortie: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text

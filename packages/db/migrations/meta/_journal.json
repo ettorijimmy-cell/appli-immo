@@ -498,6 +498,13 @@
       "when": 1793554889538,
       "tag": "0070_condemned_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793612694819,
+      "tag": "0071_chemical_sleepwalker",
+      "breakpoints": true
     }
   ]
 }

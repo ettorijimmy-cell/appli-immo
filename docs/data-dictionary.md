@@ -3072,7 +3072,11 @@ stocké, toujours dérivé de `date_entree`/`date_sortie`
 | bail_id | uuid, unique | Le bail concerné |
 | date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie |
 | lieu_entree, lieu_sortie | text, nullable | Lieu de signature de chaque phase (décret, art. 2 — mention "Fait à ..."). Posé par `EtatsDesLieuxSignatureService` au moment de la signature bailleur : valeur fournie par le signataire, sinon la ville du logement par défaut. Ajouté le 2026-10-25 (chantier Signatures, migration 0067) |
+| observations_bailleur_entree, reserves_locataire_entree | text, nullable | Observations du bailleur et réserves du locataire à l'entrée (décret n° 2016-382, art. 2, 1° h), 2 000 caractères maximum. Deux champs pour que chaque texte reste attribuable à son auteur. Saisis sur l'écran de signature, avant les tracés, écrits dans la même transaction que les signatures, figés ensuite. Classés `entree`, migration 0071 |
+| observations_bailleur_sortie, reserves_locataire_sortie | text, nullable | Mêmes règles pour la sortie. Classés `sortie`, migration 0071 |
 | nouvelle_adresse_locataire | text, nullable | Seul champ "domicile" du locataire porté par ce document (décret, art. 2, 2° a) — connu uniquement à la sortie. Texte libre, décision assumée. **Obligatoire pour signer la sortie** : `EtatsDesLieuxSignatureService` refuse une signature sans adresse et l'écrit dans la même transaction que les signatures ; saisie sur l'écran de signature mobile, 500 caractères maximum, une seule valeur pour tous les colocataires (nom devant chaque adresse), mention du type « Non communiquée par le locataire » acceptée. Imprimé dans le document de sortie via la balise `{nouvelleAdresseSortie}`, jamais dans le document d'entrée (`viderChampsSortie`) |
+
+**Observations de sortie par pièce** : les 7 tables de pièces portent `observations_sortie` (text, nullable, 500 caractères maximum, classé `sortie`, migration 0071), pour les évolutions de la pièce constatées à la sortie (décret n° 2016-382, art. 2, 2° c). Une par pièce plutôt qu'une par élément : les `*_description` décrivent l'entrée et se figent avec elle.
 
 ### etat_des_lieux_compteurs (1:1 avec etats_des_lieux)
 Relevés (décret, art. 2, 1° f — "le cas échéant"). Colonne Internet
@@ -3091,7 +3095,8 @@ Une ligne par type de clé, pas des colonnes répétées.
 | type_cle | enum | `immeuble` \| `porte_entree` \| `boite_lettres` \| `cave` \| `badge_portail` \| `parking` \| `autre` (2 emplacements libres dans le modèle réel, distingués par une ligne chacun) |
 | libelle_autre | text, nullable | Renseigné uniquement si `type_cle = "autre"` |
 | nombre_entree, nombre_sortie | integer, nullable | |
-| commentaire | text, nullable | |
+| commentaire | text, nullable | Classé `commune` : figé dès la signature d'entrée |
+| commentaire_sortie | text, nullable | Commentaire constaté à la sortie, 500 caractères maximum. Classé `sortie`, migration 0071 |
 | ajoutee_apres_signature_entree | boolean, défaut `false` | Posée par l'application à l'insertion d'une ligne NEUVE alors que l'entrée est déjà signée — voir note ci-dessous |
 
 **Écriture (`etat_des_lieux_cles`, `etat_des_lieux_equipements_divers`,
@@ -3169,7 +3174,8 @@ M/P/B/TB.
 |---|---|---|
 | libelle | text | Saisi librement |
 | nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
-| commentaire | text, nullable | |
+| commentaire | text, nullable | Classé `commune` : figé dès la signature d'entrée |
+| commentaire_sortie | text, nullable | Commentaire constaté à la sortie, 500 caractères maximum. Classé `sortie`, migration 0071 |
 | ajoutee_apres_signature_entree | boolean, défaut `false` | Voir `etat_des_lieux_cles` ci-dessus |
 
 ### elements_inventaire_meuble (catalogue de référence)
@@ -3198,7 +3204,8 @@ commentaires compense).
 |---|---|---|
 | element_id | uuid | FK vers `elements_inventaire_meuble` |
 | nombre_entree, etat_entree, nombre_sortie, etat_sortie | nullable | |
-| commentaire | text, nullable | |
+| commentaire | text, nullable | Classé `commune` : figé dès la signature d'entrée |
+| commentaire_sortie | text, nullable | Commentaire constaté à la sortie, 500 caractères maximum. Classé `sortie`, migration 0071 |
 | ajoutee_apres_signature_entree | boolean, défaut `false` | Voir `etat_des_lieux_cles` ci-dessus |
 
 ### etat_des_lieux_signature

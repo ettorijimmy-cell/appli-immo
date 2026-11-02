@@ -56,5 +56,12 @@ export const etatsDesLieux = pgTable("etats_des_lieux", {
   // chaque ligne (un bailleur + N locataires signent au même endroit).
   // Reçu dans la requête de signature, défaut bien.ville si absent.
   lieuEntree: text("lieu_entree"),
-  lieuSortie: text("lieu_sortie")
+  lieuSortie: text("lieu_sortie"),
+  // Décret n° 2016-382, art. 2, 1° h : observations et réserves par phase,
+  // attribuées à leur auteur. Saisies avant les tracés, écrites dans la même
+  // transaction que les signatures de la phase, figées ensuite.
+  observationsBailleurEntree: text("observations_bailleur_entree"),
+  reservesLocataireEntree: text("reserves_locataire_entree"),
+  observationsBailleurSortie: text("observations_bailleur_sortie"),
+  reservesLocataireSortie: text("reserves_locataire_sortie")
 });

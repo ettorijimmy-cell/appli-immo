@@ -27,7 +27,11 @@ export const CLASSIFICATION_ETATS_DES_LIEUX: Record<string, ClassificationChamp>
   // n'a de sens qu'à la sortie (décret n° 2016-382, art. 2, 2° a), jamais à
   // l'entrée — il doit donc rester modifiable jusqu'à la signature de
   // sortie, pas se figer dès l'entrée comme un champ "commune" ordinaire.
-  nouvelleAdresseLocataire: "sortie"
+  nouvelleAdresseLocataire: "sortie",
+  observationsBailleurEntree: "entree",
+  reservesLocataireEntree: "entree",
+  observationsBailleurSortie: "sortie",
+  reservesLocataireSortie: "sortie"
 };
 
 // Socle commun à toutes les tables de pièce (mur/sol/vitrageVolets/
@@ -53,7 +57,8 @@ const SOCLE_PIECE: Record<string, ClassificationChamp> = {
   prisesEtatSortie: "sortie",
   // Comptage physique, pas un état — pas de suffixe Entrée/Sortie, donc
   // commune.
-  prisesNombre: "commune"
+  prisesNombre: "commune",
+  observationsSortie: "sortie"
 };
 
 export const CLASSIFICATION_PIECE_ENTREE: Record<string, ClassificationChamp> = {
@@ -140,7 +145,8 @@ export const CLASSIFICATION_CLES: Record<string, ClassificationChamp> = {
   libelleAutre: "commune",
   nombreEntree: "entree",
   nombreSortie: "sortie",
-  commentaire: "commune"
+  commentaire: "commune",
+  commentaireSortie: "sortie"
 };
 
 export const CLASSIFICATION_EQUIPEMENTS_DIVERS: Record<string, ClassificationChamp> = {
@@ -149,7 +155,8 @@ export const CLASSIFICATION_EQUIPEMENTS_DIVERS: Record<string, ClassificationCha
   etatEntree: "entree",
   nombreSortie: "sortie",
   etatSortie: "sortie",
-  commentaire: "commune"
+  commentaire: "commune",
+  commentaireSortie: "sortie"
 };
 
 export const CLASSIFICATION_INVENTAIRE: Record<string, ClassificationChamp> = {
@@ -157,7 +164,8 @@ export const CLASSIFICATION_INVENTAIRE: Record<string, ClassificationChamp> = {
   etatEntree: "entree",
   nombreSortie: "sortie",
   etatSortie: "sortie",
-  commentaire: "commune"
+  commentaire: "commune",
+  commentaireSortie: "sortie"
 };
 
 // Champs d'IDENTITÉ : sous-ensemble des champs "commune" d'une table qui
