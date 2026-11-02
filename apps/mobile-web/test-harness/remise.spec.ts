@@ -28,6 +28,13 @@ interface EtatSimule {
   composition: { nombreChambres: number; nombreSallesDeBain: number; nombreWc: number };
   piecesSoumises: { chemin: string; corps: Record<string, unknown> }[];
   chambres: Record<string, unknown>[];
+  pieceEntree: Record<string, unknown> | null;
+  typeBail: "vide" | "meuble";
+  cles: Record<string, unknown>[];
+  equipementsDivers: Record<string, unknown>[];
+  inventaire: Record<string, unknown>[];
+  listesSoumises: Record<string, { lignes: Record<string, unknown>[] }>;
+  corpsSignatures: Record<string, unknown>[];
   statut: "non_commence" | "entree_terminee" | "complet";
   entreeSignee: boolean;
   sortieSignee: boolean;
@@ -69,6 +76,13 @@ function etatInitial(surcharge: Partial<EtatSimule> = {}): EtatSimule {
     composition: { nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0 },
     piecesSoumises: [],
     chambres: [],
+    pieceEntree: null,
+    typeBail: "vide",
+    cles: [],
+    equipementsDivers: [],
+    inventaire: [],
+    listesSoumises: {},
+    corpsSignatures: [],
     statut: "entree_terminee",
     entreeSignee: true,
     sortieSignee: false,
@@ -103,7 +117,7 @@ function etatDesLieuxComplet(etat: EtatSimule) {
     archivedAt: null,
     entreeSigneeParTous: etat.entreeSignee,
     sortieSigneeParTous: etat.sortieSignee,
-    entree: null,
+    entree: etat.pieceEntree,
     sejour: null,
     cuisine: null,
     chambres: etat.chambres,
@@ -111,9 +125,9 @@ function etatDesLieuxComplet(etat: EtatSimule) {
     wc: [],
     autres: etat.autresPieces,
     compteurs: null,
-    cles: [],
-    equipementsDivers: [],
-    inventaire: []
+    cles: etat.cles,
+    equipementsDivers: etat.equipementsDivers,
+    inventaire: etat.inventaire
   };
 }
 
@@ -127,7 +141,7 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
       return route.fulfill({ status: 204, headers: CORS });
     }
     if (pathname === "/baux/bail-test") {
-      return json(route, { id: "bail-test", appartementId: "appt", typeBail: "vide", statut: "actif", dateDebut: "2026-08-01", dateFin: null, archivedAt: null });
+      return json(route, { id: "bail-test", appartementId: "appt", typeBail: etat.typeBail, statut: "actif", dateDebut: "2026-08-01", dateFin: null, archivedAt: null });
     }
     if (pathname === "/appartements/appt") {
       return json(route, { id: "appt", bienId: "bien", numero: "1", ...etat.composition, autrePiece1: etat.autrePiece1, autrePiece2: null });
@@ -135,7 +149,15 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
     if (pathname === "/etats-des-lieux" && search.includes("bailId")) {
       return etat.rechargementEnPanne ? json(route, { message: "Panne" }, 500) : json(route, etatDesLieuxComplet(etat));
     }
-    if (/\/piece-(chambre|salle-de-bain|wc)$/.test(pathname)) {
+    if (pathname === "/etats-des-lieux/catalogue-inventaire") {
+      return json(route, [{ id: "elem-canape", code: "CANAPE", libelle: "Canapé", categorie: "meuble", ordreAffichage: 1 }]);
+    }
+    const liste = /\/(cles|equipements-divers|inventaire)$/.exec(pathname);
+    if (liste?.[1] && methode === "PATCH") {
+      etat.listesSoumises[liste[1]] = requete.postDataJSON() as { lignes: Record<string, unknown>[] };
+      return json(route, []);
+    }
+    if (/\/piece-(entree|chambre|salle-de-bain|wc)$/.test(pathname)) {
       etat.piecesSoumises.push({ chemin: pathname, corps: requete.postDataJSON() as Record<string, unknown> });
       return json(route, {});
     }
@@ -155,6 +177,7 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
     }
     if (pathname.endsWith("/signer-sortie") || pathname.endsWith("/signer-entree")) {
       etat.appelsSignature++;
+      etat.corpsSignatures.push(requete.postDataJSON() as Record<string, unknown>);
       if (etat.repondreSignature) {
         return etat.repondreSignature(route);
       }
@@ -894,4 +917,155 @@ test("signature refusée pour de vrai : l'erreur reste affichée, pas de panneau
 
   await expect(page.getByRole("alert")).toContainText("obligatoire pour signer la sortie");
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toHaveCount(0);
+});
+
+async function allerAEtape(page: Page, titre: RegExp): Promise<void> {
+  const bouton = page.getByRole("button", { name: "Suivant" });
+  for (let i = 0; i < 14; i++) {
+    await expect(bouton).toBeVisible();
+    if (await page.getByText(titre).isVisible()) {
+      return;
+    }
+    await bouton.click();
+  }
+  await expect(page.getByText(titre)).toBeVisible();
+}
+
+test("pièce à la sortie : observations sur plusieurs lignes, nettoyées, plafonnées, envoyées avec la pièce", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+
+  await page.getByRole("button", { name: "+ Observations de sortie" }).click();
+  const champ = page.getByLabel("+ Observations de sortie");
+  await expect(champ).toHaveAttribute("maxlength", "500");
+  await champ.fill("  Trou au mur\nPoignée lâche  ");
+  await page.getByRole("button", { name: "Suivant" }).click();
+  await expect(page.getByText(/^Séjour \d+\//)).toBeVisible();
+
+  const soumise = etat.piecesSoumises.find((p) => p.chemin.endsWith("/piece-entree"));
+  expect(soumise?.corps["observationsSortie"]).toBe("Trou au mur\nPoignée lâche");
+});
+
+test("pièce à la sortie : un texte enregistré se relit, et l'effacer l'efface vraiment", async ({ page }) => {
+  const etat = etatInitial({ pieceEntree: { id: "p", etatDesLieuxId: EDL_ID, observationsSortie: "Ancien constat" } });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+
+  const champ = page.getByLabel("+ Observations de sortie");
+  await expect(champ).toHaveValue("Ancien constat");
+  await champ.fill("");
+  await page.getByRole("button", { name: "Suivant" }).click();
+  await expect(page.getByText(/^Séjour \d+\//)).toBeVisible();
+
+  const soumise = etat.piecesSoumises.find((p) => p.chemin.endsWith("/piece-entree"));
+  expect(soumise?.corps["observationsSortie"]).toBeNull();
+});
+
+test("pièce à la sortie sans observation : le champ n'est pas soumis", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+
+  await page.getByRole("button", { name: "Suivant" }).click();
+  await expect(page.getByText(/^Séjour \d+\//)).toBeVisible();
+
+  const soumise = etat.piecesSoumises.find((p) => p.chemin.endsWith("/piece-entree"));
+  expect(soumise?.corps).not.toHaveProperty("observationsSortie");
+});
+
+test("parcours d'entrée : aucun champ d'observation de sortie", async ({ page }) => {
+  await simulerBackend(page, etatInitial({ statut: "non_commence", entreeSignee: false }));
+  await page.goto("/test-harness/remise.html");
+
+  await expect(page.getByRole("button", { name: "Suivant" })).toBeVisible();
+  await expect(page.getByText(/^Entrée 1\//)).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Observations de sortie" })).toHaveCount(0);
+  await expect(page.getByLabel("+ Observations de sortie")).toHaveCount(0);
+});
+
+test("commentaires de sortie : une clé, un équipement et une ligne d'inventaire", async ({ page }) => {
+  const ligne = { etatDesLieuxId: EDL_ID, nombreEntree: 1, nombreSortie: null, commentaire: null, commentaireSortie: null, archivedAt: null };
+  const etat = etatInitial({
+    typeBail: "meuble",
+    cles: [{ ...ligne, id: "cle-1", typeCle: "immeuble", libelleAutre: null }],
+    equipementsDivers: [{ ...ligne, id: "equip-1", libelle: "Aspirateur", etatEntree: "bon", etatSortie: null }],
+    inventaire: [{ ...ligne, id: "inv-1", elementId: "elem-canape", etatEntree: "bon", etatSortie: null, elementCode: "CANAPE", elementLibelle: "Canapé", elementCategorie: "meuble", elementOrdreAffichage: 1 }]
+  });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+  const suivant = page.getByRole("button", { name: "Suivant" });
+
+  await allerAEtape(page, /^Clés \d+\//);
+  await page.getByRole("button", { name: "+ Commentaire de sortie" }).first().click();
+  await page.getByLabel("+ Commentaire de sortie").fill("  Une clé manquante  ");
+  await suivant.click();
+
+  await expect(page.getByText(/^Équipements divers \d+\//)).toBeVisible();
+  await page.getByRole("button", { name: "+ Commentaire de sortie" }).click();
+  await page.getByLabel("+ Commentaire de sortie").fill("Moteur bruyant");
+  await suivant.click();
+
+  await expect(page.getByText(/^Inventaire meublé \d+\//)).toBeVisible();
+  await page.getByRole("button", { name: "+ Commentaire de sortie" }).click();
+  const champInventaire = page.getByLabel("+ Commentaire de sortie");
+  await expect(champInventaire).toHaveAttribute("maxlength", "500");
+  await champInventaire.fill("Tissu déchiré");
+  await suivant.click();
+  await expect(page.getByText(/^Récapitulatif \d+\//)).toBeVisible();
+
+  const cles = etat.listesSoumises["cles"]?.lignes ?? [];
+  expect(cles[0]).toMatchObject({ id: "cle-1", commentaireSortie: "Une clé manquante" });
+  expect(cles[1]).not.toHaveProperty("commentaireSortie");
+  expect(etat.listesSoumises["equipements-divers"]?.lignes[0]).toMatchObject({ id: "equip-1", commentaireSortie: "Moteur bruyant" });
+  expect(etat.listesSoumises["inventaire"]?.lignes[0]).toMatchObject({ elementId: "elem-canape", commentaireSortie: "Tissu déchiré" });
+});
+
+test("signature de sortie : le texte survit à « Précédent » et part avec les signatures", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await allerALaSignature(page);
+
+  await page.getByLabel("Observations du bailleur (facultatif)").fill("Parquet dégradé");
+  await page.getByLabel("Réserves du locataire (facultatif)").fill("Fuite signalée en janvier");
+
+  await page.getByRole("button", { name: "Précédent" }).click();
+  await expect(page.getByText(/^Récapitulatif \d+\//)).toBeVisible();
+  await page.getByRole("button", { name: "Suivant" }).click();
+
+  await expect(page.getByLabel("Observations du bailleur (facultatif)")).toHaveValue("Parquet dégradé");
+  await expect(page.getByLabel("Réserves du locataire (facultatif)")).toHaveValue("Fuite signalée en janvier");
+
+  await signer(page);
+  await page.getByRole("button", { name: "Terminer" }).click();
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+
+  expect(etat.corpsSignatures).toHaveLength(1);
+  expect(etat.corpsSignatures[0]).toMatchObject({
+    observationsBailleurSortie: "Parquet dégradé",
+    reservesLocataireSortie: "Fuite signalée en janvier"
+  });
+  expect(etat.corpsSignatures[0]).not.toHaveProperty("observationsBailleurEntree");
+});
+
+test("signature en échec : le texte reste à l'écran et « Réessayer » renvoie le même", async ({ page }) => {
+  const etat = etatInitial({
+    repondreSignature: (route) => {
+      etat.repondreSignature = null;
+      return json(route, { message: "Service indisponible" }, 503);
+    }
+  });
+  await simulerBackend(page, etat);
+  await allerALaSignature(page);
+  await page.getByLabel("Observations du bailleur (facultatif)").fill("Parquet dégradé");
+  await signer(page);
+
+  await page.getByRole("button", { name: "Terminer" }).click();
+  await expect(page.getByRole("alert")).toContainText("Service indisponible");
+  await expect(page.getByLabel("Observations du bailleur (facultatif)")).toHaveValue("Parquet dégradé");
+
+  await page.getByRole("button", { name: "Réessayer" }).click();
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+
+  expect(etat.corpsSignatures.map((c) => c["observationsBailleurSortie"])).toEqual(["Parquet dégradé", "Parquet dégradé"]);
 });

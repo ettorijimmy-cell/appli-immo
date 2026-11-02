@@ -25,6 +25,7 @@ const ligneCleExistante: LigneCle = {
   nombreEntree: 1,
   nombreSortie: null,
   commentaire: "RAS",
+  commentaireSortie: "Clé tordue",
   archivedAt: null
 };
 
@@ -37,6 +38,7 @@ const ligneEquipementExistante: LigneEquipementDivers = {
   nombreSortie: null,
   etatSortie: null,
   commentaire: "Un peu bruyant",
+  commentaireSortie: "Moteur à revoir",
   archivedAt: null
 };
 
@@ -53,6 +55,7 @@ const ligneInventaireExistante: LigneInventaire = {
   nombreSortie: null,
   etatSortie: null,
   commentaire: "Petite tache",
+  commentaireSortie: "Tache agrandie",
   archivedAt: null,
   elementCode: "VU",
   elementLibelle: "Canapé (vu à l'entrée)",

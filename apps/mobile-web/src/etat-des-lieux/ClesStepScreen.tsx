@@ -1,7 +1,8 @@
-import { CHAMPS_IDENTITE_CLES, champModifiable, CLASSIFICATION_CLES } from "core";
+import { CHAMPS_IDENTITE_CLES, champModifiable, CLASSIFICATION_CLES, LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { LigneCle, LigneCleInput, TypeCle } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
+import { observationSortieASoumettre } from "./observation-sortie";
 import { ChampReplie, ReferenceLectureSeule } from "./ui";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
@@ -21,6 +22,8 @@ interface LigneEditable {
   nombre: string;
   nombreReference: number | null;
   commentaire: string;
+  commentaireSortie: string;
+  commentaireSortieEnregistre: string | null;
 }
 
 function initialiser(lignes: LigneCle[], mode: "entree" | "sortie"): LigneEditable[] {
@@ -34,7 +37,9 @@ function initialiser(lignes: LigneCle[], mode: "entree" | "sortie"): LigneEditab
       libelleAutre: "",
       nombre: String((mode === "entree" ? existante?.nombreEntree : existante?.nombreSortie) ?? ""),
       nombreReference: mode === "sortie" ? (existante?.nombreEntree ?? null) : null,
-      commentaire: existante?.commentaire ?? ""
+      commentaire: existante?.commentaire ?? "",
+      commentaireSortie: existante?.commentaireSortie ?? "",
+      commentaireSortieEnregistre: existante?.commentaireSortie ?? null
     };
   });
   const autres = actives
@@ -46,7 +51,9 @@ function initialiser(lignes: LigneCle[], mode: "entree" | "sortie"): LigneEditab
       libelleAutre: l.libelleAutre ?? "",
       nombre: String((mode === "entree" ? l.nombreEntree : l.nombreSortie) ?? ""),
       nombreReference: mode === "sortie" ? (l.nombreEntree ?? null) : null,
-      commentaire: l.commentaire ?? ""
+      commentaire: l.commentaire ?? "",
+      commentaireSortie: l.commentaireSortie ?? "",
+      commentaireSortieEnregistre: l.commentaireSortie
     }));
   return [...fixes, ...autres];
 }
@@ -79,13 +86,18 @@ export const ClesStepScreen = forwardRef<
     submit: async () => {
       const payload: LigneCleInput[] = etat
         .filter((l) => l.typeCle !== "autre" || l.libelleAutre.trim())
-        .map((l) => ({
-          ...(l.id && { id: l.id }),
-          typeCle: l.typeCle,
-          ...(l.typeCle === "autre" && { libelleAutre: l.libelleAutre.trim() }),
-          ...(l.nombre !== "" && { [mode === "entree" ? "nombreEntree" : "nombreSortie"]: Number(l.nombre) }),
-          ...(l.commentaire && { commentaire: l.commentaire })
-        }));
+        .map((l) => {
+          const commentaireSortie =
+            mode === "sortie" ? observationSortieASoumettre(l.commentaireSortie, l.commentaireSortieEnregistre) : undefined;
+          return {
+            ...(l.id && { id: l.id }),
+            typeCle: l.typeCle,
+            ...(l.typeCle === "autre" && { libelleAutre: l.libelleAutre.trim() }),
+            ...(l.nombre !== "" && { [mode === "entree" ? "nombreEntree" : "nombreSortie"]: Number(l.nombre) }),
+            ...(l.commentaire && { commentaire: l.commentaire }),
+            ...(commentaireSortie !== undefined && { commentaireSortie })
+          };
+        });
       await onSubmit(payload);
     }
   }));
@@ -113,6 +125,7 @@ export const ClesStepScreen = forwardRef<
           nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
         });
         const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
+        const commentaireSortieEditable = champModifiable({ ...champParams, nomChamp: "commentaireSortie" });
 
         return (
           <div
@@ -162,6 +175,17 @@ export const ClesStepScreen = forwardRef<
                 readOnly={!commentaireEditable}
               />
             )}
+
+            {mode === "sortie" && (commentaireSortieEditable || ligne.commentaireSortie) && (
+              <ChampReplie
+                label="+ Commentaire de sortie"
+                value={ligne.commentaireSortie}
+                onChange={(v) => setLigne(index, { commentaireSortie: v })}
+                readOnly={!commentaireSortieEditable}
+                multiligne
+                maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
+              />
+            )}
           </div>
         );
       })}
@@ -178,7 +202,9 @@ export const ClesStepScreen = forwardRef<
                 libelleAutre: "",
                 nombre: "",
                 nombreReference: null,
-                commentaire: ""
+                commentaire: "",
+                commentaireSortie: "",
+                commentaireSortieEnregistre: null
               }
             ])
           }

@@ -1,7 +1,9 @@
+import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { PieceRow } from "../api/etats-des-lieux";
 import type { EtatElement } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
+import { observationSortieASoumettre } from "./observation-sortie";
 import type { ElementDef } from "./pieces-config";
 import { BoutonsEtatPiece, ChampReplie, ReferenceLectureSeule } from "./ui";
 
@@ -44,6 +46,7 @@ export const PieceStepScreen = forwardRef<
   }
 >(function PieceStepScreen({ elements, row, mode, libelleFixe, ajoutableApresEntree = false, onSubmit }, ref) {
   const [valeurs, setValeurs] = useState(() => initialiser(elements, row, mode));
+  const [observationsSortie, setObservationsSortie] = useState(row?.observationsSortie ?? "");
 
   useImperativeHandle(ref, () => ({
     submit: async () => {
@@ -72,6 +75,10 @@ export const PieceStepScreen = forwardRef<
           elementPayload.nombre = Number(champs.nombre);
         }
         payload[el.prefix] = elementPayload;
+      }
+      const observations = mode === "sortie" ? observationSortieASoumettre(observationsSortie, row?.observationsSortie) : undefined;
+      if (observations !== undefined) {
+        payload.observationsSortie = observations;
       }
       await onSubmit(payload);
     }
@@ -144,6 +151,16 @@ export const PieceStepScreen = forwardRef<
           </div>
         );
       })}
+
+      {mode === "sortie" && (
+        <ChampReplie
+          label="+ Observations de sortie"
+          value={observationsSortie}
+          onChange={setObservationsSortie}
+          multiligne
+          maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
+        />
+      )}
     </div>
   );
 });

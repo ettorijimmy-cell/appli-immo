@@ -32,6 +32,7 @@ export type PieceRow = {
   libelle?: string | null;
   prisesNombre?: number | null;
   electromenagerDescription?: string | null;
+  observationsSortie?: string | null;
   ajouteeApresSignatureEntree?: boolean;
 } & Record<string, string | number | boolean | null | undefined>;
 
@@ -64,6 +65,7 @@ export interface LigneCle {
   nombreEntree: number | null;
   nombreSortie: number | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
 }
 
@@ -76,6 +78,7 @@ export interface LigneEquipementDivers {
   nombreSortie: number | null;
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
 }
 
@@ -95,6 +98,7 @@ export interface LigneInventaire {
   nombreSortie: number | null;
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
   elementCode: string;
   elementLibelle: string;
@@ -167,6 +171,7 @@ export interface LigneCleInput {
   nombreEntree?: number;
   nombreSortie?: number;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export interface LigneEquipementDiversInput {
@@ -177,6 +182,7 @@ export interface LigneEquipementDiversInput {
   nombreSortie?: number;
   etatSortie?: EtatInventaire;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export interface LigneInventaireInput {
@@ -186,6 +192,7 @@ export interface LigneInventaireInput {
   nombreSortie?: number;
   etatSortie?: EtatInventaire;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export function submitCles(
@@ -258,6 +265,11 @@ export interface SignerEtatDesLieuxInput {
   lieu?: string;
   // Sortie uniquement (décret n° 2016-382, art. 2, 2° a).
   nouvelleAdresseLocataire?: string;
+  // Décret n° 2016-382, art. 2, 1° h : facultatives, celles de la phase signée.
+  observationsBailleurEntree?: string;
+  reservesLocataireEntree?: string;
+  observationsBailleurSortie?: string;
+  reservesLocataireSortie?: string;
 }
 
 export type PhaseEtatDesLieux = "entree" | "sortie";

@@ -1,4 +1,4 @@
-import { champModifiable, CLASSIFICATION_INVENTAIRE } from "core";
+import { champModifiable, CLASSIFICATION_INVENTAIRE, LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type {
   CategorieInventaire,
@@ -8,6 +8,7 @@ import type {
   LigneInventaireInput
 } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
+import { observationSortieASoumettre } from "./observation-sortie";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
 
 const LABEL_CATEGORIE: Record<CategorieInventaire, string> = {
@@ -21,6 +22,7 @@ interface ChampsElement {
   nombre: string;
   etat: string;
   commentaire: string;
+  commentaireSortie: string;
 }
 
 // Inventaire meublé : un step unique (comme côté desktop) piloté par le
@@ -55,7 +57,8 @@ export const InventaireStepScreen = forwardRef<
       initial[element.id] = {
         nombre: String((mode === "entree" ? existante?.nombreEntree : existante?.nombreSortie) ?? ""),
         etat: (mode === "entree" ? existante?.etatEntree : existante?.etatSortie) ?? "",
-        commentaire: existante?.commentaire ?? ""
+        commentaire: existante?.commentaire ?? "",
+        commentaireSortie: existante?.commentaireSortie ?? ""
       };
     }
     return initial;
@@ -66,7 +69,14 @@ export const InventaireStepScreen = forwardRef<
       const payload: LigneInventaireInput[] = [];
       for (const element of catalogue) {
         const champs = valeurs[element.id];
-        if (!champs || (champs.nombre === "" && !champs.etat && !champs.commentaire)) {
+        if (!champs) {
+          continue;
+        }
+        const commentaireSortie =
+          mode === "sortie"
+            ? observationSortieASoumettre(champs.commentaireSortie, parElementId.get(element.id)?.commentaireSortie)
+            : undefined;
+        if (champs.nombre === "" && !champs.etat && !champs.commentaire && commentaireSortie === undefined) {
           continue;
         }
         payload.push({
@@ -76,6 +86,9 @@ export const InventaireStepScreen = forwardRef<
         } as LigneInventaireInput);
         if (champs.commentaire) {
           payload[payload.length - 1]!.commentaire = champs.commentaire;
+        }
+        if (commentaireSortie !== undefined) {
+          payload[payload.length - 1]!.commentaireSortie = commentaireSortie;
         }
       }
       await onSubmit(payload);
@@ -117,6 +130,7 @@ export const InventaireStepScreen = forwardRef<
                 nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
               });
               const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
+              const commentaireSortieEditable = champModifiable({ ...champParams, nomChamp: "commentaireSortie" });
               const existanteLigne = parElementId.get(element.id);
 
               return (
@@ -159,6 +173,17 @@ export const InventaireStepScreen = forwardRef<
                       value={champs.commentaire}
                       onChange={(v) => setChamp(element.id, { commentaire: v })}
                       readOnly={!commentaireEditable}
+                    />
+                  )}
+
+                  {mode === "sortie" && (commentaireSortieEditable || champs.commentaireSortie) && (
+                    <ChampReplie
+                      label="+ Commentaire de sortie"
+                      value={champs.commentaireSortie}
+                      onChange={(v) => setChamp(element.id, { commentaireSortie: v })}
+                      readOnly={!commentaireSortieEditable}
+                      multiligne
+                      maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
                     />
                   )}
                 </div>

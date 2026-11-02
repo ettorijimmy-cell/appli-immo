@@ -1,7 +1,13 @@
-import { CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS, champModifiable, CLASSIFICATION_EQUIPEMENTS_DIVERS } from "core";
+import {
+  CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
+  champModifiable,
+  CLASSIFICATION_EQUIPEMENTS_DIVERS,
+  LONGUEUR_MAX_OBSERVATION_SORTIE
+} from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { EtatInventaire, LigneEquipementDivers, LigneEquipementDiversInput } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
+import { observationSortieASoumettre } from "./observation-sortie";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
 
 interface LigneEditable {
@@ -12,6 +18,8 @@ interface LigneEditable {
   nombreReference: number | null;
   etatReference: EtatInventaire | null;
   commentaire: string;
+  commentaireSortie: string;
+  commentaireSortieEnregistre: string | null;
 }
 
 function initialiser(lignes: LigneEquipementDivers[], mode: "entree" | "sortie"): LigneEditable[] {
@@ -24,7 +32,9 @@ function initialiser(lignes: LigneEquipementDivers[], mode: "entree" | "sortie")
       etat: (mode === "entree" ? l.etatEntree : l.etatSortie) ?? "",
       nombreReference: mode === "sortie" ? (l.nombreEntree ?? null) : null,
       etatReference: mode === "sortie" ? l.etatEntree : null,
-      commentaire: l.commentaire ?? ""
+      commentaire: l.commentaire ?? "",
+      commentaireSortie: l.commentaireSortie ?? "",
+      commentaireSortieEnregistre: l.commentaireSortie
     }));
 }
 
@@ -55,13 +65,18 @@ export const EquipementsDiversStepScreen = forwardRef<
     submit: async () => {
       const payload: LigneEquipementDiversInput[] = etat
         .filter((l) => l.libelle.trim())
-        .map((l) => ({
-          ...(l.id && { id: l.id }),
-          libelle: l.libelle.trim(),
-          ...(l.nombre !== "" && { [mode === "entree" ? "nombreEntree" : "nombreSortie"]: Number(l.nombre) }),
-          ...(l.etat && { [mode === "entree" ? "etatEntree" : "etatSortie"]: l.etat }),
-          ...(l.commentaire && { commentaire: l.commentaire })
-        }));
+        .map((l) => {
+          const commentaireSortie =
+            mode === "sortie" ? observationSortieASoumettre(l.commentaireSortie, l.commentaireSortieEnregistre) : undefined;
+          return {
+            ...(l.id && { id: l.id }),
+            libelle: l.libelle.trim(),
+            ...(l.nombre !== "" && { [mode === "entree" ? "nombreEntree" : "nombreSortie"]: Number(l.nombre) }),
+            ...(l.etat && { [mode === "entree" ? "etatEntree" : "etatSortie"]: l.etat }),
+            ...(l.commentaire && { commentaire: l.commentaire }),
+            ...(commentaireSortie !== undefined && { commentaireSortie })
+          };
+        });
       await onSubmit(payload);
     }
   }));
@@ -89,6 +104,7 @@ export const EquipementsDiversStepScreen = forwardRef<
           nomChamp: mode === "entree" ? "nombreEntree" : "nombreSortie"
         });
         const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
+        const commentaireSortieEditable = champModifiable({ ...champParams, nomChamp: "commentaireSortie" });
 
         return (
           <div key={ligne.id ?? index} className="space-y-2 border-b border-slate-100 pb-4 last:border-0">
@@ -139,6 +155,17 @@ export const EquipementsDiversStepScreen = forwardRef<
                 readOnly={!commentaireEditable}
               />
             )}
+
+            {mode === "sortie" && (commentaireSortieEditable || ligne.commentaireSortie) && (
+              <ChampReplie
+                label="+ Commentaire de sortie"
+                value={ligne.commentaireSortie}
+                onChange={(v) => setLigne(index, { commentaireSortie: v })}
+                readOnly={!commentaireSortieEditable}
+                multiligne
+                maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
+              />
+            )}
           </div>
         );
       })}
@@ -149,7 +176,16 @@ export const EquipementsDiversStepScreen = forwardRef<
           onClick={() =>
             setEtat((v) => [
               ...v,
-              { libelle: "", nombre: "", etat: "", nombreReference: null, etatReference: null, commentaire: "" }
+              {
+                libelle: "",
+                nombre: "",
+                etat: "",
+                nombreReference: null,
+                etatReference: null,
+                commentaire: "",
+                commentaireSortie: "",
+                commentaireSortieEnregistre: null
+              }
             ])
           }
           className="text-sm text-indigo-700 underline underline-offset-2"

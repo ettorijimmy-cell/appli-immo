@@ -22,8 +22,12 @@ async function readOnly(locator: Locator): Promise<boolean> {
   return locator.evaluate((el) => (el as HTMLInputElement).readOnly);
 }
 
+function commentaireSortie(ligne: Locator): Locator {
+  return ligne.getByLabel("+ Commentaire de sortie");
+}
+
 async function attendreAbsenceCommentaire(ligne: Locator): Promise<void> {
-  await expect(ligne.getByRole("button", { name: "+ Commentaire" })).toHaveCount(0);
+  await expect(ligne.getByRole("button", { name: "+ Commentaire", exact: true })).toHaveCount(0);
   await expect(ligne.locator('label:text-is("+ Commentaire")')).toHaveCount(0);
 }
 
@@ -46,6 +50,8 @@ test("entrée signée seule : ligne existante gelée sur son identité/commentai
   const commentaireCleExistant = cleExistante.locator('label:text-is("+ Commentaire") ~ input');
   await expect(commentaireCleExistant).toHaveValue("RAS");
   expect(await readOnly(commentaireCleExistant)).toBe(true);
+  await expect(commentaireSortie(cleExistante)).toHaveValue("Clé tordue");
+  expect(await readOnly(commentaireSortie(cleExistante))).toBe(false);
 
   await cles.getByRole("button", { name: "+ Ajouter une autre clé" }).click();
   const cleNeuve = lignes(cles).nth(7);
@@ -54,6 +60,7 @@ test("entrée signée seule : ligne existante gelée sur son identité/commentai
   expect(await readOnly(libelleCleNeuve)).toBe(false);
   expect(await readOnly(cleNeuve.locator('input[type="number"]'))).toBe(false);
   await attendreAbsenceCommentaire(cleNeuve);
+  await expect(cleNeuve.getByRole("button", { name: "+ Commentaire de sortie" })).toBeVisible();
 
   // --- Équipements divers ---
   const equipements = scenario.getByTestId("scenario-entree-signee-equipements");
@@ -66,6 +73,8 @@ test("entrée signée seule : ligne existante gelée sur son identité/commentai
   const commentaireEquipExistant = equipExistant.locator('label:text-is("+ Commentaire") ~ input');
   await expect(commentaireEquipExistant).toHaveValue("Un peu bruyant");
   expect(await readOnly(commentaireEquipExistant)).toBe(true);
+  await expect(commentaireSortie(equipExistant)).toHaveValue("Moteur à revoir");
+  expect(await readOnly(commentaireSortie(equipExistant))).toBe(false);
 
   await equipements.getByRole("button", { name: "+ Ajouter un équipement" }).click();
   const equipNeuf = lignes(equipements).nth(1);
@@ -85,6 +94,8 @@ test("entrée signée seule : ligne existante gelée sur son identité/commentai
   const commentaireInvExistant = invCanape.locator('label:text-is("+ Commentaire") ~ input');
   await expect(commentaireInvExistant).toHaveValue("Petite tache");
   expect(await readOnly(commentaireInvExistant)).toBe(true);
+  await expect(commentaireSortie(invCanape)).toHaveValue("Tache agrandie");
+  expect(await readOnly(commentaireSortie(invCanape))).toBe(false);
 
   // Poste du catalogue jamais vu à l'entrée (pas de ligne existante) :
   // sortie éditable, pas de commentaire possible/affiché.
@@ -93,6 +104,7 @@ test("entrée signée seule : ligne existante gelée sur son identité/commentai
   await expect(invTableBasse.getByRole("button", { name: "Bon" })).toBeEnabled();
   expect(await readOnly(invTableBasse.locator('input[type="number"]'))).toBe(false);
   await attendreAbsenceCommentaire(invTableBasse);
+  await expect(invTableBasse.getByRole("button", { name: "+ Commentaire de sortie" })).toBeVisible();
 });
 
 test("sortie signée : tout en lecture seule, plus aucun bouton d'ajout", async ({ page }) => {
@@ -107,6 +119,8 @@ test("sortie signée : tout en lecture seule, plus aucun bouton d'ajout", async 
   expect(await readOnly(libelleCle)).toBe(true);
   expect(await readOnly(cleExistante.locator('input[type="number"]'))).toBe(true);
   expect(await readOnly(cleExistante.locator('label:text-is("+ Commentaire") ~ input'))).toBe(true);
+  await expect(commentaireSortie(cleExistante)).toHaveValue("Clé tordue");
+  expect(await readOnly(commentaireSortie(cleExistante))).toBe(true);
   await expect(cles.getByRole("button", { name: "+ Ajouter une autre clé" })).toHaveCount(0);
 
   // --- Équipements divers ---
@@ -118,6 +132,8 @@ test("sortie signée : tout en lecture seule, plus aucun bouton d'ajout", async 
   await expect(equipExistant.getByRole("button", { name: "Bon" })).toBeDisabled();
   expect(await readOnly(equipExistant.locator('input[type="number"]'))).toBe(true);
   expect(await readOnly(equipExistant.locator('label:text-is("+ Commentaire") ~ input'))).toBe(true);
+  await expect(commentaireSortie(equipExistant)).toHaveValue("Moteur à revoir");
+  expect(await readOnly(commentaireSortie(equipExistant))).toBe(true);
   await expect(equipements.getByRole("button", { name: "+ Ajouter un équipement" })).toHaveCount(0);
 
   // --- Inventaire ---
@@ -126,10 +142,13 @@ test("sortie signée : tout en lecture seule, plus aucun bouton d'ajout", async 
   await expect(invCanape.getByRole("button", { name: "Bon" })).toBeDisabled();
   expect(await readOnly(invCanape.locator('input[type="number"]'))).toBe(true);
   expect(await readOnly(invCanape.locator('label:text-is("+ Commentaire") ~ input'))).toBe(true);
+  await expect(commentaireSortie(invCanape)).toHaveValue("Tache agrandie");
+  expect(await readOnly(commentaireSortie(invCanape))).toBe(true);
 
   // Poste jamais vu à l'entrée : désormais lui aussi verrouillé en sortie.
   const invTableBasse = lignes(inventaire).nth(1);
   await expect(invTableBasse.getByRole("button", { name: "Bon" })).toBeDisabled();
   expect(await readOnly(invTableBasse.locator('input[type="number"]'))).toBe(true);
   await attendreAbsenceCommentaire(invTableBasse);
+  await expect(invTableBasse.getByRole("button", { name: "+ Commentaire de sortie" })).toHaveCount(0);
 });

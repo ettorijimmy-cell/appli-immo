@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { EtatElement, EtatInventaire } from "../api/etats-des-lieux";
 
 const ETATS_PIECE: EtatElement[] = ["M", "P", "B", "TB"];
@@ -74,21 +74,27 @@ export function BoutonsEtatInventaire({
 // jamais s'imposer visuellement. `readOnly` (chantier Signatures, champ
 // commun figé dès l'entrée signée) : toujours ouvert dès qu'il y a une
 // valeur à montrer, jamais replié derrière un bouton qu'on ne peut plus
-// de toute façon utiliser pour éditer.
+// de toute façon utiliser pour éditer. `multiligne` : textes de sortie, seuls
+// à accepter plusieurs lignes.
 export function ChampReplie({
   label,
   value,
   onChange,
   placeholder,
-  readOnly = false
+  readOnly = false,
+  multiligne = false,
+  maxLength
 }: {
   label: string;
   value: string;
   onChange: (valeur: string) => void;
   placeholder?: string;
   readOnly?: boolean;
+  multiligne?: boolean;
+  maxLength?: number;
 }): React.JSX.Element {
   const [ouvert, setOuvert] = useState(value !== "" || readOnly);
+  const id = useId();
 
   if (!ouvert) {
     return (
@@ -102,18 +108,24 @@ export function ChampReplie({
     );
   }
 
+  const proprietes = {
+    id,
+    value,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
+    placeholder,
+    readOnly,
+    ...(maxLength !== undefined && { maxLength }),
+    className: `w-full rounded-md border px-3 py-2 text-base ${
+      readOnly ? "border-slate-200 bg-slate-50 text-slate-500" : "border-slate-300"
+    }`
+  };
+
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-slate-500">{label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        className={`w-full rounded-md border px-3 py-2 text-base ${
-          readOnly ? "border-slate-200 bg-slate-50 text-slate-500" : "border-slate-300"
-        }`}
-      />
+      <label htmlFor={id} className="text-xs font-medium text-slate-500">
+        {label}
+      </label>
+      {multiligne ? <textarea rows={3} {...proprietes} /> : <input {...proprietes} />}
     </div>
   );
 }

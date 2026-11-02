@@ -1,4 +1,9 @@
-import { LONGUEUR_MAX_NOUVELLE_ADRESSE, resoudreNouvelleAdresseSortie } from "core";
+import {
+  LONGUEUR_MAX_NOUVELLE_ADRESSE,
+  LONGUEUR_MAX_OBSERVATIONS_GENERALES,
+  nettoyerTexteObservation,
+  resoudreNouvelleAdresseSortie
+} from "core";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   getSignatairesAttendus,
@@ -16,6 +21,13 @@ interface CarteSignataire {
   nomModifiable: boolean;
   luEtApprouve: boolean;
   dataUrlPng: string | null;
+}
+
+// Conservées par EtatDesLieuxStepper : « Précédent » démonte cet écran, et
+// revenir vérifier une pièce ne doit pas faire perdre un texte long.
+export interface BrouillonObservations {
+  observationsBailleur: string;
+  reservesLocataire: string;
 }
 
 // `toDataURL("image/png")` renvoie "data:image/png;base64,XXXX" —
@@ -56,15 +68,24 @@ export const SignatureStepScreen = forwardRef<
   {
     etatDesLieuxId: string;
     mode: "entree" | "sortie";
+    brouillonObservations?: BrouillonObservations;
+    onBrouillonObservationsChange?: (brouillon: BrouillonObservations) => void;
     onPretChange: (pret: boolean) => void;
     onSubmit: (input: SignerEtatDesLieuxInput) => Promise<void>;
   }
->(function SignatureStepScreen({ etatDesLieuxId, mode, onPretChange, onSubmit }, ref) {
+>(function SignatureStepScreen(
+  { etatDesLieuxId, mode, brouillonObservations, onBrouillonObservationsChange, onPretChange, onSubmit },
+  ref
+) {
   const [chargement, setChargement] = useState(true);
   const [erreurChargement, setErreurChargement] = useState<string | null>(null);
   const [lieu, setLieu] = useState("");
   const [nouvelleAdresse, setNouvelleAdresse] = useState("");
+  const [observations, setObservations] = useState<BrouillonObservations>(
+    brouillonObservations ?? { observationsBailleur: "", reservesLocataire: "" }
+  );
   const [cartes, setCartes] = useState<CarteSignataire[]>([]);
+  const [confirmationModification, setConfirmationModification] = useState(false);
   const zonesRef = useRef<Record<number, ZoneSignatureHandle | null>>({});
 
   useEffect(() => {
@@ -106,6 +127,17 @@ export const SignatureStepScreen = forwardRef<
     };
   }, [etatDesLieuxId]);
 
+  // Une signature couvre exactement le texte affiché : dès qu'un signataire a
+  // coché sa case ou tracé, plus aucune saisie imprimée dans le document ne
+  // change (lieu, nouvelle adresse, observations, réserves, nom du bailleur).
+  // Les modifier passe par modifierLesTextes, qui efface toutes les signatures.
+  // Tout nouveau champ de cet écran suit la même règle : le test « aucun champ
+  // de saisie ne reste modifiable » (signature.spec.ts) échoue sinon.
+  const textesVerrouilles = cartes.some((c) => c.luEtApprouve || c.dataUrlPng !== null);
+  const classeTexte = `w-full rounded-md border px-3 py-2 text-base ${
+    textesVerrouilles ? "border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"
+  }`;
+
   const adresseSortie = resoudreNouvelleAdresseSortie(nouvelleAdresse, null);
   const estComplet =
     cartes.length > 0 &&
@@ -115,6 +147,12 @@ export const SignatureStepScreen = forwardRef<
   useEffect(() => {
     onPretChange(estComplet);
   }, [estComplet, onPretChange]);
+
+  useEffect(() => {
+    if (!textesVerrouilles) {
+      setConfirmationModification(false);
+    }
+  }, [textesVerrouilles]);
 
   // Jamais prêt tant que le chargement des signataires n'a pas réussi —
   // sans quoi le bouton "Terminer" resterait activé depuis l'étape
@@ -132,6 +170,8 @@ export const SignatureStepScreen = forwardRef<
       if (!bailleur?.dataUrlPng) {
         throw new Error("Signature du bailleur manquante.");
       }
+      const observationsBailleur = nettoyerTexteObservation(observations.observationsBailleur);
+      const reservesLocataire = nettoyerTexteObservation(observations.reservesLocataire);
       const input: SignerEtatDesLieuxInput = {
         bailleur: {
           nomAffiche: bailleur.nom.trim(),
@@ -146,11 +186,32 @@ export const SignatureStepScreen = forwardRef<
             imagePng: extraireBase64(c.dataUrlPng!)
           })),
         lieu: lieu.trim(),
-        ...(mode === "sortie" && adresseSortie !== null && { nouvelleAdresseLocataire: adresseSortie })
+        ...(mode === "sortie" && adresseSortie !== null && { nouvelleAdresseLocataire: adresseSortie }),
+        ...(observationsBailleur !== null &&
+          (mode === "entree"
+            ? { observationsBailleurEntree: observationsBailleur }
+            : { observationsBailleurSortie: observationsBailleur })),
+        ...(reservesLocataire !== null &&
+          (mode === "entree"
+            ? { reservesLocataireEntree: reservesLocataire }
+            : { reservesLocataireSortie: reservesLocataire }))
       };
       await onSubmit(input);
     }
   }));
+
+  function majObservations(patch: Partial<BrouillonObservations>): void {
+    const suivantes = { ...observations, ...patch };
+    setObservations(suivantes);
+    onBrouillonObservationsChange?.(suivantes);
+  }
+
+  function modifierLesTextes(): void {
+    for (const zone of Object.values(zonesRef.current)) {
+      zone?.clear();
+    }
+    setCartes((v) => v.map((c) => ({ ...c, luEtApprouve: false, dataUrlPng: null })));
+  }
 
   function majCarte(index: number, patch: Partial<CarteSignataire>): void {
     setCartes((v) => v.map((c, i) => (i === index ? { ...c, ...patch } : c)));
@@ -180,8 +241,9 @@ export const SignatureStepScreen = forwardRef<
         <input
           value={lieu}
           onChange={(e) => setLieu(e.target.value)}
+          readOnly={textesVerrouilles}
           placeholder="Ville"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+          className={classeTexte}
         />
       </div>
 
@@ -194,14 +256,85 @@ export const SignatureStepScreen = forwardRef<
             id="nouvelle-adresse"
             value={nouvelleAdresse}
             onChange={(e) => setNouvelleAdresse(e.target.value)}
+            readOnly={textesVerrouilles}
             maxLength={LONGUEUR_MAX_NOUVELLE_ADRESSE}
             rows={3}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+            className={classeTexte}
           />
           <p className="text-xs text-slate-500">
             Colocataires : le nom devant chaque adresse. Si elle n'est pas connue, indiquez « Non communiquée par le
             locataire ».
           </p>
+        </div>
+      )}
+
+      <div className="space-y-3 rounded-md bg-slate-50 p-3">
+        <div className="space-y-2">
+          <label htmlFor="observations-bailleur" className="block text-sm font-medium text-slate-700">
+            Observations du bailleur (facultatif)
+          </label>
+          <textarea
+            id="observations-bailleur"
+            value={observations.observationsBailleur}
+            onChange={(e) => majObservations({ observationsBailleur: e.target.value })}
+            readOnly={textesVerrouilles}
+            maxLength={LONGUEUR_MAX_OBSERVATIONS_GENERALES}
+            rows={4}
+            className={classeTexte}
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="reserves-locataire" className="block text-sm font-medium text-slate-700">
+            Réserves du locataire (facultatif)
+          </label>
+          <textarea
+            id="reserves-locataire"
+            value={observations.reservesLocataire}
+            onChange={(e) => majObservations({ reservesLocataire: e.target.value })}
+            readOnly={textesVerrouilles}
+            maxLength={LONGUEUR_MAX_OBSERVATIONS_GENERALES}
+            rows={4}
+            className={classeTexte}
+          />
+        </div>
+      </div>
+
+      {textesVerrouilles && (
+        <div className="space-y-2 rounded-md border border-slate-200 p-3">
+          {mode === "sortie" && adresseSortie === null && (
+            <p role="alert" className="text-sm text-red-700">
+              Nouvelle adresse manquante : modifiez les textes pour la saisir avant de signer.
+            </p>
+          )}
+          {confirmationModification ? (
+            <>
+              <p className="text-sm text-slate-700">Toutes les signatures déjà faites seront effacées et devront être refaites</p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmationModification(false)}
+                  className="flex-1 rounded-md border border-slate-300 py-2 text-sm font-medium text-slate-700"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={modifierLesTextes}
+                  className="flex-1 rounded-md bg-red-700 py-2 text-sm font-medium text-white"
+                >
+                  Effacer les signatures
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmationModification(true)}
+              className="text-sm text-indigo-700 underline underline-offset-2"
+            >
+              Modifier les textes
+            </button>
+          )}
         </div>
       )}
 
@@ -211,8 +344,9 @@ export const SignatureStepScreen = forwardRef<
             <input
               value={carte.nom}
               onChange={(e) => majCarte(index, { nom: e.target.value })}
+              readOnly={textesVerrouilles}
               placeholder="Nom du bailleur"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-base font-semibold"
+              className={`${classeTexte} font-semibold`}
             />
           ) : (
             <p className="text-base font-semibold text-slate-800">{carte.nom}</p>

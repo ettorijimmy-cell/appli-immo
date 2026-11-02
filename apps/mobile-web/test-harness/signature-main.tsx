@@ -39,6 +39,10 @@ function Harnais(): React.JSX.Element {
         bailleurImageLongueur: input.bailleur.imagePng.length,
         lieu: input.lieu,
         nouvelleAdresseLocataire: input.nouvelleAdresseLocataire,
+        observationsBailleurEntree: input.observationsBailleurEntree,
+        reservesLocataireEntree: input.reservesLocataireEntree,
+        observationsBailleurSortie: input.observationsBailleurSortie,
+        reservesLocataireSortie: input.reservesLocataireSortie,
         locataires: input.locataires.map((l) => ({ id: l.locataireId, lu: l.luEtApprouve, imgLen: l.imagePng.length }))
       })
     );

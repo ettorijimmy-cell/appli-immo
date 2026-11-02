@@ -35,7 +35,7 @@ import {
 } from "./pieces-config";
 import { PieceStepScreen } from "./PieceStepScreen";
 import { RecapStepScreen } from "./RecapStepScreen";
-import { SignatureStepScreen } from "./SignatureStepScreen";
+import { SignatureStepScreen, type BrouillonObservations } from "./SignatureStepScreen";
 import { construireEtapes, pieceTypePourEtape, type Etape } from "./stepper-config";
 
 // Le vrai outil de capture (parcours pas-à-pas, décisions actées) :
@@ -72,6 +72,7 @@ export function EtatDesLieuxStepper({
   // bouton d'une étape précédente/suivante sans rapport.
   const [etapeEstPrete, setEtapeEstPrete] = useState(true);
   const handleRef = useRef<EtapeHandle>(null);
+  const brouillonObservations = useRef<BrouillonObservations>({ observationsBailleur: "", reservesLocataire: "" });
 
   useEffect(() => {
     setEtapeEstPrete(true);
@@ -157,7 +158,7 @@ export function EtatDesLieuxStepper({
           </div>
         )}
 
-        {renderEtape(etape, donnees, mode, catalogue, handleRef, setEtapeEstPrete)}
+        {renderEtape(etape, donnees, mode, catalogue, handleRef, setEtapeEstPrete, brouillonObservations)}
 
         {error && (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
@@ -196,7 +197,8 @@ function renderEtape(
   mode: "entree" | "sortie",
   catalogue: ElementInventaireMeuble[],
   ref: React.RefObject<EtapeHandle>,
-  onEtapeEstPreteChange: (pret: boolean) => void
+  onEtapeEstPreteChange: (pret: boolean) => void,
+  brouillonObservations: React.MutableRefObject<BrouillonObservations>
 ): React.JSX.Element {
   const key = `${etape.type}-${etape.numero ?? ""}`;
 
@@ -353,6 +355,10 @@ function renderEtape(
           ref={ref}
           etatDesLieuxId={donnees.id}
           mode={mode}
+          brouillonObservations={brouillonObservations.current}
+          onBrouillonObservationsChange={(brouillon) => {
+            brouillonObservations.current = brouillon;
+          }}
           onPretChange={onEtapeEstPreteChange}
           onSubmit={(input) =>
             (mode === "entree" ? signerEntree(donnees.id, input) : signerSortie(donnees.id, input)).then(
