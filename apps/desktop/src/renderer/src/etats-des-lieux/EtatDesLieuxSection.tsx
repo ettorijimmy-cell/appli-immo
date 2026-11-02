@@ -324,6 +324,8 @@ export function EtatDesLieuxSection({
 
       <CompteursCard
         compteurs={etatDesLieux.compteurs}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
         onSave={async (payload) => {
           await submitCompteurs(etatDesLieux.id, payload);
           await refresh();

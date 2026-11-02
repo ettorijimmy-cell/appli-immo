@@ -1,4 +1,5 @@
-import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
+import type { CDPSession, Locator, Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // Vérifie SignatureStepScreen dans un vrai navigateur (Chromium, viewport
 // téléphone — voir playwright.config.ts, devices["iPhone 13"]) : jsdom ne

@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from "@playwright/test";
+import type { Locator } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // Vérifie le verrou des champs communs (Clés/Équipements divers/
 // Inventaire) dans un vrai navigateur — voir verrou-champs-main.tsx pour

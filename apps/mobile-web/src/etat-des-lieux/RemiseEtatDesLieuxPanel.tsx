@@ -49,7 +49,7 @@ function EditionAdresse({
   destinataire: DestinataireEnvoi;
   modification: boolean;
   onEnregistree: (email: string) => void;
-  onSaisieEnAttente: (enAttente: boolean) => void;
+  onSaisieEnAttente: (locataireId: string, enAttente: boolean) => void;
   onAnnuler?: () => void;
 }): React.JSX.Element {
   const [email, setEmail] = useState(destinataire.email ?? "");
@@ -58,12 +58,15 @@ function EditionAdresse({
   const [erreur, setErreur] = useState<string | null>(null);
 
   // Une saisie non enregistrée bloque l'envoi : sur place, on croirait à tort
-  // ce destinataire servi.
+  // ce destinataire servi. onSaisieEnAttente doit rester stable : une fonction
+  // recréée à chaque rendu relancerait cet effet, qui met à jour le parent, en
+  // boucle tant qu'une saisie est en attente.
+  const { locataireId } = destinataire;
   const enAttente = email.trim() !== (destinataire.email ?? "");
   useEffect(() => {
-    onSaisieEnAttente(enAttente);
-    return () => onSaisieEnAttente(false);
-  }, [enAttente, onSaisieEnAttente]);
+    onSaisieEnAttente(locataireId, enAttente);
+    return () => onSaisieEnAttente(locataireId, false);
+  }, [locataireId, enAttente, onSaisieEnAttente]);
 
   function verifier(): void {
     const adresse = email.trim();
@@ -417,7 +420,7 @@ export function RemiseEtatDesLieuxPanel({
                       destinataire={d}
                       modification={adresseEnEdition === d.locataireId}
                       onEnregistree={(email) => adresseEnregistree(d.locataireId, email)}
-                      onSaisieEnAttente={(enAttente) => signalerSaisie(d.locataireId, enAttente)}
+                      onSaisieEnAttente={signalerSaisie}
                       {...(adresseEnEdition === d.locataireId && { onAnnuler: () => setAdresseEnEdition(null) })}
                     />
                   </>

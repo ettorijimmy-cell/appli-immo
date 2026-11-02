@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // La vraie page dans un vrai navigateur (Chromium, largeur de téléphone) :
 // backend simulé par page.route(), à partir d'un état modifiable par test.

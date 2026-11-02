@@ -1,3 +1,4 @@
+import { CLASSIFICATION_COMPTEURS, champModifiable } from "core";
 import { useState } from "react";
 import type { Compteurs } from "./api";
 
@@ -48,9 +49,13 @@ function valeursInitiales(compteurs: Compteurs | null): ChampsCompteurs {
 // l'eau froide/chaude, jamais de numéro de compteur pour l'eau).
 export function CompteursCard({
   compteurs,
+  entreeSignee,
+  sortieSignee,
   onSave
 }: {
   compteurs: Compteurs | null;
+  entreeSignee: boolean;
+  sortieSignee: boolean;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState<ChampsCompteurs>(() => valeursInitiales(compteurs));
@@ -61,7 +66,20 @@ export function CompteursCard({
     setValeurs((v) => ({ ...v, [cle]: valeur }));
   }
 
+  // Même règle que le verrou d'écriture backend : les relevés d'entrée se
+  // figent à la signature d'entrée, ceux de sortie à la signature de sortie.
+  function champEditable(cle: keyof ChampsCompteurs): boolean {
+    return champModifiable({
+      nomChamp: cle,
+      classification: CLASSIFICATION_COMPTEURS,
+      ligneExistante: compteurs !== null,
+      entreeSignee,
+      sortieSignee
+    });
+  }
+
   function champ(cle: keyof ChampsCompteurs, label: string): React.JSX.Element {
+    const editable = champEditable(cle);
     return (
       <div className="space-y-0.5">
         <label htmlFor={`compteur-${cle}`} className="text-xs text-slate-500">
@@ -71,7 +89,8 @@ export function CompteursCard({
           id={`compteur-${cle}`}
           value={valeurs[cle]}
           onChange={(e) => setChamp(cle, e.target.value)}
-          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          readOnly={!editable}
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm read-only:bg-slate-50 read-only:text-slate-500"
         />
       </div>
     );
@@ -81,36 +100,40 @@ export function CompteursCard({
     setError(null);
     setIsSaving(true);
     try {
+      // Un champ figé n'est jamais envoyé, comme sur les pièces.
+      const soumises: Partial<ChampsCompteurs> = Object.fromEntries(
+        Object.entries(valeurs).filter(([cle]) => champEditable(cle as keyof ChampsCompteurs))
+      );
       await onSave({
         electricite: {
-          ...(valeurs.electriciteNumeroCompteurEntree && {
-            numeroCompteurEntree: valeurs.electriciteNumeroCompteurEntree
+          ...(soumises.electriciteNumeroCompteurEntree && {
+            numeroCompteurEntree: soumises.electriciteNumeroCompteurEntree
           }),
-          ...(valeurs.electriciteNumeroCompteurSortie && {
-            numeroCompteurSortie: valeurs.electriciteNumeroCompteurSortie
+          ...(soumises.electriciteNumeroCompteurSortie && {
+            numeroCompteurSortie: soumises.electriciteNumeroCompteurSortie
           }),
-          ...(valeurs.electriciteReleveHpEntree && { releveHpEntree: valeurs.electriciteReleveHpEntree }),
-          ...(valeurs.electriciteReleveHpSortie && { releveHpSortie: valeurs.electriciteReleveHpSortie }),
-          ...(valeurs.electriciteReleveHcEntree && { releveHcEntree: valeurs.electriciteReleveHcEntree }),
-          ...(valeurs.electriciteReleveHcSortie && { releveHcSortie: valeurs.electriciteReleveHcSortie }),
-          ...(valeurs.electriciteAncienOccupantEntree && {
-            ancienOccupantEntree: valeurs.electriciteAncienOccupantEntree
+          ...(soumises.electriciteReleveHpEntree && { releveHpEntree: soumises.electriciteReleveHpEntree }),
+          ...(soumises.electriciteReleveHpSortie && { releveHpSortie: soumises.electriciteReleveHpSortie }),
+          ...(soumises.electriciteReleveHcEntree && { releveHcEntree: soumises.electriciteReleveHcEntree }),
+          ...(soumises.electriciteReleveHcSortie && { releveHcSortie: soumises.electriciteReleveHcSortie }),
+          ...(soumises.electriciteAncienOccupantEntree && {
+            ancienOccupantEntree: soumises.electriciteAncienOccupantEntree
           }),
-          ...(valeurs.electriciteAncienOccupantSortie && {
-            ancienOccupantSortie: valeurs.electriciteAncienOccupantSortie
+          ...(soumises.electriciteAncienOccupantSortie && {
+            ancienOccupantSortie: soumises.electriciteAncienOccupantSortie
           })
         },
         gaz: {
-          ...(valeurs.gazNumeroCompteurEntree && { numeroCompteurEntree: valeurs.gazNumeroCompteurEntree }),
-          ...(valeurs.gazNumeroCompteurSortie && { numeroCompteurSortie: valeurs.gazNumeroCompteurSortie }),
-          ...(valeurs.gazReleveEntree && { releveEntree: valeurs.gazReleveEntree }),
-          ...(valeurs.gazReleveSortie && { releveSortie: valeurs.gazReleveSortie })
+          ...(soumises.gazNumeroCompteurEntree && { numeroCompteurEntree: soumises.gazNumeroCompteurEntree }),
+          ...(soumises.gazNumeroCompteurSortie && { numeroCompteurSortie: soumises.gazNumeroCompteurSortie }),
+          ...(soumises.gazReleveEntree && { releveEntree: soumises.gazReleveEntree }),
+          ...(soumises.gazReleveSortie && { releveSortie: soumises.gazReleveSortie })
         },
         eau: {
-          ...(valeurs.eauReleveFroideEntree && { releveFroideEntree: valeurs.eauReleveFroideEntree }),
-          ...(valeurs.eauReleveFroideSortie && { releveFroideSortie: valeurs.eauReleveFroideSortie }),
-          ...(valeurs.eauReleveChaudeEntree && { releveChaudeEntree: valeurs.eauReleveChaudeEntree }),
-          ...(valeurs.eauReleveChaudeSortie && { releveChaudeSortie: valeurs.eauReleveChaudeSortie })
+          ...(soumises.eauReleveFroideEntree && { releveFroideEntree: soumises.eauReleveFroideEntree }),
+          ...(soumises.eauReleveFroideSortie && { releveFroideSortie: soumises.eauReleveFroideSortie }),
+          ...(soumises.eauReleveChaudeEntree && { releveChaudeEntree: soumises.eauReleveChaudeEntree }),
+          ...(soumises.eauReleveChaudeSortie && { releveChaudeSortie: soumises.eauReleveChaudeSortie })
         }
       });
     } catch {
@@ -127,7 +150,7 @@ export function CompteursCard({
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={isSaving}
+          disabled={isSaving || sortieSignee}
           className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
         >
           {isSaving ? "Enregistrement…" : "Enregistrer"}
