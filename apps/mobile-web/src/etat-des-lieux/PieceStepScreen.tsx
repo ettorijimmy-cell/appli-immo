@@ -1,9 +1,8 @@
-import { LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import { LONGUEUR_MAX_OBSERVATION_SORTIE, observationSortieASoumettre } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { PieceRow } from "../api/etats-des-lieux";
 import type { EtatElement } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
-import { observationSortieASoumettre } from "./observation-sortie";
 import type { ElementDef } from "./pieces-config";
 import { BoutonsEtatPiece, ChampReplie, ReferenceLectureSeule } from "./ui";
 

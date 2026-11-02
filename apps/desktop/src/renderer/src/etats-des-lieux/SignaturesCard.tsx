@@ -51,14 +51,27 @@ function SignatureImage({ documentId, nomAffiche }: { documentId: string; nomAff
   );
 }
 
+function TexteSigne({ libelle, texte }: { libelle: string; texte: string | null }): React.JSX.Element {
+  return (
+    <div className="text-sm">
+      <p className="text-xs font-medium text-slate-500">{libelle}</p>
+      <p className={`whitespace-pre-wrap break-words ${texte ? "text-slate-700" : "text-slate-400"}`}>{texte ?? "Aucune"}</p>
+    </div>
+  );
+}
+
 function PhaseSignatures({
   phase,
   lieu,
-  signataires
+  signataires,
+  observationsBailleur,
+  reservesLocataire
 }: {
   phase: "entree" | "sortie";
   lieu: string | null;
   signataires: SignaturePosee[];
+  observationsBailleur: string | null;
+  reservesLocataire: string | null;
 }): React.JSX.Element {
   const dateSignature = signataires[0]?.signeLe ? new Date(signataires[0].signeLe).toLocaleDateString("fr-FR") : "—";
   const tries = [...signataires].sort((a, b) => (a.role === b.role ? 0 : a.role === "bailleur" ? -1 : 1));
@@ -89,6 +102,10 @@ function PhaseSignatures({
           </div>
         ))}
       </div>
+      <div className="mt-3 space-y-2 border-t border-slate-100 pt-2">
+        <TexteSigne libelle="Observations du bailleur" texte={observationsBailleur} />
+        <TexteSigne libelle="Réserves du locataire" texte={reservesLocataire} />
+      </div>
     </div>
   );
 }
@@ -97,19 +114,28 @@ function PhaseSignatures({
 // rien tant qu'aucune phase n'est signée (acte posé exclusivement depuis
 // le parcours mobile, voir SignatureStepScreen côté mobile-web). Lecture
 // seule : aucune action de signature n'est jamais possible depuis le
-// desktop.
+// desktop, et les observations et réserves générales, posées à la signature
+// dans la même transaction, ne se saisissent pas ici.
 export function SignaturesCard({
   etatDesLieuxId,
   entreeSigneeParTous,
   sortieSigneeParTous,
   lieuEntree,
-  lieuSortie
+  lieuSortie,
+  observationsBailleurEntree,
+  reservesLocataireEntree,
+  observationsBailleurSortie,
+  reservesLocataireSortie
 }: {
   etatDesLieuxId: string;
   entreeSigneeParTous: boolean;
   sortieSigneeParTous: boolean;
   lieuEntree: string | null;
   lieuSortie: string | null;
+  observationsBailleurEntree: string | null;
+  reservesLocataireEntree: string | null;
+  observationsBailleurSortie: string | null;
+  reservesLocataireSortie: string | null;
 }): React.JSX.Element | null {
   const [signatures, setSignatures] = useState<SignaturePosee[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -146,10 +172,22 @@ export function SignaturesCard({
       )}
       <div className="space-y-3">
         {entreeSigneeParTous && (
-          <PhaseSignatures phase="entree" lieu={lieuEntree} signataires={signatures.filter((s) => s.phase === "entree")} />
+          <PhaseSignatures
+            phase="entree"
+            lieu={lieuEntree}
+            signataires={signatures.filter((s) => s.phase === "entree")}
+            observationsBailleur={observationsBailleurEntree}
+            reservesLocataire={reservesLocataireEntree}
+          />
         )}
         {sortieSigneeParTous && (
-          <PhaseSignatures phase="sortie" lieu={lieuSortie} signataires={signatures.filter((s) => s.phase === "sortie")} />
+          <PhaseSignatures
+            phase="sortie"
+            lieu={lieuSortie}
+            signataires={signatures.filter((s) => s.phase === "sortie")}
+            observationsBailleur={observationsBailleurSortie}
+            reservesLocataire={reservesLocataireSortie}
+          />
         )}
       </div>
     </div>

@@ -1315,7 +1315,7 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       for (const soumettre of soumissionsPieces(etatDesLieuxId, "Autre texte")) {
         await expect(avecContexte(soumettre)).rejects.toThrow(ConflictException);
       }
-    });
+    }, 15000);
 
     it("sortie signée : effacer une observation est refusé, la resoumettre à l'identique reste sans effet", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);

@@ -1,8 +1,9 @@
-import { champModifiable, CHAMPS_IDENTITE_CLES, CLASSIFICATION_CLES } from "core";
+import { champModifiable, CHAMPS_IDENTITE_CLES, CLASSIFICATION_CLES, observationSortieASoumettre } from "core";
 import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { LigneCle, LigneCleInput, TypeCle } from "./api";
+import { CommentaireSortieCell } from "./CommentaireSortieCell";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
   { valeur: "immeuble", label: "Clés d'immeuble" },
@@ -57,6 +58,7 @@ export function ClesSection({
             <th className="py-1 pr-2 font-medium">Nombre entrée</th>
             <th className="py-1 pr-2 font-medium">Nombre sortie</th>
             <th className="py-1 pr-2 font-medium">Commentaire</th>
+            <th className="py-1 pr-2 font-medium">Commentaire de sortie</th>
             <th className="py-1 font-medium" />
           </tr>
         </thead>
@@ -95,6 +97,7 @@ export function ClesSection({
               <td className="py-1 pr-2">{ligne.nombreEntree ?? "—"}</td>
               <td className="py-1 pr-2">{ligne.nombreSortie ?? "—"}</td>
               <td className="py-1 pr-2">{ligne.commentaire ?? "—"}</td>
+              <td className="py-1 pr-2 whitespace-pre-wrap">{ligne.commentaireSortie ?? "—"}</td>
               <td className="py-1" />
             </tr>
           ))}
@@ -128,6 +131,7 @@ function LigneCleRow({
   const [nombreEntree, setNombreEntree] = useState(ligne?.nombreEntree?.toString() ?? "");
   const [nombreSortie, setNombreSortie] = useState(ligne?.nombreSortie?.toString() ?? "");
   const [commentaire, setCommentaire] = useState(ligne?.commentaire ?? "");
+  const [commentaireSortie, setCommentaireSortie] = useState(ligne?.commentaireSortie ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,19 +141,31 @@ function LigneCleRow({
   const nombreEntreeEditable = champModifiable({ ...champParams, nomChamp: "nombreEntree", classification: CLASSIFICATION_CLES });
   const nombreSortieEditable = champModifiable({ ...champParams, nomChamp: "nombreSortie", classification: CLASSIFICATION_CLES });
   const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire", classification: CLASSIFICATION_CLES });
+  const commentaireSortieEditable = champModifiable({
+    ...champParams,
+    nomChamp: "commentaireSortie",
+    classification: CLASSIFICATION_CLES
+  });
 
   async function handleSave(): Promise<void> {
     setError(null);
     setIsSaving(true);
     try {
+      const commentaireSortieSoumis = commentaireSortieEditable
+        ? observationSortieASoumettre(commentaireSortie, ligne?.commentaireSortie)
+        : undefined;
       await onSave({
         ...(ligne?.id && { id: ligne.id }),
         typeCle,
         ...(avecLibelle && { libelleAutre }),
         ...(nombreEntree !== "" && { nombreEntree: Number(nombreEntree) }),
         ...(nombreSortie !== "" && { nombreSortie: Number(nombreSortie) }),
-        ...(commentaire && { commentaire })
+        ...(commentaire && { commentaire }),
+        ...(commentaireSortieSoumis !== undefined && { commentaireSortie: commentaireSortieSoumis })
       });
+      if (commentaireSortieSoumis !== undefined) {
+        setCommentaireSortie(commentaireSortieSoumis ?? "");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cette clé");
     } finally {
@@ -212,11 +228,17 @@ function LigneCleRow({
           }`}
         />
       </td>
+      <CommentaireSortieCell
+        nomLigne={label}
+        value={commentaireSortie}
+        onChange={setCommentaireSortie}
+        editable={commentaireSortieEditable}
+      />
       <td className="py-1 text-right whitespace-nowrap">
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={isSaving}
+          disabled={isSaving || sortieSignee}
           className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
         >
           {isSaving ? "…" : "Enregistrer"}

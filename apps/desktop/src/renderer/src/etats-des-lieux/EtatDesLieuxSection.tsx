@@ -200,6 +200,10 @@ export function EtatDesLieuxSection({
         sortieSigneeParTous={sortieSignee}
         lieuEntree={etatDesLieux.lieuEntree}
         lieuSortie={etatDesLieux.lieuSortie}
+        observationsBailleurEntree={etatDesLieux.observationsBailleurEntree}
+        reservesLocataireEntree={etatDesLieux.reservesLocataireEntree}
+        observationsBailleurSortie={etatDesLieux.observationsBailleurSortie}
+        reservesLocataireSortie={etatDesLieux.reservesLocataireSortie}
       />
 
       <DocumentsFigesCard

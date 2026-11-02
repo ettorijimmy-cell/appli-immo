@@ -1,4 +1,9 @@
-import { champModifiable, CLASSIFICATION_INVENTAIRE, LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import {
+  champModifiable,
+  CLASSIFICATION_INVENTAIRE,
+  LONGUEUR_MAX_OBSERVATION_SORTIE,
+  observationSortieASoumettre
+} from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type {
   CategorieInventaire,
@@ -8,7 +13,6 @@ import type {
   LigneInventaireInput
 } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
-import { observationSortieASoumettre } from "./observation-sortie";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
 
 const LABEL_CATEGORIE: Record<CategorieInventaire, string> = {

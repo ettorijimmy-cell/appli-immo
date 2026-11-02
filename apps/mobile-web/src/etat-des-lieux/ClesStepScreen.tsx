@@ -1,8 +1,13 @@
-import { CHAMPS_IDENTITE_CLES, champModifiable, CLASSIFICATION_CLES, LONGUEUR_MAX_OBSERVATION_SORTIE } from "core";
+import {
+  CHAMPS_IDENTITE_CLES,
+  champModifiable,
+  CLASSIFICATION_CLES,
+  LONGUEUR_MAX_OBSERVATION_SORTIE,
+  observationSortieASoumettre
+} from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { LigneCle, LigneCleInput, TypeCle } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
-import { observationSortieASoumettre } from "./observation-sortie";
 import { ChampReplie, ReferenceLectureSeule } from "./ui";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [

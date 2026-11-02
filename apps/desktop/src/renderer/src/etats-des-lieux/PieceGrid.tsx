@@ -1,5 +1,10 @@
-import { champModifiable, type ClassificationChamp } from "core";
-import { useEffect, useState } from "react";
+import {
+  champModifiable,
+  LONGUEUR_MAX_OBSERVATION_SORTIE,
+  observationSortieASoumettre,
+  type ClassificationChamp
+} from "core";
+import { useEffect, useId, useState } from "react";
 import type { DocumentMetier } from "../documents/api";
 import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
@@ -191,11 +196,14 @@ export function PieceCard({
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
+  const [observationsSortie, setObservationsSortie] = useState(row?.observationsSortie ?? "");
+  const idObservationsSortie = useId();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setValeurs(construireValeursInitiales(elements, row));
+    setObservationsSortie(row?.observationsSortie ?? "");
   }, [row, elements]);
 
   function setChamp(prefix: string, champ: keyof ChampsElement, valeur: string): void {
@@ -217,6 +225,7 @@ export function PieceCard({
   function champEditable(nomChamp: string): boolean {
     return champModifiable({ nomChamp, classification, ligneExistante: row !== null, entreeSignee, sortieSignee });
   }
+  const observationsSortieEditable = champEditable("observationsSortie");
 
   // Bug remonté en test manuel (revue 2026-10-26) : envoyer `description`
   // systématiquement (même vide) faisait échouer à tort toute soumission
@@ -253,6 +262,12 @@ export function PieceCard({
         if (Object.keys(elementPayload).length > 0) {
           payload[el.prefix] = elementPayload;
         }
+      }
+      const observations = observationsSortieEditable
+        ? observationSortieASoumettre(observationsSortie, row?.observationsSortie)
+        : undefined;
+      if (observations !== undefined) {
+        payload.observationsSortie = observations;
       }
       await onSave(payload);
     } catch (err) {
@@ -352,6 +367,23 @@ export function PieceCard({
           })}
         </tbody>
       </table>
+
+      <div className="mt-3 space-y-1">
+        <label htmlFor={idObservationsSortie} className="text-sm font-medium text-slate-700">
+          Observations de sortie
+        </label>
+        <textarea
+          id={idObservationsSortie}
+          value={observationsSortie}
+          onChange={(e) => setObservationsSortie(e.target.value)}
+          readOnly={!observationsSortieEditable}
+          maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
+          rows={2}
+          className={`w-full rounded border px-2 py-1 text-sm ${
+            observationsSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
+          }`}
+        />
+      </div>
     </div>
   );
 }

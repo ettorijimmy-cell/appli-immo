@@ -2,12 +2,12 @@ import {
   CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
   champModifiable,
   CLASSIFICATION_EQUIPEMENTS_DIVERS,
-  LONGUEUR_MAX_OBSERVATION_SORTIE
+  LONGUEUR_MAX_OBSERVATION_SORTIE,
+  observationSortieASoumettre
 } from "core";
 import { forwardRef, useImperativeHandle, useState } from "react";
 import type { EtatInventaire, LigneEquipementDivers, LigneEquipementDiversInput } from "../api/etats-des-lieux";
 import type { EtapeHandle } from "./etape-handle";
-import { observationSortieASoumettre } from "./observation-sortie";
 import { BoutonsEtatInventaire, ChampReplie, ReferenceLectureSeule } from "./ui";
 
 interface LigneEditable {

@@ -1,8 +1,14 @@
-import { champModifiable, CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS, CLASSIFICATION_EQUIPEMENTS_DIVERS } from "core";
+import {
+  champModifiable,
+  CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
+  CLASSIFICATION_EQUIPEMENTS_DIVERS,
+  observationSortieASoumettre
+} from "core";
 import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { EtatInventaire, LigneEquipementDivers, LigneEquipementDiversInput } from "./api";
+import { CommentaireSortieCell } from "./CommentaireSortieCell";
 
 const ETATS_INVENTAIRE: { valeur: EtatInventaire; label: string }[] = [
   { valeur: "bon", label: "Bon" },
@@ -73,6 +79,7 @@ export function EquipementsDiversSection({
             <th className="py-1 pr-2 font-medium">Nb sortie</th>
             <th className="py-1 pr-2 font-medium">État sortie</th>
             <th className="py-1 pr-2 font-medium">Commentaire</th>
+            <th className="py-1 pr-2 font-medium">Commentaire de sortie</th>
             <th className="py-1 font-medium" />
           </tr>
         </thead>
@@ -98,6 +105,7 @@ export function EquipementsDiversSection({
               <td className="py-1 pr-2">{ligne.nombreSortie ?? "—"}</td>
               <td className="py-1 pr-2">{ligne.etatSortie ?? "—"}</td>
               <td className="py-1 pr-2">{ligne.commentaire ?? "—"}</td>
+              <td className="py-1 pr-2 whitespace-pre-wrap">{ligne.commentaireSortie ?? "—"}</td>
               <td className="py-1" />
             </tr>
           ))}
@@ -127,6 +135,7 @@ function LigneEquipementRow({
   const [nombreSortie, setNombreSortie] = useState(ligne.nombreSortie?.toString() ?? "");
   const [etatSortie, setEtatSortie] = useState(ligne.etatSortie ?? "");
   const [commentaire, setCommentaire] = useState(ligne.commentaire ?? "");
+  const [commentaireSortie, setCommentaireSortie] = useState(ligne.commentaireSortie ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,11 +152,15 @@ function LigneEquipementRow({
   const nombreSortieEditable = champModifiable({ ...champParams, nomChamp: "nombreSortie" });
   const etatSortieEditable = champModifiable({ ...champParams, nomChamp: "etatSortie" });
   const commentaireEditable = champModifiable({ ...champParams, nomChamp: "commentaire" });
+  const commentaireSortieEditable = champModifiable({ ...champParams, nomChamp: "commentaireSortie" });
 
   async function handleSave(): Promise<void> {
     setError(null);
     setIsSaving(true);
     try {
+      const commentaireSortieSoumis = commentaireSortieEditable
+        ? observationSortieASoumettre(commentaireSortie, ligne.commentaireSortie)
+        : undefined;
       await onSave({
         id: ligne.id,
         libelle,
@@ -155,8 +168,12 @@ function LigneEquipementRow({
         ...(etatEntree && { etatEntree: etatEntree as EtatInventaire }),
         ...(nombreSortie !== "" && { nombreSortie: Number(nombreSortie) }),
         ...(etatSortie && { etatSortie: etatSortie as EtatInventaire }),
-        ...(commentaire && { commentaire })
+        ...(commentaire && { commentaire }),
+        ...(commentaireSortieSoumis !== undefined && { commentaireSortie: commentaireSortieSoumis })
       });
+      if (commentaireSortieSoumis !== undefined) {
+        setCommentaireSortie(commentaireSortieSoumis ?? "");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer cet équipement");
     } finally {
@@ -221,11 +238,17 @@ function LigneEquipementRow({
           }`}
         />
       </td>
+      <CommentaireSortieCell
+        nomLigne={ligne.libelle}
+        value={commentaireSortie}
+        onChange={setCommentaireSortie}
+        editable={commentaireSortieEditable}
+      />
       <td className="py-1 text-right whitespace-nowrap">
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={isSaving || !libelle.trim()}
+          disabled={isSaving || sortieSignee || !libelle.trim()}
           className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
         >
           {isSaving ? "…" : "Enregistrer"}

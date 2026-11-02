@@ -16,6 +16,10 @@ export interface EtatDesLieux {
   lieuEntree: string | null;
   lieuSortie: string | null;
   nouvelleAdresseLocataire: string | null;
+  observationsBailleurEntree: string | null;
+  reservesLocataireEntree: string | null;
+  observationsBailleurSortie: string | null;
+  reservesLocataireSortie: string | null;
   statut: StatutEtatDesLieux;
   archivedAt: string | null;
   entreeSigneeParTous: boolean;
@@ -47,6 +51,7 @@ export type PieceRow = {
   etatDesLieuxId: string;
   numero?: number;
   libelle?: string | null;
+  observationsSortie?: string | null;
   prisesNombre?: number | null;
   electromenagerDescription?: string | null;
 } & Record<string, string | number | null | undefined>;
@@ -80,6 +85,7 @@ export interface LigneCle {
   nombreEntree: number | null;
   nombreSortie: number | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
   // Posé par le serveur à l'insertion : une ligne ajoutée après la
   // signature d'entrée reste retirable jusqu'à la signature de sortie,
@@ -96,6 +102,7 @@ export interface LigneEquipementDivers {
   nombreSortie: number | null;
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
   ajouteeApresSignatureEntree: boolean;
 }
@@ -116,6 +123,7 @@ export interface LigneInventaire {
   nombreSortie: number | null;
   etatSortie: EtatInventaire | null;
   commentaire: string | null;
+  commentaireSortie: string | null;
   archivedAt: string | null;
   ajouteeApresSignatureEntree: boolean;
   elementCode: string;
@@ -198,6 +206,7 @@ export interface LigneCleInput {
   nombreEntree?: number;
   nombreSortie?: number;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export interface LigneEquipementDiversInput {
@@ -208,6 +217,7 @@ export interface LigneEquipementDiversInput {
   nombreSortie?: number;
   etatSortie?: EtatInventaire;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export interface LigneInventaireInput {
@@ -217,6 +227,7 @@ export interface LigneInventaireInput {
   nombreSortie?: number;
   etatSortie?: EtatInventaire;
   commentaire?: string;
+  commentaireSortie?: string | null;
 }
 
 export function submitCles(

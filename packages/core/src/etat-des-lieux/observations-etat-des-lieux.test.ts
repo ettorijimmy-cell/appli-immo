@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nettoyerTexteObservation } from "./observations-etat-des-lieux";
+import { nettoyerTexteObservation, observationSortieASoumettre } from "./observations-etat-des-lieux";
 
 describe("nettoyerTexteObservation", () => {
   it("retire les espaces autour, garde le texte tel quel", () => {
@@ -22,5 +22,20 @@ describe("nettoyerTexteObservation", () => {
     expect(nettoyerTexteObservation("")).toBeNull();
     expect(nettoyerTexteObservation("  \n\t ")).toBeNull();
     expect(nettoyerTexteObservation("\u0000")).toBeNull();
+  });
+});
+
+describe("observationSortieASoumettre", () => {
+  it("ne soumet rien quand rien n'est saisi ni enregistré", () => {
+    expect(observationSortieASoumettre("  ", null)).toBeUndefined();
+    expect(observationSortieASoumettre("", undefined)).toBeUndefined();
+  });
+
+  it("soumet le texte nettoyé", () => {
+    expect(observationSortieASoumettre("  Trace au mur \r\nà droite ", null)).toBe("Trace au mur \nà droite");
+  });
+
+  it("soumet null pour effacer un texte déjà enregistré", () => {
+    expect(observationSortieASoumettre(" ", "Ancien texte")).toBeNull();
   });
 });
