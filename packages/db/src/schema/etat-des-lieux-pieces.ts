@@ -1,4 +1,4 @@
-import { integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { auditColumns } from "./columns.helpers";
 import { etatDesLieuxElementEtatEnum, etatsDesLieux } from "./etats-des-lieux";
 
@@ -277,7 +277,11 @@ export const etatDesLieuxPiecesAutre = pgTable(
     prisesEtatEntree: etatDesLieuxElementEtatEnum("prises_etat_entree"),
     prisesEtatSortie: etatDesLieuxElementEtatEnum("prises_etat_sortie"),
     prisesNombre: integer("prises_nombre"),
-    observationsSortie: text("observations_sortie")
+    observationsSortie: text("observations_sortie"),
+    // Même principe que etat_des_lieux_cles.ajoutee_apres_signature_entree :
+    // posée à l'écriture, jamais déduite. Une pièce absente à l'entrée ne se
+    // distingue pas autrement d'une pièce laissée vide.
+    ajouteeApresSignatureEntree: boolean("ajoutee_apres_signature_entree").notNull().default(false)
   },
   (table) => [uniqueIndex("etat_des_lieux_pieces_autre_numero_unique").on(table.etatDesLieuxId, table.numero)]
 );

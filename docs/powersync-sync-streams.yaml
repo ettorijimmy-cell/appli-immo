@@ -60,6 +60,8 @@
 #       - etat_des_lieux_piece_entree, _piece_sejour, _piece_cuisine,
 #         _pieces_chambre, _pieces_salle_de_bain, _pieces_wc, _pieces_autre :
 #         observations_sortie.
+#       - etat_des_lieux_pieces_autre : aussi ajoutee_apres_signature_entree
+#         (migration 0072, à appliquer avant ce redéploiement).
 #       - etat_des_lieux_cles, etat_des_lieux_equipements_divers,
 #         etat_des_lieux_inventaire : commentaire_sortie.
 #
@@ -1003,7 +1005,7 @@ streams:
       vitrage_volets_etat_sortie, plafond_description, plafond_etat_entree,
       plafond_etat_sortie, eclairage_description, eclairage_etat_entree,
       eclairage_etat_sortie, prises_description, prises_etat_entree,
-      prises_etat_sortie, prises_nombre, observations_sortie, archived_at, version, updated_at FROM etat_des_lieux_pieces_autre
+      prises_etat_sortie, prises_nombre, observations_sortie, ajoutee_apres_signature_entree, archived_at, version, updated_at FROM etat_des_lieux_pieces_autre
       WHERE etat_des_lieux_pieces_autre.etat_des_lieux_id IN (
         SELECT id FROM etats_des_lieux WHERE etats_des_lieux.bail_id IN (
           SELECT id FROM baux WHERE baux.appartement_id IN (

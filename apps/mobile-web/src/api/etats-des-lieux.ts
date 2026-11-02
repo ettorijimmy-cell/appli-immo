@@ -32,7 +32,8 @@ export type PieceRow = {
   libelle?: string | null;
   prisesNombre?: number | null;
   electromenagerDescription?: string | null;
-} & Record<string, string | number | null | undefined>;
+  ajouteeApresSignatureEntree?: boolean;
+} & Record<string, string | number | boolean | null | undefined>;
 
 export interface Compteurs {
   id: string;

@@ -23,7 +23,8 @@ interface Destinataire {
 
 interface EtatSimule {
   autrePiece1: string | null;
-  refusPieceAutre: string | null;
+  appelsPieceAutre: Record<string, unknown>[];
+  autresPieces: Record<string, unknown>[];
   statut: "non_commence" | "entree_terminee" | "complet";
   entreeSignee: boolean;
   sortieSignee: boolean;
@@ -60,7 +61,8 @@ function resultat(locataireId: string, statut: string, surcharge: Record<string,
 function etatInitial(surcharge: Partial<EtatSimule> = {}): EtatSimule {
   return {
     autrePiece1: null,
-    refusPieceAutre: null,
+    appelsPieceAutre: [],
+    autresPieces: [],
     statut: "entree_terminee",
     entreeSignee: true,
     sortieSignee: false,
@@ -101,7 +103,7 @@ function etatDesLieuxComplet(etat: EtatSimule) {
     chambres: [],
     sallesDeBain: [],
     wc: [],
-    autres: [],
+    autres: etat.autresPieces,
     compteurs: null,
     cles: [],
     equipementsDivers: [],
@@ -127,8 +129,9 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
     if (pathname === "/etats-des-lieux" && search.includes("bailId")) {
       return etat.rechargementEnPanne ? json(route, { message: "Panne" }, 500) : json(route, etatDesLieuxComplet(etat));
     }
-    if (pathname.endsWith("/piece-autre") && etat.refusPieceAutre) {
-      return json(route, { message: etat.refusPieceAutre }, 409);
+    if (pathname.endsWith("/piece-autre")) {
+      etat.appelsPieceAutre.push(requete.postDataJSON() as Record<string, unknown>);
+      return json(route, {});
     }
     if (pathname.endsWith("/signataires")) {
       return json(route, {
@@ -741,22 +744,60 @@ test("réponse perdue et réseau encore en panne : Réessayer reçoit un 409, la
   expect(etat.appelsSignature).toBe(2);
 });
 
-test("pièce ajoutée après l'entrée : message en clair, mais l'étape ne permet pas d'avancer", async ({ page }) => {
-  const MESSAGE = "Cette pièce a été ajoutée après l'état des lieux d'entrée : ses informations ne peuvent pas être modifiées ici.";
-  await simulerBackend(page, etatInitial({ autrePiece1: "Cellier", refusPieceAutre: MESSAGE }));
+test("pièce ajoutée après l'entrée : mention affichée, état de sortie saisi, parcours mené jusqu'à la signature", async ({ page }) => {
+  const etat = etatInitial({ autrePiece1: "Cellier" });
+  await simulerBackend(page, etat);
   await page.goto("/test-harness/remise.html");
-  const bouton = page.getByRole("button", { name: "Suivant" });
-  for (const titre of [/Entrée 1\//, /Séjour 2\//, /Cuisine 3\//]) {
-    await expect(page.getByText(titre)).toBeVisible();
+  const bouton = page.getByRole("button", { name: /^(Suivant|Terminer)$/ });
+
+  for (let i = 0; i < 12; i++) {
+    await expect(bouton).toBeVisible();
+    if (await page.getByText(/^Cellier \d+\//).isVisible()) {
+      break;
+    }
     await bouton.click();
   }
-  await expect(page.getByText(/Cellier 4\//)).toBeVisible();
+  await expect(page.getByText("Pièce ajoutée après l'état des lieux d'entrée.")).toBeVisible();
+  await page.getByRole("button", { name: "B", exact: true }).first().click();
+  await bouton.click();
+  await expect(page.getByText(/^Cellier \d+\//)).toHaveCount(0);
 
+  expect(etat.appelsPieceAutre).toHaveLength(1);
+  const envoye = etat.appelsPieceAutre[0] as { numero: number; libelle: string; mur: Record<string, unknown> };
+  expect(envoye).toMatchObject({ numero: 1, libelle: "Cellier", mur: { etatSortie: "B" } });
+  expect(JSON.stringify(envoye)).not.toContain("etatEntree");
+  expect(JSON.stringify(envoye)).not.toContain("description");
+
+  for (let i = 0; i < 10; i++) {
+    await expect(bouton).toBeVisible();
+    if ((await bouton.textContent()) === "Terminer") {
+      break;
+    }
+    await bouton.click();
+  }
+  await expect(page.getByText("Signature de la sortie")).toBeVisible();
+  await signer(page);
   await bouton.click();
 
-  await expect(page.getByRole("alert")).toHaveText(MESSAGE);
-  await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
-  await expect(page.getByText(/Cellier 4\//)).toBeVisible();
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+  expect(etat.appelsSignature).toBe(1);
+});
+
+test("pièce présente à l'entrée : aucune mention à la sortie", async ({ page }) => {
+  const etat = etatInitial({ autrePiece1: "Cellier", autresPieces: [{ numero: 1, libelle: "Cellier", ajouteeApresSignatureEntree: false }] });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+  const bouton = page.getByRole("button", { name: "Suivant" });
+
+  for (let i = 0; i < 12; i++) {
+    await expect(bouton).toBeVisible();
+    if (await page.getByText(/^Cellier \d+\//).isVisible()) {
+      break;
+    }
+    await bouton.click();
+  }
+
+  await expect(page.getByText("Pièce ajoutée après l'état des lieux d'entrée.")).toHaveCount(0);
 });
 
 test("signature refusée pour de vrai : l'erreur reste affichée, pas de panneau", async ({ page }) => {

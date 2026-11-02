@@ -1397,18 +1397,66 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       ).rejects.toThrow(ConflictException);
     });
 
-    it("autre pièce absente à l'entrée : refus en français clair, sans nom de champ technique", async () => {
+    it("autre pièce absente à l'entrée : créée avec son libellé et ses champs de sortie, marquée", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await signerEntree(etatDesLieuxId, titulaire.id);
 
-      const refus = avecContexte(() =>
-        etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier", mur: { etatSortie: "B" } })
+      const piece = await avecContexte(() =>
+        etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, {
+          numero: 1,
+          libelle: "Cellier",
+          mur: { etatSortie: "B" },
+          observationsSortie: "Pièce créée pendant le bail"
+        })
       );
 
-      await expect(refus).rejects.toThrow(ConflictException);
-      await expect(refus).rejects.toThrow(
-        "Cette pièce a été ajoutée après l'état des lieux d'entrée : ses informations ne peuvent pas être modifiées ici."
+      expect(piece).toMatchObject({
+        libelle: "Cellier",
+        murEtatSortie: "B",
+        observationsSortie: "Pièce créée pendant le bail",
+        ajouteeApresSignatureEntree: true
+      });
+      expect(piece.murEtatEntree).toBeNull();
+      expect(piece.murDescription).toBeNull();
+    });
+
+    it.each([
+      ["état d'entrée", { mur: { etatEntree: "B" as const } }],
+      ["description", { mur: { description: "Peinture" } }],
+      ["nombre de prises", { prises: { nombre: 2 } }]
+    ])("autre pièce absente à l'entrée : %s refusé", async (_nom, champs) => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier", ...champs }))
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("autre pièce ajoutée : la sortie reste modifiable, son libellé est figé", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier" }));
+
+      const piece = await avecContexte(() =>
+        etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier", sol: { etatSortie: "M" } })
       );
+      expect(piece.solEtatSortie).toBe("M");
+      expect(piece.ajouteeApresSignatureEntree).toBe(true);
+
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Remise" }))
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("autre pièce : aucun ajout une fois la sortie signée", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(userId);
+      await signerEntree(etatDesLieuxId, titulaire.id);
+      await signerSortie(etatDesLieuxId, titulaire.id);
+
+      await expect(
+        avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Cellier" }))
+      ).rejects.toThrow("aucune nouvelle pièce ne peut être ajoutée");
     });
 
     it("autre pièce présente à l'entrée : la sortie reste enregistrable", async () => {
@@ -1431,6 +1479,7 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       );
 
       expect(piece.libelle).toBe("Dressing");
+      expect(piece.ajouteeApresSignatureEntree).toBe(false);
     });
 
     it("une clé ajoutée après l'entrée peut porter un commentaire de sortie", async () => {

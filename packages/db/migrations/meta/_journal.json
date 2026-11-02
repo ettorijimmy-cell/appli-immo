@@ -505,6 +505,13 @@
       "when": 1793612694819,
       "tag": "0071_chemical_sleepwalker",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793623212644,
+      "tag": "0072_big_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }

@@ -178,6 +178,7 @@ export const CLASSIFICATION_INVENTAIRE: Record<string, ClassificationChamp> = {
 // une colonne structurelle, jamais une clé de `champs`.
 export const CHAMPS_IDENTITE_CLES: ReadonlySet<string> = new Set(["typeCle", "libelleAutre"]);
 export const CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS: ReadonlySet<string> = new Set(["libelle"]);
+export const CHAMPS_IDENTITE_PIECE_AUTRE: ReadonlySet<string> = new Set(["libelle"]);
 
 /**
  * Un champ existant est figé dès que sa phase de signature est passée —

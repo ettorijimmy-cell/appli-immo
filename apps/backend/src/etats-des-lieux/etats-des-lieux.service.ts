@@ -146,6 +146,16 @@ function champsPieceAutre(dto: SubmitPieceAutreDto) {
   };
 }
 
+function champsIdentiteSoumis(champs: Record<string, unknown>, identite: ReadonlySet<string>): Record<string, unknown> {
+  const soumis: Record<string, unknown> = {};
+  for (const champ of identite) {
+    if (champs[champ] !== undefined) {
+      soumis[champ] = champs[champ];
+    }
+  }
+  return soumis;
+}
+
 function champDecimal(valeur: string | undefined, champs: Record<string, unknown>, cle: string) {
   if (valeur !== undefined) {
     champs[cle] = valeur;
@@ -711,7 +721,8 @@ export class EtatsDesLieuxService {
       prisesEtatEntree: ligne.prisesEtatEntree,
       prisesEtatSortie: ligne.prisesEtatSortie,
       prisesNombre: ligne.prisesNombre,
-      observationsSortie: ligne.observationsSortie
+      observationsSortie: ligne.observationsSortie,
+      ajouteeApresSignatureEntree: ligne.ajouteeApresSignatureEntree
     };
   }
 
@@ -837,7 +848,6 @@ export class EtatsDesLieuxService {
 
   async submitPieceAutre(etatDesLieuxId: string, dto: SubmitPieceAutreDto) {
     await this.verifierExiste(etatDesLieuxId);
-    await this.refuserPieceAutreAjouteeApresEntree(etatDesLieuxId, dto.numero);
     return this.upsertParNumero(etatDesLieuxPiecesAutre, etatDesLieuxId, dto.numero, champsPieceAutre(dto), (ligne) =>
       this.versDtoPieceAutre(ligne)
     );
@@ -910,27 +920,6 @@ export class EtatsDesLieuxService {
       })),
       dto.elementsASupprimer ?? []
     );
-  }
-
-  // Le libellé d'une autre pièce est un champ figé par la signature d'entrée :
-  // une pièce absente à cette date ne peut pas être créée. Message en clair,
-  // le verrou générique citerait le nom technique du champ. Voir
-  // docs/backlog.md, limite connue.
-  private async refuserPieceAutreAjouteeApresEntree(etatDesLieuxId: string, numero: number): Promise<void> {
-    const { entreeSignee } = await resoudrePhasesSigneesEtatDesLieux(this.db, etatDesLieuxId);
-    if (!entreeSignee) {
-      return;
-    }
-    const [existante] = await this.db
-      .select({ id: etatDesLieuxPiecesAutre.id })
-      .from(etatDesLieuxPiecesAutre)
-      .where(and(eq(etatDesLieuxPiecesAutre.etatDesLieuxId, etatDesLieuxId), eq(etatDesLieuxPiecesAutre.numero, numero)))
-      .limit(1);
-    if (!existante) {
-      throw new ConflictException(
-        "Cette pièce a été ajoutée après l'état des lieux d'entrée : ses informations ne peuvent pas être modifiées ici."
-      );
-    }
   }
 
   // Contrôle d'appartenance (Priorité 4, chantier scoping multi-organisation,
@@ -1057,7 +1046,21 @@ export class EtatsDesLieuxService {
       .from(table)
       .where(and(eq(table.etatDesLieuxId, etatDesLieuxId), eq(table.numero, numero)))
       .limit(1);
-    verifierChampsAutorises(phases, table, champs, (existant as Record<string, unknown> | undefined) ?? null);
+    // Seule l'autre pièce a une identité (son libellé). Absente à l'entrée, elle
+    // suit la règle des lignes ajoutées après coup : identité et champs de
+    // sortie seulement, et plus aucun ajout une fois la sortie signée.
+    const identite = CHAMPS_IDENTITE_PAR_TABLE.get(table);
+    if (!existant && identite && phases.sortieSignee) {
+      throw new ConflictException(
+        "Modification refusée : aucune nouvelle pièce ne peut être ajoutée, la sortie de cet état des lieux est signée."
+      );
+    }
+    verifierChampsAutorises(
+      phases,
+      table,
+      champs,
+      (existant as Record<string, unknown> | undefined) ?? (identite ? champsIdentiteSoumis(champs, identite) : null)
+    );
     if (existant) {
       const [ligne] = await mettreAJourAvecAudit(this.db, table, (existant as { id: string }).id, champs, utilisateurId);
       if (!ligne) {
@@ -1067,7 +1070,12 @@ export class EtatsDesLieuxService {
     }
     const [ligne] = await this.db
       .insert(table)
-      .values({ etatDesLieuxId, numero, ...champs } as T["$inferInsert"])
+      .values({
+        etatDesLieuxId,
+        numero,
+        ...champs,
+        ...(identite && { ajouteeApresSignatureEntree: phases.entreeSignee })
+      } as T["$inferInsert"])
       .returning();
     if (!ligne) {
       throw new Error("Échec de l'enregistrement de la pièce");
@@ -1139,13 +1147,10 @@ export class EtatsDesLieuxService {
             );
           }
           if (phases.entreeSignee) {
-            const identite = CHAMPS_IDENTITE_PAR_TABLE.get(table) ?? new Set<string>();
-            const identiteSoumise: Record<string, unknown> = {};
-            for (const champIdentite of identite) {
-              if (ligne.champs[champIdentite] !== undefined) {
-                identiteSoumise[champIdentite] = ligne.champs[champIdentite];
-              }
-            }
+            const identiteSoumise = champsIdentiteSoumis(
+              ligne.champs,
+              CHAMPS_IDENTITE_PAR_TABLE.get(table) ?? new Set<string>()
+            );
             // `identiteSoumise` jouée comme "ligne existante" : verifierChampsAutorises
             // compare chaque champ d'identité à lui-même (toujours égal, donc
             // jamais gelé), tandis qu'un champ "entree" ou "commune" non listé

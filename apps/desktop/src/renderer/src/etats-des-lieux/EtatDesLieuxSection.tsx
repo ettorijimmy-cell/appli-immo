@@ -41,6 +41,7 @@ import {
 import { ClesSection } from "./ClesSection";
 import { CompteursCard } from "./CompteursCard";
 import { DocumentsFigesCard } from "./DocumentsFigesCard";
+import { affichagePieceAutre, MENTION_PIECE_AJOUTEE } from "./piece-autre-affichage";
 import { EquipementsDiversSection } from "./EquipementsDiversSection";
 import { InventaireSection } from "./InventaireSection";
 import { MultiPieceSection, PieceCard } from "./PieceGrid";
@@ -500,6 +501,7 @@ function AutresPiecesSection({
       <div className="space-y-3">
         {slots.map(({ numero, libelle }) => {
           const row = rows.find((r) => r.numero === numero) ?? null;
+          const affichage = affichagePieceAutre(row, sortieSignee);
           if (row) {
             // libelle capturé à la création (row.libelle), pas la valeur
             // courante de l'appartement — voir data-dictionary.md,
@@ -508,25 +510,26 @@ function AutresPiecesSection({
             // SubmitPieceAutreDto exige `libelle` à chaque soumission
             // (pas seulement à la création), d'où le réinjecter ici.
             return (
-              <PieceCard
-                key={numero}
-                titre={row.libelle || libelle}
-                elements={ELEMENTS_AUTRE}
-                classification={CLASSIFICATION_PIECE_AUTRE}
-                row={row}
-                photos={photosParNumero?.get(numero) ?? []}
-                entreeSignee={entreeSignee}
-                sortieSignee={sortieSignee}
-                onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
-              />
+              <div key={numero}>
+                {row.ajouteeApresSignatureEntree && (
+                  <p className="mb-1 text-xs text-amber-800">{MENTION_PIECE_AJOUTEE}</p>
+                )}
+                <PieceCard
+                  titre={row.libelle || libelle}
+                  elements={ELEMENTS_AUTRE}
+                  classification={CLASSIFICATION_PIECE_AUTRE}
+                  row={row}
+                  photos={photosParNumero?.get(numero) ?? []}
+                  entreeSignee={entreeSignee}
+                  sortieSignee={sortieSignee}
+                  onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
+                />
+              </div>
             );
           }
-          // Une "autre pièce" neuve envoie toujours `libelle` (champ
-          // "commune") à sa création — jamais exemptée comme les lignes
-          // neuves de clés/équipements divers (pas de notion d'identité
-          // ici) : création bloquée dès l'entrée signée, pas seulement à
-          // la sortie.
-          if (entreeSignee) {
+          // Après l'entrée signée, une pièce neuve se crée avec son seul
+          // libellé, comme une ligne de clé ajoutée après coup.
+          if (affichage === "rien") {
             return null;
           }
           return (

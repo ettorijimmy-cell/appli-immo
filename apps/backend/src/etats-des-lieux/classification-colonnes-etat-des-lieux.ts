@@ -15,6 +15,7 @@ import {
 import {
   CHAMPS_IDENTITE_CLES,
   CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS,
+  CHAMPS_IDENTITE_PIECE_AUTRE,
   CLASSIFICATION_CLES,
   CLASSIFICATION_COMPTEURS,
   CLASSIFICATION_EQUIPEMENTS_DIVERS,
@@ -118,5 +119,6 @@ export const CLASSIFICATION_PAR_TABLE = new Map<PgTable, Record<string, Classifi
 // de `champs` (voir upsertEtArchiverParElementId).
 export const CHAMPS_IDENTITE_PAR_TABLE = new Map<PgTable, ReadonlySet<string>>([
   [etatDesLieuxCles, CHAMPS_IDENTITE_CLES],
-  [etatDesLieuxEquipementsDivers, CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS]
+  [etatDesLieuxEquipementsDivers, CHAMPS_IDENTITE_EQUIPEMENTS_DIVERS],
+  [etatDesLieuxPiecesAutre, CHAMPS_IDENTITE_PIECE_AUTRE]
 ]);

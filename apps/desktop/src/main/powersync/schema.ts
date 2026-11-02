@@ -601,6 +601,7 @@ const etat_des_lieux_pieces_autre = new Table({
   prises_etat_sortie: column.text,
   prises_nombre: column.integer,
   observations_sortie: column.text,
+  ajoutee_apres_signature_entree: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text

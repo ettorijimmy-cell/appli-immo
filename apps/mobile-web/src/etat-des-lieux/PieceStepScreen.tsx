@@ -78,8 +78,13 @@ export const PieceStepScreen = forwardRef<
     setValeurs((v) => ({ ...v, [prefix]: { ...(v[prefix] as ChampsElement), [champ]: valeur } }));
   }
 
+  const pieceAjoutee = mode === "sortie" && libelleFixe !== undefined && (!row || row.ajouteeApresSignatureEntree === true);
+
   return (
     <div className="space-y-6">
+      {pieceAjoutee && (
+        <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">Pièce ajoutée après l'état des lieux d'entrée.</p>
+      )}
       {elements.map((el) => {
         const champs = valeurs[el.prefix];
         if (!champs) {

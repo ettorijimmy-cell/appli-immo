@@ -372,6 +372,31 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
       expect(donnees.equipementsDivers[0]?.["commentaireSortie"]).toBe("");
     });
 
+    it("autre pièce ajoutée : absente du document d'entrée, signalée sur celui de sortie", async () => {
+      const { etatDesLieuxId, titulaire } = await creerDossier(0);
+      await avecContexte(() => etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, { numero: 1, libelle: "Dressing" }));
+      await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
+      await avecContexte(() =>
+        etatsDesLieuxService.submitPieceAutre(etatDesLieuxId, {
+          numero: 2,
+          libelle: "Cellier",
+          mur: { etatSortie: "B" },
+          observationsSortie: "Créé pendant le bail"
+        })
+      );
+      await etatDesLieuxPdfService.attendreTachesEnCours();
+
+      const entree = (await donneesDuDocument(etatDesLieuxId, "entree")) as unknown as { autres: Record<string, unknown>[] };
+      const sortie = (await donneesDuDocument(etatDesLieuxId, "sortie")) as unknown as { autres: Record<string, unknown>[] };
+
+      expect(entree.autres.map((a) => a["titre"])).toEqual(["Dressing"]);
+      expect(sortie.autres.map((a) => [a["titre"], a["mentionPieceAjoutee"]])).toEqual([
+        ["Dressing", ""],
+        ["Cellier", "Pièce ajoutée après l'état des lieux d'entrée"]
+      ]);
+      expect(sortie.autres[1]).toMatchObject({ murEtatEntree: "", murDescription: "", murEtatSortie: "B" });
+    });
+
     it("le modèle actuel n'imprime encore aucune de ces balises et reste sans balise résiduelle", async () => {
       const etatDesLieuxId = await dossierComplet();
 

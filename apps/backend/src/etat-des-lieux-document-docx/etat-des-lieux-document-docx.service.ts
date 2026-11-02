@@ -61,6 +61,7 @@ const LABEL_TYPE_ENERGIE: Record<string, string> = {
 };
 
 const LARGEUR_PHOTO_CIBLE_PX = 180;
+const MENTION_PIECE_AJOUTEE = "Pièce ajoutée après l'état des lieux d'entrée";
 
 // Signatures (chantier Signatures, 2026-10-25) : largeur proposée, plus
 // petite qu'une photo de pièce — à ajuster après un premier essai réel
@@ -512,12 +513,19 @@ export class EtatDesLieuxDocumentDocxService {
       return champs;
     });
 
-    const autres = donnees.autres.map((row) => {
-      const champs: Record<string, unknown> = { titre: (row.libelle as string) ?? VIDE };
-      ajouterSocle(champs, "", row);
-      champs["photos"] = idsPhotos("autre", row.numero as number);
-      return champs;
-    });
+    // Une pièce ajoutée après l'entrée n'existait pas à cette date : absente du
+    // document d'entrée, signalée sur celui de sortie.
+    const autres = donnees.autres
+      .filter((row) => avecSortie || !row.ajouteeApresSignatureEntree)
+      .map((row) => {
+        const champs: Record<string, unknown> = {
+          titre: (row.libelle as string) ?? VIDE,
+          mentionPieceAjoutee: row.ajouteeApresSignatureEntree ? MENTION_PIECE_AJOUTEE : VIDE
+        };
+        ajouterSocle(champs, "", row);
+        champs["photos"] = idsPhotos("autre", row.numero as number);
+        return champs;
+      });
 
     const equipementsDivers = donnees.equipementsDivers.map((ligne) => ({
       libelle: ligne.libelle,

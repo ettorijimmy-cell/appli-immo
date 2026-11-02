@@ -1,0 +1,1 @@
+ALTER TABLE "etat_des_lieux_pieces_autre" ADD COLUMN "ajoutee_apres_signature_entree" boolean DEFAULT false NOT NULL;
