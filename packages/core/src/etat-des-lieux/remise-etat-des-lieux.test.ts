@@ -5,6 +5,7 @@ import {
   demandeARejouer,
   destinatairesARenvoyer,
   libelleResultatRemise,
+  libellesNonDestinataires,
   lignesResultatRemise,
   selectionInitialeRemise,
   type DestinataireDemande,
@@ -77,6 +78,38 @@ describe("selectionInitialeRemise", () => {
         destinataire("e", "e@example.com", resultat("e", "echec"))
       ])
     ).toEqual(["a", "e"]);
+  });
+});
+
+describe("libellesNonDestinataires", () => {
+  const signataire = (locataireId: string, nomAffiche: string, dernierEnvoi: ResultatEnvoiRemise | null = null) => ({
+    ...destinataire(locataireId, null, dernierEnvoi),
+    nomAffiche
+  });
+
+  it("liste chaque signataire absent de l'envoi, dans l'ordre des signataires", () => {
+    expect(
+      libellesNonDestinataires(
+        [signataire("a", "Camille Essai"), signataire("b", "Dominique Essai"), signataire("c", "Eva Roux")],
+        ["a"]
+      )
+    ).toEqual(["Dominique Essai : non destinataire", "Eva Roux : non destinataire"]);
+  });
+
+  it("vide si tous les signataires reçoivent le document", () => {
+    expect(libellesNonDestinataires([signataire("a", "Camille Essai")], ["a"])).toEqual([]);
+  });
+
+  it("précise quand le signataire a déjà reçu un envoi, jamais pour un simple échec", () => {
+    expect(
+      libellesNonDestinataires(
+        [signataire("a", "Camille Essai", resultat("a", "envoye")), signataire("b", "Dominique Essai", resultat("b", "echec"))],
+        []
+      )
+    ).toEqual([
+      "Camille Essai : non destinataire (déjà envoyé le 3 novembre 2026 à 14:30)",
+      "Dominique Essai : non destinataire"
+    ]);
   });
 });
 

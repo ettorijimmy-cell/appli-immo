@@ -50,6 +50,22 @@ export function selectionInitialeRemise(destinataires: DestinataireRemise[]): st
     .map((d) => d.locataireId);
 }
 
+// Une confirmation doit dire aussi qui ne recevra rien : un colocataire décoché
+// ou sans adresse ne doit jamais passer inaperçu au moment de la remise.
+export function libellesNonDestinataires<D extends DestinataireRemise & { nomAffiche: string }>(
+  signataires: D[],
+  idsDestinataires: string[]
+): string[] {
+  return signataires
+    .filter((s) => !idsDestinataires.includes(s.locataireId))
+    .map((s) => {
+      const dejaEnvoye = s.dernierEnvoi?.statut === "envoye" && s.dernierEnvoi.envoyeLe;
+      return dejaEnvoye
+        ? `${s.nomAffiche} : non destinataire (déjà envoyé le ${formaterDateHeureRemise(s.dernierEnvoi?.envoyeLe ?? "")})`
+        : `${s.nomAffiche} : non destinataire`;
+    });
+}
+
 export function lignesResultatRemise<R extends ResultatEnvoiRemise>(
   demandes: DestinataireDemande[],
   resultats: R[]

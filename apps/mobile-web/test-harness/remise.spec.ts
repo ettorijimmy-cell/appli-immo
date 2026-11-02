@@ -337,7 +337,7 @@ test("adresse manquante : refusée si invalide, enregistrée dans la fiche, dest
   const champ = page.getByLabel("Adresse e-mail de Alex Martin");
   await champ.fill("alex@a.fr,b@b.fr");
   await page.getByRole("button", { name: "Enregistrer dans la fiche" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Adresse e-mail invalide.");
+  await expect(page.getByText("Adresse e-mail invalide.")).toBeVisible();
   expect(etat.appelsPatch).toHaveLength(0);
 
   await champ.fill(EMAIL_ALEX);
@@ -413,7 +413,7 @@ test("modifier une adresse : refus si invalide, Annuler restaure, adresse inchan
   await page.getByRole("button", { name: "Modifier l'adresse de Jean Dupont" }).click();
   await page.getByLabel("Adresse e-mail de Jean Dupont").fill("jean@a.fr;b@b.fr");
   await page.getByRole("button", { name: "Enregistrer dans la fiche" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Adresse e-mail invalide.");
+  await expect(page.getByText("Adresse e-mail invalide.")).toBeVisible();
 
   await page.getByRole("button", { name: "Annuler" }).click();
   await expect(page.getByText(EMAIL_JEAN)).toBeVisible();
@@ -439,6 +439,106 @@ test("modifier une adresse déjà utilisée : le destinataire est recoché pour 
   await page.getByRole("button", { name: "Confirmer la modification" }).click();
 
   await expect(page.getByRole("checkbox").nth(0)).toBeChecked();
+});
+
+test("adresse saisie mais non enregistrée : envoi bloqué avec message, débloqué après enregistrement", async ({ page }) => {
+  const etat = etatInitial();
+  etat.destinataires[1]!.email = null;
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+  const envoyer = page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true });
+  await expect(envoyer).toBeEnabled();
+
+  await page.getByLabel("Adresse e-mail de Alex Martin").fill(EMAIL_ALEX);
+
+  await expect(envoyer).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("Adresse saisie mais non enregistrée pour Alex Martin");
+  expect(etat.appelsEnvoi).toHaveLength(0);
+
+  await page.getByRole("button", { name: "Enregistrer dans la fiche" }).click();
+
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(envoyer).toBeEnabled();
+  await confirmer(page);
+  await expect(page.getByText(/Accepté par le serveur d'envoi/)).toHaveCount(2);
+  expect(etat.appelsEnvoi[0]?.destinataires).toHaveLength(2);
+});
+
+test("adresse saisie puis vidée : l'envoi redevient possible, et le signataire exclu est annoncé", async ({ page }) => {
+  const etat = etatInitial();
+  etat.destinataires[1]!.email = null;
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+  const champ = page.getByLabel("Adresse e-mail de Alex Martin");
+  const envoyer = page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true });
+
+  await champ.fill("alex");
+  await expect(envoyer).toBeDisabled();
+  await champ.fill("");
+  await expect(envoyer).toBeEnabled();
+
+  await envoyer.click();
+
+  await expect(page.getByText("Alex Martin : non destinataire")).toBeVisible();
+  await expect(page.getByText(/Jean Dupont\s+—/)).toBeVisible();
+});
+
+test("modification d'adresse en attente : envoi bloqué, Annuler le débloque", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+  const envoyer = page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true });
+
+  await page.getByRole("button", { name: "Modifier l'adresse de Jean Dupont" }).click();
+  await expect(envoyer).toBeEnabled();
+  await page.getByLabel("Adresse e-mail de Jean Dupont").fill("jean.nouveau@example.com");
+  await expect(envoyer).toBeDisabled();
+
+  await page.getByRole("button", { name: "Annuler" }).click();
+
+  await expect(envoyer).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("confirmation : un signataire décoché est annoncé comme non destinataire", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+
+  await page.getByRole("checkbox").nth(1).uncheck();
+  await page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true }).click();
+
+  await expect(page.getByText("Alex Martin : non destinataire")).toBeVisible();
+  await expect(page.getByText("Jean Dupont : non destinataire")).toHaveCount(0);
+});
+
+test("confirmation : tous destinataires, aucune mention de non destinataire", async ({ page }) => {
+  const etat = etatInitial();
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+
+  await page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true }).click();
+
+  await expect(page.getByRole("button", { name: "Confirmer l'envoi" })).toBeVisible();
+  await expect(page.getByText(/non destinataire/)).toHaveCount(0);
+});
+
+test("renvoi : le signataire déjà servi est annoncé avec sa date", async ({ page }) => {
+  const etat = etatInitial();
+  etat.repondreEnvoi = (route) => {
+    etat.destinataires[1]!.dernierEnvoi = resultat(ALEX, "envoye");
+    return json(route, {
+      resultats: [resultat(JEAN, "echec", { codeErreur: "SMTP_RESEAU", messageErreur: "Injoignable." }), resultat(ALEX, "envoye")]
+    });
+  };
+  await simulerBackend(page, etat);
+  await ouvrirPanneauEntree(page);
+  await confirmer(page);
+  await expect(page.getByText("Injoignable.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Renvoyer aux destinataires restants" }).click();
+
+  await expect(page.getByText(/Alex Martin : non destinataire \(déjà envoyé le 3 novembre 2026/)).toBeVisible();
 });
 
 test("sans aucune adresse, le bouton d'envoi reste inactif", async ({ page }) => {

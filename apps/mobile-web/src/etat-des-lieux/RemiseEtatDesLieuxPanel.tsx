@@ -5,6 +5,7 @@ import {
   destinatairesARenvoyer,
   formaterDateHeureRemise,
   libelleResultatRemise,
+  libellesNonDestinataires,
   lignesResultatRemise,
   selectionInitialeRemise,
   type DestinataireDemande,
@@ -42,17 +43,27 @@ function EditionAdresse({
   destinataire,
   modification,
   onEnregistree,
+  onSaisieEnAttente,
   onAnnuler
 }: {
   destinataire: DestinataireEnvoi;
   modification: boolean;
   onEnregistree: (email: string) => void;
+  onSaisieEnAttente: (enAttente: boolean) => void;
   onAnnuler?: () => void;
 }): React.JSX.Element {
   const [email, setEmail] = useState(destinataire.email ?? "");
   const [aConfirmer, setAConfirmer] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+
+  // Une saisie non enregistrée bloque l'envoi : sur place, on croirait à tort
+  // ce destinataire servi.
+  const enAttente = email.trim() !== (destinataire.email ?? "");
+  useEffect(() => {
+    onSaisieEnAttente(enAttente);
+    return () => onSaisieEnAttente(false);
+  }, [enAttente, onSaisieEnAttente]);
 
   function verifier(): void {
     const adresse = email.trim();
@@ -172,6 +183,7 @@ export function RemiseEtatDesLieuxPanel({
   const [destinataires, setDestinataires] = useState<DestinataireEnvoi[]>([]);
   const [selection, setSelection] = useState<string[] | null>(null);
   const [adresseEnEdition, setAdresseEnEdition] = useState<string | null>(null);
+  const [saisiesEnAttente, setSaisiesEnAttente] = useState<string[]>([]);
   const [vue, setVue] = useState<Vue>("liste");
   const [erreur, setErreur] = useState<string | null>(null);
   const [resultats, setResultats] = useState<LigneResultatRemise<ResultatEnvoi>[]>([]);
@@ -255,6 +267,13 @@ export function RemiseEtatDesLieuxPanel({
     );
   }
 
+  const signalerSaisie = useCallback((locataireId: string, enAttente: boolean): void => {
+    setSaisiesEnAttente((actuelles) => {
+      const autres = actuelles.filter((id) => id !== locataireId);
+      return enAttente ? [...autres, locataireId] : autres;
+    });
+  }, []);
+
   function adresseEnregistree(locataireId: string, email: string): void {
     setDestinataires((liste) => liste.map((d) => (d.locataireId === locataireId ? { ...d, email } : d)));
     setAdresseEnEdition(null);
@@ -316,6 +335,13 @@ export function RemiseEtatDesLieuxPanel({
   }
 
   const choisis = destinatairesChoisis();
+  const nomsSaisiesEnAttente = destinataires
+    .filter((d) => saisiesEnAttente.includes(d.locataireId))
+    .map((d) => d.nomAffiche);
+  const nonDestinataires = libellesNonDestinataires(
+    destinataires,
+    choisis.map((d) => d.locataireId)
+  );
   const renvoisPossibles = destinatairesARenvoyer(resultats).length > 0;
 
   return (
@@ -391,6 +417,7 @@ export function RemiseEtatDesLieuxPanel({
                       destinataire={d}
                       modification={adresseEnEdition === d.locataireId}
                       onEnregistree={(email) => adresseEnregistree(d.locataireId, email)}
+                      onSaisieEnAttente={(enAttente) => signalerSaisie(d.locataireId, enAttente)}
                       {...(adresseEnEdition === d.locataireId && { onAnnuler: () => setAdresseEnEdition(null) })}
                     />
                   </>
@@ -399,10 +426,16 @@ export function RemiseEtatDesLieuxPanel({
               </li>
             ))}
           </ul>
+          {nomsSaisiesEnAttente.length > 0 && (
+            <p role="alert" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+              Adresse saisie mais non enregistrée pour {nomsSaisiesEnAttente.join(", ")}. Enregistrez-la dans la fiche
+              ou videz le champ avant d'envoyer.
+            </p>
+          )}
           <button
             type="button"
             onClick={() => setVue("confirmation")}
-            disabled={choisis.length === 0}
+            disabled={choisis.length === 0 || nomsSaisiesEnAttente.length > 0}
             className="w-full rounded-md bg-indigo-700 py-3 text-base font-medium text-white disabled:opacity-50"
           >
             Envoyer l'état des lieux
@@ -426,6 +459,13 @@ export function RemiseEtatDesLieuxPanel({
               );
             })}
           </ul>
+          {nonDestinataires.length > 0 && (
+            <ul className="space-y-1 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+              {nonDestinataires.map((libelle) => (
+                <li key={libelle}>{libelle}</li>
+              ))}
+            </ul>
+          )}
           <button
             type="button"
             onClick={() => void executerDemande({ demandeId: construireDemandeId(crypto.getRandomValues(new Uint8Array(16))), destinataires: choisis })}

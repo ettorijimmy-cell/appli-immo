@@ -5,6 +5,7 @@ import {
   destinatairesARenvoyer,
   formaterDateHeureRemise,
   libelleResultatRemise,
+  libellesNonDestinataires,
   lignesResultatRemise,
   selectionInitialeRemise,
   type DestinataireDemande,
@@ -197,6 +198,14 @@ export function EnvoiEtatDesLieuxPanel({
               );
             })}
           </ul>
+          {libellesNonDestinataires(
+            destinataires,
+            choisis.map((d) => d.locataireId)
+          ).map((libelle) => (
+            <p key={libelle} className="text-xs text-amber-800">
+              {libelle}
+            </p>
+          ))}
           <div className="flex gap-2">
             <button
               type="button"
