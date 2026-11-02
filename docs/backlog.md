@@ -704,6 +704,12 @@ les trois parcours ci-dessus).
   des lieux et Alertes se sont tous déployés et testés sans problème
   similaire jusqu'à la clôture complète du chantier.
 
+- **Autre pièce ajoutée à l'appartement après la signature d'entrée — limite
+  connue (notée le 2026-11-02).** Son libellé est figé par la signature d'entrée :
+  la créer est refusé, avec un message en français. Sur le mobile, cette étape
+  ne permet alors pas d'avancer, donc la sortie ne peut pas être signée pour ce
+  dossier.
+
 - **Photos d'origine stockées avec leurs métadonnées, dont le GPS — à traiter
   au chantier RGPD (noté le 2026-11-01).** Seules les images insérées dans les
   documents sont nettoyées. Les fichiers d'origine, chiffrés dans le stockage,

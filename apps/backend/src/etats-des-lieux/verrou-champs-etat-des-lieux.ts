@@ -1,4 +1,5 @@
 import { ConflictException } from "@nestjs/common";
+import { getTableColumns, type Column } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { CLASSIFICATION_PAR_TABLE, COLONNES_STRUCTURELLES_IGNOREES } from "./classification-colonnes-etat-des-lieux";
 
@@ -20,7 +21,9 @@ function estVide(valeur: unknown): boolean {
 // - decimal Postgres (etat_des_lieux_compteurs) : toujours renvoyé en
 //   chaîne par le driver, le DTO envoie aussi une chaîne (@IsDecimal) mais
 //   potentiellement formatée différemment ("650" vs "650.00") — comparée
-//   numériquement plutôt que caractère à caractère.
+//   numériquement, UNIQUEMENT sur une colonne numérique. Sur une colonne
+//   texte, "12" et "12.0" restent deux valeurs différentes : un texte figé
+//   par une signature ne doit jamais pouvoir changer, même d'un caractère.
 // - date (etats_des_lieux.date_entree/date_sortie) : chaîne "YYYY-MM-DD"
 //   des deux côtés en pratique, mais comparée par timestamp au cas où
 //   l'une des deux parvenait comme objet Date (défensif).
@@ -30,7 +33,11 @@ function estVide(valeur: unknown): boolean {
 //   description NULL en base, renvoyée "" par un champ contrôlé qui n'a
 //   jamais été touché, était à tort vue comme une modification d'un champ
 //   figé par la signature d'entrée).
-function valeursEquivalentes(valeurActuelle: unknown, valeurSoumise: unknown): boolean {
+function estColonneNumerique(colonne: Column | undefined): boolean {
+  return colonne?.dataType === "number" || (colonne?.columnType.startsWith("PgNumeric") ?? false);
+}
+
+function valeursEquivalentes(valeurActuelle: unknown, valeurSoumise: unknown, colonne: Column | undefined): boolean {
   if (valeurActuelle === valeurSoumise) {
     return true;
   }
@@ -40,17 +47,14 @@ function valeursEquivalentes(valeurActuelle: unknown, valeurSoumise: unknown): b
     return actuelleVide && soumiseVide;
   }
 
-  if (typeof valeurActuelle === "string" && typeof valeurSoumise === "string") {
+  if (estColonneNumerique(colonne)) {
     const nombreActuel = Number(valeurActuelle);
     const nombreSoumis = Number(valeurSoumise);
-    if (!Number.isNaN(nombreActuel) && !Number.isNaN(nombreSoumis)) {
-      return nombreActuel === nombreSoumis;
-    }
-    return false;
+    return !Number.isNaN(nombreActuel) && !Number.isNaN(nombreSoumis) && nombreActuel === nombreSoumis;
   }
 
-  if (typeof valeurActuelle === "number" && typeof valeurSoumise === "number") {
-    return valeurActuelle === valeurSoumise;
+  if (typeof valeurActuelle === "string" && typeof valeurSoumise === "string") {
+    return false;
   }
 
   if (valeurActuelle instanceof Date || valeurSoumise instanceof Date) {
@@ -143,9 +147,10 @@ export function verifierChampsAutorises(
   if (!entreeSignee && !sortieSignee) {
     return;
   }
+  const colonnes: Record<string, Column | undefined> = getTableColumns(table);
 
   for (const { cle, valeur, categorie } of champsClasses) {
-    if (ligneExistante && valeursEquivalentes(ligneExistante[cle], valeur)) {
+    if (ligneExistante && valeursEquivalentes(ligneExistante[cle], valeur, colonnes[cle])) {
       // Resoumission à l'identique : pas une vraie modification.
       continue;
     }

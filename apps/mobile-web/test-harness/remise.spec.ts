@@ -22,6 +22,8 @@ interface Destinataire {
 }
 
 interface EtatSimule {
+  autrePiece1: string | null;
+  refusPieceAutre: string | null;
   statut: "non_commence" | "entree_terminee" | "complet";
   entreeSignee: boolean;
   sortieSignee: boolean;
@@ -57,6 +59,8 @@ function resultat(locataireId: string, statut: string, surcharge: Record<string,
 
 function etatInitial(surcharge: Partial<EtatSimule> = {}): EtatSimule {
   return {
+    autrePiece1: null,
+    refusPieceAutre: null,
     statut: "entree_terminee",
     entreeSignee: true,
     sortieSignee: false,
@@ -118,10 +122,13 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
       return json(route, { id: "bail-test", appartementId: "appt", typeBail: "vide", statut: "actif", dateDebut: "2026-08-01", dateFin: null, archivedAt: null });
     }
     if (pathname === "/appartements/appt") {
-      return json(route, { id: "appt", bienId: "bien", numero: "1", nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0, autrePiece1: null, autrePiece2: null });
+      return json(route, { id: "appt", bienId: "bien", numero: "1", nombreChambres: 0, nombreSallesDeBain: 0, nombreWc: 0, autrePiece1: etat.autrePiece1, autrePiece2: null });
     }
     if (pathname === "/etats-des-lieux" && search.includes("bailId")) {
       return etat.rechargementEnPanne ? json(route, { message: "Panne" }, 500) : json(route, etatDesLieuxComplet(etat));
+    }
+    if (pathname.endsWith("/piece-autre") && etat.refusPieceAutre) {
+      return json(route, { message: etat.refusPieceAutre }, 409);
     }
     if (pathname.endsWith("/signataires")) {
       return json(route, {
@@ -732,6 +739,24 @@ test("réponse perdue et réseau encore en panne : Réessayer reçoit un 409, la
 
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
   expect(etat.appelsSignature).toBe(2);
+});
+
+test("pièce ajoutée après l'entrée : message en clair, mais l'étape ne permet pas d'avancer", async ({ page }) => {
+  const MESSAGE = "Cette pièce a été ajoutée après l'état des lieux d'entrée : ses informations ne peuvent pas être modifiées ici.";
+  await simulerBackend(page, etatInitial({ autrePiece1: "Cellier", refusPieceAutre: MESSAGE }));
+  await page.goto("/test-harness/remise.html");
+  const bouton = page.getByRole("button", { name: "Suivant" });
+  for (const titre of [/Entrée 1\//, /Séjour 2\//, /Cuisine 3\//]) {
+    await expect(page.getByText(titre)).toBeVisible();
+    await bouton.click();
+  }
+  await expect(page.getByText(/Cellier 4\//)).toBeVisible();
+
+  await bouton.click();
+
+  await expect(page.getByRole("alert")).toHaveText(MESSAGE);
+  await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
+  await expect(page.getByText(/Cellier 4\//)).toBeVisible();
 });
 
 test("signature refusée pour de vrai : l'erreur reste affichée, pas de panneau", async ({ page }) => {

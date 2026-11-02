@@ -837,6 +837,7 @@ export class EtatsDesLieuxService {
 
   async submitPieceAutre(etatDesLieuxId: string, dto: SubmitPieceAutreDto) {
     await this.verifierExiste(etatDesLieuxId);
+    await this.refuserPieceAutreAjouteeApresEntree(etatDesLieuxId, dto.numero);
     return this.upsertParNumero(etatDesLieuxPiecesAutre, etatDesLieuxId, dto.numero, champsPieceAutre(dto), (ligne) =>
       this.versDtoPieceAutre(ligne)
     );
@@ -909,6 +910,27 @@ export class EtatsDesLieuxService {
       })),
       dto.elementsASupprimer ?? []
     );
+  }
+
+  // Le libellé d'une autre pièce est un champ figé par la signature d'entrée :
+  // une pièce absente à cette date ne peut pas être créée. Message en clair,
+  // le verrou générique citerait le nom technique du champ. Voir
+  // docs/backlog.md, limite connue.
+  private async refuserPieceAutreAjouteeApresEntree(etatDesLieuxId: string, numero: number): Promise<void> {
+    const { entreeSignee } = await resoudrePhasesSigneesEtatDesLieux(this.db, etatDesLieuxId);
+    if (!entreeSignee) {
+      return;
+    }
+    const [existante] = await this.db
+      .select({ id: etatDesLieuxPiecesAutre.id })
+      .from(etatDesLieuxPiecesAutre)
+      .where(and(eq(etatDesLieuxPiecesAutre.etatDesLieuxId, etatDesLieuxId), eq(etatDesLieuxPiecesAutre.numero, numero)))
+      .limit(1);
+    if (!existante) {
+      throw new ConflictException(
+        "Cette pièce a été ajoutée après l'état des lieux d'entrée : ses informations ne peuvent pas être modifiées ici."
+      );
+    }
   }
 
   // Contrôle d'appartenance (Priorité 4, chantier scoping multi-organisation,

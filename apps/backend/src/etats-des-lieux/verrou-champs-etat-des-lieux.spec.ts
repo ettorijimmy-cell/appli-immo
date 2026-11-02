@@ -1,5 +1,12 @@
 import { ConflictException } from "@nestjs/common";
-import { etatDesLieuxCles, etatDesLieuxCompteurs, etatDesLieuxPieceEntree, etatsDesLieux } from "db";
+import {
+  etatDesLieuxCles,
+  etatDesLieuxCompteurs,
+  etatDesLieuxEquipementsDivers,
+  etatDesLieuxPieceEntree,
+  etatDesLieuxPiecesAutre,
+  etatsDesLieux
+} from "db";
 import { describe, expect, it } from "vitest";
 import { verifierChampsAutorises } from "./verrou-champs-etat-des-lieux";
 
@@ -115,6 +122,89 @@ describe("verifierChampsAutorises", () => {
       expect(() =>
         verifierChampsAutorises(AUCUNE_PHASE_SIGNEE, etatDesLieuxPieceEntree, { murDescription: "ok" }, null)
       ).not.toThrow();
+    });
+  });
+
+  describe("texte figé : comparaison stricte, jamais numérique", () => {
+    it.each([
+      ["description", etatDesLieuxPieceEntree, "murDescription"],
+      ["commentaire", etatDesLieuxCles, "commentaire"],
+      ["libellé d'équipement", etatDesLieuxEquipementsDivers, "libelle"],
+      ["libellé de pièce", etatDesLieuxPiecesAutre, "libelle"]
+    ])("%s : \"12\" vers \"12.0\" refusé", (_nom, table, champ) => {
+      expect(() => verifierChampsAutorises(ENTREE_SIGNEE, table, { [champ]: "12.0" }, { [champ]: "12" })).toThrow(
+        ConflictException
+      );
+    });
+
+    it.each([
+      ["01", "1"],
+      ["1e3", "1000"],
+      ["0x10", "16"],
+      ["  12", "12"]
+    ])("texte : %s vers %s refusé", (actuelle, soumise) => {
+      expect(() =>
+        verifierChampsAutorises(
+          ENTREE_SIGNEE,
+          etatDesLieuxPieceEntree,
+          { murDescription: soumise },
+          { murDescription: actuelle }
+        )
+      ).toThrow(ConflictException);
+    });
+
+    it("observation de sortie figée : \"12\" vers \"12.0\" refusé après la sortie", () => {
+      expect(() =>
+        verifierChampsAutorises(
+          SORTIE_SIGNEE,
+          etatDesLieuxPieceEntree,
+          { observationsSortie: "12.0" },
+          { observationsSortie: "12" }
+        )
+      ).toThrow(ConflictException);
+    });
+
+    it("texte identique : resoumission acceptée", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxPieceEntree, { murDescription: "12" }, { murDescription: "12" })
+      ).not.toThrow();
+    });
+
+    it("texte vide et absence de valeur restent équivalents", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxPieceEntree, { murDescription: "  " }, { murDescription: null })
+      ).not.toThrow();
+    });
+
+    it("effacer un texte figé reste refusé", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxPieceEntree, { murDescription: "" }, { murDescription: "12" })
+      ).toThrow(ConflictException);
+    });
+  });
+
+  describe("colonnes numériques : comparaison par valeur", () => {
+    const COMPTEUR = "electriciteReleveHpEntree";
+
+    it("decimal : 12 vers 12.0 accepté", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCompteurs, { [COMPTEUR]: "12.0" }, { [COMPTEUR]: "12" })
+      ).not.toThrow();
+    });
+
+    it("decimal : une vraie différence reste refusée", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCompteurs, { [COMPTEUR]: "12.5" }, { [COMPTEUR]: "12" })
+      ).toThrow(ConflictException);
+    });
+
+    it("entier : même valeur acceptée, valeur différente refusée", () => {
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCles, { nombreEntree: 2 }, { nombreEntree: 2 })
+      ).not.toThrow();
+      expect(() =>
+        verifierChampsAutorises(ENTREE_SIGNEE, etatDesLieuxCles, { nombreEntree: 3 }, { nombreEntree: 2 })
+      ).toThrow(ConflictException);
     });
   });
 
