@@ -3,7 +3,9 @@ import { useState } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge } from "../components/ArchiveFilter";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { LigneCle, LigneCleInput, TypeCle } from "./api";
+import { BadgeFigement } from "./BadgeFigement";
 import { CommentaireSortieCell } from "./CommentaireSortieCell";
+import { classeChamp, type Figement } from "./figement-carte";
 
 const TYPES_CLE_FIXES: { valeur: TypeCle; label: string }[] = [
   { valeur: "immeuble", label: "Clés d'immeuble" },
@@ -35,12 +37,14 @@ export function ClesSection({
   lignes,
   entreeSignee,
   sortieSignee,
+  figement,
   onSaveLigne,
   onArchiver
 }: {
   lignes: LigneCle[];
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSaveLigne: (ligne: LigneCleInput) => Promise<void>;
   onArchiver: (id: string) => Promise<void>;
 }): React.JSX.Element {
@@ -50,7 +54,10 @@ export function ClesSection({
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
-      <h4 className="mb-2 text-sm font-semibold text-slate-700">Clés</h4>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold text-slate-700">Clés</h4>
+        <BadgeFigement figement={figement} />
+      </div>
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-slate-500">
@@ -59,7 +66,7 @@ export function ClesSection({
             <th className="py-1 pr-2 font-medium">Nombre sortie</th>
             <th className="py-1 pr-2 font-medium">Commentaire</th>
             <th className="py-1 pr-2 font-medium">Commentaire de sortie</th>
-            <th className="py-1 font-medium" />
+            {!sortieSignee && <th className="py-1 font-medium" />}
           </tr>
         </thead>
         <tbody>
@@ -98,7 +105,7 @@ export function ClesSection({
               <td className="py-1 pr-2">{ligne.nombreSortie ?? "—"}</td>
               <td className="py-1 pr-2">{ligne.commentaire ?? "—"}</td>
               <td className="py-1 pr-2 whitespace-pre-wrap">{ligne.commentaireSortie ?? "—"}</td>
-              <td className="py-1" />
+              {!sortieSignee && <td className="py-1" />}
             </tr>
           ))}
         </tbody>
@@ -190,9 +197,7 @@ function LigneCleRow({
             value={libelleAutre}
             onChange={(e) => setLibelleAutre(e.target.value)}
             readOnly={!libelleEditable}
-            className={`w-32 rounded border px-2 py-1 text-sm ${
-              libelleEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-            }`}
+            className={`w-32 rounded border px-2 py-1 text-sm ${classeChamp(libelleEditable)}`}
           />
         ) : (
           label
@@ -203,9 +208,7 @@ function LigneCleRow({
           value={nombreEntree}
           onChange={(e) => setNombreEntree(e.target.value)}
           readOnly={!nombreEntreeEditable}
-          className={`w-16 rounded border px-2 py-1 text-sm ${
-            nombreEntreeEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-16 rounded border px-2 py-1 text-sm ${classeChamp(nombreEntreeEditable)}`}
         />
       </td>
       <td className="py-1 pr-2">
@@ -213,9 +216,7 @@ function LigneCleRow({
           value={nombreSortie}
           onChange={(e) => setNombreSortie(e.target.value)}
           readOnly={!nombreSortieEditable}
-          className={`w-16 rounded border px-2 py-1 text-sm ${
-            nombreSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-16 rounded border px-2 py-1 text-sm ${classeChamp(nombreSortieEditable)}`}
         />
       </td>
       <td className="py-1 pr-2">
@@ -223,9 +224,7 @@ function LigneCleRow({
           value={commentaire}
           onChange={(e) => setCommentaire(e.target.value)}
           readOnly={!commentaireEditable}
-          className={`w-full rounded border px-2 py-1 text-sm ${
-            commentaireEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-full rounded border px-2 py-1 text-sm ${classeChamp(commentaireEditable)}`}
         />
       </td>
       <CommentaireSortieCell
@@ -234,28 +233,29 @@ function LigneCleRow({
         onChange={setCommentaireSortie}
         editable={commentaireSortieEditable}
       />
-      <td className="py-1 text-right whitespace-nowrap">
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={isSaving || sortieSignee}
-          className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-        >
-          {isSaving ? "…" : "Enregistrer"}
-        </button>
-        {ligne &&
-          !sortieSignee &&
-          (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
-            <button
-              type="button"
-              onClick={() => void handleArchiver(ligne.id)}
-              className="text-xs text-slate-500 hover:text-red-600"
-            >
-              Archiver
-            </button>
-          )}
-        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
-      </td>
+      {!sortieSignee && (
+        <td className="py-1 text-right whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+          >
+            {isSaving ? "…" : "Enregistrer"}
+          </button>
+          {ligne &&
+            (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
+              <button
+                type="button"
+                onClick={() => void handleArchiver(ligne.id)}
+                className="text-xs text-slate-500 hover:text-red-600"
+              >
+                Archiver
+              </button>
+            )}
+          {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
+        </td>
+      )}
     </tr>
   );
 }

@@ -9,7 +9,9 @@ import type {
   LigneInventaire,
   LigneInventaireInput
 } from "./api";
+import { BadgeFigement } from "./BadgeFigement";
 import { CommentaireSortieCell } from "./CommentaireSortieCell";
+import { CLASSE_SELECT, classeChamp, type Figement } from "./figement-carte";
 
 const ETATS_INVENTAIRE: { valeur: EtatInventaire; label: string }[] = [
   { valeur: "bon", label: "Bon" },
@@ -37,7 +39,7 @@ function EtatInventaireSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="rounded border border-slate-300 px-1 py-0.5 text-sm disabled:bg-slate-50 disabled:text-slate-500"
+      className={CLASSE_SELECT}
     >
       <option value="">—</option>
       {ETATS_INVENTAIRE.map(({ valeur, label }) => (
@@ -58,6 +60,7 @@ export function InventaireSection({
   lignes,
   entreeSignee,
   sortieSignee,
+  figement,
   onSaveLigne,
   onArchiver
 }: {
@@ -65,6 +68,7 @@ export function InventaireSection({
   lignes: LigneInventaire[];
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSaveLigne: (ligne: LigneInventaireInput) => Promise<void>;
   onArchiver: (elementId: string) => Promise<void>;
 }): React.JSX.Element {
@@ -76,7 +80,10 @@ export function InventaireSection({
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
-      <h4 className="mb-3 text-sm font-semibold text-slate-700">Inventaire meublé</h4>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold text-slate-700">Inventaire meublé</h4>
+        <BadgeFigement figement={figement} />
+      </div>
       {categories.map((categorie) => {
         const elements = catalogue
           .filter((e) => e.categorie === categorie)
@@ -97,7 +104,7 @@ export function InventaireSection({
                   <th className="py-1 pr-2 font-medium">État sortie</th>
                   <th className="py-1 pr-2 font-medium">Commentaire</th>
                   <th className="py-1 pr-2 font-medium">Commentaire de sortie</th>
-                  <th className="py-1 font-medium" />
+                  {!sortieSignee && <th className="py-1 font-medium" />}
                 </tr>
               </thead>
               <tbody>
@@ -234,9 +241,7 @@ function LigneInventaireRow({
           value={nombreEntree}
           onChange={(e) => setNombreEntree(e.target.value)}
           readOnly={!nombreEntreeEditable}
-          className={`w-14 rounded border px-2 py-1 text-sm ${
-            nombreEntreeEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-14 rounded border px-2 py-1 text-sm ${classeChamp(nombreEntreeEditable)}`}
         />
       </td>
       <td className="py-1 pr-2">
@@ -247,9 +252,7 @@ function LigneInventaireRow({
           value={nombreSortie}
           onChange={(e) => setNombreSortie(e.target.value)}
           readOnly={!nombreSortieEditable}
-          className={`w-14 rounded border px-2 py-1 text-sm ${
-            nombreSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-14 rounded border px-2 py-1 text-sm ${classeChamp(nombreSortieEditable)}`}
         />
       </td>
       <td className="py-1 pr-2">
@@ -260,9 +263,7 @@ function LigneInventaireRow({
           value={commentaire}
           onChange={(e) => setCommentaire(e.target.value)}
           readOnly={!commentaireEditable}
-          className={`w-full rounded border px-2 py-1 text-sm ${
-            commentaireEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-full rounded border px-2 py-1 text-sm ${classeChamp(commentaireEditable)}`}
         />
       </td>
       <CommentaireSortieCell
@@ -271,28 +272,29 @@ function LigneInventaireRow({
         onChange={setCommentaireSortie}
         editable={commentaireSortieEditable}
       />
-      <td className="py-1 text-right whitespace-nowrap">
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={isSaving || sortieSignee}
-          className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
-        >
-          {isSaving ? "…" : "Enregistrer"}
-        </button>
-        {ligne &&
-          !sortieSignee &&
-          (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
-            <button
-              type="button"
-              onClick={() => void handleRetirer()}
-              className="text-xs text-slate-500 hover:text-red-600"
-            >
-              Retirer
-            </button>
-          )}
-        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
-      </td>
+      {!sortieSignee && (
+        <td className="py-1 text-right whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            className="mr-2 text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+          >
+            {isSaving ? "…" : "Enregistrer"}
+          </button>
+          {ligne &&
+            (!entreeSignee || ligne.ajouteeApresSignatureEntree) && (
+              <button
+                type="button"
+                onClick={() => void handleRetirer()}
+                className="text-xs text-slate-500 hover:text-red-600"
+              >
+                Retirer
+              </button>
+            )}
+          {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
+        </td>
+      )}
     </tr>
   );
 }

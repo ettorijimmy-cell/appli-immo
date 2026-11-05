@@ -8,6 +8,8 @@ import { useEffect, useId, useState } from "react";
 import type { DocumentMetier } from "../documents/api";
 import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
+import { BadgeFigement } from "./BadgeFigement";
+import { CLASSE_SELECT, classeChamp, type Figement } from "./figement-carte";
 import type { ElementDef } from "./pieces-config";
 import { MENTION_PIECE_AJOUTEE } from "./piece-autre-affichage";
 
@@ -27,7 +29,7 @@ function EtatSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="rounded border border-slate-300 px-1 py-0.5 text-sm disabled:bg-slate-50 disabled:text-slate-500"
+      className={CLASSE_SELECT}
     >
       <option value="">—</option>
       {ETATS.map((etat) => (
@@ -184,6 +186,7 @@ export function PieceCard({
   photos = [],
   entreeSignee,
   sortieSignee,
+  figement,
   onSave
 }: {
   titre: string;
@@ -193,6 +196,7 @@ export function PieceCard({
   photos?: DocumentMetier[];
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
@@ -278,24 +282,29 @@ export function PieceCard({
   }
 
   // Rien n'est jamais éditable une fois la sortie signée (document
-  // définitivement clos) — désactiver "Enregistrer" dans ce seul cas.
+  // définitivement clos) — masquer "Enregistrer" dans ce seul cas.
   // Une pièce jamais créée après l'entrée signée n'est PAS dans ce cas :
   // ses champs "sortie" restent éditables (voir champEditable ci-dessus),
-  // il ne faut donc pas désactiver le bouton pour elle.
+  // il ne faut donc pas masquer le bouton pour elle.
   const toutFige = sortieSignee;
 
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold text-slate-700">{titre}</h4>
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={isSaving || toutFige}
-          className="shrink-0 rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
-        >
-          {isSaving ? "Enregistrement…" : "Enregistrer"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-sm font-semibold text-slate-700">{titre}</h4>
+          <BadgeFigement figement={figement} />
+        </div>
+        {!toutFige && (
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            className="shrink-0 rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {isSaving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -332,9 +341,7 @@ export function PieceCard({
                       onChange={(e) => setChamp(el.prefix, "nombre", e.target.value)}
                       placeholder="Nb"
                       readOnly={!nombreEditable}
-                      className={`ml-2 w-12 rounded border px-1 py-0.5 text-xs ${
-                        nombreEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-                      }`}
+                      className={`ml-2 w-12 rounded border px-1 py-0.5 text-xs ${classeChamp(nombreEditable)}`}
                     />
                   )}
                 </td>
@@ -343,9 +350,7 @@ export function PieceCard({
                     value={valeurs[el.prefix]?.description ?? ""}
                     onChange={(e) => setChamp(el.prefix, "description", e.target.value)}
                     readOnly={!descriptionEditable}
-                    className={`w-full rounded border px-2 py-1 text-sm ${
-                      descriptionEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-                    }`}
+                    className={`w-full rounded border px-2 py-1 text-sm ${classeChamp(descriptionEditable)}`}
                   />
                 </td>
                 <td className="py-1 pr-2">
@@ -379,9 +384,7 @@ export function PieceCard({
           readOnly={!observationsSortieEditable}
           maxLength={LONGUEUR_MAX_OBSERVATION_SORTIE}
           rows={2}
-          className={`w-full rounded border px-2 py-1 text-sm ${
-            observationsSortieEditable ? "border-slate-300" : "border-slate-200 bg-slate-50 text-slate-500"
-          }`}
+          className={`w-full rounded border px-2 py-1 text-sm ${classeChamp(observationsSortieEditable)}`}
         />
       </div>
     </div>
@@ -405,6 +408,7 @@ export function MultiPieceSection({
   photosParNumero,
   entreeSignee,
   sortieSignee,
+  figement,
   onSave
 }: {
   titrePrefixe: string;
@@ -415,6 +419,7 @@ export function MultiPieceSection({
   photosParNumero?: Map<number, DocumentMetier[]>;
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const numerosExistants = rows.map((r) => r.numero ?? 0);
@@ -450,6 +455,7 @@ export function MultiPieceSection({
               photos={photosParNumero?.get(row.numero ?? 0) ?? []}
               entreeSignee={entreeSignee}
               sortieSignee={sortieSignee}
+              figement={figement}
               onSave={(payload) => onSave(row.numero ?? 0, payload)}
             />
           </div>

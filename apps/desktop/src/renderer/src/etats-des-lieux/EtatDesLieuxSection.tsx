@@ -41,6 +41,8 @@ import {
 import { ClesSection } from "./ClesSection";
 import { CompteursCard } from "./CompteursCard";
 import { DocumentsFigesCard } from "./DocumentsFigesCard";
+import { BadgeFigement } from "./BadgeFigement";
+import { classeChamp, figementCarte, type Figement } from "./figement-carte";
 import { affichagePieceAutre, MENTION_PIECE_AJOUTEE } from "./piece-autre-affichage";
 import { EquipementsDiversSection } from "./EquipementsDiversSection";
 import { InventaireSection } from "./InventaireSection";
@@ -55,6 +57,7 @@ import {
   ELEMENTS_WC
 } from "./pieces-config";
 import { SignaturesCard } from "./SignaturesCard";
+import { useSignaturesPosees } from "./use-signatures-posees";
 
 // Regroupe les photos par pièce (voir documents/api.ts,
 // etatDesLieuxPieceType/Numero) — pièces à instance unique (numero null)
@@ -109,6 +112,11 @@ export function EtatDesLieuxSection({
   // ne le restaure quand le contenu réapparaît. Bug remonté en test manuel
   // (2026-08-06) : "Ajouter" fonctionnait mais faisait remonter la page.
   const premierChargementEffectue = useRef(false);
+  const { signatures, erreur: erreurSignatures } = useSignaturesPosees(
+    etatDesLieux?.id ?? null,
+    etatDesLieux?.entreeSigneeParTous ?? false,
+    etatDesLieux?.sortieSigneeParTous ?? false
+  );
 
   const refresh = useCallback(async () => {
     if (!premierChargementEffectue.current) {
@@ -189,13 +197,15 @@ export function EtatDesLieuxSection({
   }
 
   const { entreeSigneeParTous: entreeSignee, sortieSigneeParTous: sortieSignee } = etatDesLieux;
+  const figement = figementCarte(entreeSignee, sortieSignee, signatures);
 
   return (
     <div className="space-y-4">
-      <EnTeteEtatDesLieux etatDesLieux={etatDesLieux} onSaved={refresh} />
+      <EnTeteEtatDesLieux etatDesLieux={etatDesLieux} figement={figement} onSaved={refresh} />
 
       <SignaturesCard
-        etatDesLieuxId={etatDesLieux.id}
+        signatures={signatures}
+        error={erreurSignatures}
         entreeSigneeParTous={entreeSignee}
         sortieSigneeParTous={sortieSignee}
         lieuEntree={etatDesLieux.lieuEntree}
@@ -224,6 +234,7 @@ export function EtatDesLieuxSection({
         photos={photosPieceUnique(photos, "entree")}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSave={async (payload) => {
           await submitPieceEntree(etatDesLieux.id, payload);
           await refresh();
@@ -237,6 +248,7 @@ export function EtatDesLieuxSection({
         photos={photosPieceUnique(photos, "sejour")}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSave={async (payload) => {
           await submitPieceSejour(etatDesLieux.id, payload);
           await refresh();
@@ -250,6 +262,7 @@ export function EtatDesLieuxSection({
         photos={photosPieceUnique(photos, "cuisine")}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSave={async (payload) => {
           await submitPieceCuisine(etatDesLieux.id, payload);
           await refresh();
@@ -267,6 +280,7 @@ export function EtatDesLieuxSection({
           photosParNumero={photosParNumero(photos, "chambre")}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
+          figement={figement}
           onSave={async (numero, payload) => {
             await submitPieceChambre(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -285,6 +299,7 @@ export function EtatDesLieuxSection({
           photosParNumero={photosParNumero(photos, "salle_de_bain")}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
+          figement={figement}
           onSave={async (numero, payload) => {
             await submitPieceSalleDeBain(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -303,6 +318,7 @@ export function EtatDesLieuxSection({
           photosParNumero={photosParNumero(photos, "wc")}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
+          figement={figement}
           onSave={async (numero, payload) => {
             await submitPieceWc(etatDesLieux.id, { numero, ...payload });
             await refresh();
@@ -316,6 +332,7 @@ export function EtatDesLieuxSection({
         photosParNumero={photosParNumero(photos, "autre")}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSave={async (numero, payload) => {
           await submitPieceAutre(etatDesLieux.id, { numero, ...payload });
           await refresh();
@@ -326,6 +343,7 @@ export function EtatDesLieuxSection({
         compteurs={etatDesLieux.compteurs}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSave={async (payload) => {
           await submitCompteurs(etatDesLieux.id, payload);
           await refresh();
@@ -338,6 +356,7 @@ export function EtatDesLieuxSection({
         lignes={etatDesLieux.cles}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSaveLigne={async (ligne) => {
           await submitCles(etatDesLieux.id, [ligne]);
           await refresh();
@@ -352,6 +371,7 @@ export function EtatDesLieuxSection({
         lignes={etatDesLieux.equipementsDivers}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
+        figement={figement}
         onSaveLigne={async (ligne) => {
           await submitEquipementsDivers(etatDesLieux.id, [ligne]);
           await refresh();
@@ -368,6 +388,7 @@ export function EtatDesLieuxSection({
           lignes={etatDesLieux.inventaire}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
+          figement={figement}
           onSaveLigne={async (ligne) => {
             await submitInventaire(etatDesLieux.id, [ligne]);
             await refresh();
@@ -462,6 +483,7 @@ function AutresPiecesSection({
   photosParNumero,
   entreeSignee,
   sortieSignee,
+  figement,
   onSave
 }: {
   appartement: Appartement;
@@ -469,6 +491,7 @@ function AutresPiecesSection({
   photosParNumero?: Map<number, DocumentMetier[]>;
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element | null {
   const [ajoutEnCours, setAjoutEnCours] = useState<number | null>(null);
@@ -528,6 +551,7 @@ function AutresPiecesSection({
                   photos={photosParNumero?.get(numero) ?? []}
                   entreeSignee={entreeSignee}
                   sortieSignee={sortieSignee}
+                  figement={figement}
                   onSave={(payload) => onSave(numero, { ...payload, libelle: row.libelle })}
                 />
               </div>
@@ -562,9 +586,11 @@ function AutresPiecesSection({
 
 function EnTeteEtatDesLieux({
   etatDesLieux,
+  figement,
   onSaved
 }: {
   etatDesLieux: EtatDesLieuxComplet;
+  figement: Figement | null;
   onSaved: () => Promise<void>;
 }): React.JSX.Element {
   const [showEditForm, setShowEditForm] = useState(false);
@@ -600,6 +626,8 @@ function EnTeteEtatDesLieux({
     classification: CLASSIFICATION_ETATS_DES_LIEUX,
     ...champParams
   });
+  // Plus rien à saisir : ni formulaire, ni bouton pour l'ouvrir.
+  const toutFige = !dateEntreeEditable && !dateSortieEditable && !nouvelleAdresseEditable;
 
   async function handleSave(): Promise<void> {
     setError(null);
@@ -644,7 +672,10 @@ function EnTeteEtatDesLieux({
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700">État des lieux</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-700">État des lieux</h3>
+          {toutFige && <BadgeFigement figement={figement} />}
+        </div>
         <div className="flex items-center gap-3">
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
             {LABEL_STATUT[etatDesLieux.statut]}
@@ -668,13 +699,15 @@ function EnTeteEtatDesLieux({
           >
             {isGenerating ? "Génération…" : "Générer le document"}
           </button>
-          <button
-            type="button"
-            onClick={() => setShowEditForm((v) => !v)}
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
-            {showEditForm ? "Annuler" : "Modifier"}
-          </button>
+          {!toutFige && (
+            <button
+              type="button"
+              onClick={() => setShowEditForm((v) => !v)}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              {showEditForm ? "Annuler" : "Modifier"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -684,7 +717,7 @@ function EnTeteEtatDesLieux({
         </p>
       )}
 
-      {showEditForm ? (
+      {showEditForm && !toutFige ? (
         <div className="mt-3 grid grid-cols-3 gap-4">
           <div className="space-y-1">
             <label htmlFor="edl-date-entree" className="text-sm font-medium text-slate-700">
@@ -699,7 +732,7 @@ function EnTeteEtatDesLieux({
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
             ) : (
-              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+              <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
                 {etatDesLieux.dateEntree ?? "—"} (figée par la signature d'entrée)
               </p>
             )}
@@ -717,7 +750,7 @@ function EnTeteEtatDesLieux({
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
             ) : (
-              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+              <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
                 {etatDesLieux.dateSortie ?? "—"} (figée par la signature de sortie)
               </p>
             )}
@@ -734,7 +767,7 @@ function EnTeteEtatDesLieux({
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
             ) : (
-              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+              <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
                 {etatDesLieux.nouvelleAdresseLocataire ?? "—"} (figée par la signature de sortie)
               </p>
             )}

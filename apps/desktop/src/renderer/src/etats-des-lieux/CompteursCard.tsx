@@ -1,6 +1,8 @@
 import { CLASSIFICATION_COMPTEURS, champModifiable } from "core";
 import { useState } from "react";
 import type { Compteurs } from "./api";
+import { BadgeFigement } from "./BadgeFigement";
+import { classeChamp, type Figement } from "./figement-carte";
 
 type ChampsCompteurs = Record<
   | "electriciteNumeroCompteurEntree"
@@ -51,11 +53,13 @@ export function CompteursCard({
   compteurs,
   entreeSignee,
   sortieSignee,
+  figement,
   onSave
 }: {
   compteurs: Compteurs | null;
   entreeSignee: boolean;
   sortieSignee: boolean;
+  figement: Figement | null;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState<ChampsCompteurs>(() => valeursInitiales(compteurs));
@@ -90,7 +94,7 @@ export function CompteursCard({
           value={valeurs[cle]}
           onChange={(e) => setChamp(cle, e.target.value)}
           readOnly={!editable}
-          className="w-full rounded border border-slate-300 px-2 py-1 text-sm read-only:bg-slate-50 read-only:text-slate-500"
+          className={`w-full rounded border px-2 py-1 text-sm ${classeChamp(editable)}`}
         />
       </div>
     );
@@ -146,15 +150,20 @@ export function CompteursCard({
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-700">Compteurs</h4>
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={isSaving || sortieSignee}
-          className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
-        >
-          {isSaving ? "Enregistrement…" : "Enregistrer"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-sm font-semibold text-slate-700">Compteurs</h4>
+          <BadgeFigement figement={figement} />
+        </div>
+        {!sortieSignee && (
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {isSaving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        )}
       </div>
 
       {error && (

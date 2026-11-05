@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
-import { getSignaturesPosees, type SignaturePosee } from "./api";
+import { authenticatedFetchBlob } from "../lib/authenticated-fetch";
+import type { SignaturePosee } from "./api";
+import { dateSignaturePhase } from "./figement-carte";
 
 const LABEL_PHASE: Record<"entree" | "sortie", string> = { entree: "Entrée", sortie: "Sortie" };
 
@@ -73,7 +74,7 @@ function PhaseSignatures({
   observationsBailleur: string | null;
   reservesLocataire: string | null;
 }): React.JSX.Element {
-  const dateSignature = signataires[0]?.signeLe ? new Date(signataires[0].signeLe).toLocaleDateString("fr-FR") : "—";
+  const dateSignature = dateSignaturePhase(signataires, phase) ?? "—";
   const tries = [...signataires].sort((a, b) => (a.role === b.role ? 0 : a.role === "bailleur" ? -1 : 1));
 
   return (
@@ -117,7 +118,8 @@ function PhaseSignatures({
 // desktop, et les observations et réserves générales, posées à la signature
 // dans la même transaction, ne se saisissent pas ici.
 export function SignaturesCard({
-  etatDesLieuxId,
+  signatures,
+  error,
   entreeSigneeParTous,
   sortieSigneeParTous,
   lieuEntree,
@@ -127,7 +129,8 @@ export function SignaturesCard({
   observationsBailleurSortie,
   reservesLocataireSortie
 }: {
-  etatDesLieuxId: string;
+  signatures: SignaturePosee[];
+  error: string | null;
   entreeSigneeParTous: boolean;
   sortieSigneeParTous: boolean;
   lieuEntree: string | null;
@@ -137,27 +140,6 @@ export function SignaturesCard({
   observationsBailleurSortie: string | null;
   reservesLocataireSortie: string | null;
 }): React.JSX.Element | null {
-  const [signatures, setSignatures] = useState<SignaturePosee[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let annule = false;
-    getSignaturesPosees(etatDesLieuxId)
-      .then((donnees) => {
-        if (!annule) {
-          setSignatures(donnees);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!annule) {
-          setError(err instanceof ApiError ? err.message : "Impossible de charger les signatures");
-        }
-      });
-    return () => {
-      annule = true;
-    };
-  }, [etatDesLieuxId]);
-
   if (!entreeSigneeParTous && !sortieSigneeParTous) {
     return null;
   }
