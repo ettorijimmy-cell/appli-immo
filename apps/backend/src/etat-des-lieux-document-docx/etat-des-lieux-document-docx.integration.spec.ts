@@ -546,6 +546,12 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     }
   });
 
+  // Délai explicite (même motif que etat-des-lieux-document-docx-ligne-sans-
+  // entree.integration.spec.ts) : deux générations docx avec réencodage de
+  // 7 photos, environ 3,6 s seul, au-delà du défaut Vitest (5000ms) sous la
+  // charge de la suite complète — relevé localement le 2026-11-05, avec et
+  // sans les changements en cours (même durée). Local à ce test : les
+  // autres tests du fichier restent sous le défaut.
   it("photos par phase : entrée puis sortie dans chaque pièce, jamais de photo de sortie sur le document d'entrée", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
@@ -604,7 +610,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     expect(compter(texteEntree, "Photos à l'entrée")).toBe(2);
     expect(texteEntree).not.toContain("Photos à la sortie");
     expect(balisesResiduelles(entree)).toEqual([]);
-  });
+  }, 20000);
 
   it("une photo de téléphone arrive redressée, sans EXIF ni GPS, dans le document", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });

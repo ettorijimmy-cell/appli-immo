@@ -19,7 +19,7 @@ import {
   type Database
 } from "db";
 import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -46,6 +46,21 @@ import { createTransactionalTestHooks } from "../test-utils/transactional-test";
 import { UsersModule } from "../users/users.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux.module";
 import { EtatsDesLieuxService } from "./etats-des-lieux.service";
+
+// Même motif que etat-des-lieux-document-docx-ligne-sans-entree
+// .integration.spec.ts (2026-10-30) : signerEntree/signerSortie lancent une
+// chaîne de documents figés (docx puis PDF) en ARRIÈRE-PLAN, jamais attendue
+// par leur réponse. Ce fichier réutilise UNE SEULE connexion/transaction
+// Postgres pour tout le test (createTransactionalTestHooks) : cette chaîne
+// tourne donc sur la MÊME connexion que les requêtes du test, et
+// postgres.js sérialise les requêtes d'une même connexion — les deux
+// générations (entrée + sortie) et les vérifications du test s'exécutent
+// l'une après l'autre, pas en parallèle comme en production (connexions
+// distinctes là-bas). 17 tests signent les deux phases ; sous charge de
+// suite complète, l'un ou l'autre dépassait le défaut Vitest (5000ms) —
+// relevé localement le 2026-11-05 (environ 7 s seul, identique avant et
+// après le chantier abandon d'un brouillon).
+vi.setConfig({ testTimeout: 20000 });
 
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
