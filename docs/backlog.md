@@ -1550,27 +1550,49 @@ déployé le 2026-11-01 :**
   réelles (signatures, vraies données) produit un résultat correct de
   bout en bout.
 
-**Étape 5 (remise de l'état des lieux par mail) — code terminé le 2026-11-01,
-non déployé.** Ordre impératif :
+**Étape 5 (remise de l'état des lieux par mail, observations et réserves,
+pièces ajoutées après l'entrée, photos par phase) — code terminé le
+2026-11-05, non déployé.** Ordre impératif :
 
-1. Appliquer les migrations `0070_condemned_abomination.sql`,
-   `0071_chemical_sleepwalker.sql`, `0072_big_crusher_hogan.sql` et
-   `0073_tricky_songbird.sql` en production. Elles sont purement
-   additives, mais la 0070 crée les premiers trigger et fonction du projet : à
-   vérifier avec le rôle de production. Puis redéployer dans PowerSync les 11
-   streams modifiés (liste en tête de `docs/powersync-sync-streams.yaml`),
-   jamais avant la 0073 : ils sélectionnent les colonnes de ces migrations.
-2. Déployer l'image backend, qui embarque aussi le mobile. L'inverse casserait
-   les routes d'envoi et le job des 10 minutes.
-3. Reconstruire l'installeur desktop.
-4. Envoyer un vrai mail de test depuis la Messagerie : le diagnostic du
-   2026-11-01 prouve la connexion et l'authentification sur le port 587
-   (`GET /diagnostic/smtp`), pas la livraison. Jusqu'au déploiement du commit
-   `9279fe3`, l'envoi reste sur le 465, bloqué par Scaleway : Tâches et Messagerie
-   ne peuvent pas envoyer en production.
-5. Au premier état des lieux réel : vérifier le PDF signé, sa taille, le délai
+1. Appliquer les migrations dans l'ordre : `0070_condemned_abomination.sql`,
+   `0071_chemical_sleepwalker.sql`, `0072_big_crusher_hogan.sql`, puis
+   `0073_tricky_songbird.sql`. Elles sont purement additives, mais la 0070
+   crée les premiers trigger et fonction du projet : à vérifier avec le rôle
+   de production.
+2. Déployer l'image backend, qui embarque aussi le mobile.
+3. Déployer dans PowerSync la configuration complète de
+   `docs/powersync-sync-streams.yaml`, dont les 11 streams modifiés (liste en
+   tête du fichier). Jamais avant la 0073 : ces streams sélectionnent les
+   colonnes des migrations.
+4. Reconstruire l'installeur desktop.
+5. Envoyer un vrai mail de test depuis la Messagerie, puis relire le
+   diagnostic SMTP (`GET /diagnostic/smtp`). Le diagnostic du 2026-11-01
+   prouve la connexion et l'authentification sur le port 587, pas la
+   livraison. Jusqu'au déploiement du commit `9279fe3`, l'envoi reste sur le
+   465, bloqué par Scaleway : Tâches et Messagerie ne peuvent pas envoyer en
+   production.
+6. Au premier état des lieux réel : vérifier le PDF signé, sa taille, le délai
    de préparation, puis la réception par le locataire. `envoye` signifie accepté
    par le serveur d'envoi, un rebond arrive ensuite dans la Messagerie.
+
+Limites connues de l'étape 5 :
+
+- **Date autour de minuit.** Le desktop affiche la date de signature à partir
+  de son horodatage, en heure locale (« Fait le », badge « Figé par la
+  signature… »). Le document imprime `date_entree` / `date_sortie`. Pour une
+  signature autour de minuit, les deux peuvent différer d'un jour.
+- **Pas de tests d'interface sur le desktop.** Le desktop n'a pas Playwright :
+  les écrans de l'état des lieux (observations, commentaires de sortie,
+  cartes figées, en-tête) n'ont été vérifiés que par un harnais navigateur
+  local, non versionné. Seules les fonctions pures (`figement-carte.ts`,
+  helpers de `core`) et le typecheck sont dans la CI.
+- **Photos d'origine stockées avec leurs métadonnées, dont le GPS.** Voir
+  l'entrée du même nom dans la dette technique : à traiter au chantier RGPD.
+- **Documents déjà figés non régénérés.** Un `.docx` ou un PDF figé produit
+  avant le déploiement garde sa présentation d'origine (photos non séparées
+  par phase, pas d'observations ni de réserves). C'est voulu : un document
+  signé ne change plus. Seuls les documents produits ensuite ont la nouvelle
+  présentation.
 
 ---
 
@@ -2464,11 +2486,12 @@ desktop, et retrait encadré des lignes/pièces ajoutées après l'entrée.
   pas encore à l'entrée, donc jamais signée — aucun garde-fou bloquant,
   rien dans le schéma actuel ne permet de documenter une signature
   d'entrée rétroactive proprement.
-- **Playwright (`apps/mobile-web`, test-harness/) hors CI** : 5 tests
-  (signature tactile + verrou des champs communs) rejoués manuellement à
-  chaque changement pertinent, jamais exécutés par le pipeline GitHub
-  Actions — aucune étape `playwright test` dans `.github/workflows/`.
-  Risque de régression silencieuse si un changement futur n'y pense pas.
+- **Playwright (`apps/mobile-web`, test-harness/) en CI depuis `ca31e57`**
+  (premier run vert : 41350486925) : 61 tests au 2026-11-05 (signature
+  tactile, verrou des champs, remise de l'état des lieux), lancés par
+  `pnpm --filter mobile-web test:e2e` dans GitHub Actions. Chaque test échoue
+  aussi sur toute erreur console ou exception de page
+  (`test-harness/fixtures.ts`, imposé aux specs par une règle ESLint).
 - **Harnais de test mobile (`test-harness/verrou-champs-main.tsx`)** :
   monte directement les 3 écrans avec des fixtures en dur (pas d'appel
   réseau, ces écrans sont de purs composants contrôlés par props) — toute
