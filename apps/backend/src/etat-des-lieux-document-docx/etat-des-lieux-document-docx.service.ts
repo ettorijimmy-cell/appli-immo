@@ -40,6 +40,7 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
 import { corrigerMediasJpeg, reencoderPhotoPourDocument } from "./medias-photo-document";
+import { groupesPhotosPiece, photosDuDocument } from "./photos-par-phase";
 import { SignatureIllisibleError } from "./signature-illisible.error";
 
 // Vide si non renseigné — même convention que BailDocumentDocxService,
@@ -345,11 +346,14 @@ export class EtatDesLieuxDocumentDocxService {
     // téléchargement consigne déjà son propre accès dans journal_audit
     // (DocumentsService.telecharger). Redressement EXIF, retrait des
     // métadonnées et réencodage JPEG : voir reencoderPhotoPourDocument.
-    const photosMeta = await this.documentsService.findAll({
-      entiteType: "etat_des_lieux",
-      entiteId: etatDesLieuxId,
-      categorie: "photo"
-    });
+    const photosMeta = photosDuDocument(
+      await this.documentsService.findAll({
+        entiteType: "etat_des_lieux",
+        entiteId: etatDesLieuxId,
+        categorie: "photo"
+      }),
+      avecSortie
+    );
     const images = new Map<string, ImageEntree>();
     await Promise.all(
       photosMeta.map(async (doc) => {
@@ -364,10 +368,10 @@ export class EtatDesLieuxDocumentDocxService {
         });
       })
     );
-    function idsPhotos(type: string, numero: number | null): string[] {
-      return photosMeta
-        .filter((p) => p.etatDesLieuxPieceType === type && p.etatDesLieuxPieceNumero === numero)
-        .map((p) => p.id);
+    // Par pièce, un groupe « Photos à l'entrée » puis « Photos à la sortie »,
+    // chacun omis s'il est vide (voir photos-par-phase.ts).
+    function idsPhotos(type: string, numero: number | null) {
+      return groupesPhotosPiece(photosMeta, type, numero);
     }
 
     // Signatures (chantier Signatures, 2026-10-25) : etat_des_lieux_signature

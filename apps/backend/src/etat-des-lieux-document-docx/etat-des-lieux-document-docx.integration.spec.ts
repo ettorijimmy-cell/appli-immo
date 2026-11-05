@@ -9,6 +9,7 @@ import {
   appartements,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
+  documents,
   elementsInventaireMeuble,
   equipements,
   journalAudit,
@@ -543,6 +544,66 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     for (const media of mediaGenerees) {
       expect(relations).toContain(`Target="${media.replace("word/", "")}"`);
     }
+  });
+
+  it("photos par phase : entrée puis sortie dans chaque pièce, jamais de photo de sortie sur le document d'entrée", async () => {
+    const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
+    await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
+    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+
+    // Phase posée directement par id exact : l'upload la déduit des
+    // signatures, absentes de ce dossier. Une photo sans phase (antérieure à
+    // la colonne) compte comme une photo d'entrée.
+    const photosVoulues: { piece: "sejour" | "chambre"; numero?: number; phase: "entree" | "sortie" | null }[] = [
+      { piece: "sejour", phase: "entree" },
+      { piece: "sejour", phase: null },
+      { piece: "sejour", phase: "sortie" },
+      { piece: "chambre", numero: 1, phase: "entree" },
+      { piece: "chambre", numero: 1, phase: "sortie" }
+    ];
+    for (const [i, voulue] of photosVoulues.entries()) {
+      const contenu = await creerPetitePngValide({ r: 40 * i, g: 100, b: 200 - 40 * i });
+      const document = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        documentsService.upload(
+          {
+            entiteType: "etat_des_lieux",
+            entiteId: etatDesLieux.id,
+            categorie: "photo",
+            etatDesLieuxPieceType: voulue.piece,
+            ...(voulue.numero !== undefined && { etatDesLieuxPieceNumero: voulue.numero })
+          },
+          fauxFichierMulter(contenu, `photo-${i}.png`, "image/png")
+        )
+      );
+      await db.update(documents).set({ etatDesLieuxPhase: voulue.phase }).where(eq(documents.id, document.id));
+    }
+
+    const generer = (phase: "entree" | "sortie") =>
+      requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id, phase)
+      );
+    const photosGenerees = (buffer: Buffer) =>
+      Object.keys(new PizZip(buffer).files).filter((nom) => nom.startsWith("word/media/") && nom.includes("generated"));
+    const compter = (texte: string, motif: string) => texte.split(motif).length - 1;
+    // docxtemplater échappe l'apostrophe d'une valeur insérée.
+    const lire = (buffer: Buffer) => texteDuDocx(buffer).replace(/&apos;/g, "'");
+
+    const sortie = await generer("sortie");
+    const texteSortie = lire(sortie);
+    expect(photosGenerees(sortie)).toHaveLength(5);
+    expect(compter(texteSortie, "Photos à l'entrée")).toBe(2);
+    expect(compter(texteSortie, "Photos à la sortie")).toBe(2);
+    // Séjour puis chambre 1 : chaque pièce présente l'entrée avant la sortie.
+    const positions = [...texteSortie.matchAll(/Photos à (l'entrée|la sortie)/g)].map((m) => m[1]);
+    expect(positions).toEqual(["l'entrée", "la sortie", "l'entrée", "la sortie"]);
+    expect(balisesResiduelles(sortie)).toEqual([]);
+
+    const entree = await generer("entree");
+    const texteEntree = lire(entree);
+    expect(photosGenerees(entree)).toHaveLength(3);
+    expect(compter(texteEntree, "Photos à l'entrée")).toBe(2);
+    expect(texteEntree).not.toContain("Photos à la sortie");
+    expect(balisesResiduelles(entree)).toEqual([]);
   });
 
   it("une photo de téléphone arrive redressée, sans EXIF ni GPS, dans le document", async () => {
