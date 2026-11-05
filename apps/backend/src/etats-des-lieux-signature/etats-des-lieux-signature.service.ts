@@ -20,7 +20,7 @@ import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { construireCheminStockage } from "../documents/storage/construire-chemin-stockage";
 import { EtatDesLieuxPdfService } from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
-import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
+import { EtatsDesLieuxService, MESSAGE_BROUILLON_ABANDONNE } from "../etats-des-lieux/etats-des-lieux.service";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { DocumentStorageService } from "../storage/document-storage.service";
 import { decoderEtValiderImageSignature } from "./decoder-image-signature";
@@ -138,6 +138,9 @@ export class EtatsDesLieuxSignatureService {
 
   private async signerPhase(etatDesLieuxId: string, phase: Phase, dto: SignerEtatDesLieuxDto) {
     const contexte = await this.chargerContexte(etatDesLieuxId);
+    if (contexte.abandonne) {
+      throw new ConflictException(MESSAGE_BROUILLON_ABANDONNE);
+    }
 
     const entreeDejaSignee = contexte.phasesSigneesParBailleur.has("entree");
     const sortieDejaSignee = contexte.phasesSigneesParBailleur.has("sortie");
@@ -248,6 +251,17 @@ export class EtatsDesLieuxSignatureService {
       const aujourdHui = dateDuJourParis();
 
       await this.db.transaction(async (tx) => {
+        // Même verrou de ligne que EtatsDesLieuxService.abandonner : un
+        // abandon concurrent attend la fin de cette transaction (et voit
+        // alors la signature), ou l'a précédée (et la signature est refusée).
+        const [entete] = await tx
+          .select({ archivedAt: etatsDesLieux.archivedAt })
+          .from(etatsDesLieux)
+          .where(eq(etatsDesLieux.id, etatDesLieuxId))
+          .for("update");
+        if (!entete || entete.archivedAt) {
+          throw new ConflictException(MESSAGE_BROUILLON_ABANDONNE);
+        }
         for (let i = 0; i < signataires.length; i++) {
           const signataire = signataires[i]!;
           const blob = blobsEcrits[i]!;
@@ -432,6 +446,7 @@ export class EtatsDesLieuxSignatureService {
       villeLogement: jointure.ville,
       bienId: jointure.bienId,
       nouvelleAdresseLocataire: entete.nouvelleAdresseLocataire,
+      abandonne: entete.archivedAt !== null,
       locatairesActifs: liensLocataires.map((l) => ({ locataireId: l.locataireId, nomAffiche: `${l.prenom} ${l.nom}` })),
       phasesSigneesParBailleur: new Set(signaturesBailleur.map((s) => s.phase))
     };

@@ -1,0 +1,4 @@
+ALTER TABLE "etats_des_lieux" DROP CONSTRAINT "etats_des_lieux_bail_id_unique";--> statement-breakpoint
+ALTER TABLE "etats_des_lieux" ADD COLUMN "motif_abandon" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "etats_des_lieux_bail_id_actif_unique" ON "etats_des_lieux" USING btree ("bail_id") WHERE "etats_des_lieux"."archived_at" IS NULL;--> statement-breakpoint
+ALTER TABLE "etats_des_lieux" ADD CONSTRAINT "etats_des_lieux_motif_abandon_coherent" CHECK (("etats_des_lieux"."archived_at" IS NULL AND "etats_des_lieux"."motif_abandon" IS NULL) OR ("etats_des_lieux"."archived_at" IS NOT NULL AND "etats_des_lieux"."motif_abandon" IS NOT NULL AND btrim("etats_des_lieux"."motif_abandon") <> ''));

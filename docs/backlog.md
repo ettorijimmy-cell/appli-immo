@@ -1559,6 +1559,15 @@ pièces ajoutées après l'entrée, photos par phase) — code terminé le
    `0073_tricky_songbird.sql`. Elles sont purement additives, mais la 0070
    crée les premiers trigger et fonction du projet : à vérifier avec le rôle
    de production.
+   **Si le lot contient aussi `0074_quiet_famine.sql`** (abandon d'un
+   brouillon, 2026-11-05), lancer d'abord, sur la production, le script en
+   lecture seule `verifier-archives-etats-des-lieux-avant-0074.ts`
+   (`docs/powersync-deploiement-local/`, local, non versionné ; commande et
+   garde-fous en tête du fichier). La 0074 n'est pas purement additive :
+   elle remplace la contrainte `unique(bail_id)` par un index unique partiel
+   et ajoute une CHECK qui échouerait sur toute ligne `etats_des_lieux` déjà
+   archivée — et `drizzle-kit migrate` annulerait alors tout le lot. Ne
+   migrer que sur le verdict « OK pour la 0074 » (0 ligne archivée).
 2. Déployer l'image backend, qui embarque aussi le mobile.
 3. Déployer dans PowerSync la configuration complète de
    `docs/powersync-sync-streams.yaml`, dont les 11 streams modifiés (liste en

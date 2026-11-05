@@ -786,9 +786,12 @@ streams:
   # filtrage que baux lui-même (bail_id -> appartement_id -> bien_id ->
   # bien.organisation_id -> utilisateurs, 3 niveaux, migré le 2026-08-26) —
   # toutes les tables satellites ci-dessous en ajoutent un 4e
-  # (etat_des_lieux_id -> etats_des_lieux.bail_id -> ...). Aucune colonne
-  # exclue — nouvelle_adresse_locataire incluse (cohérent avec
-  # locataires.adresse déjà accepté, décision du 2026-08-20).
+  # (etat_des_lieux_id -> etats_des_lieux.bail_id -> ...). Une seule colonne
+  # exclue : motif_abandon (migration 0074, 2026-11-05), lu uniquement par
+  # l'API (liste des brouillons abandonnés) — archived_at, déjà synchronisé,
+  # suffit à distinguer un brouillon abandonné. nouvelle_adresse_locataire
+  # incluse (cohérent avec locataires.adresse déjà accepté, décision du
+  # 2026-08-20).
   # lieu_entree/lieu_sortie ajoutées le 2026-10-25 (chantier Signatures) :
   # "Fait à ..." de chaque phase, même principe que date_entree/
   # date_sortie (posées ensemble, même transaction).

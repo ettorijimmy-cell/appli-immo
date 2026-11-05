@@ -71,6 +71,9 @@ const EXCLUSIONS: Record<string, Record<string, string>> = {
   alertes: {
     derniere_condition_vraie: "champ interne, jamais exposé à l'utilisateur (schema.ts, packages/db/src/schema/alertes.ts)"
   },
+  etats_des_lieux: {
+    motif_abandon: "texte libre du brouillon abandonné (migration 0074, 2026-11-05), lu uniquement par l'API (liste des brouillons abandonnés) — archived_at, synchronisé, suffit à reconnaître un brouillon abandonné (yaml)"
+  },
   etat_des_lieux_cles: {
     commentaire: "texte libre annexe, même motif que remboursements.commentaire (schema.ts)"
   },

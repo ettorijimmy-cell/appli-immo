@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
-import type { Database } from "db";
+import { etatsDesLieux, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { resoudrePhasesSigneesEtatDesLieux } from "./resoudre-phase-etat-des-lieux";
 
 // Verrou des photos d'état des lieux (chantier Signatures, 2026-10-25) :
@@ -21,6 +22,18 @@ export async function verifierAjoutPhotoAutorise(
   db: Pick<Database, "select">,
   etatDesLieuxId: string
 ): Promise<void> {
+  // Brouillon abandonné : plus aucun document ne s'y ajoute (même règle que
+  // les écritures de EtatsDesLieuxService.verifierExiste).
+  const [entete] = await db
+    .select({ archivedAt: etatsDesLieux.archivedAt })
+    .from(etatsDesLieux)
+    .where(eq(etatsDesLieux.id, etatDesLieuxId))
+    .limit(1);
+  if (entete?.archivedAt) {
+    throw new ConflictException(
+      "Ce brouillon d'état des lieux a été abandonné : plus aucune photo ne peut y être ajoutée."
+    );
+  }
   const { sortieSignee } = await resoudrePhasesSigneesEtatDesLieux(db, etatDesLieuxId);
   if (sortieSignee) {
     throw new ConflictException(

@@ -3061,15 +3061,31 @@ pièces, `etat_des_lieux_inventaire_etat` (bon/dusage/mauvais) pour
 l'inventaire meublé et pour "ÉQUIPEMENTS DIVERS".
 
 ### etats_des_lieux
-Un seul enregistrement par bail (`bail_id` unique) : le même document
-couvre l'entrée et la sortie (décret, art. 3, 2° — "document unique"
-permettant la comparaison), jamais deux lignes séparées. Statut jamais
-stocké, toujours dérivé de `date_entree`/`date_sortie`
+Un seul enregistrement **actif** par bail : le même document couvre
+l'entrée et la sortie (décret, art. 3, 2° — "document unique" permettant
+la comparaison), jamais deux lignes séparées. Statut jamais stocké,
+toujours dérivé de `date_entree`/`date_sortie`
 (`calculerStatutEtatDesLieux`, packages/core), même principe que
 `calculerStatutPaiement`.
+
+**Abandon d'un brouillon** (migration 0074, 2026-11-05) : un état des lieux
+dont aucune phase n'est signée peut être abandonné
+(`POST /etats-des-lieux/:id/abandonner`, motif obligatoire, 200 caractères
+maximum). Il est archivé (`archived_at` + `motif_abandon`, auteur dans
+`updated_by`), jamais supprimé ; il reste lisible (`GET /etats-des-lieux/:id`,
+liste `GET /etats-des-lieux/abandonnes?bailId=`) mais refuse toute écriture
+(pièces, listes, en-tête, photos, signature : 409). Refusé dès qu'une phase
+est signée. L'unicité par bail est portée par l'index unique partiel
+`etats_des_lieux_bail_id_actif_unique (bail_id) WHERE archived_at IS NULL`
+(remplace la contrainte `etats_des_lieux_bail_id_unique`) : un bail dont le
+brouillon a été abandonné accepte un nouvel état des lieux. L'abandon et la
+signature verrouillent la ligne d'en-tête (`FOR UPDATE`) : l'un exclut
+l'autre.
 | Champ | Type | Description |
 |---|---|---|
-| bail_id | uuid, unique | Le bail concerné |
+| bail_id | uuid | Le bail concerné. Unique parmi les lignes non archivées (index partiel ci-dessus) |
+| archived_at | timestamptz, nullable | Posé uniquement par l'abandon d'un brouillon |
+| motif_abandon | text, nullable | Motif de l'abandon, obligatoire avec `archived_at` et jamais sans lui (CHECK `etats_des_lieux_motif_abandon_coherent`, motif non blanc). Colonne structurelle pour le verrou de signature (jamais écrite par un DTO de contenu). Hors Sync Stream : le desktop lit les états des lieux par l'API |
 | date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie |
 | lieu_entree, lieu_sortie | text, nullable | Lieu de signature de chaque phase (décret, art. 2 — mention "Fait à ..."). Posé par `EtatsDesLieuxSignatureService` au moment de la signature bailleur : valeur fournie par le signataire, sinon la ville du logement par défaut. Ajouté le 2026-10-25 (chantier Signatures, migration 0067) |
 | observations_bailleur_entree, reserves_locataire_entree | text, nullable | Observations du bailleur et réserves du locataire à l'entrée (décret n° 2016-382, art. 2, 1° h), 2 000 caractères maximum. Deux champs pour que chaque texte reste attribuable à son auteur. Saisis sur l'écran de signature, avant les tracés, reçus par `SignerEtatDesLieuxDto`, nettoyés (`nettoyerTexteObservation`) et écrits dans la même transaction que les signatures, figés ensuite. Le texte de l'autre phase est refusé (400). Classés `entree`, migration 0071 |

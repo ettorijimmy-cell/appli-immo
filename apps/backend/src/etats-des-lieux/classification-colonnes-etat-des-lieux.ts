@@ -76,7 +76,10 @@ export const COLONNES_STRUCTURELLES_IGNOREES = new Set([
   // Posée par l'application elle-même à l'écriture (jamais soumise par un
   // DTO client), voir etat-des-lieux-cles.ts — pas un fait métier
   // entree/sortie/commune, un simple drapeau de traçabilité serveur.
-  "ajouteeApresSignatureEntree"
+  "ajouteeApresSignatureEntree",
+  // Posé uniquement par EtatsDesLieuxService.abandonner, avec archived_at :
+  // jamais soumis par un DTO de contenu, pas un fait d'entrée ou de sortie.
+  "motifAbandon"
 ]);
 
 // Registre central table Drizzle -> classification de ses colonnes. Chaque

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
+import { AbandonnerEtatDesLieuxDto } from "./dto/abandonner-etat-des-lieux.dto";
 import { CreateEtatDesLieuxDto } from "./dto/create-etat-des-lieux.dto";
 import { SubmitClesDto } from "./dto/submit-cles.dto";
 import { SubmitCompteursDto } from "./dto/submit-compteurs.dto";
@@ -37,9 +38,20 @@ export class EtatsDesLieuxController {
     return this.etatsDesLieuxService.getCatalogueInventaire();
   }
 
+  // Littérale aussi, même raison : brouillons abandonnés d'un bail.
+  @Get("abandonnes")
+  listerAbandonnes(@Query("bailId", ParseUUIDPipe) bailId: string) {
+    return this.etatsDesLieuxService.listerAbandonnes(bailId);
+  }
+
   @Get(":id")
   findOne(@Param("id") id: string, @Query("avecArchives") avecArchives?: string) {
     return this.etatsDesLieuxService.findById(id, avecArchives === "true");
+  }
+
+  @Post(":id/abandonner")
+  abandonner(@Param("id") id: string, @Body() dto: AbandonnerEtatDesLieuxDto) {
+    return this.etatsDesLieuxService.abandonner(id, dto);
   }
 
   @Patch(":id")

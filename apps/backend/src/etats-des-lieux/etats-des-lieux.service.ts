@@ -20,12 +20,13 @@ import {
   mettreAJourAvecAudit,
   type Database
 } from "db";
-import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, type AnyColumn } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { resoudrePhasesSigneesEtatDesLieux } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
 import { CHAMPS_IDENTITE_PAR_TABLE } from "./classification-colonnes-etat-des-lieux";
+import type { AbandonnerEtatDesLieuxDto } from "./dto/abandonner-etat-des-lieux.dto";
 import type { CreateEtatDesLieuxDto } from "./dto/create-etat-des-lieux.dto";
 import type { EtatElementDto } from "./dto/etat-element.dto";
 import type { SubmitClesDto } from "./dto/submit-cles.dto";
@@ -41,6 +42,13 @@ import type { SubmitPieceSejourDto } from "./dto/submit-piece-sejour.dto";
 import type { SubmitPieceWcDto } from "./dto/submit-piece-wc.dto";
 import type { UpdateEtatDesLieuxDto } from "./dto/update-etat-des-lieux.dto";
 import { verifierChampsAutorises } from "./verrou-champs-etat-des-lieux";
+
+export const MESSAGE_BROUILLON_ABANDONNE =
+  "Ce brouillon d'état des lieux a été abandonné : il ne peut plus être modifié.";
+
+function estViolationUnicite(erreur: unknown): boolean {
+  return typeof erreur === "object" && erreur !== null && "code" in erreur && erreur.code === "23505";
+}
 
 // La DTO expose les éléments (mur, sol, prises...) comme des objets
 // imbriqués pour coller au parcours mobile pas-à-pas (un élément à la
@@ -220,10 +228,13 @@ export class EtatsDesLieuxService {
   }
 
   async create(dto: CreateEtatDesLieuxDto) {
+    // Un brouillon abandonné (archivé) ne bloque pas la création : seul un
+    // état des lieux actif compte (index unique partiel
+    // etats_des_lieux_bail_id_actif_unique, qui tranche aussi une course).
     const [existant] = await this.db
       .select({ id: etatsDesLieux.id })
       .from(etatsDesLieux)
-      .where(eq(etatsDesLieux.bailId, dto.bailId))
+      .where(and(eq(etatsDesLieux.bailId, dto.bailId), isNull(etatsDesLieux.archivedAt)))
       .limit(1);
     if (existant) {
       throw new ConflictException("Un état des lieux existe déjà pour ce bail");
@@ -267,7 +278,15 @@ export class EtatsDesLieuxService {
       });
     }
 
-    const [entete] = await this.db.insert(etatsDesLieux).values({ bailId: dto.bailId }).returning();
+    let entete: typeof etatsDesLieux.$inferSelect | undefined;
+    try {
+      [entete] = await this.db.insert(etatsDesLieux).values({ bailId: dto.bailId }).returning();
+    } catch (erreur) {
+      if (estViolationUnicite(erreur)) {
+        throw new ConflictException("Un état des lieux existe déjà pour ce bail");
+      }
+      throw erreur;
+    }
     if (!entete) {
       throw new Error("Échec de la création de l'état des lieux");
     }
@@ -371,16 +390,90 @@ export class EtatsDesLieuxService {
     };
   }
 
+  // L'état des lieux ACTIF du bail : un brouillon abandonné n'est jamais
+  // renvoyé ici (voir listerAbandonnes ci-dessous).
   async findByBailId(bailId: string, avecArchives = false) {
     const [entete] = await this.db
       .select({ id: etatsDesLieux.id })
       .from(etatsDesLieux)
-      .where(eq(etatsDesLieux.bailId, bailId))
+      .where(and(eq(etatsDesLieux.bailId, bailId), isNull(etatsDesLieux.archivedAt)))
       .limit(1);
     if (!entete) {
       return null;
     }
     return this.findById(entete.id, avecArchives);
+  }
+
+  // Brouillons abandonnés d'un bail, du plus récent au plus ancien (en-tête
+  // seul : motif, date d'abandon, auteur). Limités à l'organisation
+  // courante, même jointure que verifierAppartenance.
+  async listerAbandonnes(bailId: string) {
+    const organisationId = this.requestContext.getOrganisationId();
+    const lignes = await this.db
+      .select({
+        id: etatsDesLieux.id,
+        bailId: etatsDesLieux.bailId,
+        createdAt: etatsDesLieux.createdAt,
+        archivedAt: etatsDesLieux.archivedAt,
+        motifAbandon: etatsDesLieux.motifAbandon,
+        updatedBy: etatsDesLieux.updatedBy
+      })
+      .from(etatsDesLieux)
+      .innerJoin(baux, eq(baux.id, etatsDesLieux.bailId))
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(
+        and(
+          eq(etatsDesLieux.bailId, bailId),
+          isNotNull(etatsDesLieux.archivedAt),
+          organisationId ? eq(bien.organisationId, organisationId) : undefined
+        )
+      )
+      .orderBy(desc(etatsDesLieux.archivedAt));
+    return lignes;
+  }
+
+  // Abandon d'un brouillon : archivage (jamais de DELETE), motif court
+  // obligatoire, refusé dès qu'une phase est signée — un état des lieux
+  // signé est un acte, jamais un brouillon. La ligne d'en-tête est
+  // verrouillée (FOR UPDATE) le temps de la vérification et de l'écriture ;
+  // la signature verrouille la même ligne avant d'écrire
+  // (EtatsDesLieuxSignatureService.signerPhase) : les deux s'excluent, une
+  // signature ne peut jamais atterrir sur un brouillon abandonné ni un
+  // abandon passer entre la vérification et une signature concurrente.
+  async abandonner(id: string, dto: AbandonnerEtatDesLieuxDto) {
+    const motif = dto.motif.trim();
+    if (!motif) {
+      throw new BadRequestException("Le motif d'abandon est obligatoire.");
+    }
+    await this.verifierAppartenance(id);
+    const entete = await this.db.transaction(async (tx) => {
+      const [actuel] = await tx.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id)).for("update");
+      if (!actuel) {
+        throw new NotFoundException("État des lieux introuvable");
+      }
+      if (actuel.archivedAt) {
+        throw new ConflictException("Ce brouillon d'état des lieux est déjà abandonné.");
+      }
+      const phases = await resoudrePhasesSigneesEtatDesLieux(tx, id);
+      if (phases.entreeSignee || phases.sortieSignee) {
+        throw new ConflictException(
+          "Abandon refusé : cet état des lieux est signé, ce n'est plus un brouillon."
+        );
+      }
+      const [archive] = await mettreAJourAvecAudit(
+        tx,
+        etatsDesLieux,
+        id,
+        { archivedAt: new Date(), motifAbandon: motif },
+        this.requestContext.getUtilisateurId()
+      );
+      return archive as typeof etatsDesLieux.$inferSelect | undefined;
+    });
+    if (!entete) {
+      throw new NotFoundException("État des lieux introuvable");
+    }
+    return this.versDto(entete);
   }
 
   // dateEntree/dateSortie/nouvelleAdresseLocataire restent modifiables à la
@@ -937,9 +1030,13 @@ export class EtatsDesLieuxService {
   // point de vérité, même message "n'existe pas" dans les deux cas, aucune
   // différence observable. Seuls les 11 submitX() appellent verifierExiste()
   // en interne (vérifié par grep) ; aucun autre appelant.
+  // Abandon d'un brouillon (2026-11-05) : un état des lieux archivé reste
+  // lisible (findById) mais n'accepte plus aucune écriture — refus après
+  // le contrôle d'appartenance, pour ne rien révéler d'une autre
+  // organisation.
   private async verifierExiste(etatDesLieuxId: string): Promise<void> {
     const [entete] = await this.db
-      .select({ id: etatsDesLieux.id })
+      .select({ id: etatsDesLieux.id, archivedAt: etatsDesLieux.archivedAt })
       .from(etatsDesLieux)
       .where(eq(etatsDesLieux.id, etatDesLieuxId))
       .limit(1);
@@ -947,6 +1044,9 @@ export class EtatsDesLieuxService {
       throw new NotFoundException("État des lieux introuvable");
     }
     await this.verifierAppartenance(etatDesLieuxId);
+    if (entete.archivedAt) {
+      throw new ConflictException(MESSAGE_BROUILLON_ABANDONNE);
+    }
   }
 
   // Extrait de findById() (Sous-commit 5c) : etatsDesLieux n'a pas de
