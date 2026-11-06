@@ -127,3 +127,13 @@ export function libelleMoisDepuisDate(date: string): string {
   const { mois } = decomposerDate(date);
   return LIBELLES_MOIS[mois - 1] as string;
 }
+
+/**
+ * Date ISO "AAAA-MM-JJ" (ou horodatage ISO, seule la date est lue) affichée
+ * "JJ/MM/AAAA", sans `Date` native : aucun décalage de fuseau possible sur
+ * une date sans heure (ex. date de début d'un bail).
+ */
+export function formaterDateCourteFr(date: string): string {
+  const { annee, mois, jour } = decomposerDate(date.slice(0, 10));
+  return `${jour.toString().padStart(2, "0")}/${mois.toString().padStart(2, "0")}/${annee}`;
+}

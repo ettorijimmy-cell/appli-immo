@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsString, MaxLength } from "class-validator";
+import { LONGUEUR_MAX_MOTIF_ABANDON } from "core";
 
 // Motif court obligatoire (décision du 2026-11-05) : conservé avec le
 // brouillon archivé, affiché dans la liste des brouillons abandonnés.
@@ -6,6 +7,6 @@ import { IsNotEmpty, IsString, MaxLength } from "class-validator";
 export class AbandonnerEtatDesLieuxDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(200)
+  @MaxLength(LONGUEUR_MAX_MOTIF_ABANDON)
   motif!: string;
 }

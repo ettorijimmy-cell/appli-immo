@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { calculerStatutEtatDesLieux, validerCompletudeEtatDesLieux } from "core";
+import { calculerStatutEtatDesLieux, motifAbandonValide, validerCompletudeEtatDesLieux } from "core";
 import {
   appartements,
   baux,
@@ -442,7 +442,7 @@ export class EtatsDesLieuxService {
   // signature ne peut jamais atterrir sur un brouillon abandonné ni un
   // abandon passer entre la vérification et une signature concurrente.
   async abandonner(id: string, dto: AbandonnerEtatDesLieuxDto) {
-    const motif = dto.motif.trim();
+    const motif = motifAbandonValide(dto.motif);
     if (!motif) {
       throw new BadRequestException("Le motif d'abandon est obligatoire.");
     }

@@ -4,6 +4,7 @@ import {
   ajouterMois,
   dateVersJourOrdinal,
   estBissextile,
+  formaterDateCourteFr,
   jourDeLaSemaine,
   joursDansLeMois,
   libelleMoisDepuisDate
@@ -127,5 +128,15 @@ describe("libelleMoisDepuisDate", () => {
 
   it("octobre pour le mois de bascule du décret 2026-596", () => {
     expect(libelleMoisDepuisDate("2026-10-01")).toBe("octobre");
+  });
+});
+
+describe("formaterDateCourteFr", () => {
+  it("affiche une date ISO en JJ/MM/AAAA", () => {
+    expect(formaterDateCourteFr("2026-08-01")).toBe("01/08/2026");
+  });
+
+  it("ne lit que la date d'un horodatage, sans conversion de fuseau", () => {
+    expect(formaterDateCourteFr("2026-12-31T23:30:00.000Z")).toBe("31/12/2026");
   });
 });

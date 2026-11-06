@@ -1,3 +1,4 @@
+import { formaterDateCourteFr } from "core";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getAppartement, getBail, type Appartement, type Bail } from "../api/patrimoine";
@@ -58,6 +59,7 @@ export function EtatDesLieuxPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [confirmationCreation, setConfirmationCreation] = useState(false);
   const [termine, setTermine] = useState(false);
   const [phaseRemise, setPhaseRemise] = useState<PhaseEtatDesLieux | null>(null);
 
@@ -134,16 +136,46 @@ export function EtatDesLieuxPage(): React.JSX.Element {
   }
 
   if (!etatDesLieux) {
+    // Confirmation avant création (décision du 2026-11-05) : jamais d'état
+    // des lieux créé d'un seul toucher, sans voir pour quel logement.
+    if (confirmationCreation) {
+      return (
+        <div className="mx-auto max-w-md space-y-4 p-4 text-center">
+          <p className="text-base font-medium text-slate-800">Démarrer l'état des lieux ?</p>
+          <p className="text-base text-slate-700">
+            Logement n° {appartement.numero}, bail du {formaterDateCourteFr(bail.dateDebut)}.
+          </p>
+          <p className="text-sm text-slate-500">
+            Un seul état des lieux couvre l'entrée et la sortie de ce bail.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleCreer()}
+            disabled={isCreating}
+            className="w-full rounded-md bg-indigo-700 py-3 text-base font-medium text-white disabled:opacity-50"
+          >
+            {isCreating ? "Création…" : "Confirmer et démarrer"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmationCreation(false)}
+            disabled={isCreating}
+            className="w-full rounded-md border border-slate-300 py-3 text-base font-medium text-slate-700 disabled:opacity-50"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-md space-y-4 p-4 text-center">
         <p className="text-base text-slate-700">Aucun état des lieux pour ce bail.</p>
         <button
           type="button"
-          onClick={() => void handleCreer()}
-          disabled={isCreating}
-          className="w-full rounded-md bg-indigo-700 py-3 text-base font-medium text-white disabled:opacity-50"
+          onClick={() => setConfirmationCreation(true)}
+          className="w-full rounded-md bg-indigo-700 py-3 text-base font-medium text-white"
         >
-          {isCreating ? "Création…" : "Démarrer l'état des lieux"}
+          Démarrer l'état des lieux
         </button>
         <button
           type="button"

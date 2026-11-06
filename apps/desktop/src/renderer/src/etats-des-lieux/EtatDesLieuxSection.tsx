@@ -1,4 +1,5 @@
 import {
+  brouillonAbandonnable,
   champModifiable,
   CLASSIFICATION_ETATS_DES_LIEUX,
   CLASSIFICATION_PIECE_AUTRE,
@@ -38,6 +39,7 @@ import {
   type PieceRow,
   type StatutEtatDesLieux
 } from "./api";
+import { AbandonBrouillonModal, BrouillonsAbandonnesCard, ConfirmationCreationModal } from "./BrouillonEtatDesLieux";
 import { ClesSection } from "./ClesSection";
 import { CompteursCard } from "./CompteursCard";
 import { DocumentsFigesCard } from "./DocumentsFigesCard";
@@ -103,6 +105,8 @@ export function EtatDesLieuxSection({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [confirmationCreation, setConfirmationCreation] = useState(false);
+  const [abandonEnCours, setAbandonEnCours] = useState(false);
   // Distingue le tout premier chargement (seul cas où on démonte l'arbre
   // entier au profit de "Chargement…") des rafraîchissements silencieux
   // après chaque sauvegarde/ajout. Sans cette distinction, chaque clic sur
@@ -157,6 +161,7 @@ export function EtatDesLieuxSection({
     setIsCreating(true);
     try {
       await createEtatDesLieux(bail.id);
+      setConfirmationCreation(false);
       await refresh();
     } catch (err) {
       // Le backend renvoie déjà un message complet et lisible (liste des
@@ -175,22 +180,40 @@ export function EtatDesLieuxSection({
 
   if (!etatDesLieux) {
     return (
-      <div className="rounded-lg border border-slate-200 p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">Aucun état des lieux pour ce bail.</p>
-          <button
-            type="button"
-            onClick={() => void handleCreer()}
-            disabled={isCreating}
-            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
-          >
-            {isCreating ? "Création…" : "Créer l'état des lieux"}
-          </button>
+      <div className="space-y-4">
+        <div className="rounded-lg border border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-500">Aucun état des lieux pour ce bail.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setConfirmationCreation(true);
+              }}
+              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+            >
+              Créer l'état des lieux
+            </button>
+          </div>
+          {error && !confirmationCreation && (
+            <p role="alert" className="mt-2 text-sm text-red-600">
+              {error}
+            </p>
+          )}
         </div>
-        {error && (
-          <p role="alert" className="mt-2 text-sm text-red-600">
-            {error}
-          </p>
+        <div className="flex justify-end">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
+        </div>
+        {showArchived && <BrouillonsAbandonnesCard bailId={bail.id} />}
+        {confirmationCreation && (
+          <ConfirmationCreationModal
+            bail={bail}
+            appartement={appartement}
+            enCours={isCreating}
+            erreur={error}
+            onAnnuler={() => setConfirmationCreation(false)}
+            onConfirmer={() => void handleCreer()}
+          />
         )}
       </div>
     );
@@ -222,9 +245,31 @@ export function EtatDesLieuxSection({
         sortieSigneeParTous={sortieSignee}
       />
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {brouillonAbandonnable(etatDesLieux) ? (
+          <button
+            type="button"
+            onClick={() => setAbandonEnCours(true)}
+            className="text-sm font-medium text-red-700 hover:text-red-800"
+          >
+            Abandonner le brouillon
+          </button>
+        ) : (
+          <span />
+        )}
         <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
       </div>
+      {showArchived && <BrouillonsAbandonnesCard bailId={bail.id} />}
+      {abandonEnCours && (
+        <AbandonBrouillonModal
+          etatDesLieuxId={etatDesLieux.id}
+          onAnnuler={() => setAbandonEnCours(false)}
+          onAbandonne={() => {
+            setAbandonEnCours(false);
+            void refresh();
+          }}
+        />
+      )}
 
       <PieceCard
         titre="Entrée"

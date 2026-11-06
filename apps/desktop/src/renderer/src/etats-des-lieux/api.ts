@@ -22,8 +22,19 @@ export interface EtatDesLieux {
   reservesLocataireSortie: string | null;
   statut: StatutEtatDesLieux;
   archivedAt: string | null;
+  motifAbandon: string | null;
   entreeSigneeParTous: boolean;
   sortieSigneeParTous: boolean;
+}
+
+// Brouillon abandonné, tel que listé par GET /etats-des-lieux/abandonnes.
+export interface EtatDesLieuxAbandonne {
+  id: string;
+  bailId: string;
+  createdAt: string;
+  archivedAt: string;
+  motifAbandon: string;
+  updatedBy: string | null;
 }
 
 export interface SignaturePosee {
@@ -161,6 +172,17 @@ export function getEtatDesLieuxById(id: string): Promise<EtatDesLieuxComplet> {
 
 export function createEtatDesLieux(bailId: string): Promise<EtatDesLieux> {
   return authenticatedFetch<EtatDesLieux>("/etats-des-lieux", { method: "POST", body: JSON.stringify({ bailId }) });
+}
+
+export function abandonnerEtatDesLieux(id: string, motif: string): Promise<EtatDesLieux> {
+  return authenticatedFetch<EtatDesLieux>(`/etats-des-lieux/${id}/abandonner`, {
+    method: "POST",
+    body: JSON.stringify({ motif })
+  });
+}
+
+export function listerEtatsDesLieuxAbandonnes(bailId: string): Promise<EtatDesLieuxAbandonne[]> {
+  return authenticatedFetch<EtatDesLieuxAbandonne[]>(`/etats-des-lieux/abandonnes?bailId=${bailId}`);
 }
 
 export function updateEtatDesLieuxHeader(
