@@ -46,6 +46,26 @@ function BoutonsRemise({
   );
 }
 
+// Entrée établie et signée sur papier (2026-11-06) : rien à signer ni à
+// envoyer pour l'entrée sur le téléphone, la sortie se fait normalement.
+function ExplicationEntreePapier({ etatDesLieux }: { etatDesLieux: EtatDesLieuxComplet }): React.JSX.Element | null {
+  const papier = etatDesLieux.entreePapier ?? null;
+  if (!papier) {
+    return null;
+  }
+  return (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-left text-sm text-emerald-900">
+      <p className="font-medium">
+        Entrée signée sur papier le {formaterDateCourteFr(papier.dateSignature)} à {papier.lieu}
+      </p>
+      <p className="mt-1">
+        L'original est conservé par le bailleur : l'entrée ne se signe pas et ne s'envoie pas ici. La sortie se fait
+        normalement sur le téléphone ; le scan de l'entrée sera joint à l'envoi de la sortie.
+      </p>
+    </div>
+  );
+}
+
 // Résout bail + appartement + état des lieux existant (ou propose sa
 // création, bloquée côté backend si la composition de l'appartement est
 // incomplète — validerCompletudeEtatDesLieux) avant de lancer le
@@ -195,6 +215,7 @@ export function EtatDesLieuxPage(): React.JSX.Element {
       key={phaseRemise}
       etatDesLieuxId={etatDesLieux.id}
       phase={phaseRemise}
+      scanEntreeJoint={phaseRemise === "sortie" && (etatDesLieux.entreePapier ?? null) !== null}
       onRetour={() => setPhaseRemise(null)}
     />
   ) : null;
@@ -208,6 +229,7 @@ export function EtatDesLieuxPage(): React.JSX.Element {
         <p className="text-base text-slate-700">
           {termine ? "Visite enregistrée." : "Cet état des lieux est déjà complet (entrée et sortie renseignées)."}
         </p>
+        <ExplicationEntreePapier etatDesLieux={etatDesLieux} />
         <BoutonsRemise etatDesLieux={etatDesLieux} onOuvrir={setPhaseRemise} />
         <p className="text-sm text-slate-500">
           Les corrections se font depuis l'application desktop, vue de relecture.
@@ -229,6 +251,9 @@ export function EtatDesLieuxPage(): React.JSX.Element {
     <>
       {panneauRemise}
       <div hidden={panneauRemise !== null}>
+        <div className="mx-auto max-w-md px-4 pt-4 empty:hidden">
+          <ExplicationEntreePapier etatDesLieux={etatDesLieux} />
+        </div>
         <BoutonsRemise etatDesLieux={etatDesLieux} onOuvrir={setPhaseRemise} />
         <EtatDesLieuxStepper
           etatDesLieux={etatDesLieux}

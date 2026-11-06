@@ -19,6 +19,7 @@ import {
   type EtatDesLieuxComplet
 } from "../api/etats-des-lieux";
 import { ApiError } from "../lib/authenticated-fetch";
+import { ChampsEntreeVidesAvertissement } from "./ChampsEntreeVidesAvertissement";
 import { ClesStepScreen } from "./ClesStepScreen";
 import { CompteursStepScreen } from "./CompteursStepScreen";
 import type { EtapeHandle } from "./etape-handle";
@@ -61,7 +62,11 @@ export function EtatDesLieuxStepper({
   onTermine: (phase: "entree" | "sortie") => void;
 }): React.JSX.Element {
   const etapes = construireEtapes(appartement, typeBail);
-  const mode: "entree" | "sortie" = etatDesLieux.statut === "entree_terminee" ? "sortie" : "entree";
+  // Une entrée établie sur papier ne se signe jamais sur le téléphone : le
+  // parcours va toujours à la sortie, même si le statut n'était pas encore
+  // à jour.
+  const mode: "entree" | "sortie" =
+    etatDesLieux.statut === "entree_terminee" || (etatDesLieux.entreePapier ?? null) !== null ? "sortie" : "entree";
   const [index, setIndex] = useState(0);
   const [donnees, setDonnees] = useState(etatDesLieux);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -138,7 +143,7 @@ export function EtatDesLieuxStepper({
           </p>
           {donnees.entreeSigneeParTous && (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Entrée signée
+              {donnees.entreePapier ? "Entrée signée sur papier" : "Entrée signée"}
             </span>
           )}
         </div>
@@ -159,6 +164,10 @@ export function EtatDesLieuxStepper({
               {...(etape.numero !== undefined && { pieceNumero: etape.numero })}
             />
           </div>
+        )}
+
+        {etape.type === "signature" && mode === "entree" && (
+          <ChampsEntreeVidesAvertissement donnees={donnees} appartement={appartement} />
         )}
 
         {renderEtape(etape, donnees, mode, catalogue, handleRef, setEtapeEstPrete, brouillonObservations)}

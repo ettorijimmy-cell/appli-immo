@@ -174,10 +174,13 @@ function EditionAdresse({
 export function RemiseEtatDesLieuxPanel({
   etatDesLieuxId,
   phase,
+  scanEntreeJoint = false,
   onRetour
 }: {
   etatDesLieuxId: string;
   phase: PhaseEtatDesLieux;
+  // Sortie après une entrée papier : le backend joint le scan d'entrée.
+  scanEntreeJoint?: boolean;
   onRetour: () => void;
 }): React.JSX.Element {
   const [etatPdf, setEtatPdf] = useState<EtatPdf>("preparation");
@@ -350,6 +353,11 @@ export function RemiseEtatDesLieuxPanel({
   return (
     <div className="mx-auto max-w-md space-y-4 p-4">
       <h1 className="text-lg font-semibold text-slate-800">Remise de l'état des lieux {libellePhase}</h1>
+      {scanEntreeJoint && (
+        <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+          Le scan de l'état des lieux d'entrée, signé sur papier, est joint au même mail que le PDF de sortie.
+        </p>
+      )}
 
       {etatPdf === "preparation" && (
         <p role="status" className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
@@ -448,7 +456,10 @@ export function RemiseEtatDesLieuxPanel({
 
       {etatPdf === "pret" && vue === "confirmation" && (
         <div className="space-y-3 rounded-md border border-slate-200 p-3">
-          <p className="text-base font-medium text-slate-800">Envoyer l'état des lieux {libellePhase} à :</p>
+          <p className="text-base font-medium text-slate-800">
+            Envoyer l'état des lieux {libellePhase}
+            {scanEntreeJoint ? " et le scan de l'entrée papier" : ""} à :
+          </p>
           <ul className="space-y-2">
             {choisis.map((d) => {
               const dernier = destinataires.find((x) => x.locataireId === d.locataireId)?.dernierEnvoi;

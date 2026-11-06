@@ -312,7 +312,8 @@ test("entrée papier : aucun envoi d'entrée, le parcours mène à la signature 
   await simulerBackend(page, etat);
   await page.goto("/test-harness/remise.html");
 
-  await expect(page.getByText("Entrée signée")).toBeVisible();
+  // Commit 7 : le badge précise « sur papier » (avant : « Entrée signée »).
+  await expect(page.getByText("Entrée signée sur papier", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Envoyer l'état des lieux d'entrée" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Envoyer l'état des lieux de sortie" })).toHaveCount(0);
 
@@ -322,6 +323,73 @@ test("entrée papier : aucun envoi d'entrée, le parcours mène à la signature 
 
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
   expect(etat.cheminsSignature).toEqual([`/etats-des-lieux/${EDL_ID}/signer-sortie`]);
+});
+
+const ENTREE_PAPIER = { dateSignature: "2026-08-01", lieu: "Paris", nomsSignataires: ["SCI Test", "Jean Dupont", "Alex Martin"] };
+
+test("entrée papier : la page l'explique, parcours de sortie complet jusqu'au panneau qui annonce le scan joint", async ({ page }) => {
+  const etat = etatInitial({ entreePapier: ENTREE_PAPIER });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+
+  await expect(page.getByText("Entrée signée sur papier le 01/08/2026 à Paris")).toBeVisible();
+  await expect(page.getByText(/La sortie se fait\s+normalement sur le téléphone/)).toBeVisible();
+
+  await allerALaSignature(page);
+  // Rappel des champs vides : seulement avant une signature d'entrée.
+  await expect(page.getByText("Champs d'entrée encore vides")).toHaveCount(0);
+  await signer(page);
+  await page.getByRole("button", { name: "Terminer" }).click();
+
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+  await expect(
+    page.getByText("Le scan de l'état des lieux d'entrée, signé sur papier, est joint au même mail que le PDF de sortie.")
+  ).toBeVisible();
+  await expect(page.getByText("PDF prêt.")).toBeVisible();
+  await page.getByRole("button", { name: "Envoyer l'état des lieux", exact: true }).click();
+  await expect(page.getByText("Envoyer l'état des lieux de sortie et le scan de l'entrée papier à :")).toBeVisible();
+  expect(etat.cheminsSignature).toEqual([`/etats-des-lieux/${EDL_ID}/signer-sortie`]);
+});
+
+test("entrée papier : aucune signature d'entrée possible, même si le statut n'est pas encore à jour", async ({ page }) => {
+  const etat = etatInitial({ statut: "non_commence", entreePapier: ENTREE_PAPIER });
+  await simulerBackend(page, etat);
+
+  await allerALaSignature(page);
+  await expect(page.getByText("Signature de l'entrée")).toHaveCount(0);
+  await signer(page);
+  await page.getByRole("button", { name: "Terminer" }).click();
+
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+  expect(etat.cheminsSignature).toEqual([`/etats-des-lieux/${EDL_ID}/signer-sortie`]);
+});
+
+test("signature d'entrée : avertissement non bloquant des champs d'entrée vides, la signature reste possible", async ({ page }) => {
+  const etat = etatInitial({ statut: "non_commence", entreeSignee: false });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+  const bouton = page.getByRole("button", { name: /^(Suivant|Terminer)$/ });
+  for (let i = 0; i < 10; i++) {
+    await expect(bouton).toBeVisible();
+    if ((await bouton.textContent()) === "Terminer") {
+      break;
+    }
+    await bouton.click();
+  }
+  await expect(page.getByText("Signature de l'entrée")).toBeVisible();
+
+  const avertissement = page.getByRole("status").filter({ hasText: "Champs d'entrée encore vides" });
+  await expect(avertissement).toBeVisible();
+  await expect(avertissement).toContainText("Vous pouvez signer quand même");
+  await expect(avertissement).toContainText(
+    "Entrée : Porte, Sonnette ou interphone, Mur, Sol, Vitrage et volets, Plafond, Éclairage et interrupteurs, Prises électriques"
+  );
+  await expect(avertissement).toContainText("Clés : Aucune clé saisie");
+
+  await signer(page);
+  await page.getByRole("button", { name: "Terminer" }).click();
+  await expect(page.getByText("Remise de l'état des lieux d'entrée")).toBeVisible();
+  expect(etat.cheminsSignature).toEqual([`/etats-des-lieux/${EDL_ID}/signer-entree`]);
 });
 
 test("page : aucune phase signée, aucun bouton d'envoi", async ({ page }) => {
