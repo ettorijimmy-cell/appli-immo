@@ -56,6 +56,14 @@ export function HistoriqueEnvoisEtatDesLieux({
             <span className="font-medium text-slate-700">{LABEL_PHASE[envoi.phase]}</span> — {envoi.nomDestinataire} —{" "}
             {envoi.adresseUtilisee}
             <span className="block text-slate-500">{libelleResultatRemise(envoi)}</span>
+            {envoi.scanSha256 && (
+              <span className="block text-slate-500">
+                Scan de l'entrée papier joint — empreinte SHA-256{" "}
+                <span className="font-mono" title={envoi.scanSha256}>
+                  {envoi.scanSha256.slice(0, 16)}…
+                </span>
+              </span>
+            )}
           </li>
         ))}
       </ul>

@@ -40,11 +40,14 @@ const BOUTON_SECONDAIRE =
 export function EnvoiEtatDesLieuxPanel({
   etatDesLieuxId,
   phase,
+  scanEntreeJoint = false,
   onFermer,
   onEnvoiTermine
 }: {
   etatDesLieuxId: string;
   phase: PhaseEtatDesLieux;
+  // Sortie après une entrée papier : le backend joint le scan d'entrée.
+  scanEntreeJoint?: boolean;
   onFermer: () => void;
   onEnvoiTermine: () => void;
 }): React.JSX.Element {
@@ -183,6 +186,11 @@ export function EnvoiEtatDesLieuxPanel({
       {vue === "confirmation" && (
         <>
           <p className="font-medium text-slate-700">Envoyer le PDF à :</p>
+          {scanEntreeJoint && (
+            <p className="text-xs text-slate-600">
+              Le scan de l'état des lieux d'entrée signé sur papier est joint au même mail.
+            </p>
+          )}
           <ul className="space-y-1">
             {choisis.map((d) => {
               const dernier = destinataires.find((x) => x.locataireId === d.locataireId)?.dernierEnvoi;

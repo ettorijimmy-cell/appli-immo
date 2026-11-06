@@ -1,3 +1,4 @@
+import { formaterDateCourteFr, formaterListeNoms, type EntreePapierEtatDesLieux } from "core";
 import { useEffect, useState } from "react";
 import { authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { SignaturePosee } from "./api";
@@ -121,6 +122,7 @@ export function SignaturesCard({
   signatures,
   error,
   entreeSigneeNumeriquement,
+  entreePapier = null,
   sortieSignee,
   lieuEntree,
   lieuSortie,
@@ -134,6 +136,9 @@ export function SignaturesCard({
   // Famille B : une entrée établie sur papier n'a aucune signature
   // numérique à montrer ici.
   entreeSigneeNumeriquement: boolean;
+  // Entrée établie sur papier : une ligne d'explication à la place des
+  // signatures d'entrée, pour qu'on ne la croie pas manquante.
+  entreePapier?: EntreePapierEtatDesLieux | null;
   sortieSignee: boolean;
   lieuEntree: string | null;
   lieuSortie: string | null;
@@ -142,7 +147,7 @@ export function SignaturesCard({
   observationsBailleurSortie: string | null;
   reservesLocataireSortie: string | null;
 }): React.JSX.Element | null {
-  if (!entreeSigneeNumeriquement && !sortieSignee) {
+  if (!entreeSigneeNumeriquement && !entreePapier && !sortieSignee) {
     return null;
   }
 
@@ -155,6 +160,16 @@ export function SignaturesCard({
         </p>
       )}
       <div className="space-y-3">
+        {entreePapier && (
+          <div className="text-sm">
+            <p className="font-medium text-slate-700">Entrée</p>
+            <p className="text-slate-600">
+              Signée sur papier le {formaterDateCourteFr(entreePapier.dateSignature)} à {entreePapier.lieu} par{" "}
+              {formaterListeNoms(entreePapier.nomsSignataires)} : aucune signature numérique. L'original est conservé
+              par le bailleur (voir « Entrée signée sur papier »).
+            </p>
+          </div>
+        )}
         {entreeSigneeNumeriquement && (
           <PhaseSignatures
             phase="entree"

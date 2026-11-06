@@ -1,3 +1,4 @@
+import type { EntreePapierEtatDesLieux } from "core";
 import { useEffect, useState } from "react";
 import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { listerDocumentsFigesEtatDesLieux, produirePdfEtatDesLieux, type StatutDocumentsFigesPhase } from "./api";
@@ -22,11 +23,14 @@ const LABEL_PHASE: Record<"entree" | "sortie", string> = { entree: "Entrée", so
 export function DocumentsFigesCard({
   etatDesLieuxId,
   entreeSigneeNumeriquement,
+  entreePapier = null,
   sortieSignee
 }: {
   etatDesLieuxId: string;
   // Famille B : pas de PDF figé ni d'envoi pour une entrée établie sur papier.
   entreeSigneeNumeriquement: boolean;
+  // Entrée papier : une ligne explique pourquoi l'entrée n'a ni PDF ni envoi.
+  entreePapier?: EntreePapierEtatDesLieux | null;
   sortieSignee: boolean;
 }): React.JSX.Element | null {
   const [statuts, setStatuts] = useState<StatutDocumentsFigesPhase[]>([]);
@@ -57,7 +61,7 @@ export function DocumentsFigesCard({
     // réussi — l'effet ne dépend d'aucune autre donnée dérivée.
   }, [etatDesLieuxId, version]);
 
-  if (!entreeSigneeNumeriquement && !sortieSignee) {
+  if (!entreeSigneeNumeriquement && !entreePapier && !sortieSignee) {
     return null;
   }
 
@@ -92,6 +96,12 @@ export function DocumentsFigesCard({
         </p>
       )}
       <div className="space-y-2">
+        {entreePapier && (
+          <p className="text-sm text-slate-600">
+            <span className="font-medium text-slate-700">{LABEL_PHASE.entree}</span> — Signée sur papier : aucun PDF ni
+            envoi d'entrée. L'original est le papier ; son scan est joint à l'envoi de la sortie.
+          </p>
+        )}
         {phasesSignees.map((phase) => {
           const statut = statuts.find((s) => s.phase === phase);
           return (
@@ -135,6 +145,7 @@ export function DocumentsFigesCard({
                 <EnvoiEtatDesLieuxPanel
                   etatDesLieuxId={etatDesLieuxId}
                   phase={phase}
+                  scanEntreeJoint={phase === "sortie" && entreePapier !== null}
                   onFermer={() => setPhaseEnvoi(null)}
                   onEnvoiTermine={() => setVersionEnvois((v) => v + 1)}
                 />

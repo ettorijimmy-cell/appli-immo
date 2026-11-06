@@ -60,6 +60,7 @@ import {
   ELEMENTS_SEJOUR,
   ELEMENTS_WC
 } from "./pieces-config";
+import { EntreePapierSection } from "./EntreePapierCard";
 import { SignaturesCard } from "./SignaturesCard";
 import { useSignaturesPosees } from "./use-signatures-posees";
 
@@ -230,16 +231,25 @@ export function EtatDesLieuxSection({
   const { entreeSigneeParTous: entreeSignee, sortieSigneeParTous: sortieSignee } = etatDesLieux;
   const phases = phasesDepuisEtatDesLieux(etatDesLieux);
   const entreeSigneeNumeriquement = phaseSigneeNumeriquement(phases, "entree");
-  const figement = figementCarte(entreeSignee, sortieSignee, signatures);
+  const figement = figementCarte(entreeSignee, sortieSignee, signatures, etatDesLieux.entreePapier);
 
   return (
     <div className="space-y-4">
       <EnTeteEtatDesLieux etatDesLieux={etatDesLieux} figement={figement} onSaved={refresh} />
 
+      <EntreePapierSection
+        etatDesLieux={etatDesLieux}
+        bail={bail}
+        appartement={appartement}
+        photos={photos}
+        onChange={refresh}
+      />
+
       <SignaturesCard
         signatures={signatures}
         error={erreurSignatures}
         entreeSigneeNumeriquement={entreeSigneeNumeriquement}
+        entreePapier={etatDesLieux.entreePapier}
         sortieSignee={sortieSignee}
         lieuEntree={etatDesLieux.lieuEntree}
         lieuSortie={etatDesLieux.lieuSortie}
@@ -252,6 +262,7 @@ export function EtatDesLieuxSection({
       <DocumentsFigesCard
         etatDesLieuxId={etatDesLieux.id}
         entreeSigneeNumeriquement={entreeSigneeNumeriquement}
+        entreePapier={etatDesLieux.entreePapier}
         sortieSignee={sortieSignee}
       />
 
@@ -722,7 +733,7 @@ function EnTeteEtatDesLieux({
           </span>
           {etatDesLieux.entreeSigneeParTous && (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Entrée signée
+              {etatDesLieux.entreePapier ? "Entrée signée sur papier" : "Entrée signée"}
             </span>
           )}
           {etatDesLieux.sortieSigneeParTous && (

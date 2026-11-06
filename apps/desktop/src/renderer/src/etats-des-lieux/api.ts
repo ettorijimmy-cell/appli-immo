@@ -349,6 +349,55 @@ export interface EnvoiHistorique extends ResultatEnvoi {
   objet: string;
   smtpMessageId: string | null;
   pdfSha256: string;
+  // Sortie après une entrée papier : empreinte du scan d'entrée joint.
+  scanSha256: string | null;
+}
+
+// Entrée établie et signée sur papier (2026-11-06) : une ligne par
+// déclaration, la plus récente en premier ; archivedAt non null pour une
+// déclaration remplacée par une correction.
+export interface DeclarationEntreePapier {
+  id: string;
+  dateSignature: string;
+  lieu: string;
+  documentId: string;
+  signataires: { role: "bailleur" | "locataire"; locataireId: string | null; nomAffiche: string }[];
+  declareeLe: string;
+  declareePar: string;
+  archivedAt: string | null;
+}
+
+export function listerDeclarationsEntreePapier(id: string): Promise<DeclarationEntreePapier[]> {
+  return authenticatedFetch<DeclarationEntreePapier[]>(`/etats-des-lieux/${id}/entree-papier`);
+}
+
+// Multipart : le scan est obligatoire à la première déclaration, facultatif
+// pour une correction (le scan précédent est alors repris).
+export function declarerEntreePapier(
+  id: string,
+  saisie: { dateSignature: string; lieu: string; bailleurNom: string; locataireIds: string[]; scan: File | null }
+): Promise<{ etatDesLieux: EtatDesLieux; avertissement: string | null }> {
+  const formData = new FormData();
+  formData.append("dateSignature", saisie.dateSignature);
+  formData.append("lieu", saisie.lieu);
+  formData.append("bailleurNom", saisie.bailleurNom);
+  formData.append("locataireIds", JSON.stringify(saisie.locataireIds));
+  if (saisie.scan) {
+    formData.append("scan", saisie.scan);
+  }
+  return authenticatedFetch(`/etats-des-lieux/${id}/entree-papier`, { method: "POST", body: formData });
+}
+
+// Bailleur pré-rempli et locataires actifs du bail : mêmes données que
+// l'écran de signature mobile.
+export interface SignatairesAttendus {
+  villeLogement: string;
+  bailleurNomPropose: string;
+  locataires: { locataireId: string; nomAffiche: string }[];
+}
+
+export function getSignatairesAttendus(id: string): Promise<SignatairesAttendus> {
+  return authenticatedFetch<SignatairesAttendus>(`/etats-des-lieux/${id}/signataires`);
 }
 
 export interface DestinataireEnvoi {

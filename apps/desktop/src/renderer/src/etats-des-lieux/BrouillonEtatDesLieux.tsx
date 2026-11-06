@@ -6,7 +6,7 @@ import type { Bail } from "../locataires/api";
 import type { Appartement } from "../patrimoine/api";
 import { abandonnerEtatDesLieux, listerEtatsDesLieuxAbandonnes, type EtatDesLieuxAbandonne } from "./api";
 
-function Modale({ titre, children }: { titre: string; children: React.ReactNode }): React.JSX.Element {
+export function Modale({ titre, children }: { titre: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div role="dialog" aria-modal="true" aria-label={titre} className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-lg">

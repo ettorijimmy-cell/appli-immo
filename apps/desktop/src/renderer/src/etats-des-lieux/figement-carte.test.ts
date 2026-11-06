@@ -41,6 +41,19 @@ describe("figementCarte", () => {
     });
   });
 
+  it("entrée papier : figé par la déclaration papier, à la date portée sur le papier", () => {
+    expect(figementCarte(true, false, [], { dateSignature: "2026-08-01" })).toEqual({
+      phase: "entree",
+      texte: "Figé par la déclaration papier du 01/08/2026 (champs d'entrée)"
+    });
+  });
+
+  it("entrée papier puis sortie signée : la signature de sortie l'emporte", () => {
+    expect(figementCarte(true, true, signatures, { dateSignature: "2026-08-01" })?.texte).toBe(
+      "Figé par la signature de sortie du 31/10/2026"
+    );
+  });
+
   it("omet la date tant que les signatures ne sont pas chargées", () => {
     expect(figementCarte(true, true, [])?.texte).toBe("Figé par la signature de sortie");
     expect(figementCarte(true, false, [])?.texte).toBe("Figé par la signature d'entrée (champs d'entrée)");

@@ -56,6 +56,10 @@ export interface DocumentMetier {
   archivedAt: string | null;
   etatDesLieuxPieceType: DocumentEtatDesLieuxPieceType | null;
   etatDesLieuxPieceNumero: number | null;
+  // Phase de prise d'une photo d'état des lieux (null : photo antérieure au
+  // chantier signatures, ou autre entité). Facultatif : absent des
+  // documents construits côté client.
+  etatDesLieuxPhase?: "entree" | "sortie" | null;
   candidatRole: DocumentCandidatRole | null;
 }
 
