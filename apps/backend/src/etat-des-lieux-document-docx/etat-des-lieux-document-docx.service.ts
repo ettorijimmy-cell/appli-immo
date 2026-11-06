@@ -12,6 +12,8 @@ import { ConfigService } from "@nestjs/config";
 import {
   calculerStatutEtatDesLieux,
   formaterListeNoms,
+  mentionCourteEntreePapier,
+  mentionEntreePapier,
   phaseSigneeNumeriquement,
   phasesDepuisEtatDesLieux,
   trouverBalisesDesequilibrees,
@@ -734,6 +736,15 @@ export class EtatDesLieuxDocumentDocxService {
       // {^...} : trouverBalisesDesequilibrees ne compte que les {#...}.
       avecObservationsGenerales,
       sansObservationsGenerales: !avecObservationsGenerales,
+
+      // Entrée établie sur papier (décision 6) : une mention au-dessus du
+      // bloc des signatures, et une mention courte à la place de « Le … à
+      // … » dans la partie entrée de ce bloc, qui n'a pas de signature
+      // numérique (famille B ci-dessus).
+      avecEntreePapier: donnees.entreePapier !== null,
+      entreeSansPapier: donnees.entreePapier === null,
+      mentionEntreePapier: donnees.entreePapier ? mentionEntreePapier(donnees.entreePapier) : VIDE,
+      mentionCourteEntreePapier: donnees.entreePapier ? mentionCourteEntreePapier(donnees.entreePapier) : VIDE,
 
       dateEntreeJour: dateEntreeAffichee.jour,
       dateEntreeMois: dateEntreeAffichee.mois,

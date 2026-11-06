@@ -9,6 +9,9 @@ export interface DonneesMailRemise {
   dateSignature: string;
   lieuSignature: string;
   nomBailleur: string;
+  // Sortie après une entrée établie sur papier : le scan de l'entrée est
+  // joint au même mail (décision 7).
+  scanEntreePapierJoint?: boolean;
 }
 
 export interface MailRemise {
@@ -54,6 +57,9 @@ export function construireMailRemiseEtatDesLieux(donnees: DonneesMailRemise): Ma
       "Bonjour,",
       "",
       `Vous trouverez ci-joint l'état des lieux ${phase} du logement situé ${adresse}, signé le ${formaterDateLongue(donnees.dateSignature)} à ${donnees.lieuSignature}.`,
+      ...(donnees.scanEntreePapierJoint
+        ? ["", "Vous trouverez également ci-joint la copie numérisée de l'état des lieux d'entrée, établi et signé sur papier."]
+        : []),
       "",
       "Cordialement,",
       donnees.nomBailleur

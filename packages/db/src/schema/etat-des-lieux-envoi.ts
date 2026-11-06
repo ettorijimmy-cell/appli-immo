@@ -40,6 +40,11 @@ export const etatDesLieuxEnvoi = pgTable(
       .notNull()
       .references(() => documents.id),
     pdfSha256: text("pdf_sha256").notNull(),
+    // Sortie après une entrée établie sur papier (2026-11-06) : le scan de
+    // l'entrée joint au même mail, et l'empreinte des octets exacts joints.
+    // Toujours ensemble, NULL pour tout autre envoi.
+    scanDocumentId: uuid("scan_document_id").references(() => documents.id),
+    scanSha256: text("scan_sha256"),
     // Une par confirmation à l'écran : la rejouer renvoie le résultat
     // existant plutôt qu'un second mail (double clic, réponse réseau perdue).
     demandeId: uuid("demande_id").notNull(),
@@ -73,6 +78,10 @@ export const etatDesLieuxEnvoi = pgTable(
     check(
       "etat_des_lieux_envoi_envoye_coherent",
       sql`(${table.statut} = 'envoye') = (${table.envoyeLe} IS NOT NULL)`
+    ),
+    check(
+      "etat_des_lieux_envoi_scan_coherent",
+      sql`(${table.scanDocumentId} IS NULL) = (${table.scanSha256} IS NULL)`
     ),
     check(
       "etat_des_lieux_envoi_echec_coherent",

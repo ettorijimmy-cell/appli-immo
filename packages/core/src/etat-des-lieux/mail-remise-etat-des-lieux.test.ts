@@ -22,6 +22,15 @@ describe("construireMailRemiseEtatDesLieux", () => {
     });
   });
 
+  it("sortie après une entrée papier : annonce la copie numérisée de l'entrée jointe", () => {
+    expect(construireMailRemiseEtatDesLieux({ ...SORTIE, scanEntreePapierJoint: true }).corps).toBe(
+      "Bonjour,\n\n" +
+        "Vous trouverez ci-joint l'état des lieux de sortie du logement situé 12 rue Turgot, 75009 Paris, signé le 3 novembre 2026 à Paris.\n\n" +
+        "Vous trouverez également ci-joint la copie numérisée de l'état des lieux d'entrée, établi et signé sur papier.\n\n" +
+        "Cordialement,\nSCI Turgot"
+    );
+  });
+
   it("entrée : libellé d'entrée dans l'objet et le corps", () => {
     const mail = construireMailRemiseEtatDesLieux({ ...SORTIE, phase: "entree" });
 

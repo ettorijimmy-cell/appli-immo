@@ -10,7 +10,7 @@ import {
   type OnApplicationShutdown
 } from "@nestjs/common";
 import { phaseSigneeNumeriquement, phasesDepuisEtatDesLieux } from "core";
-import { documents, type Database } from "db";
+import { documents, etatDesLieuxEntreePapier, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { RequestContextService } from "../common/request-context";
@@ -27,6 +27,11 @@ import { OrganisationResolutionService } from "../organisation-resolution/organi
 import { DocumentStorageService } from "../storage/document-storage.service";
 
 export type PhaseEtatDesLieux = "entree" | "sortie";
+
+// Entrée établie sur papier (décision 6) : aucun document d'entrée n'est
+// produit ni envoyé, l'original est le papier, sa copie est le scan.
+export const MESSAGE_ENTREE_PAPIER_SANS_DOCUMENT =
+  "L'entrée de cet état des lieux a été établie et signée sur papier : il n'y a pas de document d'entrée à produire ni à envoyer. Le scan est joint à l'envoi de la sortie.";
 
 export interface StatutDocumentsFigesPhase {
   phase: PhaseEtatDesLieux;
@@ -407,6 +412,9 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
       throw new NotFoundException("État des lieux introuvable");
     }
     // Famille B : pas de PDF figé pour une entrée établie sur papier.
+    if (phase === "entree" && etatDesLieux.entreePapier !== null) {
+      throw new ConflictException(MESSAGE_ENTREE_PAPIER_SANS_DOCUMENT);
+    }
     if (!phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(etatDesLieux), phase)) {
       throw new ConflictException(`La phase '${phase}' de cet état des lieux n'est pas signée.`);
     }
@@ -553,6 +561,26 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
       }
     }
     return incomplets;
+  }
+
+  // Scan de l'entrée papier active (décision 7 : joint à l'envoi de la
+  // sortie). null s'il n'y a pas d'entrée papier. L'appelant fait le
+  // contrôle d'organisation.
+  async lireScanEntreePapier(
+    etatDesLieuxId: string
+  ): Promise<{ documentId: string; nomFichier: string; contenu: Buffer } | null> {
+    const [declaration] = await this.db
+      .select({ documentId: etatDesLieuxEntreePapier.documentId })
+      .from(etatDesLieuxEntreePapier)
+      .where(
+        and(eq(etatDesLieuxEntreePapier.etatDesLieuxId, etatDesLieuxId), isNull(etatDesLieuxEntreePapier.archivedAt))
+      )
+      .limit(1);
+    if (!declaration) {
+      return null;
+    }
+    const { contenu, document } = await this.documentsService.telecharger(declaration.documentId);
+    return { documentId: declaration.documentId, nomFichier: document.nomFichier, contenu };
   }
 
   // Pour l'envoi au locataire, qui a besoin de l'identifiant exact du document

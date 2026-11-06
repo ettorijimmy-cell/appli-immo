@@ -2,8 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   avertissementDateEntreePapier,
   contenuEstUnPdf,
+  mentionCourteEntreePapier,
+  mentionEntreePapier,
   refusDateEntreePapier
 } from "./entree-papier-etat-des-lieux";
+
+describe("mentionCourteEntreePapier", () => {
+  it("date courte et original conservé", () => {
+    expect(
+      mentionCourteEntreePapier({ dateSignature: "2026-08-01", lieu: "Lyon", nomsSignataires: ["SCI", "Claire Martin"] })
+    ).toBe("Signé sur papier le 01/08/2026 — original conservé par le bailleur");
+  });
+});
+
+describe("mentionEntreePapier", () => {
+  it("date courte, lieu et signataires dans l'ordre déclaré", () => {
+    expect(
+      mentionEntreePapier({
+        dateSignature: "2026-08-01",
+        lieu: "Lyon",
+        nomsSignataires: ["SCI Exemple", "Claire Martin", "Paul Durand"]
+      })
+    ).toBe(
+      "État des lieux d'entrée établi et signé sur papier le 01/08/2026 à Lyon par SCI Exemple, Claire Martin et Paul Durand. Original conservé par le bailleur."
+    );
+  });
+
+  it("deux signataires : liés par « et »", () => {
+    expect(
+      mentionEntreePapier({ dateSignature: "2026-08-01", lieu: "Lyon", nomsSignataires: ["SCI Exemple", "Claire Martin"] })
+    ).toContain("par SCI Exemple et Claire Martin.");
+  });
+});
 
 const octets = (texte: string): Uint8Array => new TextEncoder().encode(texte);
 

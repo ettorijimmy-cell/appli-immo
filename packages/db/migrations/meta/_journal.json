@@ -533,6 +533,13 @@
       "when": 1793963843377,
       "tag": "0075_conscious_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793968684252,
+      "tag": "0076_shocking_tattoo",
+      "breakpoints": true
     }
   ]
 }

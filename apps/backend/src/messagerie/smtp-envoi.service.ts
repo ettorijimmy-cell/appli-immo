@@ -94,9 +94,13 @@ export class SmtpEnvoiService {
     destinataire: string,
     objet: string,
     corps: string,
-    pieceJointe?: PieceJointeEmail,
+    // Une ou plusieurs (sortie d'état des lieux après une entrée papier :
+    // le PDF de sortie et le scan d'entrée).
+    piecesJointesRecues?: PieceJointeEmail | PieceJointeEmail[],
     classificationChoisie?: ResultatClassification
   ): Promise<AccuseEnvoiSmtp> {
+    const piecesJointes =
+      piecesJointesRecues === undefined ? [] : Array.isArray(piecesJointesRecues) ? piecesJointesRecues : [piecesJointesRecues];
     const { email, motDePasseApp } = await this.boiteMailDedieeService.obtenirIdentifiants(organisationId);
 
     const transporteur = nodemailer.createTransport({
@@ -119,8 +123,8 @@ export class SmtpEnvoiService {
         to: destinataire,
         subject: objet,
         text: corps,
-        ...(pieceJointe && {
-          attachments: [{ filename: pieceJointe.nomFichier, content: pieceJointe.contenu, contentType: pieceJointe.mimeType }]
+        ...(piecesJointes.length > 0 && {
+          attachments: piecesJointes.map((pj) => ({ filename: pj.nomFichier, content: pj.contenu, contentType: pj.mimeType }))
         })
       });
     } catch (err) {
@@ -142,7 +146,7 @@ export class SmtpEnvoiService {
         destinataire,
         objet,
         corps,
-        pieceJointe,
+        piecesJointes,
         classificationChoisie
       );
     } catch (err) {
@@ -166,7 +170,7 @@ export class SmtpEnvoiService {
     destinataire: string,
     objet: string,
     corps: string,
-    pieceJointe?: PieceJointeEmail,
+    piecesJointes: PieceJointeEmail[],
     classificationChoisie?: ResultatClassification
   ): Promise<string> {
     const classification =
@@ -190,8 +194,8 @@ export class SmtpEnvoiService {
       throw new Error("Échec de la journalisation du message envoyé");
     }
 
-    if (pieceJointe) {
-      // Le message reste journalisé même si sa copie de pièce jointe échoue.
+    for (const pieceJointe of piecesJointes) {
+      // Le message reste journalisé même si la copie d'une pièce jointe échoue.
       try {
         await this.journaliserPieceJointe(ligne.id, organisationId, pieceJointe);
       } catch (err) {

@@ -3291,6 +3291,8 @@ juste si la fiche locataire change ensuite.
 | locataire_id | uuid, FK `locataires` | Destinataire, signataire de la phase |
 | document_id | uuid, FK `documents` | PDF figé exact de la phase |
 | pdf_sha256 | text | Empreinte du PDF envoyé, pour prouver quel contenu est parti |
+| scan_document_id | uuid, FK `documents`, nullable | Sortie après une entrée papier (migration 0076) : le scan de l'entrée joint au même mail. `NULL` pour tout autre envoi |
+| scan_sha256 | text, nullable | Empreinte des octets exacts du scan joint. Renseigné si et seulement si `scan_document_id` l'est (CHECK `etat_des_lieux_envoi_scan_coherent`) |
 | demande_id | uuid | Une par confirmation à l'écran. La rejouer renvoie le résultat existant plutôt qu'un second mail (double clic, réponse réseau perdue) |
 | nom_destinataire | text | Copie au moment de l'envoi |
 | adresse_utilisee | text | **Donnée personnelle**, copie de l'adresse utilisée. Voir "Conservation" ci-dessous |
@@ -3336,6 +3338,16 @@ ou modification confirmée de l'adresse dans la fiche) et
 `EnvoiEtatDesLieuxPanel` avec `HistoriqueEnvoisEtatDesLieux` (desktop), sur les
 règles communes de `packages/core` (`remise-etat-des-lieux.ts`). Texte du mail : `construireMailRemiseEtatDesLieux`
 (`packages/core`).
+
+**Après une entrée papier** (2026-11-06) : l'envoi de l'entrée est refusé
+(409, aucun document d'entrée n'existe), et le mail de sortie joint, après le
+PDF de sortie, le scan de l'entrée papier active
+(`etat-des-lieux-entree-papier-scan.pdf`), avec une phrase qui l'annonce. Le
+plafond de 18 Mo porte sur l'ensemble des pièces jointes. La ligne
+d'`etat_des_lieux_envoi` trace le PDF de sortie (`document_id`,
+`pdf_sha256`) et le scan joint (`scan_document_id`, `scan_sha256`, calculé
+sur les octets exacts de la pièce jointe) ; les deux pièces sont aussi
+copiées dans la messagerie (`piece_jointe_message`).
 
 **Envois abandonnés** : une ligne `en_cours` de plus de 10 minutes passe à
 `indetermine`, à chaque lecture ou envoi de cet état des lieux, et par un job

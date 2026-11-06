@@ -1,0 +1,4 @@
+ALTER TABLE "etat_des_lieux_envoi" ADD COLUMN "scan_document_id" uuid;--> statement-breakpoint
+ALTER TABLE "etat_des_lieux_envoi" ADD COLUMN "scan_sha256" text;--> statement-breakpoint
+ALTER TABLE "etat_des_lieux_envoi" ADD CONSTRAINT "etat_des_lieux_envoi_scan_document_id_documents_id_fk" FOREIGN KEY ("scan_document_id") REFERENCES "public"."documents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "etat_des_lieux_envoi" ADD CONSTRAINT "etat_des_lieux_envoi_scan_coherent" CHECK (("etat_des_lieux_envoi"."scan_document_id" IS NULL) = ("etat_des_lieux_envoi"."scan_sha256" IS NULL));

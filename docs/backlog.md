@@ -1576,6 +1576,11 @@ pièces ajoutées après l'entrée, photos par phase) — code terminé le
    toutes les lectures. Additive (une valeur d'enum, une table, des
    triggers), sans contrôle préalable nécessaire ; elle crée aussi un trigger
    sur `etat_des_lieux_signature`, à vérifier avec le rôle de production.
+   `0076_shocking_tattoo.sql` (preuve du scan joint à l'envoi de sortie)
+   suit la 0075, elle aussi avant le backend : celui-ci écrit les colonnes
+   `scan_document_id` et `scan_sha256` d'`etat_des_lieux_envoi`. Additive
+   (deux colonnes facultatives, une clé étrangère, une CHECK vraie pour
+   toutes les lignes existantes).
 2. Déployer l'image backend, qui embarque aussi le mobile.
 3. Déployer dans PowerSync la configuration complète de
    `docs/powersync-sync-streams.yaml`, dont les 11 streams modifiés (liste en

@@ -23,9 +23,13 @@ import {
 import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
-import { EtatDesLieuxPdfService, type PhaseEtatDesLieux } from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
+import {
+  EtatDesLieuxPdfService,
+  MESSAGE_ENTREE_PAPIER_SANS_DOCUMENT,
+  type PhaseEtatDesLieux
+} from "../etat-des-lieux-pdf/etat-des-lieux-pdf.service";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
-import { SmtpEnvoiService, type AccuseEnvoiSmtp } from "../messagerie/smtp-envoi.service";
+import { SmtpEnvoiService, type AccuseEnvoiSmtp, type PieceJointeEmail } from "../messagerie/smtp-envoi.service";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { adresseEnvoiValide } from "./adresse-envoi";
 import type { DestinataireEnvoiDto, EnvoyerEtatDesLieuxDto } from "./dto/envoyer-etat-des-lieux.dto";
@@ -48,13 +52,21 @@ interface Signataire {
   nomAffiche: string;
 }
 
+// Nom de la pièce jointe, indépendant du nom du fichier envoyé au desktop.
+export const NOM_FICHIER_SCAN_ENTREE_PAPIER = "etat-des-lieux-entree-papier-scan.pdf";
+
 interface ContexteMail {
   objet: string;
   corps: string;
-  contenu: Buffer;
-  nomFichier: string;
+  // Le PDF figé de la phase, puis, pour une sortie après une entrée papier,
+  // le scan de l'entrée.
+  piecesJointes: PieceJointeEmail[];
   documentId: string;
   pdfSha256: string;
+  // Preuve du scan d'entrée papier joint (null s'il n'y en a pas) :
+  // empreinte des octets exacts de la pièce jointe.
+  scanDocumentId: string | null;
+  scanSha256: string | null;
 }
 
 export interface ResultatEnvoi {
@@ -89,7 +101,9 @@ function versHistorique(ligne: LigneEnvoi) {
     adresseExpediteur: ligne.adresseExpediteur,
     objet: ligne.objet,
     smtpMessageId: ligne.smtpMessageId,
-    pdfSha256: ligne.pdfSha256
+    pdfSha256: ligne.pdfSha256,
+    // Non null pour une sortie qui a joint le scan d'une entrée papier.
+    scanSha256: ligne.scanSha256
   };
 }
 
@@ -138,6 +152,9 @@ export class EtatDesLieuxEnvoiService {
   private async verifierPhaseSignee(etatDesLieuxId: string, phase: PhaseEtatDesLieux) {
     const etat = await this.etatsDesLieuxService.findById(etatDesLieuxId);
     // Famille B : on n'envoie que le PDF d'une phase signée numériquement.
+    if (phase === "entree" && etat.entreePapier !== null) {
+      throw new ConflictException(MESSAGE_ENTREE_PAPIER_SANS_DOCUMENT);
+    }
     if (!phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(etat), phase)) {
       throw new ConflictException("Cette partie de l'état des lieux n'est pas encore signée.");
     }
@@ -297,6 +314,20 @@ export class EtatDesLieuxEnvoiService {
         "Le PDF est trop volumineux pour être envoyé par mail. Remettez-le par un autre moyen."
       );
     }
+    // Décision 7 : la sortie qui suit une entrée papier part avec le scan de
+    // l'entrée. Le plafond porte sur l'ensemble des pièces jointes.
+    const scanEntree =
+      phase === "sortie" && etat.entreePapier !== null
+        ? await this.etatDesLieuxPdfService.lireScanEntreePapier(etatDesLieuxId)
+        : null;
+    if (phase === "sortie" && etat.entreePapier !== null && !scanEntree) {
+      throw new NotFoundException("Le scan de l'état des lieux d'entrée papier est introuvable.");
+    }
+    if (scanEntree && pdf.contenu.byteLength + scanEntree.contenu.byteLength > TAILLE_MAX_PDF_ENVOI_OCTETS) {
+      throw new PayloadTooLargeException(
+        "Le PDF de sortie et le scan de l'entrée sont ensemble trop volumineux pour être envoyés par mail. Remettez-les par un autre moyen."
+      );
+    }
 
     const [logement] = await this.db
       .select({ adresse: bien.adresse, codePostal: bien.codePostal, ville: bien.ville })
@@ -329,15 +360,24 @@ export class EtatDesLieuxEnvoiService {
       villeLogement: logement.ville,
       dateSignature,
       lieuSignature: (phase === "entree" ? etat.lieuEntree : etat.lieuSortie) ?? logement.ville,
-      nomBailleur: bailleur.nomAffiche
+      nomBailleur: bailleur.nomAffiche,
+      scanEntreePapierJoint: scanEntree !== null
     });
     return {
       objet,
       corps,
-      contenu: pdf.contenu,
-      nomFichier: pdf.nomFichier,
+      piecesJointes: [
+        { nomFichier: pdf.nomFichier, contenu: pdf.contenu, mimeType: "application/pdf" },
+        ...(scanEntree
+          ? [{ nomFichier: NOM_FICHIER_SCAN_ENTREE_PAPIER, contenu: scanEntree.contenu, mimeType: "application/pdf" }]
+          : [])
+      ],
       documentId: pdf.documentId,
-      pdfSha256: createHash("sha256").update(pdf.contenu).digest("hex")
+      pdfSha256: createHash("sha256").update(pdf.contenu).digest("hex"),
+      // Même Buffer que celui joint ci-dessus : l'empreinte porte sur les
+      // octets exacts envoyés.
+      scanDocumentId: scanEntree?.documentId ?? null,
+      scanSha256: scanEntree ? createHash("sha256").update(scanEntree.contenu).digest("hex") : null
     };
   }
 
@@ -361,6 +401,8 @@ export class EtatDesLieuxEnvoiService {
         locataireId,
         documentId: contexte.documentId,
         pdfSha256: contexte.pdfSha256,
+        scanDocumentId: contexte.scanDocumentId,
+        scanSha256: contexte.scanSha256,
         demandeId,
         nomDestinataire,
         adresseUtilisee: email,
@@ -381,7 +423,7 @@ export class EtatDesLieuxEnvoiService {
         email,
         contexte.objet,
         contexte.corps,
-        { nomFichier: contexte.nomFichier, contenu: contexte.contenu, mimeType: "application/pdf" },
+        contexte.piecesJointes,
         { type: "locataire", id: locataireId }
       );
     } catch (erreur) {

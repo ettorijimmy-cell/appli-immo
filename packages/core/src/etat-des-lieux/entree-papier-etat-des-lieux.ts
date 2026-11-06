@@ -3,6 +3,21 @@
 // desktop (formulaire), jamais dupliquées.
 
 import { ajouterMois, decomposerDate, formaterDateCourteFr, formaterDateIso, joursDansLeMois } from "../dates/calendrier";
+import { formaterListeNoms } from "../documents/formater-liste-noms";
+import type { EntreePapierEtatDesLieux } from "./phases-etat-des-lieux";
+
+// À la place des pointillés du bloc « Entrée » des signatures, pour
+// qu'aucun lecteur ne croie l'entrée non signée.
+export function mentionCourteEntreePapier(entreePapier: EntreePapierEtatDesLieux): string {
+  return `Signé sur papier le ${formaterDateCourteFr(entreePapier.dateSignature)} — original conservé par le bailleur`;
+}
+
+// Décision 6 : mention imprimée sur le document (pas de PDF d'entrée généré
+// pour une entrée papier). Signataires dans l'ordre déclaré : le bailleur,
+// puis les locataires cochés.
+export function mentionEntreePapier(entreePapier: EntreePapierEtatDesLieux): string {
+  return `État des lieux d'entrée établi et signé sur papier le ${formaterDateCourteFr(entreePapier.dateSignature)} à ${entreePapier.lieu} par ${formaterListeNoms(entreePapier.nomsSignataires)}. Original conservé par le bailleur.`;
+}
 
 // Un seul PDF, plusieurs pages possibles. Plafond choisi pour laisser de la
 // place au PDF de sortie dans un même mail (décision 7, contrôle de taille
