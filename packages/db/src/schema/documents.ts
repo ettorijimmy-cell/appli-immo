@@ -90,7 +90,14 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   // (entite_id, categorie, etat_des_lieux_phase) — voir l'index unique
   // partiel ci-dessous.
   "etat_des_lieux_docx",
-  "etat_des_lieux_pdf"
+  "etat_des_lieux_pdf",
+  // Scan PDF d'une entrée d'état des lieux établie et signée sur papier
+  // (2026-11-06) — toujours entiteType='etat_des_lieux',
+  // etat_des_lieux_phase='entree', référencé par
+  // etat_des_lieux_entree_papier.document_id. Catégorie réservée : jamais
+  // créé, modifié ni archivé par les routes génériques, jamais effacé
+  // (une correction de la déclaration garde l'ancien scan).
+  "etat_des_lieux_entree_papier"
 ]);
 
 // 'valide'/'expire' sont calculés à la lecture (packages/core,

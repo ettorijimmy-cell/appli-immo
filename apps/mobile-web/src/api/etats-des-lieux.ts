@@ -136,7 +136,8 @@ export function createEtatDesLieux(bailId: string): Promise<EtatDesLieux> {
 
 export function updateEtatDesLieuxHeader(
   id: string,
-  input: { dateEntree?: string; dateSortie?: string; nouvelleAdresseLocataire?: string }
+  // dateEntree/dateSortie ne se saisissent plus (refusées par le backend).
+  input: { nouvelleAdresseLocataire?: string }
 ): Promise<EtatDesLieux> {
   return authenticatedFetch<EtatDesLieux>(`/etats-des-lieux/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 }

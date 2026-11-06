@@ -242,10 +242,12 @@ describe("EtatsDesLieuxService — contrôle d'appartenance à l'organisation (i
       return [
         {
           nom: "updateHeader",
-          soumettre: (id) => etatsDesLieuxService.updateHeader(id, { dateEntree: "2026-08-01" }),
+          // Décision 11 (2026-11-06) : dateEntree ne se saisit plus ; la
+          // nouvelle adresse reste le champ libre de l'en-tête.
+          soumettre: (id) => etatsDesLieuxService.updateHeader(id, { nouvelleAdresseLocataire: "1 rue du Test" }),
           verifierAucuneEcriture: async (id) => {
             const [entete] = await db.select().from(etatsDesLieux).where(eq(etatsDesLieux.id, id));
-            expect(entete?.dateEntree).toBeNull();
+            expect(entete?.nouvelleAdresseLocataire).toBeNull();
           }
         },
         {

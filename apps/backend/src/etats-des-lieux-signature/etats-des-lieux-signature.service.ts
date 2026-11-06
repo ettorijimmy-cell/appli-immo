@@ -50,6 +50,14 @@ interface BlobEcrit {
 // applicative faite avant la transaction (voir chargerContexte).
 const CODE_POSTGRES_VIOLATION_UNICITE = "23505";
 
+// exclusion_violation : levée par le trigger
+// etat_des_lieux_signature_entree_sans_papier (migration 0075).
+const CODE_POSTGRES_VIOLATION_EXCLUSION = "23P01";
+
+function codePostgres(erreur: unknown): unknown {
+  return typeof erreur === "object" && erreur !== null && "code" in erreur ? (erreur as { code: unknown }).code : undefined;
+}
+
 export const MESSAGE_ENTREE_DECLAREE_PAPIER =
   "L'entrée de cet état des lieux a été établie et signée sur papier : elle ne se signe pas numériquement.";
 
@@ -272,6 +280,14 @@ export class EtatsDesLieuxSignatureService {
         if (!entete || entete.archivedAt) {
           throw new ConflictException(MESSAGE_BROUILLON_ABANDONNE);
         }
+        // Relu sous le même verrou que la déclaration d'entrée papier
+        // (EtatDesLieuxEntreePapierService) : une déclaration concurrente
+        // a soit précédé ce verrou (et la signature d'entrée est refusée),
+        // soit attend la fin de cette transaction. Le trigger
+        // etat_des_lieux_signature_entree_sans_papier reste le filet.
+        if (phase === "entree" && (await resoudrePhasesSigneesEtatDesLieux(tx, etatDesLieuxId)).entreePapier !== null) {
+          throw new ConflictException(MESSAGE_ENTREE_DECLAREE_PAPIER);
+        }
         for (let i = 0; i < signataires.length; i++) {
           const signataire = signataires[i]!;
           const blob = blobsEcrits[i]!;
@@ -311,6 +327,9 @@ export class EtatsDesLieuxSignatureService {
       });
     } catch (erreur) {
       await this.nettoyerBlobsOrphelins(blobsEcrits);
+      if (codePostgres(erreur) === CODE_POSTGRES_VIOLATION_EXCLUSION) {
+        throw new ConflictException(MESSAGE_ENTREE_DECLAREE_PAPIER);
+      }
       if (this.estViolationUnicite(erreur)) {
         throw new ConflictException(
           phase === "entree"

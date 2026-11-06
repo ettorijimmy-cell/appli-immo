@@ -27,6 +27,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx.module";
 import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.service";
@@ -137,7 +138,7 @@ describe("EtatDesLieuxDocumentDocxService — fermeture de B3 par le contrôle d
     });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
     const etatDesLieux = await etatsDesLieuxService.create({ bailId: bail.id });
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     return { organisationId: organisation.id, userId, etatDesLieuxId: etatDesLieux.id };
   }

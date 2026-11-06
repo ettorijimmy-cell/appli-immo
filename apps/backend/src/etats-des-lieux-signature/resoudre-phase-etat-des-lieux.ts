@@ -1,5 +1,5 @@
 import { resoudrePhasesEtatDesLieux, type EntreePapierEtatDesLieux, type PhasesEtatDesLieux } from "core";
-import { etatDesLieuxSignature, type Database } from "db";
+import { etatDesLieuxEntreePapier, etatDesLieuxSignature, type Database } from "db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
 // Source de vérité UNIQUE des phases d'un état des lieux — réutilisée par
@@ -53,9 +53,28 @@ export async function resoudrePhasesSigneesEtatsDesLieux(
       )
     );
 
-  // Aucune entrée papier tant que la table etat_des_lieux_entree_papier
-  // n'existe pas : elle sera lue ici, au même endroit, quand elle existera.
-  const entreesPapier = new Map<string, EntreePapierEtatDesLieux>();
+  // Déclaration papier active (au plus une par état des lieux, index unique
+  // partiel etat_des_lieux_entree_papier_active_unique).
+  const declarations = await db
+    .select({
+      etatDesLieuxId: etatDesLieuxEntreePapier.etatDesLieuxId,
+      dateSignature: etatDesLieuxEntreePapier.dateSignature,
+      lieu: etatDesLieuxEntreePapier.lieu,
+      signataires: etatDesLieuxEntreePapier.signataires
+    })
+    .from(etatDesLieuxEntreePapier)
+    .where(
+      and(
+        ids === undefined ? undefined : inArray(etatDesLieuxEntreePapier.etatDesLieuxId, ids),
+        isNull(etatDesLieuxEntreePapier.archivedAt)
+      )
+    );
+  const entreesPapier = new Map<string, EntreePapierEtatDesLieux>(
+    declarations.map((d) => [
+      d.etatDesLieuxId,
+      { dateSignature: d.dateSignature, lieu: d.lieu, nomsSignataires: d.signataires.map((s) => s.nomAffiche) }
+    ])
+  );
 
   const phasesParEtat = new Map<string, ("entree" | "sortie")[]>();
   for (const id of ids ?? []) {

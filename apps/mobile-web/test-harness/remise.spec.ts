@@ -49,6 +49,10 @@ interface EtatSimule {
   repondreEnvoi: (route: Route, corps: EtatSimule["appelsEnvoi"][number]) => Promise<void>;
   repondreSignature: ((route: Route) => Promise<void>) | null;
   rechargementEnPanne: boolean;
+  // Entrée établie sur papier (non null) : verrou posé, aucun artefact
+  // numérique d'entrée.
+  entreePapier: Record<string, unknown> | null;
+  cheminsSignature: string[];
 }
 
 function json(route: Route, corps: unknown, status = 200): Promise<void> {
@@ -101,6 +105,8 @@ function etatInitial(surcharge: Partial<EtatSimule> = {}): EtatSimule {
       json(route, { resultats: corps.destinataires.map((d) => resultat(d.locataireId, "envoye")) }),
     repondreSignature: null,
     rechargementEnPanne: false,
+    entreePapier: null,
+    cheminsSignature: [],
     ...surcharge
   };
 }
@@ -118,6 +124,7 @@ function etatDesLieuxComplet(etat: EtatSimule) {
     archivedAt: null,
     entreeSigneeParTous: etat.entreeSignee,
     sortieSigneeParTous: etat.sortieSignee,
+    entreePapier: etat.entreePapier,
     entree: etat.pieceEntree,
     sejour: null,
     cuisine: null,
@@ -178,6 +185,7 @@ async function simulerBackend(page: Page, etat: EtatSimule): Promise<void> {
     }
     if (pathname.endsWith("/signer-sortie") || pathname.endsWith("/signer-entree")) {
       etat.appelsSignature++;
+      etat.cheminsSignature.push(pathname);
       etat.corpsSignatures.push(requete.postDataJSON() as Record<string, unknown>);
       if (etat.repondreSignature) {
         return etat.repondreSignature(route);
@@ -292,6 +300,28 @@ test("page : état des lieux complet, les deux phases restent accessibles", asyn
   await page.getByRole("button", { name: "Envoyer l'état des lieux de sortie" }).click();
 
   await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+});
+
+// Entrée établie sur papier (2026-11-06) : date_entree posée par la
+// déclaration, donc statut entree_terminee ; l'ouverture mène à la sortie,
+// jamais à une signature numérique d'entrée, et rien d'entrée à envoyer.
+test("entrée papier : aucun envoi d'entrée, le parcours mène à la signature de la sortie, jamais à celle de l'entrée", async ({ page }) => {
+  const etat = etatInitial({
+    entreePapier: { dateSignature: "2026-08-01", lieu: "Paris", nomsSignataires: ["SCI Test", "Jean Dupont"] }
+  });
+  await simulerBackend(page, etat);
+  await page.goto("/test-harness/remise.html");
+
+  await expect(page.getByText("Entrée signée")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Envoyer l'état des lieux d'entrée" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Envoyer l'état des lieux de sortie" })).toHaveCount(0);
+
+  await allerALaSignature(page);
+  await signer(page);
+  await page.getByRole("button", { name: "Terminer" }).click();
+
+  await expect(page.getByText("Remise de l'état des lieux de sortie")).toBeVisible();
+  expect(etat.cheminsSignature).toEqual([`/etats-des-lieux/${EDL_ID}/signer-sortie`]);
 });
 
 test("page : aucune phase signée, aucun bouton d'envoi", async ({ page }) => {

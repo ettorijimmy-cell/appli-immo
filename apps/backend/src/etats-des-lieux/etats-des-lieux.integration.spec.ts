@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -25,6 +25,7 @@ import { DATABASE_CONNECTION, DatabaseModule } from "../database/database.module
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatsDesLieuxModule } from "./etats-des-lieux.module";
 import { EtatsDesLieuxService } from "./etats-des-lieux.service";
@@ -228,10 +229,12 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     const entete = await etatsDesLieuxService.create({ bailId });
     expect(entete.statut).toBe("non_commence");
 
-    const apresEntree = await etatsDesLieuxService.updateHeader(entete.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, entete.id, { dateEntree: "2026-08-01" });
+    const apresEntree = await etatsDesLieuxService.findById(entete.id);
     expect(apresEntree.statut).toBe("entree_terminee");
 
-    const apresSortie = await etatsDesLieuxService.updateHeader(entete.id, { dateSortie: "2027-07-31" });
+    await poserDatesEtatDesLieux(db, entete.id, { dateSortie: "2027-07-31" });
+    const apresSortie = await etatsDesLieuxService.findById(entete.id);
     expect(apresSortie.statut).toBe("complet");
 
     const relu = await etatsDesLieuxService.findById(entete.id);
@@ -455,16 +458,26 @@ describe("État des lieux — soumission par pièce, listes en bloc, lecture ass
     expect(apresSuppression[0]?.elementId).toBe(second.id);
   });
 
-  it("updateHeader() : renseigne dateSortie / nouvelleAdresseLocataire (connus uniquement à la sortie)", async () => {
+  // Décision 11 (2026-11-06) : dateSortie ne se saisit plus à la main
+  // (avant : acceptée ici). nouvelleAdresseLocataire reste modifiable.
+  it("updateHeader() : renseigne nouvelleAdresseLocataire, refuse dateEntree et dateSortie (400) sans rien écrire", async () => {
     const entete = await etatsDesLieuxService.create({ bailId });
 
     const misAJour = await etatsDesLieuxService.updateHeader(entete.id, {
-      dateSortie: "2027-07-31",
       nouvelleAdresseLocataire: "12 rue du Départ, 75012 Paris"
     });
-
-    expect(misAJour.dateSortie).toBe("2027-07-31");
     expect(misAJour.nouvelleAdresseLocataire).toBe("12 rue du Départ, 75012 Paris");
+
+    await expect(
+      etatsDesLieuxService.updateHeader(entete.id, { dateSortie: "2027-07-31", nouvelleAdresseLocataire: "Autre" })
+    ).rejects.toThrow(BadRequestException);
+    await expect(etatsDesLieuxService.updateHeader(entete.id, { dateEntree: "2026-08-01" })).rejects.toThrow(
+      /ne se saisissent plus à la main/
+    );
+    const relu = await etatsDesLieuxService.findById(entete.id);
+    expect(relu.dateEntree).toBeNull();
+    expect(relu.dateSortie).toBeNull();
+    expect(relu.nouvelleAdresseLocataire).toBe("12 rue du Départ, 75012 Paris");
   });
 
   it("findByBailId() retrouve le même état des lieux que create(), findById() assemble toutes les sections", async () => {

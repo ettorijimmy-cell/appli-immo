@@ -47,7 +47,14 @@ import { DocumentStorageService } from "../storage/document-storage.service";
 // remplacerDocument/archiver) pour que les trois catégories restent
 // toujours traitées de façon identique, jamais l'une mise à jour sans
 // l'autre.
-const CATEGORIES_RESERVEES: readonly DocumentCategorie[] = ["signature", "etat_des_lieux_docx", "etat_des_lieux_pdf"];
+// Le scan d'une entrée papier (2026-11-06) en fait partie : seul
+// EtatDesLieuxEntreePapierService l'écrit.
+const CATEGORIES_RESERVEES: readonly DocumentCategorie[] = [
+  "signature",
+  "etat_des_lieux_docx",
+  "etat_des_lieux_pdf",
+  "etat_des_lieux_entree_papier"
+];
 
 export interface FindAllDocumentsFiltres {
   entiteType?: DocumentEntiteType;

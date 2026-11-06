@@ -30,6 +30,7 @@ export * from "./elements-inventaire-meuble";
 export * from "./etat-des-lieux-inventaire";
 export * from "./etat-des-lieux-signature";
 export * from "./etat-des-lieux-envoi";
+export * from "./etat-des-lieux-entree-papier";
 export * from "./tache";
 export * from "./modele-courrier";
 export * from "./revision-loyer";

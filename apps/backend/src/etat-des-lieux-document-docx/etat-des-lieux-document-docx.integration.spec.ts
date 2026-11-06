@@ -44,6 +44,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx.module";
 import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.service";
@@ -341,7 +342,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
       typeBail: "vide"
     });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -393,7 +394,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     expect(bien.nomProprietaire).toBe("Paul Durand");
 
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -416,7 +417,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("affiche le nombre réel de chaudières/chauffe-eau déclarés (1 chaudière ici, 0 chauffe-eau), et exclut les équipements archivés", async () => {
     const { appartement, etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     await db.insert(equipements).values({ appartementId: appartement.id, type: "chaudiere" });
     // Équipement archivé : ne doit jamais être compté.
@@ -436,7 +437,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("un appartement sans aucun équipement déclaré affiche 0/0, pas une ligne masquée", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -453,7 +454,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
       avecColocataire: true
     });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "meuble");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -481,7 +482,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("jointure de 3 locataires ou plus : virgules entre tous les noms, 'et' avant le dernier seulement", async () => {
     const { locataireTitulaire, bail, etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
     const c1 = await locatairesService.create(userId, { nom: "Martin", prenom: "Marie" });
     const c2 = await locatairesService.create(userId, { nom: "Durand", prenom: "Paul" });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: c1.id, role: "colocataire" });
@@ -498,7 +499,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("intègre les photos réelles (entrée, cuisine, chambre 1) via le module image", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const photoEntree = await creerPetitePngValide({ r: 200, g: 50, b: 50 });
     const photoCuisine = await creerPetitePngValide({ r: 50, g: 200, b: 50 });
@@ -555,7 +556,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("photos par phase : entrée puis sortie dans chaque pièce, jamais de photo de sortie sur le document d'entrée", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     // Phase posée directement par id exact : l'upload la déduit des
     // signatures, absentes de ce dossier. Une photo sans phase (antérieure à
@@ -615,7 +616,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("une photo de téléphone arrive redressée, sans EXIF ni GPS, dans le document", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
     const photo = await sharp({ create: { width: 40, height: 20, channels: 3, background: { r: 200, g: 50, b: 50 } } })
       .withExif({ IFD0: { Make: "MarqueTelephoneTest" }, IFD3: { GPSLatitudeRef: "N", GPSLatitude: "48/1 51/1 24/1" } })
       .withMetadata({ orientation: 6 })
@@ -649,7 +650,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("colonne sortie masquée tant que date_sortie est absente, puis renseignée une fois la sortie faite", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
     // Valeur de sortie déjà en base à ce stade (saisie anticipée possible
     // côté UI) — ne doit PAS apparaître tant que date_sortie est absente.
     await etatsDesLieuxService.submitPieceEntree(etatDesLieux.id, {
@@ -666,7 +667,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
     // balise résiduelle) ; ici on vérifie explicitement la date.
     expect(texteAvant).not.toContain("2026-09-01");
 
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateSortie: "2026-09-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateSortie: "2026-09-01" });
     const bufferApresSortie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
     );
@@ -676,7 +677,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
 
   it("bloque si la composition de l'appartement (chambres/SdB/WC) est incomplète", async () => {
     const { appartement, etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
     await db.update(appartements).set({ nombreWc: null }).where(eq(appartements.id, appartement.id));
 
     let erreur: unknown;
@@ -714,7 +715,7 @@ describe("Génération docx de l'état des lieux (intégration Postgres réelle)
   it("consigne un accès dans journal_audit à chaque génération réussie, aucun si la génération échoue", async () => {
     const { etatDesLieux } = await creerDossierComplet({ typeBail: "vide" });
     await remplirEtatDesLieuxComplet(etatDesLieux.id, "vide");
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)
@@ -905,7 +906,7 @@ describe("Garde-fou : modèle avec balises de boucle non appariées (intégratio
     });
     await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
     const etatDesLieux = await etatsDesLieuxService.create({ bailId: bail.id });
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     let erreur: unknown;
     try {

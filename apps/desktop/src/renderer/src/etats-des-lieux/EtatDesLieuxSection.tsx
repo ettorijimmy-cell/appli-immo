@@ -649,8 +649,6 @@ function EnTeteEtatDesLieux({
   onSaved: () => Promise<void>;
 }): React.JSX.Element {
   const [showEditForm, setShowEditForm] = useState(false);
-  const [dateEntree, setDateEntree] = useState(etatDesLieux.dateEntree ?? "");
-  const [dateSortie, setDateSortie] = useState(etatDesLieux.dateSortie ?? "");
   const [nouvelleAdresseLocataire, setNouvelleAdresseLocataire] = useState(
     etatDesLieux.nouvelleAdresseLocataire ?? ""
   );
@@ -660,38 +658,25 @@ function EnTeteEtatDesLieux({
   const [generationError, setGenerationError] = useState<string | null>(null);
 
   // Même classification que le verrou backend (CLASSIFICATION_ETATS_DES_LIEUX,
-  // "core") : dateEntree se fige dès la signature d'entrée, dateSortie et
-  // nouvelleAdresseLocataire seulement à la signature de sortie. Masquer
-  // ces champs plutôt que simplement désactiver le bouton "Enregistrer" :
-  // aucun moyen, même visuel, de donner l'impression qu'on peut encore les
-  // poser à la main une fois la phase correspondante signée.
+  // "core") : nouvelleAdresseLocataire se fige à la signature de sortie.
+  // dateEntree/dateSortie ne se saisissent plus à la main (décision 11,
+  // 2026-11-06) : la signature ou la déclaration de l'entrée papier les
+  // pose, elles ne sont donc jamais des champs du formulaire.
   const champParams = { ligneExistante: true, entreeSignee: etatDesLieux.entreeSigneeParTous, sortieSignee: etatDesLieux.sortieSigneeParTous };
-  const dateEntreeEditable = champModifiable({
-    nomChamp: "dateEntree",
-    classification: CLASSIFICATION_ETATS_DES_LIEUX,
-    ...champParams
-  });
-  const dateSortieEditable = champModifiable({
-    nomChamp: "dateSortie",
-    classification: CLASSIFICATION_ETATS_DES_LIEUX,
-    ...champParams
-  });
   const nouvelleAdresseEditable = champModifiable({
     nomChamp: "nouvelleAdresseLocataire",
     classification: CLASSIFICATION_ETATS_DES_LIEUX,
     ...champParams
   });
   // Plus rien à saisir : ni formulaire, ni bouton pour l'ouvrir.
-  const toutFige = !dateEntreeEditable && !dateSortieEditable && !nouvelleAdresseEditable;
+  const toutFige = !nouvelleAdresseEditable;
 
   async function handleSave(): Promise<void> {
     setError(null);
     setIsSaving(true);
     try {
       await updateEtatDesLieuxHeader(etatDesLieux.id, {
-        ...(dateEntreeEditable && dateEntree && { dateEntree }),
-        ...(dateSortieEditable && dateSortie && { dateSortie }),
-        ...(nouvelleAdresseEditable && nouvelleAdresseLocataire && { nouvelleAdresseLocataire })
+        ...(nouvelleAdresseLocataire && { nouvelleAdresseLocataire })
       });
       setShowEditForm(false);
       await onSaved();
@@ -775,40 +760,16 @@ function EnTeteEtatDesLieux({
       {showEditForm && !toutFige ? (
         <div className="mt-3 grid grid-cols-3 gap-4">
           <div className="space-y-1">
-            <label htmlFor="edl-date-entree" className="text-sm font-medium text-slate-700">
-              Date d'entrée
-            </label>
-            {dateEntreeEditable ? (
-              <input
-                id="edl-date-entree"
-                type="date"
-                value={dateEntree}
-                onChange={(e) => setDateEntree(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
-            ) : (
-              <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
-                {etatDesLieux.dateEntree ?? "—"} (figée par la signature d'entrée)
-              </p>
-            )}
+            <p className="text-sm font-medium text-slate-700">Date d'entrée</p>
+            <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
+              {etatDesLieux.dateEntree ?? "—"} (posée par la signature d'entrée)
+            </p>
           </div>
           <div className="space-y-1">
-            <label htmlFor="edl-date-sortie" className="text-sm font-medium text-slate-700">
-              Date de sortie
-            </label>
-            {dateSortieEditable ? (
-              <input
-                id="edl-date-sortie"
-                type="date"
-                value={dateSortie}
-                onChange={(e) => setDateSortie(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
-            ) : (
-              <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
-                {etatDesLieux.dateSortie ?? "—"} (figée par la signature de sortie)
-              </p>
-            )}
+            <p className="text-sm font-medium text-slate-700">Date de sortie</p>
+            <p className={`rounded-md border px-3 py-2 text-sm ${classeChamp(false)}`}>
+              {etatDesLieux.dateSortie ?? "—"} (posée par la signature de sortie)
+            </p>
           </div>
           <div className="space-y-1">
             <label htmlFor="edl-nouvelle-adresse" className="text-sm font-medium text-slate-700">

@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -234,8 +234,12 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
         etatsDesLieuxService.submitPieceEntree(etatDesLieuxId, { mur: { description: "RAS", etatEntree: "B" } })
       );
       expect(resultat.murDescription).toBe("RAS");
+      // Décision 11 (2026-11-06) : seule la nouvelle adresse reste
+      // saisissable dans l'en-tête.
       await expect(
-        avecContexte(() => etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateEntree: "2026-09-01" }))
+        avecContexte(() =>
+          etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "1 rue du Test" })
+        )
       ).resolves.toBeTruthy();
     });
   });
@@ -774,7 +778,9 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
       expect(resultat[0]!.etatSortie).toBe("dusage");
     });
 
-    it("updateHeader : refuse dateEntree, autorise toujours dateSortie et nouvelleAdresseLocataire", async () => {
+    // Décision 11 (2026-11-06) : dateSortie, encore libre côté verrou, n'est
+    // plus une saisie acceptée (400) ; avant, elle était autorisée ici.
+    it("updateHeader : refuse dateEntree (verrou), refuse dateSortie (plus de saisie libre), autorise nouvelleAdresseLocataire", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(userId);
       await signerEntree(etatDesLieuxId, titulaire.id);
 
@@ -784,7 +790,7 @@ describe("Verrou de signature — submitX()/updateHeader()/photos (intégration 
 
       await expect(
         avecContexte(() => etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateSortie: "2026-09-30" }))
-      ).resolves.toBeTruthy();
+      ).rejects.toThrow(BadRequestException);
       await expect(
         avecContexte(() =>
           etatsDesLieuxService.updateHeader(etatDesLieuxId, { nouvelleAdresseLocataire: "2 rue du Départ" })

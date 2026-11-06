@@ -26,6 +26,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx.module";
 import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.service";
@@ -190,7 +191,7 @@ describe("EtatDesLieuxDocumentDocxService — génération avec le modèle embar
     await etatsDesLieuxService.submitPieceEntree(etatDesLieux.id, {
       porte: { description: "Bois", etatEntree: "B" }
     });
-    await etatsDesLieuxService.updateHeader(etatDesLieux.id, { dateEntree: "2026-08-01" });
+    await poserDatesEtatDesLieux(db, etatDesLieux.id, { dateEntree: "2026-08-01" });
 
     const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieux.id)

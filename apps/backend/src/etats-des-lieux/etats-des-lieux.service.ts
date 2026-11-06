@@ -46,6 +46,9 @@ import { verifierChampsAutorises } from "./verrou-champs-etat-des-lieux";
 export const MESSAGE_BROUILLON_ABANDONNE =
   "Ce brouillon d'état des lieux a été abandonné : il ne peut plus être modifié.";
 
+export const MESSAGE_DATES_NON_SAISISSABLES =
+  "Les dates d'entrée et de sortie ne se saisissent plus à la main : elles sont posées par la signature ou par la déclaration de l'entrée papier.";
+
 function estViolationUnicite(erreur: unknown): boolean {
   return typeof erreur === "object" && erreur !== null && "code" in erreur && erreur.code === "23505";
 }
@@ -476,18 +479,22 @@ export class EtatsDesLieuxService {
     return this.versDto(entete);
   }
 
-  // dateEntree/dateSortie/nouvelleAdresseLocataire restent modifiables à la
-  // main via cet endpoint UNIQUEMENT tant que leur phase n'est pas signée
-  // (cas d'un état des lieux papier ressaisi après coup, sans jamais passer
-  // par EtatsDesLieuxSignatureService) — figés dès qu'une signature
-  // bailleur existe pour la phase correspondante (verifierChampsAutorises,
-  // classification-colonnes-etat-des-lieux.ts). lieuEntree/lieuSortie ne
-  // sont volontairement pas dans UpdateEtatDesLieuxDto : seul
-  // EtatsDesLieuxSignatureService les pose, au moment de la signature.
+  // Seule nouvelleAdresseLocataire reste modifiable à la main, tant que la
+  // sortie n'est pas signée (verifierChampsAutorises,
+  // classification-colonnes-etat-des-lieux.ts). dateEntree/dateSortie ne se
+  // saisissent plus librement (décision 11, 2026-11-06) : la signature
+  // (EtatsDesLieuxSignatureService) ou la déclaration d'entrée papier
+  // (EtatDesLieuxEntreePapierService) les pose, avec lieuEntree/lieuSortie,
+  // dans leur propre transaction.
   async updateHeader(id: string, dto: UpdateEtatDesLieuxDto) {
     await this.verifierExiste(id);
     const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, id);
+    // Le verrou d'abord : un champ figé par une signature reste un conflit
+    // (409), une date encore libre est une saisie refusée (400).
     verifierChampsAutorises(phases, etatsDesLieux, { ...dto }, null);
+    if (dto.dateEntree !== undefined || dto.dateSortie !== undefined) {
+      throw new BadRequestException(MESSAGE_DATES_NON_SAISISSABLES);
+    }
     const [entete] = await mettreAJourAvecAudit(
       this.db,
       etatsDesLieux,

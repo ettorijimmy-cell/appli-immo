@@ -297,7 +297,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 |---|---|---|
 | entite_type | enum | `sci` \| `immeuble` \| `bien` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` \| `garant` — lien polymorphe. Pas de contrainte de clé étrangère possible (8 tables cibles) : `DocumentsService.verifierEntiteExiste()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03). `garant` ajouté le 2026-08-24 (checklist documentaire, pièce d'identité du garant). `bien` ajouté le 2026-08-26 (migration bien) : seul chemin possible pour rattacher un document à un bien non-immeuble (maison, parking, bureau, local_commercial) ou à un immeuble créé après cette date via `BienService` — `immeuble` reste réservé aux documents déjà rattachés à une ligne `immeubles` existante (table conservée, voir section `bien` ci-dessous) |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
-| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` \| `signature` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous). `signature` ajoutée le 2026-10-24 (chantier Signatures, voir section `etat_des_lieux_signature` ci-dessous) : toujours `entiteType='etat_des_lieux'`, l'image étant référencée par `etat_des_lieux_signature.document_id`, jamais affichée par ailleurs |
+| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` \| `signature` \| `etat_des_lieux_docx` \| `etat_des_lieux_pdf` \| `etat_des_lieux_entree_papier` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous). `signature` ajoutée le 2026-10-24 (chantier Signatures, voir section `etat_des_lieux_signature` ci-dessous) : toujours `entiteType='etat_des_lieux'`, l'image étant référencée par `etat_des_lieux_signature.document_id`, jamais affichée par ailleurs. `etat_des_lieux_entree_papier` ajoutée le 2026-11-06 (migration 0075) : scan PDF d'une entrée papier, catégorie réservée, voir section `etat_des_lieux_entree_papier` |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
 | date_expiration | date, nullable | Alimente le moteur d'alertes (Module 6) et le calcul de `statut` |
 | nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |
@@ -3086,8 +3086,8 @@ l'autre.
 | bail_id | uuid | Le bail concerné. Unique parmi les lignes non archivées (index partiel ci-dessus) |
 | archived_at | timestamptz, nullable | Posé uniquement par l'abandon d'un brouillon |
 | motif_abandon | text, nullable | Motif de l'abandon, obligatoire avec `archived_at` et jamais sans lui (CHECK `etats_des_lieux_motif_abandon_coherent`, motif non blanc). Colonne structurelle pour le verrou de signature (jamais écrite par un DTO de contenu). Hors Sync Stream : le desktop lit les états des lieux par l'API |
-| date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie |
-| lieu_entree, lieu_sortie | text, nullable | Lieu de signature de chaque phase (décret, art. 2 — mention "Fait à ..."). Posé par `EtatsDesLieuxSignatureService` au moment de la signature bailleur : valeur fournie par le signataire, sinon la ville du logement par défaut. Ajouté le 2026-10-25 (chantier Signatures, migration 0067) |
+| date_entree, date_sortie | date, nullable | `date_sortie` reste `null` potentiellement des mois ou années après la création, jusqu'à la visite de sortie. **Plus de saisie libre** depuis le 2026-11-06 (décision 11) : `PATCH /etats-des-lieux/:id` refuse les deux champs (400, après le verrou : un champ déjà figé reste un 409). `date_entree` est posée par la signature d'entrée ou par la déclaration de l'entrée papier (date portée sur le papier, suit la déclaration active), `date_sortie` par la signature de sortie. Des lignes antérieures peuvent porter une date saisie à la main sans signature |
+| lieu_entree, lieu_sortie | text, nullable | Lieu de signature de chaque phase (décret, art. 2 — mention "Fait à ..."). Posé par `EtatsDesLieuxSignatureService` au moment de la signature bailleur : valeur fournie par le signataire, sinon la ville du logement par défaut. Ajouté le 2026-10-25 (chantier Signatures, migration 0067). Pour une entrée papier, `lieu_entree` est le lieu porté sur le papier, posé par la déclaration |
 | observations_bailleur_entree, reserves_locataire_entree | text, nullable | Observations du bailleur et réserves du locataire à l'entrée (décret n° 2016-382, art. 2, 1° h), 2 000 caractères maximum. Deux champs pour que chaque texte reste attribuable à son auteur. Saisis sur l'écran de signature, avant les tracés, reçus par `SignerEtatDesLieuxDto`, nettoyés (`nettoyerTexteObservation`) et écrits dans la même transaction que les signatures, figés ensuite. Le texte de l'autre phase est refusé (400). Classés `entree`, migration 0071 |
 | observations_bailleur_sortie, reserves_locataire_sortie | text, nullable | Mêmes règles pour la sortie. Classés `sortie`, migration 0071 |
 | nouvelle_adresse_locataire | text, nullable | Seul champ "domicile" du locataire porté par ce document (décret, art. 2, 2° a) — connu uniquement à la sortie. Texte libre, décision assumée. **Obligatoire pour signer la sortie** : `EtatsDesLieuxSignatureService` refuse une signature sans adresse et l'écrit dans la même transaction que les signatures ; saisie sur l'écran de signature mobile, 500 caractères maximum, une seule valeur pour tous les colocataires (nom devant chaque adresse), mention du type « Non communiquée par le locataire » acceptée. Imprimé dans le document de sortie via la balise `{nouvelleAdresseSortie}`, jamais dans le document d'entrée (`viderChampsSortie`) |
@@ -3345,6 +3345,61 @@ nouvel envoi. Le mail a pu partir ou non.
 
 **PowerSync** : table **hors publication et hors Sync Streams**, décision
 explicite. Lecture REST uniquement via `apps/backend`.
+
+### etat_des_lieux_entree_papier
+Entrée d'état des lieux établie et signée **sur papier** (2026-11-06,
+migration 0075), à la place de la signature numérique d'entrée. La sortie se
+signe ensuite numériquement, comme d'habitude.
+| Champ | Type | Description |
+|---|---|---|
+| etat_des_lieux_id | uuid, FK `etats_des_lieux` | |
+| date_signature | date | Date portée sur le papier, jamais dans le futur (date du jour à Paris) |
+| lieu | text | Lieu porté sur le papier, non blanc (CHECK `etat_des_lieux_entree_papier_lieu_non_vide`) |
+| document_id | uuid, FK `documents` | Partagé par plusieurs lignes quand une correction reprend le scan précédent. Scan PDF (`documents.categorie = 'etat_des_lieux_entree_papier'`, `etat_des_lieux_phase = 'entree'`) |
+| signataires | jsonb | `[{ role, locataireId, nomAffiche }]` : le bailleur (`locataireId` null, nom saisi) puis les locataires cochés, actifs sur le bail, noms copiés à la déclaration. Au moins deux entrées (CHECK `etat_des_lieux_entree_papier_signataires_coherent`) |
+| declaree_le | timestamptz | |
+| declaree_par | uuid, FK `utilisateurs` | Auteur de la déclaration |
+| archived_at | timestamptz, nullable | Posé quand une correction remplace la ligne |
+
+**Déclaration** (`POST /etats-des-lieux/:id/entree-papier`, multipart : champs
+`dateSignature`, `lieu`, `bailleurNom`, `locataireIds` et fichier `scan`) :
+`EtatDesLieuxEntreePapierService`. Contrôle d'organisation fail-closed. Refus,
+sans rien écrire : scan absent à la première déclaration, scan vide, qui n'est pas un PDF (en-tête `%PDF-` lu
+sur le contenu) ou de plus de 10 Mo ; date invalide ou future ; lieu ou nom du
+bailleur blancs ; aucun locataire coché, ou un locataire qui n'est pas partie
+active au bail ; bail sans locataire actif ; photo d'entrée non archivée
+(phase `entree` ou sans phase, message listant les pièces) ; brouillon
+abandonné ; entrée signée numériquement ; sortie signée. Un écart de plus d'un
+mois avec le début du bail renvoie un avertissement non bloquant
+(`avertissement` dans la réponse). Une seule transaction, sous le verrou
+`FOR UPDATE` de l'en-tête (le même que la signature et l'abandon) : document
+du scan, ligne papier, `date_entree` et `lieu_entree`.
+
+**Correction** : la même route, tant que la sortie n'est pas signée. La ligne
+active est archivée, une nouvelle est écrite. Le scan y est facultatif : sans
+nouveau scan, la nouvelle ligne reprend le même `document_id` (rien n'est
+dupliqué) ; avec un nouveau scan, l'ancien reste stocké et référencé par la
+ligne archivée, jamais effacé.
+`GET /etats-des-lieux/:id/entree-papier` renvoie l'historique complet, le plus
+récent en premier.
+
+**Effets** : le résolveur des phases (`resoudrePhasesEtatDesLieux`, core)
+renseigne `entreePapier` ; `entreeSigneeParTous` vaut vrai (verrou des champs
+et des photos d'entrée, phase des nouvelles photos, signature de sortie
+permise). `phaseSigneeNumeriquement(…, "entree")` reste faux : pas de bloc de
+signatures, de PDF figé ni d'envoi d'entrée. `signerEntree` refuse (409).
+
+**Garanties portées par la base** (triggers posés à la main dans la
+migration) : aucun `DELETE` ni `TRUNCATE` (`23001`) ; une ligne ne change
+jamais, sauf pour être archivée une seule fois (`23001`) ; aucune déclaration
+si une signature d'entrée ou de sortie non archivée existe, et aucune
+signature d'entrée si une déclaration active existe (`23P01`, trigger
+`etat_des_lieux_signature_entree_sans_papier` sur `etat_des_lieux_signature`).
+Index unique partiel : une seule déclaration active par état des lieux.
+
+**PowerSync** : table hors publication et hors Sync Streams. La valeur
+`etat_des_lieux_entree_papier` de `documents.categorie` est une catégorie
+réservée (ni upload générique, ni modification, ni archivage).
 
 **Accès mobile** : page web légère, API REST directe sur `apps/backend`,
 pas de SDK PowerSync web — voir `docs/app-spec.md`, section 3, pour le

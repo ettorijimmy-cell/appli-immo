@@ -33,6 +33,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatDesLieuxDocumentDocxModule } from "./etat-des-lieux-document-docx.module";
 import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.service";
@@ -549,7 +550,7 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
     it("sortie non signée sans adresse saisie : cellule vide, jamais de valeur littérale null/undefined", async () => {
       const { etatDesLieuxId, titulaire } = await creerDossier(0);
       await avecContexte(() => etatsDesLieuxSignatureService.signerEntree(etatDesLieuxId, dtoSignature([titulaire.id])));
-      await etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateSortie: "2026-10-01" });
+      await poserDatesEtatDesLieux(db, etatDesLieuxId, { dateSortie: "2026-10-01" });
 
       const buffer = await genererPhase(etatDesLieuxId, "sortie");
 
@@ -598,7 +599,7 @@ describe("Génération docx — bloc signatures (Entrée/Sortie, intégration Po
     // pointillés du bloc signature doivent rester, même si dateEntree est
     // techniquement renseignée (le gel est piloté par
     // entreeSigneeParTous, jamais par dateEntree seule).
-    await avecContexte(() => etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateEntree: "2026-08-01" }));
+    await avecContexte(() => poserDatesEtatDesLieux(db, etatDesLieuxId, { dateEntree: "2026-08-01" }));
 
     const buffer = await avecContexte(() =>
       etatDesLieuxDocumentDocxService.genererDocumentEtatDesLieuxDocx(etatDesLieuxId)

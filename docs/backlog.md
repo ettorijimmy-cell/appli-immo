@@ -1568,6 +1568,14 @@ pièces ajoutées après l'entrée, photos par phase) — code terminé le
    et ajoute une CHECK qui échouerait sur toute ligne `etats_des_lieux` déjà
    archivée — et `drizzle-kit migrate` annulerait alors tout le lot. Ne
    migrer que sur le verdict « OK pour la 0074 » (0 ligne archivée).
+   **Si le lot contient `0075_conscious_cyclops.sql`** (entrée d'état des
+   lieux établie sur papier, 2026-11-06) : elle doit impérativement être
+   appliquée **avant** le déploiement du nouveau backend. Le résolveur des
+   phases lit la table `etat_des_lieux_entree_papier` à chaque lecture d'un
+   état des lieux : un backend déployé avant la migration ferait échouer
+   toutes les lectures. Additive (une valeur d'enum, une table, des
+   triggers), sans contrôle préalable nécessaire ; elle crée aussi un trigger
+   sur `etat_des_lieux_signature`, à vérifier avec le rôle de production.
 2. Déployer l'image backend, qui embarque aussi le mobile.
 3. Déployer dans PowerSync la configuration complète de
    `docs/powersync-sync-streams.yaml`, dont les 11 streams modifiés (liste en

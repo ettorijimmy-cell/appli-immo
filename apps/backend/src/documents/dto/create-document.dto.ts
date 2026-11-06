@@ -68,7 +68,11 @@ export const DOCUMENT_CATEGORIES = [
   // que "signature" ci-dessus. Seul le service de génération PDF de
   // l'état des lieux crée/archive ces documents.
   "etat_des_lieux_docx",
-  "etat_des_lieux_pdf"
+  "etat_des_lieux_pdf",
+  // Scan PDF d'une entrée établie et signée sur papier (2026-11-06) : même
+  // principe, seul EtatDesLieuxEntreePapierService le crée, dans la
+  // transaction de déclaration.
+  "etat_des_lieux_entree_papier"
 ] as const;
 export type DocumentCategorie = (typeof DOCUMENT_CATEGORIES)[number];
 

@@ -41,6 +41,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { ScisModule } from "../scis/scis.module";
 import { ScisService } from "../scis/scis.service";
 import { createTransactionalTestHooks } from "../test-utils/transactional-test";
+import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux";
 import { UsersModule } from "../users/users.module";
 import { EtatsDesLieuxSignatureModule } from "./etats-des-lieux-signature.module";
 import { EtatsDesLieuxSignatureService } from "./etats-des-lieux-signature.service";
@@ -771,7 +772,7 @@ describe("EtatsDesLieuxSignatureService — signature entrée/sortie (intégrati
     // ce chantier) ou une correction manuelle côté desktop : pose
     // dateEntree directement, sans jamais passer par
     // EtatsDesLieuxSignatureService — aucune signature n'existe.
-    await avecContexte(() => etatsDesLieuxService.updateHeader(etatDesLieuxId, { dateEntree: "2026-01-01" }));
+    await avecContexte(() => poserDatesEtatDesLieux(db, etatDesLieuxId, { dateEntree: "2026-01-01" }));
 
     const fichier = {
       originalname: "piece.jpg",
