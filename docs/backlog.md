@@ -1196,6 +1196,32 @@ les trois parcours ci-dessus).
   l'époque. Entrée conservée ci-dessous pour l'historique, mais la cause
   probable est désormais celle-ci.
 
+- **Délais d'intégration des tests qui signent un état des lieux — cause
+  commune identifiée le 2026-11-05.** Chaque signature (entrée ou sortie)
+  lance en arrière-plan la chaîne des documents figés (.docx puis PDF,
+  `produireDocumentsFigesEnArrierePlan`). Dans les tests d'intégration,
+  cette chaîne tourne sur la **même connexion** que le test
+  (`createTransactionalTestHooks`, une transaction par test) : postgres.js
+  sérialise les requêtes d'une connexion, donc la génération du document
+  s'intercale avec les requêtes du test et l'allonge. Seul, un test qui
+  signe les deux phases prend 4 à 7 s ; sous la charge de la suite
+  complète, il dépassait le délai par défaut de 5 s. Elle laisse aussi,
+  après le ROLLBACK de fin de test, des lignes « current transaction is
+  aborted » dans la sortie (sans échec). Délais relevés à 20 s, au cas par
+  cas : test docx « photos par phase », `verrou-signature-etat-des-lieux`,
+  `abandon-etat-des-lieux` et les fichiers de l'entrée papier
+  (`vi.setConfig({ testTimeout: 20000 })`).
+  **Piste de fond** : désactiver cette chaîne, ou la remplacer par un
+  simulacre, dans les tests qui ne portent pas sur le PDF (seuls
+  `etat-des-lieux-pdf`, `etat-des-lieux-envoi` et
+  `sortie-apres-entree-papier` en ont besoin), puis revenir aux délais par
+  défaut.
+  **Autre cause de lenteur constatée le 2026-11-06** : des processus
+  restés actifs sur le poste (deux `grep` orphelins, CPU à 63 % au repos)
+  ont fait passer la suite de ~445 s à ~625 s et dépasser des délais de
+  5 s dans des fichiers sans lien. Avant un lancement complet, vérifier
+  la charge du poste en plus du backend de dev (voir ci-dessus).
+
 - **Test `auth-login-throttling` instable en intégration, dépassement de
   délai (5000ms) — observé le 2026-10-30.** Constaté pendant la
   vérification du chantier PDF étape 4 (relance) : sur plusieurs
@@ -1511,7 +1537,7 @@ production" ci-dessous pour le détail confirmé de chaque point.
 
 ## État de la production
 
-**Dernière mise à jour confirmée : 2026-11-01.**
+**Dernière mise à jour confirmée : 2026-11-05 (étape 5 déployée, voir plus bas).**
 
 - Migrations Drizzle `0058` à `0065` appliquées en base de production
   (confirmé par Jimmy après test manuel réel).
@@ -1551,51 +1577,66 @@ déployé le 2026-11-01 :**
   bout en bout.
 
 **Étape 5 (remise de l'état des lieux par mail, observations et réserves,
-pièces ajoutées après l'entrée, photos par phase) — code terminé le
-2026-11-05, non déployé.** Ordre impératif :
+pièces ajoutées après l'entrée, photos par phase) — déployée le
+2026-11-05 :**
 
-1. Appliquer les migrations dans l'ordre : `0070_condemned_abomination.sql`,
-   `0071_chemical_sleepwalker.sql`, `0072_big_crusher_hogan.sql`, puis
-   `0073_tricky_songbird.sql`. Elles sont purement additives, mais la 0070
-   crée les premiers trigger et fonction du projet : à vérifier avec le rôle
-   de production.
-   **Si le lot contient aussi `0074_quiet_famine.sql`** (abandon d'un
-   brouillon, 2026-11-05), lancer d'abord, sur la production, le script en
-   lecture seule `verifier-archives-etats-des-lieux-avant-0074.ts`
+- Image backend déployée : tag `28598fd` (hash complet
+  `28598fdf2a9d8612e34e7ba6482ce411b1441bbc`).
+- Migrations Drizzle `0070` à `0073` appliquées en base de production :
+  **dernière migration en production, `0073_tricky_songbird.sql`**.
+- Configuration PowerSync redéployée avec les 11 streams modifiés.
+- Installeur desktop reconstruit sur `28598fd`.
+- Mail de test réel envoyé avec succès.
+- Reste à vérifier au premier état des lieux réel signé : PDF, taille,
+  délai de préparation, réception par le locataire (`envoye` = accepté par
+  le serveur d'envoi ; un rebond arrive ensuite dans la Messagerie).
+
+**Chantier « entrée papier, confirmation, abandon » — code terminé le
+2026-11-06 (commits `0970ffa` à `1f02f18`, sur `main`), non déployé.**
+Ordre impératif :
+
+1. **Contrôle préalable, en lecture seule, sur la production** : lancer
+   `verifier-archives-etats-des-lieux-avant-0074.ts`
    (`docs/powersync-deploiement-local/`, local, non versionné ; commande et
-   garde-fous en tête du fichier). La 0074 n'est pas purement additive :
-   elle remplace la contrainte `unique(bail_id)` par un index unique partiel
-   et ajoute une CHECK qui échouerait sur toute ligne `etats_des_lieux` déjà
-   archivée — et `drizzle-kit migrate` annulerait alors tout le lot. Ne
-   migrer que sur le verdict « OK pour la 0074 » (0 ligne archivée).
-   **Si le lot contient `0075_conscious_cyclops.sql`** (entrée d'état des
-   lieux établie sur papier, 2026-11-06) : elle doit impérativement être
-   appliquée **avant** le déploiement du nouveau backend. Le résolveur des
-   phases lit la table `etat_des_lieux_entree_papier` à chaque lecture d'un
-   état des lieux : un backend déployé avant la migration ferait échouer
-   toutes les lectures. Additive (une valeur d'enum, une table, des
-   triggers), sans contrôle préalable nécessaire ; elle crée aussi un trigger
-   sur `etat_des_lieux_signature`, à vérifier avec le rôle de production.
-   `0076_shocking_tattoo.sql` (preuve du scan joint à l'envoi de sortie)
-   suit la 0075, elle aussi avant le backend : celui-ci écrit les colonnes
-   `scan_document_id` et `scan_sha256` d'`etat_des_lieux_envoi`. Additive
-   (deux colonnes facultatives, une clé étrangère, une CHECK vraie pour
-   toutes les lignes existantes).
-2. Déployer l'image backend, qui embarque aussi le mobile.
-3. Déployer dans PowerSync la configuration complète de
-   `docs/powersync-sync-streams.yaml`, dont les 11 streams modifiés (liste en
-   tête du fichier). Jamais avant la 0073 : ces streams sélectionnent les
-   colonnes des migrations.
-4. Reconstruire l'installeur desktop.
-5. Envoyer un vrai mail de test depuis la Messagerie, puis relire le
-   diagnostic SMTP (`GET /diagnostic/smtp`). Le diagnostic du 2026-11-01
-   prouve la connexion et l'authentification sur le port 587, pas la
-   livraison. Jusqu'au déploiement du commit `9279fe3`, l'envoi reste sur le
-   465, bloqué par Scaleway : Tâches et Messagerie ne peuvent pas envoyer en
-   production.
-6. Au premier état des lieux réel : vérifier le PDF signé, sa taille, le délai
-   de préparation, puis la réception par le locataire. `envoye` signifie accepté
-   par le serveur d'envoi, un rebond arrive ensuite dans la Messagerie.
+   garde-fous en tête du fichier : cible exacte, transaction en lecture
+   seule). Il compte les lignes `etats_des_lieux` déjà archivées. **Ne
+   migrer que sur le verdict « OK pour la 0074 »** (0 ligne archivée) : la
+   0074 ajoute une CHECK qui échouerait sur une telle ligne, et
+   `drizzle-kit migrate` annulerait alors tout le lot.
+2. **Migrations `0074`, `0075` et `0076`, dans cet ordre, toutes AVANT le
+   nouveau backend** :
+   - `0074_quiet_famine.sql` (abandon d'un brouillon) : **pas purement
+     additive**, elle remplace la contrainte `unique(bail_id)` par un index
+     unique partiel et ajoute `motif_abandon` avec sa CHECK — d'où le
+     contrôle de l'étape 1 ;
+   - `0075_conscious_cyclops.sql` (entrée papier) : additive (une valeur
+     d'enum, la table `etat_des_lieux_entree_papier`, des triggers, dont un
+     sur `etat_des_lieux_signature`, à vérifier avec le rôle de
+     production) ;
+   - `0076_shocking_tattoo.sql` (preuve du scan joint) : additive (deux
+     colonnes facultatives sur `etat_des_lieux_envoi`, une clé étrangère,
+     une CHECK vraie pour toutes les lignes existantes).
+
+   Le nouveau backend lit `etat_des_lieux_entree_papier` à **chaque**
+   lecture d'un état des lieux et écrit `scan_document_id`/`scan_sha256` :
+   déployé avant ces migrations, il ferait échouer toutes les lectures.
+3. **Image backend**, qui embarque aussi le mobile.
+4. **Aucun redéploiement PowerSync.** Depuis `28598fd` (configuration
+   déployée le 2026-11-05), `docs/powersync-sync-streams.yaml` n'a changé
+   que dans un commentaire (`motif_abandon` exclu du stream
+   `etats_des_lieux`, absent de sa liste de colonnes explicite) ;
+   `etat_des_lieux_entree_papier` et `etat_des_lieux_envoi` ne sont ni
+   publiées ni synchronisées ; le scan
+   (`documents.categorie = 'etat_des_lieux_entree_papier'`) arrive sur le
+   desktop par le stream `documents` existant, qui ne filtre pas par
+   catégorie.
+5. **Installeur desktop** reconstruit.
+6. **Vérifications** : première reprise papier réelle (par exemple le
+   brouillon du 2026-10-27) — déclaration depuis le desktop, carte « Entrée
+   signée sur papier », ouverture du scan ; puis sortie signée sur le
+   téléphone, document de sortie avec la mention papier, et envoi de la
+   sortie avec le scan joint (empreinte visible dans l'historique des
+   envois du desktop).
 
 Limites connues de l'étape 5 :
 
@@ -1615,6 +1656,41 @@ Limites connues de l'étape 5 :
   par phase, pas d'observations ni de réserves). C'est voulu : un document
   signé ne change plus. Seuls les documents produits ensuite ont la nouvelle
   présentation.
+
+Limites connues du chantier entrée papier, confirmation, abandon :
+
+- **Fidélité des états saisis : déclarative.** La case « Les états saisis
+  reproduisent fidèlement l'original » engage l'utilisateur ; rien ne
+  compare le scan aux états saisis (pas de lecture du PDF). Un
+  avertissement non bloquant liste seulement les champs d'entrée vides.
+- **Scan : un PDF unique, 10 Mo au plus**, vérifié sur son en-tête. Le
+  contenu (lisibilité, nombre de pages, signatures présentes) n'est pas
+  contrôlé.
+- **Plus aucune correction après la signature de sortie.** Une erreur sur
+  la date, le lieu ou les signataires découverte ensuite n'a pas de
+  recours dans l'application (la ligne est figée par trigger).
+- **Photos d'entrée à archiver avant la déclaration.** Les photos prises
+  dans l'application pour l'entrée ne correspondent pas au papier : la
+  déclaration est refusée tant qu'il en reste.
+- **Déclaration et abandon : desktop seulement.** Le téléphone n'a que la
+  confirmation à la création et la sortie.
+- **Vue « Documents » générale du desktop.** Elle liste tous les documents,
+  donc aussi le scan papier, comme déjà les images de signature et les
+  documents figés, sans libellé de catégorie dédié ; l'archivage y est
+  refusé par le backend (catégorie réservée). Comportement préexistant pour
+  les signatures et les documents figés, à revoir avec la vue Documents.
+- **Dates saisies à la main avant la décision 11.** Le PATCH ne pose plus
+  `date_entree` ni `date_sortie`, mais des lignes plus anciennes peuvent
+  en porter une sans signature ; le statut dérivé (`entree_terminee`) en
+  tient toujours compte.
+- **Concurrence réelle testée sur serveur jetable seulement.** Le test qui
+  met deux connexions en concurrence (déclaration contre signature
+  d'entrée) crée sa propre base : il tourne en CI et avec
+  `pnpm test:integration:clean`, il est ignoré contre la base de dev.
+- **Écrans desktop vérifiés par harnais.** Comme pour l'étape 5, sans
+  Playwright desktop : captures et assertions dans un harnais local non
+  versionné ; seules les fonctions pures et le typecheck sont en CI. Le
+  mobile, lui, a ses tests Playwright (CI).
 
 ---
 
@@ -2541,30 +2617,32 @@ desktop, et retrait encadré des lignes/pièces ajoutées après l'entrée.
   d'état des lieux réel signé : à vérifier lors du premier vrai état des
   lieux.
 
-**À faire — Confirmation et abandon d'un état des lieux (2026-10-27).**
-Aujourd'hui, "Démarrer l'état des lieux" (mobile) / "Créer l'état des
-lieux" (desktop) crée l'en-tête `etats_des_lieux` sans aucune étape de
-confirmation, et rien ne permet ensuite d'abandonner ce brouillon :
-`etats_des_lieux.bail_id` porte une contrainte `unique()` stricte (un
-seul EDL par bail, jamais plus), et la table n'a pas de colonne
-`archived_at` (contrairement aux lignes clés/équipements/inventaire, qui
-en ont une). Contexte : un brouillon vide créé par erreur en production
-le 2026-10-27, conservé volontairement (voir entrée suivante). Piste
-retenue : confirmation avant création côté UI + `archived_at` sur
-`etats_des_lieux` + remplacement de `unique(bail_id)` par un index
-unique partiel `WHERE archived_at IS NULL` (pour permettre de recréer un
-EDL après abandon du brouillon) + bouton "Abandonner le brouillon" (même
-mécanisme d'archivage que les lignes clés/équipements/inventaire).
+**Fait — Confirmation et abandon d'un état des lieux (2026-11-05,
+commits `93e5570` et `81f576b`, migration 0074).** Constat d'origine
+(2026-10-27) : la création se faisait sans confirmation, et rien ne
+permettait d'abandonner un brouillon, à cause de la contrainte
+`unique(bail_id)` d'`etats_des_lieux`. **Correction** de l'entrée
+initiale, qui affirmait à tort que la table n'avait pas de colonne
+`archived_at` : comme toute table métier, elle la portait déjà
+(`auditColumns`), mais rien ne l'utilisait. Réalisé : confirmation
+avant création (desktop et mobile), abandon d'un brouillon non signé
+avec motif obligatoire (`motif_abandon`, desktop seulement), index
+unique partiel `WHERE archived_at IS NULL` à la place de
+`unique(bail_id)`, brouillons abandonnés listés via « Afficher les
+archivés ». Le brouillon vide créé par erreur en production le
+2026-10-27 peut désormais servir de point de départ à une reprise papier
+ou être abandonné, sans manipulation en base.
 
-**À faire — Reprise d'une entrée papier (2026-10-27).** Pour les baux
-en cours dont l'état des lieux d'entrée a été signé sur papier (avant la
-mise en place de la signature numérique), permettre de saisir dans
-l'appli les états relevés sur le papier, d'y joindre le scan signé, et
-de verrouiller l'entrée avec la mention "signée sur papier le …" — sans
-signature numérique : le bailleur ne signe jamais à la place du
-locataire. La sortie se déroule ensuite normalement dans l'appli
-(signature numérique bailleur + locataires). Prérequis pour pouvoir
-utiliser l'appli à la sortie de tous les locataires actuels.
+**Fait — Reprise d'une entrée papier (2026-11-06, commits `52fc011` à
+`1f02f18`, migrations 0075 et 0076).** Déclaration depuis le desktop
+d'une entrée établie et signée sur papier (date, lieu, signataires, scan
+PDF, case de fidélité), correction tant que la sortie n'est pas signée,
+mention sur le document de sortie, scan joint à l'envoi de la sortie
+avec preuve de remise, sortie signée ensuite normalement sur le
+téléphone. Le bailleur ne signe jamais à la place du locataire : aucune
+signature numérique n'est créée pour l'entrée. Voir
+docs/data-dictionary.md, section `etat_des_lieux_entree_papier`, et les
+limites connues ci-dessous (déploiement).
 
 **Insertion de photos dans le document généré — module choisi et
 vérifié avant conception du schéma (2026-08-02).** Le besoin ("photos

@@ -3096,6 +3096,29 @@ l'autre.
 
 **Pièce ajoutée après l'entrée** : `ajoutee_apres_signature_entree` (boolean, défaut `false`) sur `etat_des_lieux_pieces_autre` (migration 0072), `etat_des_lieux_pieces_chambre`, `etat_des_lieux_pieces_salle_de_bain` et `etat_des_lieux_pieces_wc` (migration 0073), posée à l'écriture, jamais déduite. Après l'entrée signée, une pièce absente se crée avec ses seuls champs de sortie, plus son libellé pour une autre pièce, comme une ligne de clé. Elle reste absente du document d'entrée, et celui de sortie la signale (`mentionPieceAjoutee`). Plus aucun ajout une fois la sortie signée.
 
+**Phases signées, lues par l'API (jamais stockées)** : un seul résolveur,
+`resoudrePhasesEtatDesLieux` (`packages/core`), alimenté par
+`resoudrePhasesSigneesEtatDesLieux` (backend : signatures bailleur non
+archivées, déclaration papier active). Le DTO d'un état des lieux porte :
+
+| Champ du DTO | Sens |
+|---|---|
+| `entreeSigneeParTous` | Entrée acquise : signée numériquement **ou** établie sur papier |
+| `entreePapier` | `null`, ou `{ dateSignature, lieu, nomsSignataires }` pour une entrée établie sur papier (déclaration active de `etat_des_lieux_entree_papier`) |
+| `sortieSigneeParTous` | Sortie signée (toujours numériquement) |
+
+Deux familles d'usages, à ne jamais confondre :
+- **A, le verrou** (`entreeSigneeParTous`) : champs d'entrée et photos
+  d'entrée figés, phase des nouvelles photos, sortie autorisée, abandon
+  refusé, figement des cartes desktop, badge « Entrée signée ».
+- **B, les artefacts de la signature numérique**
+  (`phaseSigneeNumeriquement`, `core` : pour l'entrée,
+  `entreeSigneeParTous && entreePapier === null`) : bloc de signatures du
+  document, PDF figé et sa relance, envoi au locataire, cartes Signatures
+  et Documents PDF, bouton d'envoi mobile. Une entrée papier n'en a aucun :
+  le document de sortie porte à la place une mention papier, et le mail de
+  sortie joint le scan.
+
 ### etat_des_lieux_compteurs (1:1 avec etats_des_lieux)
 Relevés (décret, art. 2, 1° f — "le cas échéant"). Colonne Internet
 retirée du modèle réel par le propriétaire (aucun champ structuré
