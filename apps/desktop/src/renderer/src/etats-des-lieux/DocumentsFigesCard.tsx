@@ -21,12 +21,13 @@ const LABEL_PHASE: Record<"entree" | "sortie", string> = { entree: "Entrée", so
 // exploitable, jamais le générique NestJS brut (voir message-erreur-carte-pdf.ts).
 export function DocumentsFigesCard({
   etatDesLieuxId,
-  entreeSigneeParTous,
-  sortieSigneeParTous
+  entreeSigneeNumeriquement,
+  sortieSignee
 }: {
   etatDesLieuxId: string;
-  entreeSigneeParTous: boolean;
-  sortieSigneeParTous: boolean;
+  // Famille B : pas de PDF figé ni d'envoi pour une entrée établie sur papier.
+  entreeSigneeNumeriquement: boolean;
+  sortieSignee: boolean;
 }): React.JSX.Element | null {
   const [statuts, setStatuts] = useState<StatutDocumentsFigesPhase[]>([]);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function DocumentsFigesCard({
     // réussi — l'effet ne dépend d'aucune autre donnée dérivée.
   }, [etatDesLieuxId, version]);
 
-  if (!entreeSigneeParTous && !sortieSigneeParTous) {
+  if (!entreeSigneeNumeriquement && !sortieSignee) {
     return null;
   }
 
@@ -74,7 +75,7 @@ export function DocumentsFigesCard({
   }
 
   const phasesSignees = (["entree", "sortie"] as const).filter((phase) =>
-    phase === "entree" ? entreeSigneeParTous : sortieSigneeParTous
+    phase === "entree" ? entreeSigneeNumeriquement : sortieSignee
   );
 
   return (

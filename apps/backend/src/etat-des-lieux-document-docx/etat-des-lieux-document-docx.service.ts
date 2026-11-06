@@ -12,6 +12,8 @@ import { ConfigService } from "@nestjs/config";
 import {
   calculerStatutEtatDesLieux,
   formaterListeNoms,
+  phaseSigneeNumeriquement,
+  phasesDepuisEtatDesLieux,
   trouverBalisesDesequilibrees,
   validerCompletudeEtatDesLieux,
   type DonneesCompletudeEtatDesLieuxAppartement
@@ -440,15 +442,19 @@ export class EtatDesLieuxDocumentDocxService {
       const [annee, mois, jour] = dateIso.split("-");
       return { jour: jour ?? VIDE, mois: mois ?? VIDE, annee: annee ?? VIDE };
     }
+    // Famille B : date et lieu du bloc de signatures d'entrée n'apparaissent
+    // que pour une entrée signée numériquement (une entrée papier aura sa
+    // propre mention, jamais ce bloc).
+    const entreeSigneeNumeriquement = phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(donnees), "entree");
     const dateEntreeAffichee =
-      donnees.entreeSigneeParTous && donnees.dateEntree
+      entreeSigneeNumeriquement && donnees.dateEntree
         ? formaterJourMoisAnnee(donnees.dateEntree)
         : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
     const dateSortieAffichee =
       sortieSigneeAffichee && donnees.dateSortie
         ? formaterJourMoisAnnee(donnees.dateSortie)
         : { jour: POINTILLES_JOUR, mois: POINTILLES_MOIS, annee: POINTILLES_ANNEE };
-    const lieuEntreeAffiche = donnees.entreeSigneeParTous ? (donnees.lieuEntree ?? VIDE) : POINTILLES_LIEU;
+    const lieuEntreeAffiche = entreeSigneeNumeriquement ? (donnees.lieuEntree ?? VIDE) : POINTILLES_LIEU;
     const lieuSortieAffiche = sortieSigneeAffichee ? (donnees.lieuSortie ?? VIDE) : POINTILLES_LIEU;
 
     // Nombre réel de chaudières/chauffe-eau déclarés sur la fiche

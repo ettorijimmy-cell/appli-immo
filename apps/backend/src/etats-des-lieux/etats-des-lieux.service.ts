@@ -520,12 +520,18 @@ export class EtatsDesLieuxService {
   // donc jamais exister sans la signature bailleur de cette même phase
   // (garanti par test, voir
   // etats-des-lieux-signature.integration.spec.ts).
+  //
+  // entreeSigneeParTous est le verrou (famille A : entrée numérique OU
+  // papier) ; entreePapier dit laquelle des deux (null : numérique ou pas
+  // encore signée). Les artefacts de la signature numérique se lisent avec
+  // phaseSigneeNumeriquement (core), jamais avec entreeSigneeParTous seul.
   private async versDto(entete: typeof etatsDesLieux.$inferSelect) {
     const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, entete.id);
     return {
       ...entete,
       statut: calculerStatutEtatDesLieux(entete.dateEntree, entete.dateSortie),
       entreeSigneeParTous: phases.entreeSignee,
+      entreePapier: phases.entreePapier,
       sortieSigneeParTous: phases.sortieSignee
     };
   }

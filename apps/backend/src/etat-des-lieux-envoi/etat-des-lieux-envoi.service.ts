@@ -9,7 +9,7 @@ import {
   NotFoundException,
   PayloadTooLargeException
 } from "@nestjs/common";
-import { construireMailRemiseEtatDesLieux } from "core";
+import { construireMailRemiseEtatDesLieux, phaseSigneeNumeriquement, phasesDepuisEtatDesLieux } from "core";
 import {
   appartements,
   baux,
@@ -137,7 +137,8 @@ export class EtatDesLieuxEnvoiService {
 
   private async verifierPhaseSignee(etatDesLieuxId: string, phase: PhaseEtatDesLieux) {
     const etat = await this.etatsDesLieuxService.findById(etatDesLieuxId);
-    if (!(phase === "entree" ? etat.entreeSigneeParTous : etat.sortieSigneeParTous)) {
+    // Famille B : on n'envoie que le PDF d'une phase signée numériquement.
+    if (!phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(etat), phase)) {
       throw new ConflictException("Cette partie de l'état des lieux n'est pas encore signée.");
     }
     return etat;

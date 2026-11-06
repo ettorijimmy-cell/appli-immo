@@ -8,7 +8,9 @@ import {
   CLASSIFICATION_PIECE_ENTREE,
   CLASSIFICATION_PIECE_SALLE_DE_BAIN,
   CLASSIFICATION_PIECE_SEJOUR,
-  CLASSIFICATION_PIECE_WC
+  CLASSIFICATION_PIECE_WC,
+  phaseSigneeNumeriquement,
+  phasesDepuisEtatDesLieux
 } from "core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -116,10 +118,13 @@ export function EtatDesLieuxSection({
   // ne le restaure quand le contenu réapparaît. Bug remonté en test manuel
   // (2026-08-06) : "Ajouter" fonctionnait mais faisait remonter la page.
   const premierChargementEffectue = useRef(false);
+  // Famille B : seules les phases signées numériquement ont des signatures
+  // à relire.
+  const phasesEtat = etatDesLieux ? phasesDepuisEtatDesLieux(etatDesLieux) : null;
   const { signatures, erreur: erreurSignatures } = useSignaturesPosees(
     etatDesLieux?.id ?? null,
-    etatDesLieux?.entreeSigneeParTous ?? false,
-    etatDesLieux?.sortieSigneeParTous ?? false
+    phasesEtat ? phaseSigneeNumeriquement(phasesEtat, "entree") : false,
+    phasesEtat ? phaseSigneeNumeriquement(phasesEtat, "sortie") : false
   );
 
   const refresh = useCallback(async () => {
@@ -219,7 +224,12 @@ export function EtatDesLieuxSection({
     );
   }
 
+  // Famille A (verrou des cartes, figement, abandon) : entrée numérique ou
+  // papier. Famille B (cartes Signatures et Documents PDF) : signature
+  // numérique seulement.
   const { entreeSigneeParTous: entreeSignee, sortieSigneeParTous: sortieSignee } = etatDesLieux;
+  const phases = phasesDepuisEtatDesLieux(etatDesLieux);
+  const entreeSigneeNumeriquement = phaseSigneeNumeriquement(phases, "entree");
   const figement = figementCarte(entreeSignee, sortieSignee, signatures);
 
   return (
@@ -229,8 +239,8 @@ export function EtatDesLieuxSection({
       <SignaturesCard
         signatures={signatures}
         error={erreurSignatures}
-        entreeSigneeParTous={entreeSignee}
-        sortieSigneeParTous={sortieSignee}
+        entreeSigneeNumeriquement={entreeSigneeNumeriquement}
+        sortieSignee={sortieSignee}
         lieuEntree={etatDesLieux.lieuEntree}
         lieuSortie={etatDesLieux.lieuSortie}
         observationsBailleurEntree={etatDesLieux.observationsBailleurEntree}
@@ -241,8 +251,8 @@ export function EtatDesLieuxSection({
 
       <DocumentsFigesCard
         etatDesLieuxId={etatDesLieux.id}
-        entreeSigneeParTous={entreeSignee}
-        sortieSigneeParTous={sortieSignee}
+        entreeSigneeNumeriquement={entreeSigneeNumeriquement}
+        sortieSignee={sortieSignee}
       />
 
       <div className="flex items-center justify-between">

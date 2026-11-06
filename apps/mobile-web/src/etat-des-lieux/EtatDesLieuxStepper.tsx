@@ -1,3 +1,4 @@
+import { phaseSigneeNumeriquement, phasesDepuisEtatDesLieux } from "core";
 import { useEffect, useRef, useState } from "react";
 import type { Appartement } from "../api/patrimoine";
 import {
@@ -88,7 +89,9 @@ export function EtatDesLieuxStepper({
   async function signatureDejaAcquise(): Promise<boolean> {
     try {
       const fraiches = await onSubmitted();
-      return Boolean(mode === "entree" ? fraiches?.entreeSigneeParTous : fraiches?.sortieSigneeParTous);
+      // Famille B : c'est la signature numérique de cette phase qui doit
+      // être acquise, pas une entrée établie entre-temps sur papier.
+      return fraiches ? phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(fraiches), mode) : false;
     } catch {
       return false;
     }

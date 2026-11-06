@@ -1,3 +1,4 @@
+import type { EntreePapierEtatDesLieux } from "core";
 import { authenticatedFetch } from "../lib/authenticated-fetch";
 
 export type EtatElement = "M" | "P" | "B" | "TB";
@@ -19,7 +20,12 @@ export interface EtatDesLieux {
   // Dérivés de l'existence d'une signature bailleur pour la phase (jamais
   // de date_entree/date_sortie seules, qui peuvent être posées sans
   // signature) — voir EtatsDesLieuxService.versDto côté backend.
+  // entreeSigneeParTous est le verrou (famille A) : entrée signée
+  // numériquement OU établie sur papier (entreePapier non null). Les
+  // artefacts de la signature numérique se lisent avec
+  // phaseSigneeNumeriquement (core).
   entreeSigneeParTous: boolean;
+  entreePapier: EntreePapierEtatDesLieux | null;
   sortieSigneeParTous: boolean;
 }
 

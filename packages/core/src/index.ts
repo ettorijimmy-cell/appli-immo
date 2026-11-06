@@ -37,6 +37,7 @@ export * from "./etat-des-lieux/mail-remise-etat-des-lieux";
 export * from "./etat-des-lieux/remise-etat-des-lieux";
 export * from "./etat-des-lieux/observations-etat-des-lieux";
 export * from "./etat-des-lieux/abandon-etat-des-lieux";
+export * from "./etat-des-lieux/phases-etat-des-lieux";
 export * from "./biens/type-bien";
 export * from "./modeles-courrier/resoudre-modele-courrier";
 export * from "./baux/calculer-revision-loyer";

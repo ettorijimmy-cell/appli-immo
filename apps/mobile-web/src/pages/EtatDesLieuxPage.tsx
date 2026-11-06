@@ -1,4 +1,4 @@
-import { formaterDateCourteFr } from "core";
+import { formaterDateCourteFr, phaseSigneeNumeriquement, phasesDepuisEtatDesLieux } from "core";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getAppartement, getBail, type Appartement, type Bail } from "../api/patrimoine";
@@ -21,9 +21,11 @@ function BoutonsRemise({
   etatDesLieux: EtatDesLieuxComplet;
   onOuvrir: (phase: PhaseEtatDesLieux) => void;
 }): React.JSX.Element | null {
+  // Famille B : on n'envoie que le PDF d'une phase signée numériquement.
+  const signees = phasesDepuisEtatDesLieux(etatDesLieux);
   const phases: { phase: PhaseEtatDesLieux; libelle: string }[] = [
-    ...(etatDesLieux.entreeSigneeParTous ? [{ phase: "entree" as const, libelle: "d'entrée" }] : []),
-    ...(etatDesLieux.sortieSigneeParTous ? [{ phase: "sortie" as const, libelle: "de sortie" }] : [])
+    ...(phaseSigneeNumeriquement(signees, "entree") ? [{ phase: "entree" as const, libelle: "d'entrée" }] : []),
+    ...(phaseSigneeNumeriquement(signees, "sortie") ? [{ phase: "sortie" as const, libelle: "de sortie" }] : [])
   ];
   if (phases.length === 0) {
     return null;

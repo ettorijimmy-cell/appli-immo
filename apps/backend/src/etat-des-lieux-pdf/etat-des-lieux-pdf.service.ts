@@ -9,7 +9,8 @@ import {
   UnprocessableEntityException,
   type OnApplicationShutdown
 } from "@nestjs/common";
-import { documents, etatDesLieuxSignature, type Database } from "db";
+import { phaseSigneeNumeriquement, phasesDepuisEtatDesLieux } from "core";
+import { documents, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { RequestContextService } from "../common/request-context";
@@ -19,6 +20,7 @@ import { construireCheminStockage } from "../documents/storage/construire-chemin
 import { EtatDesLieuxDocumentDocxService } from "../etat-des-lieux-document-docx/etat-des-lieux-document-docx.service";
 import { SignatureIllisibleError } from "../etat-des-lieux-document-docx/signature-illisible.error";
 import { EtatsDesLieuxService } from "../etats-des-lieux/etats-des-lieux.service";
+import { resoudrePhasesSigneesEtatsDesLieux } from "../etats-des-lieux-signature/resoudre-phase-etat-des-lieux";
 import { GotenbergConversionError, GotenbergIndisponibleError } from "../gotenberg/gotenberg.errors";
 import { GotenbergService } from "../gotenberg/gotenberg.service";
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
@@ -404,8 +406,8 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
     if (!etatDesLieux) {
       throw new NotFoundException("État des lieux introuvable");
     }
-    const phaseSignee = phase === "entree" ? etatDesLieux.entreeSigneeParTous : etatDesLieux.sortieSigneeParTous;
-    if (!phaseSignee) {
+    // Famille B : pas de PDF figé pour une entrée établie sur papier.
+    if (!phaseSigneeNumeriquement(phasesDepuisEtatDesLieux(etatDesLieux), phase)) {
       throw new ConflictException(`La phase '${phase}' de cet état des lieux n'est pas signée.`);
     }
 
@@ -511,10 +513,10 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
         };
       })
     );
+    // Famille B : seule une phase signée numériquement a des documents figés.
+    const phasesEtat = phasesDepuisEtatDesLieux(etatDesLieux);
     for (const resultat of resultats) {
-      const phaseSignee =
-        resultat.phase === "entree" ? etatDesLieux.entreeSigneeParTous : etatDesLieux.sortieSigneeParTous;
-      if (phaseSignee && (!resultat.docx || !resultat.pdf)) {
+      if (phaseSigneeNumeriquement(phasesEtat, resultat.phase) && (!resultat.docx || !resultat.pdf)) {
         this.rattraperDocumentsManquantsEnArrierePlan(etatDesLieuxId, resultat.phase);
       }
     }
@@ -525,25 +527,23 @@ export class EtatDesLieuxPdfService implements OnApplicationShutdown {
   // balaie TOUTES les signatures bailleur, toutes organisations
   // confondues — ce job n'a pas de contexte HTTP/organisation, à la
   // différence de produireManuellement/listerDocumentsFiges ci-dessus,
-  // donc aucun verifierAppartenanceFailClosed ici. Même source de vérité
-  // "phase signée" que resoudrePhasesSigneesEtatDesLieux (une signature
-  // bailleur, archived_at NULL) — relue ici directement en masse plutôt
-  // que phase par phase. Volume très faible (quelques états des lieux
-  // signés par an) : un aller-retour par couple (état des lieux, phase)
-  // pour vérifier la présence du .docx et du PDF est largement
-  // suffisant, pas la peine d'une requête SQL à deux NOT EXISTS pour ce
-  // volume.
+  // donc aucun verifierAppartenanceFailClosed ici. Même résolveur que le
+  // reste (resoudrePhasesSigneesEtatsDesLieux, en masse), lu en famille
+  // B : seule une phase signée numériquement a des documents figés.
+  // Volume très faible (quelques états des lieux signés par an) : un
+  // aller-retour par couple (état des lieux, phase) pour vérifier la
+  // présence du .docx et du PDF est largement suffisant, pas la peine
+  // d'une requête SQL à deux NOT EXISTS pour ce volume.
   async trouverPhasesSigneesIncompletes(): Promise<{ etatDesLieuxId: string; phase: PhaseEtatDesLieux }[]> {
-    const signaturesBailleur = await this.db
-      .selectDistinct({
-        etatDesLieuxId: etatDesLieuxSignature.etatDesLieuxId,
-        phase: etatDesLieuxSignature.phase
-      })
-      .from(etatDesLieuxSignature)
-      .where(and(eq(etatDesLieuxSignature.role, "bailleur"), isNull(etatDesLieuxSignature.archivedAt)));
+    const phasesParEtat = await resoudrePhasesSigneesEtatsDesLieux(this.db);
+    const phasesSignees = [...phasesParEtat].flatMap(([etatDesLieuxId, phases]) =>
+      (["entree", "sortie"] as const)
+        .filter((phase) => phaseSigneeNumeriquement(phases, phase))
+        .map((phase) => ({ etatDesLieuxId, phase }))
+    );
 
     const incomplets: { etatDesLieuxId: string; phase: PhaseEtatDesLieux }[] = [];
-    for (const { etatDesLieuxId, phase } of signaturesBailleur) {
+    for (const { etatDesLieuxId, phase } of phasesSignees) {
       const [docx, pdf] = await Promise.all([
         this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_docx"),
         this.trouverDocumentFige(etatDesLieuxId, phase, "etat_des_lieux_pdf")

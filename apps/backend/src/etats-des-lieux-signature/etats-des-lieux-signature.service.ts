@@ -24,6 +24,7 @@ import { EtatsDesLieuxService, MESSAGE_BROUILLON_ABANDONNE } from "../etats-des-
 import { OrganisationResolutionService } from "../organisation-resolution/organisation-resolution.service";
 import { DocumentStorageService } from "../storage/document-storage.service";
 import { decoderEtValiderImageSignature } from "./decoder-image-signature";
+import { resoudrePhasesSigneesEtatDesLieux } from "./resoudre-phase-etat-des-lieux";
 import type { SignerEtatDesLieuxDto } from "./dto/signer-etat-des-lieux.dto";
 
 type Phase = "entree" | "sortie";
@@ -48,6 +49,9 @@ interface BlobEcrit {
 // signerEntree/signerSortie pour la même phase, au-delà de la vérification
 // applicative faite avant la transaction (voir chargerContexte).
 const CODE_POSTGRES_VIOLATION_UNICITE = "23505";
+
+export const MESSAGE_ENTREE_DECLAREE_PAPIER =
+  "L'entrée de cet état des lieux a été établie et signée sur papier : elle ne se signe pas numériquement.";
 
 @Injectable()
 export class EtatsDesLieuxSignatureService {
@@ -85,8 +89,8 @@ export class EtatsDesLieuxSignatureService {
       bailleurNomPropose,
       nouvelleAdresseLocataire: contexte.nouvelleAdresseLocataire,
       locataires: contexte.locatairesActifs,
-      entreeSignee: contexte.phasesSigneesParBailleur.has("entree"),
-      sortieSignee: contexte.phasesSigneesParBailleur.has("sortie")
+      entreeSignee: contexte.phases.entreeSignee,
+      sortieSignee: contexte.phases.sortieSignee
     };
   }
 
@@ -142,8 +146,14 @@ export class EtatsDesLieuxSignatureService {
       throw new ConflictException(MESSAGE_BROUILLON_ABANDONNE);
     }
 
-    const entreeDejaSignee = contexte.phasesSigneesParBailleur.has("entree");
-    const sortieDejaSignee = contexte.phasesSigneesParBailleur.has("sortie");
+    // Famille A : la sortie suit une entrée acquise, numérique ou papier.
+    const { entreeSignee: entreeDejaSignee, sortieSignee: sortieDejaSignee, entreePapier } = contexte.phases;
+    // Une entrée déclarée sur papier ne se signe jamais en plus
+    // numériquement. Toujours faux tant que la déclaration papier n'existe
+    // pas ; testé avant "déjà signée", dont le message serait trompeur.
+    if (phase === "entree" && entreePapier !== null) {
+      throw new ConflictException(MESSAGE_ENTREE_DECLAREE_PAPIER);
+    }
     if (phase === "entree" && entreeDejaSignee) {
       throw new ConflictException("La partie entrée de cet état des lieux est déjà signée.");
     }
@@ -431,16 +441,9 @@ export class EtatsDesLieuxSignatureService {
       .innerJoin(locataires, eq(locataires.id, bailLocataires.locataireId))
       .where(and(eq(bailLocataires.bailId, entete.bailId), isNull(bailLocataires.archivedAt)));
 
-    const signaturesBailleur = await this.db
-      .select({ phase: etatDesLieuxSignature.phase })
-      .from(etatDesLieuxSignature)
-      .where(
-        and(
-          eq(etatDesLieuxSignature.etatDesLieuxId, etatDesLieuxId),
-          eq(etatDesLieuxSignature.role, "bailleur"),
-          isNull(etatDesLieuxSignature.archivedAt)
-        )
-      );
+    // Même résolveur que le verrou et le DTO (famille A : entrée numérique
+    // ou papier), plus de requête propre à ce service.
+    const phases = await resoudrePhasesSigneesEtatDesLieux(this.db, etatDesLieuxId);
 
     return {
       villeLogement: jointure.ville,
@@ -448,7 +451,7 @@ export class EtatsDesLieuxSignatureService {
       nouvelleAdresseLocataire: entete.nouvelleAdresseLocataire,
       abandonne: entete.archivedAt !== null,
       locatairesActifs: liensLocataires.map((l) => ({ locataireId: l.locataireId, nomAffiche: `${l.prenom} ${l.nom}` })),
-      phasesSigneesParBailleur: new Set(signaturesBailleur.map((s) => s.phase))
+      phases
     };
   }
 }

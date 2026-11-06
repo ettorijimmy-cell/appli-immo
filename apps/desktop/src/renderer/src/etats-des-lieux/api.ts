@@ -1,3 +1,4 @@
+import type { EntreePapierEtatDesLieux } from "core";
 import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
 export type EtatElement = "M" | "P" | "B" | "TB";
@@ -23,7 +24,11 @@ export interface EtatDesLieux {
   statut: StatutEtatDesLieux;
   archivedAt: string | null;
   motifAbandon: string | null;
+  // Verrou (famille A) : entrée signée numériquement OU établie sur papier.
   entreeSigneeParTous: boolean;
+  // Non null pour une entrée établie sur papier. Les artefacts de la
+  // signature numérique se lisent avec phaseSigneeNumeriquement (core).
+  entreePapier: EntreePapierEtatDesLieux | null;
   sortieSigneeParTous: boolean;
 }
 

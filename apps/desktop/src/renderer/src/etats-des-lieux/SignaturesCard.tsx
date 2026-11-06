@@ -120,8 +120,8 @@ function PhaseSignatures({
 export function SignaturesCard({
   signatures,
   error,
-  entreeSigneeParTous,
-  sortieSigneeParTous,
+  entreeSigneeNumeriquement,
+  sortieSignee,
   lieuEntree,
   lieuSortie,
   observationsBailleurEntree,
@@ -131,8 +131,10 @@ export function SignaturesCard({
 }: {
   signatures: SignaturePosee[];
   error: string | null;
-  entreeSigneeParTous: boolean;
-  sortieSigneeParTous: boolean;
+  // Famille B : une entrée établie sur papier n'a aucune signature
+  // numérique à montrer ici.
+  entreeSigneeNumeriquement: boolean;
+  sortieSignee: boolean;
   lieuEntree: string | null;
   lieuSortie: string | null;
   observationsBailleurEntree: string | null;
@@ -140,7 +142,7 @@ export function SignaturesCard({
   observationsBailleurSortie: string | null;
   reservesLocataireSortie: string | null;
 }): React.JSX.Element | null {
-  if (!entreeSigneeParTous && !sortieSigneeParTous) {
+  if (!entreeSigneeNumeriquement && !sortieSignee) {
     return null;
   }
 
@@ -153,7 +155,7 @@ export function SignaturesCard({
         </p>
       )}
       <div className="space-y-3">
-        {entreeSigneeParTous && (
+        {entreeSigneeNumeriquement && (
           <PhaseSignatures
             phase="entree"
             lieu={lieuEntree}
@@ -162,7 +164,7 @@ export function SignaturesCard({
             reservesLocataire={reservesLocataireEntree}
           />
         )}
-        {sortieSigneeParTous && (
+        {sortieSignee && (
           <PhaseSignatures
             phase="sortie"
             lieu={lieuSortie}
