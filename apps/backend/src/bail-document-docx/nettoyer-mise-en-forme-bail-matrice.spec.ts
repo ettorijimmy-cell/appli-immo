@@ -5,11 +5,11 @@ import PizZip from "pizzip";
 import { describe, expect, it } from "vitest";
 import { nettoyerMiseEnFormeBail } from "./nettoyer-mise-en-forme-bail";
 
-// Matrice complète demandée : vide/meublé × avec/sans garant ×
+// Matrice complète demandée : vide/meublé × 0, 1 ou 2 garants ×
 // avec/sans diagnostics × colocation oui/non × servitude oui/non ×
 // clause résolutoire avant/après — sur le VRAI modèle (assets/modele-bail.docx),
 // sans base de données (toutes les données sont des drapeaux/balises en dur).
-// Objectif : prouver, sur les 64 combinaisons, qu'après nettoyerMiseEnFormeBail
+// Objectif : prouver, sur les 96 combinaisons, qu'après nettoyerMiseEnFormeBail
 // il ne reste plus aucune puce vide, jamais plus d'un paragraphe vide
 // consécutif, et que le bloc résiliation + le bloc caution ne montrent
 // jamais qu'une seule variante, sans trace de l'autre.
@@ -18,7 +18,7 @@ const TEMPLATE_PATH = path.join(__dirname, "assets", "modele-bail.docx");
 
 interface Drapeaux {
   meuble: boolean;
-  aGarant: boolean;
+  nombreCautions: number;
   colocation: boolean;
   servitude: boolean;
   clauseResolutoireAvant: boolean;
@@ -30,12 +30,12 @@ const BOOLEENS = [false, true];
 function toutesLesCombinaisons(): Drapeaux[] {
   const combinaisons: Drapeaux[] = [];
   for (const meuble of BOOLEENS) {
-    for (const aGarant of BOOLEENS) {
+    for (const nombreCautions of [0, 1, 2]) {
       for (const colocation of BOOLEENS) {
         for (const servitude of BOOLEENS) {
           for (const clauseResolutoireAvant of BOOLEENS) {
             for (const diagnostics of BOOLEENS) {
-              combinaisons.push({ meuble, aGarant, colocation, servitude, clauseResolutoireAvant, diagnostics });
+              combinaisons.push({ meuble, nombreCautions, colocation, servitude, clauseResolutoireAvant, diagnostics });
             }
           }
         }
@@ -83,15 +83,6 @@ const DONNEES_BALISES = {
   "dernière valeur indice Insee IRL": "148.37",
   "dernier indice Insee IRL connu": "148.37",
   "mettre un champ à compléter le cas échéant": "Néant",
-  "Nom prénom de la personne caution": "Jean Garant",
-  "adresse caution": "2 rue du Garant",
-  "code postale caution": "19100",
-  "ville caution": "Brive",
-  "téléphone caution": "0622222222",
-  "date de naissance caution": "1985-01-01",
-  "ville de naissance caution ": "Brive",
-  "nationalité caution": "française",
-  "adresse mail caution": "jean@example.com",
   "montant loyer": "650",
   "mois de départ du bail": "juillet",
   "montant des charges": "30",
@@ -107,6 +98,34 @@ const DONNEES_BALISES = {
   // Chantier bail — corrections juridiques, commit C.
   "prénom nom du gérant": "Jean Dupont"
 };
+
+// Une entrée par caution (boucle {#cautions} du modèle, 2026-11-07).
+const CAUTIONS = [
+  {
+    "numero caution": "1",
+    "Nom prénom de la personne caution": "Jean Garant",
+    "adresse caution": "2 rue du Garant",
+    "code postale caution": "19100",
+    "ville caution": "Brive",
+    "téléphone caution": "0622222222",
+    "date de naissance caution": "1985-01-01",
+    "ville de naissance caution ": "Brive",
+    "nationalité caution": "française",
+    "adresse mail caution": "jean@example.com"
+  },
+  {
+    "numero caution": "2",
+    "Nom prénom de la personne caution": "Paule Seconde",
+    "adresse caution": "3 rue du Garant",
+    "code postale caution": "69002",
+    "ville caution": "Lyon",
+    "téléphone caution": "0633333333",
+    "date de naissance caution": "1970-02-02",
+    "ville de naissance caution ": "Lyon",
+    "nationalité caution": "française",
+    "adresse mail caution": "paule@example.com"
+  }
+];
 
 function genererDocumentXml(drapeaux: Drapeaux): string {
   const contenu = readFileSync(TEMPLATE_PATH, "binary");
@@ -125,7 +144,9 @@ function genererDocumentXml(drapeaux: Drapeaux): string {
     eauChaudeIndividuelle: true,
     eauChaudeCollective: false,
     meuble: drapeaux.meuble,
-    aGarant: drapeaux.aGarant,
+    cautions: CAUTIONS.slice(0, drapeaux.nombreCautions),
+    aGarant: drapeaux.nombreCautions > 0,
+    plusieursCautions: drapeaux.nombreCautions > 1,
     // Chantier bail — corrections juridiques, commit C : true dans toute
     // la matrice (bailleur SCI) — hors des 6 dimensions combinées, même
     // traitement que reconductionTacite/collectif/... ci-dessus.
@@ -209,7 +230,7 @@ describe("nettoyerMiseEnFormeBail — matrice complète sur le vrai modèle (san
   it("signalement : sans mention du loyer précédent, 2 paragraphes vides se retrouvent côte à côte juste avant LES CHARGES", () => {
     const resultat = genererDocumentXml({
       meuble: false,
-      aGarant: false,
+      nombreCautions: 0,
       colocation: false,
       servitude: false,
       clauseResolutoireAvant: true,
@@ -226,7 +247,7 @@ describe("nettoyerMiseEnFormeBail — matrice complète sur le vrai modèle (san
   it("bail vide, sans garant : une seule variante du bloc résiliation visible, aucune puce vide avant, Néant suivi directement de la section suivante", () => {
     const resultat = genererDocumentXml({
       meuble: false,
-      aGarant: false,
+      nombreCautions: 0,
       colocation: false,
       servitude: false,
       clauseResolutoireAvant: true,
@@ -250,7 +271,7 @@ describe("nettoyerMiseEnFormeBail — matrice complète sur le vrai modèle (san
   it("bail meublé, avec garant : une seule variante du bloc résiliation visible (meublé), bloc caution détaillé présent", () => {
     const resultat = genererDocumentXml({
       meuble: true,
-      aGarant: true,
+      nombreCautions: 1,
       colocation: false,
       servitude: false,
       clauseResolutoireAvant: false,
@@ -264,10 +285,66 @@ describe("nettoyerMiseEnFormeBail — matrice complète sur le vrai modèle (san
     expect(resultat).toContain("Etat descriptif et inventaire du mobilier");
   });
 
+  it("bail à 2 cautions : identité de chacune dans l'ordre reçu, engagement au pluriel une seule fois, une ligne d'annexe par caution", () => {
+    const resultat = genererDocumentXml({
+      meuble: false,
+      nombreCautions: 2,
+      colocation: true,
+      servitude: false,
+      clauseResolutoireAvant: false,
+      diagnostics: false
+    });
+    const paragraphes = extraireParagraphesAvecTexteEtListe(resultat).map((p) => p.texte);
+    const noms = paragraphes.filter((t) => t.startsWith("Nom : ") && (t.includes("Garant") || t.includes("Seconde")));
+    expect(noms).toEqual(["Nom : Jean Garant", "Nom : Paule Seconde"]);
+    // Intitulé juste avant chaque bloc, dans l'ordre.
+    expect(paragraphes[paragraphes.indexOf("Nom : Jean Garant") - 1]).toBe("Caution 1");
+    expect(paragraphes[paragraphes.indexOf("Nom : Paule Seconde") - 1]).toBe("Caution 2");
+    expect(
+      paragraphes.some((t) => t.trim() === "La présente location est garantie par les personnes désignées ci-dessous en qualité de cautions:")
+    ).toBe(true);
+
+    const engagements = paragraphes.filter((t) => t.includes("aux bénéfices de discussion et de division"));
+    expect(engagements).toHaveLength(1);
+    expect(engagements[0]).toMatch(/^Les cautions se portent cautions solidaires du locataire et renoncent aux bénéfices/);
+    expect(paragraphes.some((t) => t.trim() === "Un exemplaire de l’engagement de chaque caution est annexé au présent bail.")).toBe(true);
+    // L'engagement suit la liste : après la dernière identité, jamais entre deux.
+    expect(paragraphes.indexOf(engagements[0]!)).toBeGreaterThan(paragraphes.indexOf("Nom : Paule Seconde"));
+
+    const annexes = paragraphes.filter((t) => t.startsWith("Acte de caution solidaire"));
+    expect(annexes).toEqual([
+      "Acte de caution solidaire. Nom de la caution : Jean Garant",
+      "Acte de caution solidaire. Nom de la caution : Paule Seconde"
+    ]);
+  });
+
+  it("bail à 1 caution : engagement et exemplaire annexé au singulier", () => {
+    const resultat = genererDocumentXml({
+      meuble: false,
+      nombreCautions: 1,
+      colocation: false,
+      servitude: false,
+      clauseResolutoireAvant: false,
+      diagnostics: false
+    });
+    const paragraphes = extraireParagraphesAvecTexteEtListe(resultat).map((p) => p.texte);
+    expect(paragraphes.some((t) => t.startsWith("La caution se porte caution solidaire du locataire et renonce aux bénéfices"))).toBe(true);
+    expect(resultat).not.toContain("Les cautions se portent");
+    expect(paragraphes.some((t) => /^Caution d/.test(t))).toBe(false);
+    // Aucun paragraphe vide laissé à la place de l'intitulé.
+    expect(paragraphes[paragraphes.indexOf("Nom : Jean Garant") - 1]!.trim()).toBe(
+      "La présente location est garantie par la personne désignée ci-dessous en qualité de caution:"
+    );
+    expect(paragraphes.some((t) => t.trim() === "Un exemplaire de l’engagement de la caution est annexé au présent bail.")).toBe(true);
+    expect(paragraphes.filter((t) => t.startsWith("Acte de caution solidaire"))).toEqual([
+      "Acte de caution solidaire. Nom de la caution : Jean Garant"
+    ]);
+  });
+
   it('preuve zéro mot changé : aucune balise ("{" ou "}") ne subsiste dans le texte final', () => {
     const resultat = genererDocumentXml({
       meuble: false,
-      aGarant: true,
+      nombreCautions: 2,
       colocation: true,
       servitude: true,
       clauseResolutoireAvant: false,

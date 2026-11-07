@@ -171,12 +171,24 @@ describe("nettoyerMiseEnFormeBail", () => {
     expect(() => nettoyerMiseEnFormeBail(xmlModele, xmlRenduTronque)).toThrow(/saut\(s\) de page/);
   });
 
-  it("lève une erreur si le document rendu contient PLUS de paragraphes que le modèle", () => {
+  it("lève une erreur si le document rendu contient un paragraphe dont le paraId est absent du modèle", () => {
     const { xmlModele, xmlRendu } = construireFixture([]);
     const paragrapheEnTrop = '<w:p w14:paraId="PARAGRAPHE_FANTOME"><w:pPr><w:rPr/></w:pPr></w:p>';
     expect(() => nettoyerMiseEnFormeBail(xmlModele, xmlRendu.replace("</w:body>", `${paragrapheEnTrop}</w:body>`))).toThrow(
-      /en contient plus que le modèle/
+      /PARAGRAPHE_FANTOME.*absent du modèle/
     );
+  });
+
+  it("accepte PLUS de paragraphes que le modèle quand ils sont répétés par une boucle (une itération par caution)", () => {
+    const { xmlModele, xmlRendu } = construireFixture([
+      { paraId: "TEST_CAUTION_NOM", texteModele: "Nom : {Nom prénom de la personne caution}", texteRendu: "Nom : Claire Durand" }
+    ]);
+    const secondeIteration =
+      '<w:p w14:paraId="TEST_CAUTION_NOM"><w:pPr><w:rPr/></w:pPr><w:r><w:rPr/><w:t>Nom : Paul Martin</w:t></w:r></w:p>';
+    const xmlRenduDeuxCautions = xmlRendu.replace(/(<w:p w14:paraId="TEST_CAUTION_NOM">[\s\S]*?<\/w:p>)/, `$1${secondeIteration}`);
+    const resultat = nettoyerMiseEnFormeBail(xmlModele, xmlRenduDeuxCautions);
+    expect(resultat).toContain("Claire Durand");
+    expect(resultat).toContain("Paul Martin");
   });
 
   it("lève une erreur si un paragraphe cible keepNext/keepLines est introuvable", () => {

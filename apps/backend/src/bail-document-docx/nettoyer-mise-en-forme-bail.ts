@@ -124,10 +124,22 @@ export function nettoyerMiseEnFormeBail(xmlModele: string, xmlRendu: string): st
   const paragraphesModele = extraireParagraphes(xmlModele);
   const paragraphesRendu = extraireParagraphes(xmlRendu);
 
-  if (paragraphesRendu.length > paragraphesModele.length) {
-    throw new Error(
-      `nettoyerMiseEnFormeBail : le document rendu (${paragraphesRendu.length} paragraphes) en contient plus que le modèle (${paragraphesModele.length}) — Docxtemplater ne devrait jamais en ajouter.`
-    );
+  // Seule source légitime de paragraphes supplémentaires : la boucle
+  // {#cautions} du modèle (bloc identité de la section GARANTS SOLIDAIRES
+  // et ligne « Acte de caution solidaire » des pièces annexées, une
+  // itération par garant, 2026-11-07). Un paragraphe répété garde le
+  // w14:paraId de son modèle : il est donc toujours connu ci-dessous. Tout
+  // paragraphe porteur d'un paraId absent du modèle reste une anomalie.
+  const paraIdsModele = new Set(
+    paragraphesModele.map((match) => extraireParaId(match[0])).filter((id): id is string => id !== null)
+  );
+  for (const match of paragraphesRendu) {
+    const paraId = extraireParaId(match[0]);
+    if (paraId !== null && !paraIdsModele.has(paraId)) {
+      throw new Error(
+        `nettoyerMiseEnFormeBail : paragraphe w14:paraId="${paraId}" absent du modèle — Docxtemplater ne devrait jamais en créer.`
+      );
+    }
   }
 
   const texteModeleParParaId = new Map<string, string>();

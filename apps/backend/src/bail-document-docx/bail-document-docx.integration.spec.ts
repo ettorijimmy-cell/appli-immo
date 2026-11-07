@@ -10,6 +10,7 @@ import {
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
   documents,
+  garants as garantsTable,
   indicesIrl,
   journalAudit,
   organisations,
@@ -561,6 +562,135 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     const texte = texteDuDocx(buffer);
     expect(texte).toContain("caution solidaire du locataire");
     expect(texte).not.toContain("8 rue de la Caution");
+  });
+
+  // Commit 3 du chantier garants (2026-11-07) : tous les garants imprimés,
+  // dans l'ordre de saisie (created_at, puis id). Dans une même transaction
+  // de test, created_at vaut now() pour toutes les lignes : il est fixé
+  // explicitement ici, à l'inverse de l'ordre d'insertion, pour prouver que
+  // l'ordre vient bien de created_at et pas de l'ordre de retour de la base.
+  it("imprime tous les garants dans l'ordre de saisie, engagement au pluriel une seule fois, une ligne d'annexe par caution", async () => {
+    const { bail } = await creerDossierComplet();
+    const [claire] = await db.select().from(garantsTable).where(eq(garantsTable.bailId, bail.id));
+    const paul = await garantsService.create({
+      bailId: bail.id,
+      nom: "Martin",
+      prenom: "Paul",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1960-01-15",
+      lieuNaissance: "Tulle",
+      nationalite: "Française",
+      adresse: "4 place du Second Garant",
+      codePostal: "19000",
+      ville: "Tulle"
+    });
+    await db.update(garantsTable).set({ createdAt: new Date("2026-01-02T10:00:00Z") }).where(eq(garantsTable.id, claire!.id));
+    await db.update(garantsTable).set({ createdAt: new Date("2026-01-01T10:00:00Z") }).where(eq(garantsTable.id, paul.id));
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    // Identité : Paul (saisi le premier) puis Claire, chacun avec son adresse.
+    expect(texte.indexOf("Paul Martin")).toBeGreaterThan(-1);
+    expect(texte.indexOf("Paul Martin")).toBeLessThan(texte.indexOf("Claire Durand"));
+    expect(texte).toContain("4 place du Second Garant");
+    expect(texte).toContain("8 rue de la Caution");
+    // Introduction au pluriel ; intitulé « Caution n » devant chaque bloc.
+    expect(texte).toContain("garantie par les personnes désignées ci-dessous en qualité de cautions:");
+    expect(texte.indexOf("Caution 1")).toBeGreaterThan(-1);
+    expect(texte.indexOf("Caution 1")).toBeLessThan(texte.indexOf("Paul Martin"));
+    expect(texte.indexOf("Caution 2")).toBeGreaterThan(texte.indexOf("Paul Martin"));
+    expect(texte.indexOf("Caution 2")).toBeLessThan(texte.indexOf("Claire Durand"));
+
+    // Engagement : une seule fois, au pluriel, après la liste.
+    expect(texte.split("aux bénéfices de discussion et de division").length - 1).toBe(1);
+    expect(texte).toContain("Les cautions se portent cautions solidaires du locataire et renoncent");
+    expect(texte).not.toContain("La caution se porte caution solidaire");
+    expect(texte.indexOf("Les cautions se portent")).toBeGreaterThan(texte.indexOf("Claire Durand"));
+    expect(texte).toContain("Un exemplaire de l’engagement de chaque caution est annexé au présent bail.");
+
+    // Pièces annexées : une ligne par caution, même ordre.
+    const ligneAnnexePaul = texte.indexOf("Acte de caution solidaire. Nom de la caution : Paul Martin");
+    const ligneAnnexeClaire = texte.indexOf("Acte de caution solidaire. Nom de la caution : Claire Durand");
+    expect(ligneAnnexePaul).toBeGreaterThan(-1);
+    expect(ligneAnnexeClaire).toBeGreaterThan(ligneAnnexePaul);
+  });
+
+  it("un seul garant : engagement au singulier, une seule ligne d'annexe portant son nom", async () => {
+    const { bail } = await creerDossierComplet();
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    expect(texte).toContain("La caution se porte caution solidaire du locataire et renonce");
+    expect(texte).not.toContain("Les cautions se portent");
+    // Introduction au singulier, aucun intitulé « Caution n ».
+    expect(texte).toContain("garantie par la personne désignée ci-dessous en qualité de caution:");
+    expect(texte).not.toContain("les personnes désignées");
+    expect(texte).not.toMatch(/Caution \d/);
+    expect(texte).toContain("Un exemplaire de l’engagement de la caution est annexé au présent bail.");
+    expect(texte.split("Acte de caution solidaire. Nom de la caution :").length - 1).toBe(1);
+    expect(texte).toContain("Acte de caution solidaire. Nom de la caution : Claire Durand");
+  });
+
+  it("un garant archivé n'est ni imprimé ni compté dans l'accord", async () => {
+    const { bail } = await creerDossierComplet();
+    const archive = await garantsService.create({
+      bailId: bail.id,
+      nom: "Archive",
+      prenom: "Garant",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1960-01-15",
+      lieuNaissance: "Tulle",
+      nationalite: "Française"
+    });
+    await db.update(garantsTable).set({ archivedAt: new Date() }).where(eq(garantsTable.id, archive.id));
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    expect(texte).not.toContain("Garant Archive");
+    expect(texte).toContain("La caution se porte caution solidaire du locataire");
+  });
+
+  // Ordre des locataires (décision du 2026-11-07) : le titulaire occupe
+  // toujours le premier emplacement du modèle, même rattaché après le
+  // colocataire.
+  it("imprime le titulaire en premier même s'il a été rattaché au bail après le colocataire", async () => {
+    const { bail, locataire } = await creerDossierComplet();
+    // Le lien titulaire créé par creerDossierComplet est archivé puis
+    // recréé APRÈS le lien colocataire : sans tri, la base renverrait le
+    // colocataire en premier (ordre d'insertion) et l'imprimerait à la
+    // place du titulaire. Dans la transaction de test, created_at est le
+    // même pour tous les liens : c'est bien le rôle qui décide ici.
+    const [lienTitulaireInitial] = await db
+      .select()
+      .from(bailLocataires)
+      .where(and(eq(bailLocataires.bailId, bail.id), eq(bailLocataires.role, "titulaire")));
+    await bailLocatairesService.archive(lienTitulaireInitial!.id);
+    const colocataire = await locatairesService.create(userId, { nom: "Antérieur", prenom: "Colocataire" });
+    await locatairesService.update(colocataire.id, { adresse: "2 rue du Colocataire", codePostal: "19100", ville: "Brive" });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: colocataire.id, role: "colocataire" });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    // Emplacement titulaire (« Nom : … », adresse, e-mail du titulaire)
+    // avant l'emplacement colocataire.
+    const indexTitulaire = texte.indexOf(`${locataire.prenom} ${locataire.nom}`);
+    const indexColocataire = texte.indexOf("Colocataire Antérieur");
+    expect(indexTitulaire).toBeGreaterThan(-1);
+    expect(indexColocataire).toBeGreaterThan(indexTitulaire);
+    expect(texte.indexOf("1 rue du Locataire")).toBeLessThan(texte.indexOf("2 rue du Colocataire"));
   });
 
   it("bloque si un garant rattaché a des champs manquants (date/lieu de naissance, nationalité)", async () => {

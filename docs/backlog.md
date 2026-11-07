@@ -1315,6 +1315,27 @@ les trois parcours ci-dessus).
   Code civil dans leur rédaction issue de l'ordonnance 2021-1192) avant
   toute modification. Aucune modification de `validerCompletudeGenerationBail`
   ni de `bail-document-docx.service.ts` avant cette vérification.
+  *Mis à jour le 2026-11-07 (chantier garants, commit 3) :* le document
+  n'imprime plus seulement le premier garant. Tous les garants non
+  archivés sont imprimés, dans l'ordre de saisie (`created_at`, puis
+  `id` — `ordonnerGarantsDuBail`, packages/core), avec une ligne
+  « Acte de caution solidaire. Nom de la caution : … » par garant dans
+  les pièces annexées, et un paragraphe d'engagement unique accordé au
+  singulier ou au pluriel. Toujours sans filtre par `typeGarantie` : le
+  point ci-dessus (Visale/autre) reste entier.
+
+- **Bail généré : au-delà de deux locataires, les suivants ne sont pas
+  imprimés — non résolu (constaté le 2026-11-07, chantier garants).** Le
+  modèle (`assets/modele-bail.docx` et la fixture) n'a que deux
+  emplacements fixes : « LE(S) LOCATAIRE(S) » (titulaire) et
+  « Colocataire ». `bail-document-docx.service.ts` remplit le premier avec
+  le titulaire et le second avec le colocataire suivant dans l'ordre de
+  saisie (`ordonnerLocatairesDuBail`, packages/core) : un 3e locataire
+  rattaché au bail est absent du document, sans aucun message. La clause
+  de colocation (art. 8-1) s'imprime pourtant bien, elle ne dépend que du
+  nombre de liens. Piste : boucle sur les colocataires, même mécanisme que
+  `{#cautions}` ; à défaut, au minimum bloquer ou signaler la génération
+  au-delà de deux locataires.
 
 - **`EditLocataireForm` ne peut pas vider un champ optionnel une fois
   rempli — résolu (commit `4faa41d`, 2026-10-14).**

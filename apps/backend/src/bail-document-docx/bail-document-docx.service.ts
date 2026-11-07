@@ -20,6 +20,8 @@ import {
   formaterFourchetteDepensesEnergie,
   irlEstPerime,
   libelleMoisDepuisDate,
+  ordonnerGarantsDuBail,
+  ordonnerLocatairesDuBail,
   regimesDureeApplicables,
   validerCompletudeGenerationBail,
   type ChoixDureeBail,
@@ -155,10 +157,15 @@ export class BailDocumentDocxService {
       throw new NotFoundException("Bailleur introuvable (nom de la SCI ou du propriétaire manquant)");
     }
 
-    const liensLocataires = await this.db
-      .select()
-      .from(bailLocataires)
-      .where(and(eq(bailLocataires.bailId, bailId), isNull(bailLocataires.archivedAt)));
+    // Ordre d'impression (titulaire d'abord, puis ordre de saisie ; garants
+    // dans l'ordre de saisie) : packages/core, ordonner-parties-bail.ts —
+    // jamais l'ordre de retour de la base, non garanti sans ORDER BY.
+    const liensLocataires = ordonnerLocatairesDuBail(
+      await this.db
+        .select()
+        .from(bailLocataires)
+        .where(and(eq(bailLocataires.bailId, bailId), isNull(bailLocataires.archivedAt)))
+    );
     const locatairesDuBail = (
       await Promise.all(
         liensLocataires.map(async (lien) => {
@@ -172,10 +179,12 @@ export class BailDocumentDocxService {
       )
     ).filter((l): l is NonNullable<typeof l> => l !== undefined);
 
-    const garantsDuBail = await this.db
-      .select()
-      .from(garants)
-      .where(and(eq(garants.bailId, bailId), isNull(garants.archivedAt)));
+    const garantsDuBail = ordonnerGarantsDuBail(
+      await this.db
+        .select()
+        .from(garants)
+        .where(and(eq(garants.bailId, bailId), isNull(garants.archivedAt)))
+    );
 
     const [derniereValeurIrl] = await this.db
       .select()
@@ -329,7 +338,26 @@ export class BailDocumentDocxService {
 
     const titulaire = locatairesDuBail[0] ?? null;
     const colocataire = locatairesDuBail[1] ?? null;
-    const caution = garantsDuBail[0] ?? null;
+
+    // Une entrée par garant, dans l'ordre de saisie : boucle {#cautions}
+    // du modèle (bloc identité de la section GARANTS SOLIDAIRES, une ligne
+    // « Acte de caution solidaire » par caution dans les pièces annexées).
+    // Clés identiques aux anciennes balises de la caution unique, résolues
+    // dans le contexte de chaque itération.
+    // « numero caution » : intitulé « Caution 1 », « Caution 2 »… imprimé
+    // en tête de chaque bloc, seulement à partir de deux garants.
+    const cautions = garantsDuBail.map((caution, index) => ({
+      "numero caution": String(index + 1),
+      "Nom prénom de la personne caution": `${caution.prenom} ${caution.nom}`,
+      "adresse caution": caution.adresse ?? VIDE,
+      "code postale caution": caution.codePostal ?? VIDE,
+      "ville caution": caution.ville ?? VIDE,
+      "téléphone caution": caution.telephone ?? VIDE,
+      "date de naissance caution": caution.dateNaissance ?? VIDE,
+      "ville de naissance caution ": caution.lieuNaissance ?? VIDE,
+      "nationalité caution": caution.nationalite ?? VIDE,
+      "adresse mail caution": caution.email ?? VIDE
+    }));
 
     // Mentions de performance énergétique (décret n° 2015-587, annexes 1/2
     // — texte identique vide/meublé, voir rendreDocument) : générées quand
@@ -412,16 +440,6 @@ export class BailDocumentDocxService {
 
       "mettre un champ à compléter le cas échéant": bail.honorairesLocataire ?? NEANT,
 
-      "Nom prénom de la personne caution": caution ? `${caution.prenom} ${caution.nom}` : VIDE,
-      "adresse caution": caution?.adresse ?? VIDE,
-      "code postale caution": caution?.codePostal ?? VIDE,
-      "ville caution": caution?.ville ?? VIDE,
-      "téléphone caution": caution?.telephone ?? VIDE,
-      "date de naissance caution": caution?.dateNaissance ?? VIDE,
-      "ville de naissance caution ": caution?.lieuNaissance ?? VIDE,
-      "nationalité caution": caution?.nationalite ?? VIDE,
-      "adresse mail caution": caution?.email ?? VIDE,
-
       "montant loyer": bail.loyerMensuel ?? VIDE,
       "mois de départ du bail": libelleMoisDepuisDate(bail.dateDebut),
       "montant des charges": bail.provisionsCharges ?? VIDE,
@@ -449,7 +467,7 @@ export class BailDocumentDocxService {
       "duree bail": formaterDureeBail(duree.dureeMois)
     };
 
-    const buffer = this.rendreDocument(donneesBalises, {
+    const buffer = this.rendreDocument(donneesBalises, cautions, {
       clauseResolutoireAvant: regime === "avant_2026_10_01",
       clauseResolutoireApres: regime === "depuis_2026_10_01",
       servitude: servitudeApplicable,
@@ -475,6 +493,13 @@ export class BailDocumentDocxService {
       // vides plutôt que masquées, un vrai gap constaté sur le bail
       // Ilan Devos (aucun garant).
       aGarant: garantsDuBail.length > 0,
+      // Accord de l'introduction (« la personne désignée… en qualité de
+      // caution » / « les personnes désignées… en qualité de cautions »),
+      // du paragraphe d'engagement, imprimé une seule fois après la liste
+      // (« La caution se porte » / « Les cautions se portent »), et de la
+      // phrase sur l'exemplaire annexé ; intitulés « Caution n » seulement
+      // à partir de deux garants.
+      plusieursCautions: garantsDuBail.length > 1,
       // Mention "représentée par {gérant}" dans l'en-tête LE BAILLEUR
       // (chantier bail — corrections juridiques, commit C) : uniquement
       // pour un bailleur SCI, jamais pour un bailleur en nom propre — voir
@@ -523,6 +548,7 @@ export class BailDocumentDocxService {
 
   private rendreDocument(
     donneesBalises: Record<string, string>,
+    cautions: Record<string, string>[],
     drapeaux: {
       clauseResolutoireAvant: boolean;
       clauseResolutoireApres: boolean;
@@ -537,6 +563,7 @@ export class BailDocumentDocxService {
       eauChaudeIndividuelle: boolean;
       eauChaudeCollective: boolean;
       aGarant: boolean;
+      plusieursCautions: boolean;
       representantSci: boolean;
       meuble: boolean;
       colocation: boolean;
@@ -566,7 +593,7 @@ export class BailDocumentDocxService {
     // paragraphe vidé par une balise conditionnelle fausse.
     const xmlModele = zip.file("word/document.xml")!.asText();
     const document = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
-    document.render({ ...donneesBalises, ...drapeaux });
+    document.render({ ...donneesBalises, cautions, ...drapeaux });
 
     const zipRendu = document.getZip();
     const xmlRendu = zipRendu.file("word/document.xml")!.asText();
