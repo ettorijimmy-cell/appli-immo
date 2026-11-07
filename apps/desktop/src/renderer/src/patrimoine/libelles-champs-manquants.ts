@@ -11,11 +11,10 @@ const LIEU_SCI = "Fiche de la SCI, bouton « Modifier »";
 const LIEU_BIEN = "Fiche du bien, bouton « Modifier »";
 const LIEU_APPARTEMENT = "Fiche de l'appartement, bouton « Modifier »";
 const LIEU_LOCATAIRE = "Fiche du locataire, bouton « Modifier »";
-// Avertissement explicite : il existe deux formulaires d'ajout de garant,
-// seul celui de la fiche locataire collecte ces informations (voir audit
-// du 2026-10-12) — l'autre (onglet "Bail actuel") ne les demande pas.
-const LIEU_GARANT =
-  "Fiche du locataire, section Garants (pas le formulaire d'ajout de garant de l'onglet « Bail actuel », qui ne demande pas ces informations)";
+// Les deux écrans (fiche locataire et onglet "Bail actuel") partagent le
+// même formulaire garant depuis le 2026-11-07 (locataires/GarantForms.tsx) :
+// les deux permettent de renseigner ces informations.
+const LIEU_GARANT = "Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »";
 const LIEU_IRL = "Aucune action possible dans l'application — contactez l'administrateur";
 const LIEU_TYPE_BIEN = "Aucune action possible : ce document ne s'applique pas à ce type de bien";
 

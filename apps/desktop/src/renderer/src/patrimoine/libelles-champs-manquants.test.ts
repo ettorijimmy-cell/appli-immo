@@ -33,11 +33,10 @@ describe("resoudreAffichageChampManquant", () => {
     expect(resoudreAffichageChampManquant("Locataire 2 — ville").libelle).toBe("Ville du locataire 2");
   });
 
-  it("traduit un garant sans numéro, avec l'avertissement sur le bon formulaire", () => {
+  it("traduit un garant sans numéro, en indiquant les deux écrans possibles", () => {
     const resultat = resoudreAffichageChampManquant("Garant — date de naissance");
     expect(resultat.libelle).toBe("Date de naissance du garant");
-    expect(resultat.lieu).toContain("section Garants");
-    expect(resultat.lieu).toContain("Bail actuel");
+    expect(resultat.lieu).toBe("Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »");
   });
 
   it("traduit un garant numéroté (plusieurs garants)", () => {

@@ -13,6 +13,9 @@ export interface ChampsGarant {
   email: string;
   telephone: string;
   typeGarantie: GarantTypeGarantie;
+  adresse: string;
+  codePostal: string;
+  ville: string;
   dateNaissance: string;
   lieuNaissance: string;
   nationalite: string;
@@ -25,6 +28,9 @@ export function champsGarantVides(): ChampsGarant {
     email: "",
     telephone: "",
     typeGarantie: "personne_physique",
+    adresse: "",
+    codePostal: "",
+    ville: "",
     dateNaissance: "",
     lieuNaissance: "",
     nationalite: ""
@@ -38,6 +44,9 @@ export function champsGarantDepuis(garant: Garant): ChampsGarant {
     email: garant.email ?? "",
     telephone: garant.telephone ?? "",
     typeGarantie: garant.typeGarantie,
+    adresse: garant.adresse ?? "",
+    codePostal: garant.codePostal ?? "",
+    ville: garant.ville ?? "",
     dateNaissance: garant.dateNaissance ?? "",
     lieuNaissance: garant.lieuNaissance ?? "",
     nationalite: garant.nationalite ?? ""
@@ -53,6 +62,9 @@ export function creationGarant(bailId: string, champs: ChampsGarant): CreateGara
     typeGarantie: champs.typeGarantie,
     ...(champs.email && { email: champs.email }),
     ...(champs.telephone && { telephone: champs.telephone }),
+    ...(champs.adresse && { adresse: champs.adresse }),
+    ...(champs.codePostal && { codePostal: champs.codePostal }),
+    ...(champs.ville && { ville: champs.ville }),
     ...(champs.dateNaissance && { dateNaissance: champs.dateNaissance }),
     ...(champs.lieuNaissance && { lieuNaissance: champs.lieuNaissance }),
     ...(champs.nationalite && { nationalite: champs.nationalite })
@@ -68,6 +80,9 @@ export function modificationGarant(champs: ChampsGarant): UpdateGarantInput {
     typeGarantie: champs.typeGarantie,
     email: valeurOuNull(champs.email),
     telephone: valeurOuNull(champs.telephone),
+    adresse: valeurOuNull(champs.adresse),
+    codePostal: valeurOuNull(champs.codePostal),
+    ville: valeurOuNull(champs.ville),
     dateNaissance: valeurOuNull(champs.dateNaissance),
     lieuNaissance: valeurOuNull(champs.lieuNaissance),
     nationalite: valeurOuNull(champs.nationalite)

@@ -212,6 +212,7 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       avecIrl?: boolean;
       typeBail?: "vide" | "meuble";
       estFamiliale?: boolean;
+      garantSansAdresse?: boolean;
     } = {}
   ) {
     const dateDebut = options.dateDebut ?? "2026-07-01";
@@ -264,7 +265,8 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
         typeGarantie: "personne_physique",
         dateNaissance: "1965-03-20",
         lieuNaissance: "Lyon",
-        nationalite: "Française"
+        nationalite: "Française",
+        ...(options.garantSansAdresse ? {} : { adresse: "8 rue de la Caution", codePostal: "69002", ville: "Lyon" })
       });
     }
 
@@ -326,6 +328,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     // la mention "caution solidaire" du bloc signature qui reste toujours
     // imprimée, garant ou non).
     expect(texte).toContain("caution solidaire du locataire");
+    // Adresse du garant saisissable depuis le 2026-11-07 : imprimée.
+    expect(texte).toContain("8 rue de la Caution");
+    expect(texte).toContain("69002");
 
     // Bail vide (typeBail par défaut) : jamais la mention réservée au
     // meublé (inventaire de mobilier, docs/backlog.md).
@@ -542,6 +547,20 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       bailDocumentDocxService.genererDocumentBailDocx(bailMeuble.id, {})
     );
     expect(texteDuDocx(bufferMeuble)).toContain("inventaire du mobilier");
+  });
+
+  // Option A (décision du 2026-11-07) : l'adresse du garant est imprimée si
+  // elle est saisie, jamais exigée par le contrôle de complétude.
+  it("génère normalement un bail dont le garant n'a pas d'adresse, sans signaler de champ manquant", async () => {
+    const { bail } = await creerDossierComplet({ garantSansAdresse: true });
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain("caution solidaire du locataire");
+    expect(texte).not.toContain("8 rue de la Caution");
   });
 
   it("bloque si un garant rattaché a des champs manquants (date/lieu de naissance, nationalité)", async () => {

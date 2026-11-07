@@ -171,6 +171,25 @@ describe("GarantsService — contrôle d'appartenance à l'organisation (create/
       expect(garant.bailId).toBe(orgA.bailId);
     });
 
+    // Adresse du garant (2026-11-07) : absente de CreateGarantDto jusqu'ici,
+    // donc supprimée par whitelist: true et jamais écrite.
+    it("écrit l'adresse du garant (adresse, code postal, ville) à la création", async () => {
+      const garant = await contexteOrgA(() =>
+        garantsService.create({
+          bailId: orgA.bailId,
+          nom: "Adresse",
+          prenom: "Garant",
+          typeGarantie: "personne_physique",
+          adresse: "4 rue des Lilas",
+          codePostal: "69003",
+          ville: "Lyon"
+        })
+      );
+      expect(garant).toMatchObject({ adresse: "4 rue des Lilas", codePostal: "69003", ville: "Lyon" });
+      const [ligneEnBase] = await db.select().from(garants).where(eq(garants.id, garant.id));
+      expect(ligneEnBase).toMatchObject({ adresse: "4 rue des Lilas", codePostal: "69003", ville: "Lyon" });
+    });
+
     it("404 sur le bailId d'une autre organisation, sans jamais insérer de ligne garants — ni chez l'appelant ni chez le propriétaire réel du bail", async () => {
       await expect(
         contexteOrgB(() =>
@@ -293,6 +312,20 @@ describe("GarantsService — contrôle d'appartenance à l'organisation (create/
       const garant = await contexteOrgA(() => garantsService.update(orgA.garantId, { lieuNaissance: null }));
 
       expect(garant.lieuNaissance).toBeNull();
+    });
+
+    it("modifie puis efface l'adresse du garant (null explicite)", async () => {
+      const modifie = await contexteOrgA(() =>
+        garantsService.update(orgA.garantId, { adresse: "4 rue des Lilas", codePostal: "69003", ville: "Lyon" })
+      );
+      expect(modifie).toMatchObject({ adresse: "4 rue des Lilas", codePostal: "69003", ville: "Lyon" });
+
+      const efface = await contexteOrgA(() =>
+        garantsService.update(orgA.garantId, { adresse: null, codePostal: null, ville: null })
+      );
+      expect(efface).toMatchObject({ adresse: null, codePostal: null, ville: null });
+      const [ligneEnBase] = await db.select().from(garants).where(eq(garants.id, orgA.garantId));
+      expect(ligneEnBase).toMatchObject({ adresse: null, codePostal: null, ville: null });
     });
   });
 

@@ -2060,6 +2060,10 @@ ou section Garants de la fiche locataire pour les champs du garant
 (jamais le formulaire d'ajout de garant de l'onglet "Bail actuel", qui ne
 les demande pas — point découvert lors de l'audit ayant motivé ce
 correctif). Aucune règle métier, DTO ni route backend modifiés.
+**Mis à jour le 2026-11-07** : les deux écrans partagent désormais le même
+formulaire garant (`locataires/GarantForms.tsx`), qui demande aussi la
+naissance et la nationalité ; le lieu indiqué est donc « Section Garants
+(fiche du locataire ou onglet « Bail actuel ») ».
 
 ### État des lieux (en cours, priorité 2)
 

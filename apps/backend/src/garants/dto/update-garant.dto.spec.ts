@@ -38,7 +38,7 @@ describe("UpdateGarantDto", () => {
     expect(erreurs.some((e) => e.property === "prenom")).toBe(true);
   });
 
-  for (const champ of ["email", "telephone", "dateNaissance", "lieuNaissance", "nationalite"]) {
+  for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance", "lieuNaissance", "nationalite"]) {
     it(`${champ} accepte null (champ à effacer)`, async () => {
       const dto = plainToInstance(UpdateGarantDto, { [champ]: null });
       const erreurs = await validate(dto);
@@ -62,6 +62,12 @@ describe("UpdateGarantDto", () => {
     const dto = plainToInstance(UpdateGarantDto, { dateNaissance: "pas-une-date" });
     const erreurs = await validate(dto);
     expect(erreurs.some((e) => e.property === "dateNaissance")).toBe(true);
+  });
+
+  it("adresse non textuelle est rejetée", async () => {
+    const dto = plainToInstance(UpdateGarantDto, { adresse: 12, codePostal: 69001, ville: true });
+    const erreurs = await validate(dto);
+    expect(erreurs.map((e) => e.property).sort()).toEqual(["adresse", "codePostal", "ville"]);
   });
 
   it("typeGarantie accepte les 3 valeurs valides", async () => {

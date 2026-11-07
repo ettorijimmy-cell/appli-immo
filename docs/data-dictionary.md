@@ -149,6 +149,8 @@ module/UI ne lit ni n'écrit `diagnostics` à ce jour.
 | Champ | Type | Description |
 |---|---|---|
 | type_garantie | enum | `personne_physique` \| `garantie_visale` \| `autre` |
+| adresse, code_postal, ville | text, nullable | Adresse du garant, imprimée dans le bail (section « Garants solidaires ») si renseignée. Colonnes présentes depuis la création de la table mais **saisissables seulement depuis le 2026-11-07** (`CreateGarantDto`/`UpdateGarantDto`, formulaire garant partagé `locataires/GarantForms.tsx`) — avant, absentes des DTO, donc supprimées par `whitelist: true` et toujours `null`. **Jamais exigées** par `validerCompletudeGenerationBail` (décision du 2026-11-07, option A, en attendant la lecture du texte sur les mentions de l'acte de cautionnement). Déjà synchronisées par le stream PowerSync `garants` |
+| profession, revenus | text / decimal, nullable | Ni saisissables, ni renvoyés par l'API, ni synchronisés (donnée financière précise, décision du 2026-08-15) |
 | date_naissance, lieu_naissance, nationalite | text/date, nullable | Mentions manuscrites de l'acte de cautionnement, sous peine de nullité absolue (loi ALUR) — figées à la création, même principe que adresse/profession/revenus |
 
 ## baux

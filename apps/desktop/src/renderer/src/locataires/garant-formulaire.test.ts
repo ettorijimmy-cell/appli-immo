@@ -10,6 +10,9 @@ const garant: Garant = {
   email: null,
   telephone: "0600000000",
   typeGarantie: "garantie_visale",
+  adresse: "4 rue des Lilas",
+  codePostal: "69003",
+  ville: null,
   dateNaissance: "1970-01-02",
   lieuNaissance: null,
   nationalite: "française",
@@ -24,6 +27,9 @@ describe("formulaires garant", () => {
       email: "",
       telephone: "",
       typeGarantie: "personne_physique",
+      adresse: "",
+      codePostal: "",
+      ville: "",
       dateNaissance: "",
       lieuNaissance: "",
       nationalite: ""
@@ -41,6 +47,18 @@ describe("formulaires garant", () => {
     });
   });
 
+  it("création : l'adresse saisie est envoyée", () => {
+    const champs = {
+      ...champsGarantVides(),
+      nom: "Martin",
+      prenom: "Paul",
+      adresse: "4 rue des Lilas",
+      codePostal: "69003",
+      ville: "Lyon"
+    };
+    expect(creationGarant("b1", champs)).toMatchObject({ adresse: "4 rue des Lilas", codePostal: "69003", ville: "Lyon" });
+  });
+
   it("modification : préremplie depuis le garant, null en base devient chaîne vide", () => {
     expect(champsGarantDepuis(garant)).toEqual({
       nom: "Martin",
@@ -48,6 +66,9 @@ describe("formulaires garant", () => {
       email: "",
       telephone: "0600000000",
       typeGarantie: "garantie_visale",
+      adresse: "4 rue des Lilas",
+      codePostal: "69003",
+      ville: "",
       dateNaissance: "1970-01-02",
       lieuNaissance: "",
       nationalite: "française"
@@ -55,13 +76,16 @@ describe("formulaires garant", () => {
   });
 
   it("modification : un champ vidé est envoyé en null explicite, jamais omis", () => {
-    const champs = { ...champsGarantDepuis(garant), telephone: "", nationalite: "" };
+    const champs = { ...champsGarantDepuis(garant), telephone: "", nationalite: "", adresse: "" };
     expect(modificationGarant(champs)).toEqual({
       nom: "Martin",
       prenom: "Paul",
       typeGarantie: "garantie_visale",
       email: null,
       telephone: null,
+      adresse: null,
+      codePostal: "69003",
+      ville: null,
       dateNaissance: "1970-01-02",
       lieuNaissance: null,
       nationalite: null

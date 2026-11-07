@@ -25,6 +25,21 @@ export class CreateGarantDto {
   @IsIn(GARANT_TYPES_GARANTIE)
   typeGarantie!: (typeof GARANT_TYPES_GARANTIE)[number];
 
+  // Adresse du garant, imprimée dans le bail si renseignée. Jamais exigée
+  // par validerCompletudeGenerationBail (décision du 2026-11-07, option A,
+  // en attendant la lecture du texte sur les mentions de l'acte).
+  @IsOptional()
+  @IsString()
+  adresse?: string;
+
+  @IsOptional()
+  @IsString()
+  codePostal?: string;
+
+  @IsOptional()
+  @IsString()
+  ville?: string;
+
   // Mentions manuscrites de l'acte de cautionnement — figées à la
   // création, comme adresse/profession/revenus (voir schéma garants).
   @IsOptional()

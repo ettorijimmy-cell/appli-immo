@@ -41,6 +41,19 @@ export class UpdateGarantDto {
   @IsIn(GARANT_TYPES_GARANTIE)
   typeGarantie?: (typeof GARANT_TYPES_GARANTIE)[number];
 
+  // Adresse du garant (voir CreateGarantDto), effaçable par `null`.
+  @IsOptional()
+  @IsString()
+  adresse?: string | null;
+
+  @IsOptional()
+  @IsString()
+  codePostal?: string | null;
+
+  @IsOptional()
+  @IsString()
+  ville?: string | null;
+
   // Mentions manuscrites de l'acte de cautionnement (voir CreateGarantDto) —
   // modifiables après coup ici si une erreur de saisie initiale est
   // constatée, contrairement au commentaire "figées à la création" du

@@ -73,6 +73,30 @@ function ChampsGarantFormulaire({
           </option>
         ))}
       </select>
+      {/* Grille de 3 colonnes : cellule vide pour que l'adresse occupe une
+          ligne entière (adresse, code postal, ville). */}
+      <span aria-hidden="true" />
+      <input
+        id={id("adresse")}
+        placeholder="Adresse"
+        value={champs.adresse}
+        onChange={(event) => onChange({ adresse: event.target.value })}
+        className={CLASSE_CHAMP}
+      />
+      <input
+        id={id("code-postal")}
+        placeholder="Code postal"
+        value={champs.codePostal}
+        onChange={(event) => onChange({ codePostal: event.target.value })}
+        className={CLASSE_CHAMP}
+      />
+      <input
+        id={id("ville")}
+        placeholder="Ville"
+        value={champs.ville}
+        onChange={(event) => onChange({ ville: event.target.value })}
+        className={CLASSE_CHAMP}
+      />
       <input
         id={id("date-naissance")}
         type="date"

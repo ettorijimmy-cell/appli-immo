@@ -109,6 +109,9 @@ export interface Garant {
   email: string | null;
   telephone: string | null;
   typeGarantie: GarantTypeGarantie;
+  adresse: string | null;
+  codePostal: string | null;
+  ville: string | null;
   dateNaissance: string | null;
   lieuNaissance: string | null;
   nationalite: string | null;
@@ -122,6 +125,9 @@ export interface CreateGarantInput {
   email?: string;
   telephone?: string;
   typeGarantie: GarantTypeGarantie;
+  adresse?: string;
+  codePostal?: string;
+  ville?: string;
   dateNaissance?: string;
   lieuNaissance?: string;
   nationalite?: string;
@@ -138,6 +144,9 @@ export interface UpdateGarantInput {
   email?: string | null;
   telephone?: string | null;
   typeGarantie?: GarantTypeGarantie;
+  adresse?: string | null;
+  codePostal?: string | null;
+  ville?: string | null;
   dateNaissance?: string | null;
   lieuNaissance?: string | null;
   nationalite?: string | null;
