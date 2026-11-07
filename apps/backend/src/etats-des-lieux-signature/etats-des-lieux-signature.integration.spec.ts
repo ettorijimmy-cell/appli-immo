@@ -15,7 +15,7 @@ import {
   type Database
 } from "db";
 import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -45,6 +45,13 @@ import { poserDatesEtatDesLieux } from "../test-utils/poser-dates-etat-des-lieux
 import { UsersModule } from "../users/users.module";
 import { EtatsDesLieuxSignatureModule } from "./etats-des-lieux-signature.module";
 import { EtatsDesLieuxSignatureService } from "./etats-des-lieux-signature.service";
+
+// Même motif que verrou-signature-etat-des-lieux.integration.spec.ts : une
+// signature lance la chaîne docx/PDF d'arrière-plan sur la connexion
+// unique du test (voir docs/backlog.md). « la saisie remplace la valeur
+// déjà enregistrée » a dépassé le défaut Vitest (5000ms) sous charge de
+// suite complète le 2026-11-07, vert à la relance.
+vi.setConfig({ testTimeout: 20000 });
 
 const PNG_1X1_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
