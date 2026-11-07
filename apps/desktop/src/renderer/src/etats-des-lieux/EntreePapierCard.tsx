@@ -549,7 +549,8 @@ function ConfirmationEntreePapierModal({
       {piecesPhotos.length > 0 && (
         <p role="alert" className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-sm text-red-700">
           Déclaration impossible : des photos d'entrée prises dans l'application ne sont pas archivées (
-          {piecesPhotos.join(", ")}). Archivez-les d'abord, elles ne correspondent pas au papier.
+          {piecesPhotos.join(", ")}). Elles ne correspondent pas au papier : archivez-les depuis l'état des lieux, sous
+          les miniatures de chaque pièce.
         </p>
       )}
       {avertissementDate && (

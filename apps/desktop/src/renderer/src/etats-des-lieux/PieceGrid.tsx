@@ -2,10 +2,12 @@ import {
   champModifiable,
   LONGUEUR_MAX_OBSERVATION_SORTIE,
   observationSortieASoumettre,
+  photoEtatDesLieuxArchivable,
   type ClassificationChamp
 } from "core";
 import { useEffect, useId, useState } from "react";
 import type { DocumentMetier } from "../documents/api";
+import { ConfirmationArchivagePhotoModal } from "../documents/ConfirmationArchivagePhotoModal";
 import { ApiError, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 import type { EtatElement, PieceRow } from "./api";
 import { BadgeFigement } from "./BadgeFigement";
@@ -126,9 +128,23 @@ function PhotoThumbnail({
 
 // Photos prises depuis le parcours mobile pour cette pièce précise (voir
 // documentEtatDesLieuxPieceTypeEnum) — vignettes cliquables, agrandies
-// dans une modale plein écran (pas de téléchargement forcé).
-function PhotosPiece({ photos }: { photos: DocumentMetier[] }): React.JSX.Element | null {
+// dans une modale plein écran (pas de téléchargement forcé). Sous chaque
+// vignette, « Archiver » tant que la phase de la photo n'est pas figée
+// (photoEtatDesLieuxArchivable, même règle que le backend), après
+// confirmation.
+export function PhotosPiece({
+  photos,
+  entreeSignee,
+  sortieSignee,
+  onPhotoArchivee
+}: {
+  photos: DocumentMetier[];
+  entreeSignee: boolean;
+  sortieSignee: boolean;
+  onPhotoArchivee: () => Promise<void>;
+}): React.JSX.Element | null {
   const [agrandie, setAgrandie] = useState<{ url: string; nomFichier: string } | null>(null);
+  const [aArchiver, setAArchiver] = useState<DocumentMetier | null>(null);
 
   if (photos.length === 0) {
     return null;
@@ -138,13 +154,31 @@ function PhotosPiece({ photos }: { photos: DocumentMetier[] }): React.JSX.Elemen
     <>
       <div className="mb-2 flex flex-wrap gap-2">
         {photos.map((photo) => (
-          <PhotoThumbnail
-            key={photo.id}
-            photo={photo}
-            onOuvrir={(url, nomFichier) => setAgrandie({ url, nomFichier })}
-          />
+          <div key={photo.id} className="flex w-16 flex-col items-center gap-0.5">
+            <PhotoThumbnail photo={photo} onOuvrir={(url, nomFichier) => setAgrandie({ url, nomFichier })} />
+            {photoEtatDesLieuxArchivable({ entreeSignee, sortieSignee }, photo.etatDesLieuxPhase ?? null) && (
+              <button
+                type="button"
+                onClick={() => setAArchiver(photo)}
+                className="text-xs text-slate-500 hover:text-red-600"
+              >
+                Archiver
+              </button>
+            )}
+          </div>
         ))}
       </div>
+
+      {aArchiver && (
+        <ConfirmationArchivagePhotoModal
+          document={aArchiver}
+          onAnnuler={() => setAArchiver(null)}
+          onArchive={() => {
+            setAArchiver(null);
+            void onPhotoArchivee();
+          }}
+        />
+      )}
 
       {agrandie && (
         <div
@@ -187,7 +221,8 @@ export function PieceCard({
   entreeSignee,
   sortieSignee,
   figement,
-  onSave
+  onSave,
+  onPhotoArchivee
 }: {
   titre: string;
   elements: ElementDef[];
@@ -198,6 +233,7 @@ export function PieceCard({
   sortieSignee: boolean;
   figement: Figement | null;
   onSave: (payload: Record<string, unknown>) => Promise<void>;
+  onPhotoArchivee: () => Promise<void>;
 }): React.JSX.Element {
   const [valeurs, setValeurs] = useState(() => construireValeursInitiales(elements, row));
   const [observationsSortie, setObservationsSortie] = useState(row?.observationsSortie ?? "");
@@ -313,7 +349,12 @@ export function PieceCard({
         </p>
       )}
 
-      <PhotosPiece photos={photos} />
+      <PhotosPiece
+        photos={photos}
+        entreeSignee={entreeSignee}
+        sortieSignee={sortieSignee}
+        onPhotoArchivee={onPhotoArchivee}
+      />
 
       <table className="w-full text-left text-sm">
         <thead>
@@ -409,7 +450,8 @@ export function MultiPieceSection({
   entreeSignee,
   sortieSignee,
   figement,
-  onSave
+  onSave,
+  onPhotoArchivee
 }: {
   titrePrefixe: string;
   elements: ElementDef[];
@@ -421,6 +463,7 @@ export function MultiPieceSection({
   sortieSignee: boolean;
   figement: Figement | null;
   onSave: (numero: number, payload: Record<string, unknown>) => Promise<void>;
+  onPhotoArchivee: () => Promise<void>;
 }): React.JSX.Element {
   const numerosExistants = rows.map((r) => r.numero ?? 0);
   const prochainNumero = numerosExistants.length > 0 ? Math.max(...numerosExistants) + 1 : 1;
@@ -457,6 +500,7 @@ export function MultiPieceSection({
               sortieSignee={sortieSignee}
               figement={figement}
               onSave={(payload) => onSave(row.numero ?? 0, payload)}
+              onPhotoArchivee={onPhotoArchivee}
             />
           </div>
         ))}

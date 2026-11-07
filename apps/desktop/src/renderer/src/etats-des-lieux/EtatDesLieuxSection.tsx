@@ -50,7 +50,8 @@ import { classeChamp, figementCarte, type Figement } from "./figement-carte";
 import { affichagePieceAutre, MENTION_PIECE_AJOUTEE } from "./piece-autre-affichage";
 import { EquipementsDiversSection } from "./EquipementsDiversSection";
 import { InventaireSection } from "./InventaireSection";
-import { MultiPieceSection, PieceCard } from "./PieceGrid";
+import { photosHorsPiece } from "./photos-hors-piece";
+import { MultiPieceSection, PhotosPiece, PieceCard } from "./PieceGrid";
 import {
   ELEMENTS_AUTRE,
   ELEMENTS_CHAMBRE,
@@ -232,6 +233,17 @@ export function EtatDesLieuxSection({
   const phases = phasesDepuisEtatDesLieux(etatDesLieux);
   const entreeSigneeNumeriquement = phaseSigneeNumeriquement(phases, "entree");
   const figement = figementCarte(entreeSignee, sortieSignee, signatures, etatDesLieux.entreePapier);
+  const numeros = (rows: PieceRow[]): number[] => rows.map((r) => r.numero ?? 0);
+  const photosSansPiece = photosHorsPiece(photos, {
+    chambre: numeros(etatDesLieux.chambres),
+    salle_de_bain: numeros(etatDesLieux.sallesDeBain),
+    wc: numeros(etatDesLieux.wc),
+    // Même règle d'affichage que AutresPiecesSection : une ligne n'apparaît
+    // que si son emplacement est encore configuré sur l'appartement.
+    autre: numeros(etatDesLieux.autres).filter(
+      (n) => (n === 1 && appartement.autrePiece1) || (n === 2 && appartement.autrePiece2)
+    )
+  });
 
   return (
     <div className="space-y-4">
@@ -298,6 +310,7 @@ export function EtatDesLieuxSection({
         classification={CLASSIFICATION_PIECE_ENTREE}
         row={etatDesLieux.entree}
         photos={photosPieceUnique(photos, "entree")}
+        onPhotoArchivee={refresh}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
         figement={figement}
@@ -312,6 +325,7 @@ export function EtatDesLieuxSection({
         classification={CLASSIFICATION_PIECE_SEJOUR}
         row={etatDesLieux.sejour}
         photos={photosPieceUnique(photos, "sejour")}
+        onPhotoArchivee={refresh}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
         figement={figement}
@@ -326,6 +340,7 @@ export function EtatDesLieuxSection({
         classification={CLASSIFICATION_PIECE_CUISINE}
         row={etatDesLieux.cuisine}
         photos={photosPieceUnique(photos, "cuisine")}
+        onPhotoArchivee={refresh}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
         figement={figement}
@@ -344,6 +359,7 @@ export function EtatDesLieuxSection({
           rows={etatDesLieux.chambres}
           max={appartement.nombreChambres ?? 3}
           photosParNumero={photosParNumero(photos, "chambre")}
+          onPhotoArchivee={refresh}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
           figement={figement}
@@ -363,6 +379,7 @@ export function EtatDesLieuxSection({
           rows={etatDesLieux.sallesDeBain}
           max={appartement.nombreSallesDeBain ?? 2}
           photosParNumero={photosParNumero(photos, "salle_de_bain")}
+          onPhotoArchivee={refresh}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
           figement={figement}
@@ -382,6 +399,7 @@ export function EtatDesLieuxSection({
           rows={etatDesLieux.wc}
           max={appartement.nombreWc ?? 2}
           photosParNumero={photosParNumero(photos, "wc")}
+          onPhotoArchivee={refresh}
           entreeSignee={entreeSignee}
           sortieSignee={sortieSignee}
           figement={figement}
@@ -396,6 +414,7 @@ export function EtatDesLieuxSection({
         appartement={appartement}
         rows={etatDesLieux.autres}
         photosParNumero={photosParNumero(photos, "autre")}
+        onPhotoArchivee={refresh}
         entreeSignee={entreeSignee}
         sortieSignee={sortieSignee}
         figement={figement}
@@ -404,6 +423,21 @@ export function EtatDesLieuxSection({
           await refresh();
         }}
       />
+
+      {photosSansPiece.length > 0 && (
+        <div className="rounded-lg border border-slate-200 p-4">
+          <h4 className="mb-1 text-sm font-semibold text-slate-700">Photos sans pièce affichée</h4>
+          <p className="mb-2 text-xs text-slate-500">
+            Ces photos ne sont rattachées à aucune pièce affichée ci-dessus.
+          </p>
+          <PhotosPiece
+            photos={photosSansPiece}
+            entreeSignee={entreeSignee}
+            sortieSignee={sortieSignee}
+            onPhotoArchivee={refresh}
+          />
+        </div>
+      )}
 
       <CompteursCard
         compteurs={etatDesLieux.compteurs}
@@ -547,6 +581,7 @@ function AutresPiecesSection({
   appartement,
   rows,
   photosParNumero,
+  onPhotoArchivee,
   entreeSignee,
   sortieSignee,
   figement,
@@ -555,6 +590,7 @@ function AutresPiecesSection({
   appartement: Appartement;
   rows: PieceRow[];
   photosParNumero?: Map<number, DocumentMetier[]>;
+  onPhotoArchivee: () => Promise<void>;
   entreeSignee: boolean;
   sortieSignee: boolean;
   figement: Figement | null;
@@ -615,6 +651,7 @@ function AutresPiecesSection({
                   classification={CLASSIFICATION_PIECE_AUTRE}
                   row={row}
                   photos={photosParNumero?.get(numero) ?? []}
+                  onPhotoArchivee={onPhotoArchivee}
                   entreeSignee={entreeSignee}
                   sortieSignee={sortieSignee}
                   figement={figement}

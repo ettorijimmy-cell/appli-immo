@@ -289,6 +289,16 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
+- **Archivage sans message d'erreur sur les fiches locataire,
+  appartement, garant et sinistre (constaté le 2026-11-07, à aligner).**
+  La section Documents embarquée dans ces fiches
+  (`apps/desktop/src/renderer/src/documents/DocumentsForEntite.tsx`)
+  archive au clic, sans confirmation, et un échec n'affiche rien (la
+  ligne reste simplement en place). L'écran Documents et l'état des lieux
+  ont été corrigés le même jour (confirmation pour une photo, message
+  d'erreur visible : `ConfirmationArchivagePhotoModal`,
+  `messageErreurArchivage`) ; aligner ces fiches sur le même principe.
+
 - **Absence totale de logging des requêtes HTTP côté backend — résolu
   (commit `98a05ed`, 2026-09-27).** Constaté le même jour pendant le
   diagnostic d'un rejet réseau Postgres masqué en 500 générique (voir
@@ -1671,7 +1681,10 @@ Limites connues du chantier entrée papier, confirmation, abandon :
   recours dans l'application (la ligne est figée par trigger).
 - **Photos d'entrée à archiver avant la déclaration.** Les photos prises
   dans l'application pour l'entrée ne correspondent pas au papier : la
-  déclaration est refusée tant qu'il en reste.
+  déclaration est refusée tant qu'il en reste. Elles s'archivent depuis
+  l'état des lieux, sous les miniatures de chaque pièce (carte « Photos
+  sans pièce affichée » pour celles qu'aucune pièce ne montre), après
+  confirmation (correctif du 2026-11-07).
 - **Déclaration et abandon : desktop seulement.** Le téléphone n'a que la
   confirmation à la création et la sortie.
 - **Vue « Documents » générale du desktop.** Elle liste tous les documents,

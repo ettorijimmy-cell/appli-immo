@@ -1,4 +1,5 @@
 import { ConflictException } from "@nestjs/common";
+import { photoEtatDesLieuxArchivable } from "core";
 import { etatsDesLieux, type Database } from "db";
 import { eq } from "drizzle-orm";
 import { resoudrePhasesSigneesEtatDesLieux } from "./resoudre-phase-etat-des-lieux";
@@ -51,21 +52,19 @@ export async function verifierArchivagePhotoAutorise(
   etatDesLieuxId: string,
   phase: "entree" | "sortie" | null
 ): Promise<void> {
-  const { entreeSignee, sortieSignee } = await resoudrePhasesSigneesEtatDesLieux(db, etatDesLieuxId);
-  if (sortieSignee) {
+  const phases = await resoudrePhasesSigneesEtatDesLieux(db, etatDesLieuxId);
+  // Règle partagée avec le bouton « Archiver » du desktop
+  // (photoEtatDesLieuxArchivable, packages/core) ; une photo sans phase y
+  // compte comme une photo d'entrée. Ici, seul le choix du message.
+  if (photoEtatDesLieuxArchivable(phases, phase)) {
+    return;
+  }
+  if (phases.sortieSignee) {
     throw new ConflictException(
       "Cet état des lieux est signé en sortie : plus aucune photo ne peut y être archivée."
     );
   }
-  // Une photo sans phase (`null`) est nécessairement antérieure à l'ajout
-  // de la colonne etat_des_lieux_phase (2026-10-24) — la fonctionnalité de
-  // phase de sortie n'existait pas encore, donc une telle photo est
-  // forcément une photo de la visite d'entrée. Traitée comme "entree",
-  // jamais comme un cas à part qui échapperait au verrou.
-  const phaseEffective = phase ?? "entree";
-  if (phaseEffective === "entree" && entreeSignee) {
-    throw new ConflictException(
-      "La partie entrée de cet état des lieux est signée : ses photos ne peuvent plus être archivées."
-    );
-  }
+  throw new ConflictException(
+    "La partie entrée de cet état des lieux est signée : ses photos ne peuvent plus être archivées."
+  );
 }

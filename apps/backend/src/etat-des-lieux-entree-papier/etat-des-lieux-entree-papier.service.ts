@@ -353,7 +353,7 @@ export class EtatDesLieuxEntreePapierService {
       )
     ].sort((a, b) => a.localeCompare(b, "fr"));
     throw new ConflictException(
-      `Entrée papier refusée : ${photos.length} photo(s) d'entrée prise(s) dans l'application ne sont pas archivées (${pieces.join(", ")}). Archivez-les avant de déclarer l'entrée papier.`
+      `Entrée papier refusée : ${photos.length} photo(s) d'entrée prise(s) dans l'application ne sont pas archivées (${pieces.join(", ")}). Archivez-les depuis l'état des lieux, sous les miniatures de chaque pièce, puis déclarez l'entrée papier.`
     );
   }
 

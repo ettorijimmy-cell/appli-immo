@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
 import { archiveDocument, listDocuments, type DocumentCategorie, type DocumentMetier, type DocumentStatut } from "./api";
+import { confirmationArchivageRequise, messageErreurArchivage } from "./archivage-document";
+import { ConfirmationArchivagePhotoModal } from "./ConfirmationArchivagePhotoModal";
 import { DocumentApercuModal } from "./DocumentApercuModal";
 import { creerCacheLibellesEntites, resoudreLibelleEntite } from "./libelle-entite";
 import { CATEGORIE_LABELS, ENTITE_TYPE_LABELS, STATUT_BADGE_CLASSNAMES, STATUT_LABELS } from "./labels";
@@ -37,6 +39,8 @@ export function DocumentsListView(): React.JSX.Element {
   const [filtreStatut, setFiltreStatut] = useState<DocumentStatut | "tous">("tous");
   const [recherche, setRecherche] = useState("");
   const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
+  const [photoAArchiver, setPhotoAArchiver] = useState<DocumentMetier | null>(null);
+  const [erreurArchivage, setErreurArchivage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -62,8 +66,21 @@ export function DocumentsListView(): React.JSX.Element {
     void refresh();
   }, [refresh]);
 
-  async function handleArchive(id: string): Promise<void> {
-    await archiveDocument(id);
+  // Une photo passe par une confirmation (ConfirmationArchivagePhotoModal,
+  // qui affiche elle-même un refus) ; les autres documents s'archivent
+  // directement, avec un message visible en cas d'échec.
+  async function handleArchive(document: DocumentMetier): Promise<void> {
+    setErreurArchivage(null);
+    if (confirmationArchivageRequise(document)) {
+      setPhotoAArchiver(document);
+      return;
+    }
+    try {
+      await archiveDocument(document.id);
+    } catch (err) {
+      setErreurArchivage(messageErreurArchivage(err, document));
+      return;
+    }
     await refresh();
   }
 
@@ -126,6 +143,11 @@ export function DocumentsListView(): React.JSX.Element {
           {error}
         </p>
       )}
+      {erreurArchivage && (
+        <p role="alert" className="text-sm text-red-600">
+          {erreurArchivage}
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
@@ -174,7 +196,7 @@ export function DocumentsListView(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => {
-                        void handleArchive(document.id);
+                        void handleArchive(document);
                       }}
                       className="text-sm text-slate-500 hover:text-red-600"
                     >
@@ -189,6 +211,16 @@ export function DocumentsListView(): React.JSX.Element {
       )}
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
+      {photoAArchiver && (
+        <ConfirmationArchivagePhotoModal
+          document={photoAArchiver}
+          onAnnuler={() => setPhotoAArchiver(null)}
+          onArchive={() => {
+            setPhotoAArchiver(null);
+            void refresh();
+          }}
+        />
+      )}
       {erreurApercu && (
         <p role="alert" className="mt-2 text-sm text-red-600">
           {erreurApercu}

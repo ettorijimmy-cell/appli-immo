@@ -394,7 +394,7 @@ describe("État des lieux — entrée papier (intégration Postgres réelle)", (
       const p3 = await photo("chambre", 1);
 
       await expect(declarer(etatDesLieuxId, [claireId])).rejects.toThrow(
-        "Entrée papier refusée : 3 photo(s) d'entrée prise(s) dans l'application ne sont pas archivées (Chambre 1, Séjour). Archivez-les avant de déclarer l'entrée papier."
+        "Entrée papier refusée : 3 photo(s) d'entrée prise(s) dans l'application ne sont pas archivées (Chambre 1, Séjour). Archivez-les depuis l'état des lieux, sous les miniatures de chaque pièce, puis déclarez l'entrée papier."
       );
       await attendreRienEcrit(etatDesLieuxId);
 

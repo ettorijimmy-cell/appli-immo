@@ -63,6 +63,22 @@ export function phasesDepuisEtatDesLieux(etat: {
   };
 }
 
+// Archivage d'une photo d'état des lieux (famille A). Une photo de la phase
+// entrée n'est plus archivable une fois l'entrée acquise (signée ou
+// déclarée sur papier) ; aucune photo ne l'est plus une fois la sortie
+// signée. Une photo sans phase (`null`) est antérieure à la colonne
+// etat_des_lieux_phase, donc forcément une photo d'entrée. Même règle côté
+// backend (verrou de l'archivage) et desktop (bouton « Archiver »).
+export function photoEtatDesLieuxArchivable(
+  phases: Pick<PhasesEtatDesLieux, "entreeSignee" | "sortieSignee">,
+  phasePhoto: Phase | null
+): boolean {
+  if (phases.sortieSignee) {
+    return false;
+  }
+  return (phasePhoto ?? "entree") === "sortie" || !phases.entreeSignee;
+}
+
 // Famille B : la phase porte des signatures numériques (et donc un bloc de
 // signatures, un PDF figé, un envoi). Une entrée papier n'en a aucune.
 export function phaseSigneeNumeriquement(phases: PhasesEtatDesLieux, phase: Phase): boolean {

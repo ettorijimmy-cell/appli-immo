@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   phaseSigneeNumeriquement,
   phasesDepuisEtatDesLieux,
+  photoEtatDesLieuxArchivable,
   resoudrePhasesEtatDesLieux,
   type EntreePapierEtatDesLieux
 } from "./phases-etat-des-lieux";
@@ -53,6 +54,39 @@ describe("resoudrePhasesEtatDesLieux", () => {
     expect(phases.sortieSignee).toBe(true);
     expect(phaseSigneeNumeriquement(phases, "entree")).toBe(false);
     expect(phaseSigneeNumeriquement(phases, "sortie")).toBe(true);
+  });
+});
+
+describe("photoEtatDesLieuxArchivable", () => {
+  const rien = { entreeSignee: false, sortieSignee: false };
+  const entreeAcquise = { entreeSignee: true, sortieSignee: false };
+  const sortieSignee = { entreeSignee: true, sortieSignee: true };
+
+  it("rien de signé : toute photo est archivable", () => {
+    expect(photoEtatDesLieuxArchivable(rien, "entree")).toBe(true);
+    expect(photoEtatDesLieuxArchivable(rien, "sortie")).toBe(true);
+    expect(photoEtatDesLieuxArchivable(rien, null)).toBe(true);
+  });
+
+  it("entrée acquise (numérique ou papier) : photos d'entrée figées, photos de sortie archivables", () => {
+    expect(photoEtatDesLieuxArchivable(entreeAcquise, "entree")).toBe(false);
+    expect(photoEtatDesLieuxArchivable(entreeAcquise, "sortie")).toBe(true);
+  });
+
+  it("photo sans phase : traitée comme une photo d'entrée", () => {
+    expect(photoEtatDesLieuxArchivable(entreeAcquise, null)).toBe(false);
+  });
+
+  it("entrée papier : même verrou que la signature numérique", () => {
+    const phases = resoudrePhasesEtatDesLieux({ phasesSigneesParBailleur: [], entreePapier: PAPIER });
+    expect(photoEtatDesLieuxArchivable(phases, "entree")).toBe(false);
+    expect(photoEtatDesLieuxArchivable(phases, "sortie")).toBe(true);
+  });
+
+  it("sortie signée : plus aucune photo archivable", () => {
+    expect(photoEtatDesLieuxArchivable(sortieSignee, "entree")).toBe(false);
+    expect(photoEtatDesLieuxArchivable(sortieSignee, "sortie")).toBe(false);
+    expect(photoEtatDesLieuxArchivable(sortieSignee, null)).toBe(false);
   });
 });
 
