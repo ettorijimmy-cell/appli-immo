@@ -1341,6 +1341,53 @@ les trois parcours ci-dessus).
      dans la base locale, champ « Caution de » et mention dans la liste,
      bail généré avec « , caution de … ».
 
+- **Acte de cautionnement — chantier en attente (textes lus sur
+  Légifrance le 2026-11-08).** Le chantier garants s'arrête au commit 4
+  (garant rattaché au locataire, mention « caution de » dans le bail) :
+  l'acte de cautionnement lui-même n'est pas généré. Synthèse des textes
+  lus, à relire à la source avant toute reprise :
+  - **Loi n° 89-462, art. 22-1 :**
+    - pas de caution si le bailleur a souscrit une assurance loyers
+      impayés ou toute autre forme de garantie, sauf locataire étudiant
+      ou apprenti ;
+    - bailleur personne morale autre qu'une SCI familiale (entre parents
+      et alliés jusqu'au 4e degré inclus) : caution seulement d'un
+      organisme agréé, ou pour un étudiant non boursier ;
+    - refus interdit d'une caution en raison de sa nationalité ou de sa
+      résidence ;
+    - engagement sans durée : la caution peut le résilier, avec effet au
+      terme du bail en cours ;
+    - à peine de nullité : acte signé, indiquant le montant
+      du loyer et les conditions de sa révision, reproduisant l'avant-
+      dernier alinéa de l'article, et portant la mention prévue à
+      l'art. 2297 du Code civil ; un exemplaire du bail est remis à la
+      caution.
+  - **Loi n° 89-462, art. 8-1, VI :**
+    - la solidarité du colocataire sortant et celle de sa caution
+      prennent fin à la date d'effet du congé si un nouveau colocataire
+      figure au bail, sinon au plus tard six mois après cette date ;
+    - en colocation, l'acte de cautionnement identifie, sous peine de
+      nullité, le colocataire garanti.
+  - **Code civil, art. 2297 :**
+    - mention apposée par la caution elle-même ;
+    - plafond de l'engagement, en principal et accessoires, en lettres et
+      en chiffres, les lettres prévalant en cas de différence ;
+    - caution solidaire : la renonciation aux bénéfices de discussion et
+      de division figure dans cette mention elle-même, sinon la caution
+      les conserve. La clause du bail (« GARANTS SOLIDAIRES ») ne suffit
+      pas.
+
+  Pistes si le chantier reprend :
+  - génération de l'acte : cadre réservé à la mention manuscrite, avec un
+    modèle à recopier ;
+  - trace de la remise d'un exemplaire du bail à la caution ;
+  - contrôles d'acceptation d'une caution (art. 22-1) ;
+  - date de fin d'engagement en colocation (art. 8-1, VI).
+
+  **À rouvrir avant le premier bail réel avec garant.** Faire relire
+  l'acte par l'ADIL avant tout usage. Voir aussi l'entrée « Garant
+  Visale/autre » ci-dessus, dont la question juridique recoupe celle-ci.
+
 - **Bail généré : au-delà de deux locataires, les suivants ne sont pas
   imprimés — non résolu (constaté le 2026-11-07, chantier garants).** Le
   modèle (`assets/modele-bail.docx` et la fixture) n'a que deux
