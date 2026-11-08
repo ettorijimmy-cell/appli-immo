@@ -82,6 +82,17 @@ machine. La chaîne de connexion de repli (`DEFAULT_DEV_DATABASE_URL`,
 packages/db/src/client.ts) pointe dessus — aucune variable d'environnement
 à définir pour un usage local.
 
+Version de Postgres : `postgres:17.11` en dev (port 5433, volume
+`appli_immo_pg17_data`), en test (port 5434, `docker-compose.test.yml`)
+et en CI (`.github/workflows/ci.yml`), alignée sur la production
+(PostgreSQL 17, voir docs/integrations.md). L'image est volontairement
+figée sur une version mineure : un tag flottant dérive sans prévenir (en
+`postgres:16`, le poste tournait en 16.14 et la CI en 16.15). Une montée
+de mineure se fait dans un commit dédié, sur les trois fichiers à la fois.
+Un changement de version majeure exige un nouveau volume de dev et un
+dump/restauration de la base (bascule 16 → 17 du 2026-11-08).
+Procédure : docs/procedure-montee-version-postgres-dev.md.
+
 `pnpm test:integration:clean` (`scripts/test-integration-clean.mjs`) lance
 la suite d'intégration backend contre un second Postgres, entièrement
 jetable (`docker-compose.test.yml`, port 5434), jamais contre la base de

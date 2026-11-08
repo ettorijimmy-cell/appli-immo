@@ -13,6 +13,7 @@ déboguer chaque intégration au fil du développement.
 | Région | Paris (fr-par) |
 | Documentation | https://www.scaleway.com/en/docs/ |
 | Variables d'environnement | `DATABASE_URL`, `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY`, `OBJECT_STORAGE_BUCKET_NAME` (nommage sans préfixe `SCW_`, réservé par la plateforme — voir docs/error-log.md, [2026-08-11]) |
+| Version PostgreSQL | Production : PostgreSQL 17. Version majeure gérée par Scaleway, indiquée « Up to date » dans la console ; la version mineure n'y est pas affichée. Fin de support annoncée : 2029-11-08. CI, dev et test figés en `postgres:17.11` depuis le 2026-11-08 (commits `231ad53` pour la CI, `1b08a10` pour le dev et le test ; voir CLAUDE.md, section Commandes) |
 | Point de vigilance | La réplication logique (`wal_level=logical`, requise par PowerSync) doit être activée explicitement via les paramètres avancés de l'instance — vérifier à la création, ne pas supposer que c'est actif par défaut |
 | Secrets | Stockés via Scaleway Secret Manager, jamais en `.env` versionné |
 

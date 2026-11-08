@@ -33,6 +33,20 @@ Copier ce modèle pour chaque entrée, la plus récente en premier.
 
 ## Entrées
 
+### [2026-11-08] pg_restore ne trouve pas le dump copié dans le conteneur — Git Bash convertit les chemins commençant par /
+
+**Symptôme** : pendant la bascule de la base de dev de PostgreSQL 16 à 17.11, `docker compose cp` copie bien le dump dans `/tmp/avant_pg17.dump` du conteneur, mais `docker compose exec -T postgres pg_restore … /tmp/avant_pg17.dump` échoue (code de sortie 1) : `pg_restore: error: could not open input file "C:/Users/jimmy/AppData/Local/Temp/avant_pg17.dump": No such file or directory`.
+
+**Contexte** : chantier d'alignement de Postgres sur la production (17), étape de restauration de la procédure de bascule de la base de dev, lancée en Git Bash.
+
+**Cause** : Git Bash (MSYS) convertit en chemin Windows tout argument qui commence par `/` avant de le passer à un exécutable Windows comme `docker.exe`. `/tmp/avant_pg17.dump` est devenu `C:/Users/jimmy/AppData/Local/Temp/avant_pg17.dump`, un chemin qui n'existe pas dans le conteneur. Les commandes `docker run` de la même procédure portaient déjà `MSYS_NO_PATHCONV=1` ; la commande `pg_restore` ne la portait pas.
+
+**Solution** : préfixer par `MSYS_NO_PATHCONV=1` toute commande Docker (`docker run`, `docker exec`, `docker compose exec`, `docker compose cp`) qui passe un chemin du conteneur. Sans conséquence : `pg_restore` n'avait rien écrit (base vérifiée vide, 0 table et 0 type enum), et la reprise avec la variable a réussi (code 0, comptages identiques sur les 56 tables).
+
+**Fichiers concernés** : docs/procedure-montee-version-postgres-dev.md
+
+**À surveiller** : toute future commande ou documentation qui passe un chemin du conteneur à Docker depuis Git Bash. Ce n'est pas un problème sous PowerShell ni sous Linux, mais les commandes de ce projet sont données pour Git Bash.
+
 ### [2026-11-01] Port SMTP 465 bloqué en sortie des Serverless Containers Scaleway
 
 **Symptôme** : `GET /diagnostic/smtp` en production : port 465 en échec `ESOCKET` à la connexion, port 587 entièrement fonctionnel (connexion, EHLO, STARTTLS, authentification, `SIZE 35882577`). Tout envoi passant par `smtp.gmail.com:465` ne pouvait pas partir.

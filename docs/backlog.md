@@ -1627,6 +1627,11 @@ production" ci-dessous pour le détail confirmé de chaque point.
   2027-08-08.** À renouveler avant cette date : en cas d'expiration non
   anticipée, le stockage des documents (pièces d'identité, RIB, photos
   d'état des lieux) tombe en panne.
+- **Ancien volume Postgres 16 de dev (`appli-immo_appli_immo_pg_data`)
+  conservé après la bascule du 2026-11-08** : à supprimer sur décision de
+  Jimmy après quelques jours d'usage
+  (`docker volume rm appli-immo_appli_immo_pg_data`). Dumps dans
+  `backups/`.
 
 ---
 
