@@ -1328,8 +1328,18 @@ les trois parcours ci-dessus).
   (`garants.locataire_id`, migration 0077, champ « Caution de » du
   formulaire garant). Le bail imprime « , caution de [Prénom Nom] » après
   le nom de la caution et dans sa ligne d'annexe, sauf si ce locataire a
-  quitté le bail. **À déployer :** migration 0077 avant le backend, puis
-  redéploiement du stream PowerSync `garants` (colonne `locataire_id`).
+  quitté le bail. **Ordre de déploiement :**
+  1. migration 0077 sur la base de production ;
+  2. backend ;
+  3. configuration PowerSync **complète** : le fichier
+     `docs/powersync-sync-streams.yaml` entier collé dans le dashboard,
+     puis « Deploy ». Le Deploy remplace toute la configuration : on ne
+     redéploie jamais un stream seul, même si seul `garants` a changé
+     (colonne `locataire_id`) ;
+  4. installeur desktop (schéma local avec `garants.locataire_id`) ;
+  5. vérifications : synchronisation de `garants` avec `locataire_id`
+     dans la base locale, champ « Caution de » et mention dans la liste,
+     bail généré avec « , caution de … ».
 
 - **Bail généré : au-delà de deux locataires, les suivants ne sont pas
   imprimés — non résolu (constaté le 2026-11-07, chantier garants).** Le

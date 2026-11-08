@@ -66,9 +66,11 @@
 #         ce redéploiement.
 #       - etat_des_lieux_cles, etat_des_lieux_equipements_divers,
 #         etat_des_lieux_inventaire : commentaire_sortie.
-#   - Stream MODIFIÉ EN CODE le 2026-11-08, À REDÉPLOYER après la migration
-#     0077 (rattachement « caution de », 1 stream) :
-#       - garants : locataire_id. La migration passe avant ce redéploiement.
+#   - Stream MODIFIÉ EN CODE le 2026-11-08 (rattachement « caution de ») :
+#       - garants : locataire_id (migration 0077).
+#     À redéployer après la migration 0077 et le backend : ce fichier
+#     COMPLET, jamais ce seul stream — le Deploy du dashboard remplace
+#     toute la configuration (ordre complet : docs/backlog.md).
 #
 # indices_irl a longtemps été considérée comme jamais confirmée
 # fonctionnelle (voir son historique de bug de backfill plus bas dans ce
