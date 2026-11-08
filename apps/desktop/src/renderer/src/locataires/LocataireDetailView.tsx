@@ -20,7 +20,8 @@ import {
   type Locataire,
   type LocataireStatutModifiable
 } from "./api";
-import { EditGarantForm, NewGarantForm } from "./GarantForms";
+import { EditGarantForm, MentionCautionDe, NewGarantForm } from "./GarantForms";
+import { mentionCautionDe } from "./garant-formulaire";
 
 const LOCATAIRE_STATUTS_MODIFIABLES: LocataireStatutModifiable[] = ["actif", "ancien"];
 
@@ -29,6 +30,10 @@ interface BailAvecContexte {
   appartement: Appartement | null;
   colocataires: Array<{ lien: BailLocataire; locataire: Locataire | null }>;
   garants: Garant[];
+  // Noms de tous les locataires passés par ce bail, liens archivés compris :
+  // un garant peut rester rattaché à un locataire retiré du bail
+  // (« caution de X (n'est plus au bail) »).
+  nomsLocataires: Map<string, string>;
 }
 
 export function LocataireDetailView({
@@ -61,15 +66,17 @@ export function LocataireDetailView({
             listBailLocataires({ bailId: bail.id }),
             listGarants(bail.id)
           ]);
-          const colocataires = await Promise.all(
-            colocatairesLiens
-              .filter((colocLien) => colocLien.archivedAt === null)
-              .map(async (colocLien) => ({
-                lien: colocLien,
-                locataire: await getLocataire(colocLien.locataireId).catch(() => null)
-              }))
+          const tousLesLiens = await Promise.all(
+            colocatairesLiens.map(async (colocLien) => ({
+              lien: colocLien,
+              locataire: await getLocataire(colocLien.locataireId).catch(() => null)
+            }))
           );
-          return { bail, appartement, colocataires, garants };
+          const colocataires = tousLesLiens.filter(({ lien: colocLien }) => colocLien.archivedAt === null);
+          const nomsLocataires = new Map(
+            tousLesLiens.flatMap(({ locataire: l }) => (l ? [[l.id, `${l.prenom} ${l.nom}`] as const] : []))
+          );
+          return { bail, appartement, colocataires, garants, nomsLocataires };
         })
       );
 
@@ -187,7 +194,7 @@ export function LocataireDetailView({
           ) : (
             <div className="space-y-6">
               {bauxEnCours.map((contexte) => (
-                <BailDetail key={contexte.bail.id} contexte={contexte} onChanged={refresh} />
+                <BailDetail key={contexte.bail.id} contexte={contexte} locataireId={locataireId} onChanged={refresh} />
               ))}
             </div>
           )}
@@ -199,7 +206,13 @@ export function LocataireDetailView({
           ) : (
             <div className="space-y-4">
               {bauxHistorique.map((contexte) => (
-                <BailDetail key={contexte.bail.id} contexte={contexte} onChanged={refresh} readOnly />
+                <BailDetail
+                  key={contexte.bail.id}
+                  contexte={contexte}
+                  locataireId={locataireId}
+                  onChanged={refresh}
+                  readOnly
+                />
               ))}
             </div>
           )}
@@ -215,14 +228,19 @@ export function LocataireDetailView({
 
 function BailDetail({
   contexte,
+  locataireId,
   onChanged,
   readOnly = false
 }: {
   contexte: BailAvecContexte;
+  // Locataire de la fiche : « Caution de » prérempli avec lui à l'ajout.
+  locataireId: string;
   onChanged: () => void;
   readOnly?: boolean;
 }): React.JSX.Element {
-  const { bail, appartement, colocataires, garants } = contexte;
+  const { bail, appartement, colocataires, garants, nomsLocataires } = contexte;
+  const locatairesDuBail = colocataires.flatMap(({ locataire: l }) => (l ? [l] : []));
+  const locataireIdsAuBail = colocataires.map(({ lien }) => lien.locataireId);
   const [showGarantForm, setShowGarantForm] = useState(false);
   const [editingGarantId, setEditingGarantId] = useState<string | null>(null);
 
@@ -289,6 +307,8 @@ function BailDetail({
         {showGarantForm && (
           <NewGarantForm
             bailId={bail.id}
+            locatairesDuBail={locatairesDuBail}
+            locataireIdParDefaut={locataireId}
             onCreated={() => {
               setShowGarantForm(false);
               onChanged();
@@ -307,6 +327,8 @@ function BailDetail({
                   <li key={garant.id} className="py-0.5">
                     <EditGarantForm
                       garant={garant}
+                      locatairesDuBail={locatairesDuBail}
+                      nomsLocataires={nomsLocataires}
                       onSaved={() => {
                         setEditingGarantId(null);
                         onChanged();
@@ -318,6 +340,7 @@ function BailDetail({
                   <li key={garant.id} className="flex items-center justify-between py-0.5">
                     <span>
                       {garant.prenom} {garant.nom} <span className="text-slate-400">({garant.typeGarantie})</span>
+                      <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                     </span>
                     {!readOnly && (
                       <span className="flex items-center gap-2">

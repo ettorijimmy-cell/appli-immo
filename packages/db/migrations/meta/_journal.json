@@ -540,6 +540,13 @@
       "when": 1793968684252,
       "tag": "0076_shocking_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794134266251,
+      "tag": "0077_cuddly_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

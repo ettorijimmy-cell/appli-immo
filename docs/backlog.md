@@ -1323,6 +1323,13 @@ les trois parcours ci-dessus).
   les pièces annexées, et un paragraphe d'engagement unique accordé au
   singulier ou au pluriel. Toujours sans filtre par `typeGarantie` : le
   point ci-dessus (Visale/autre) reste entier.
+  *Mis à jour le 2026-11-08 (chantier garants, commit 4) :* un garant peut
+  être rattaché au locataire du bail dont il se porte caution
+  (`garants.locataire_id`, migration 0077, champ « Caution de » du
+  formulaire garant). Le bail imprime « , caution de [Prénom Nom] » après
+  le nom de la caution et dans sa ligne d'annexe, sauf si ce locataire a
+  quitté le bail. **À déployer :** migration 0077 avant le backend, puis
+  redéploiement du stream PowerSync `garants` (colonne `locataire_id`).
 
 - **Bail généré : au-delà de deux locataires, les suivants ne sont pas
   imprimés — non résolu (constaté le 2026-11-07, chantier garants).** Le

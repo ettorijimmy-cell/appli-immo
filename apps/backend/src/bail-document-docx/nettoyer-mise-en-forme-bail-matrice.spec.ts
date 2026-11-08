@@ -103,6 +103,7 @@ const DONNEES_BALISES = {
 const CAUTIONS = [
   {
     "numero caution": "1",
+    "locataire cautionne": null as string | null,
     "Nom prénom de la personne caution": "Jean Garant",
     "adresse caution": "2 rue du Garant",
     "code postale caution": "19100",
@@ -115,6 +116,7 @@ const CAUTIONS = [
   },
   {
     "numero caution": "2",
+    "locataire cautionne": null as string | null,
     "Nom prénom de la personne caution": "Paule Seconde",
     "adresse caution": "3 rue du Garant",
     "code postale caution": "69002",
@@ -127,7 +129,7 @@ const CAUTIONS = [
   }
 ];
 
-function genererDocumentXml(drapeaux: Drapeaux): string {
+function genererDocumentXml(drapeaux: Drapeaux, cautions = CAUTIONS.slice(0, drapeaux.nombreCautions)): string {
   const contenu = readFileSync(TEMPLATE_PATH, "binary");
   const zip = new PizZip(contenu);
   const xmlModele = zip.file("word/document.xml")!.asText();
@@ -144,7 +146,7 @@ function genererDocumentXml(drapeaux: Drapeaux): string {
     eauChaudeIndividuelle: true,
     eauChaudeCollective: false,
     meuble: drapeaux.meuble,
-    cautions: CAUTIONS.slice(0, drapeaux.nombreCautions),
+    cautions,
     aGarant: drapeaux.nombreCautions > 0,
     plusieursCautions: drapeaux.nombreCautions > 1,
     // Chantier bail — corrections juridiques, commit C : true dans toute
@@ -339,6 +341,27 @@ describe("nettoyerMiseEnFormeBail — matrice complète sur le vrai modèle (san
     expect(paragraphes.filter((t) => t.startsWith("Acte de caution solidaire"))).toEqual([
       "Acte de caution solidaire. Nom de la caution : Jean Garant"
     ]);
+  });
+
+  // Commit 4 garants (2026-11-08) : « , caution de [Prénom Nom] » après le
+  // nom, dans le bloc identité et dans la ligne d'annexe, seulement pour la
+  // caution dont « locataire cautionne » est renseigné.
+  it("caution rattachée à un locataire : mention « caution de » après le nom et dans sa ligne d'annexe, rien pour l'autre", () => {
+    const resultat = genererDocumentXml(
+      { meuble: false, nombreCautions: 2, colocation: true, servitude: false, clauseResolutoireAvant: false, diagnostics: false },
+      [{ ...CAUTIONS[0]!, "locataire cautionne": "Lucie Bernard" }, CAUTIONS[1]!]
+    );
+    const paragraphes = extraireParagraphesAvecTexteEtListe(resultat).map((p) => p.texte);
+    expect(paragraphes.filter((t) => t.startsWith("Nom : ") && (t.includes("Garant") || t.includes("Seconde")))).toEqual([
+      "Nom : Jean Garant, caution de Lucie Bernard",
+      "Nom : Paule Seconde"
+    ]);
+    expect(paragraphes.filter((t) => t.startsWith("Acte de caution solidaire"))).toEqual([
+      "Acte de caution solidaire. Nom de la caution : Jean Garant, caution de Lucie Bernard",
+      "Acte de caution solidaire. Nom de la caution : Paule Seconde"
+    ]);
+    const texte = [...resultat.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join("");
+    expect(texte).not.toContain("{");
   });
 
   it('preuve zéro mot changé : aucune balise ("{" ou "}") ne subsiste dans le texte final', () => {

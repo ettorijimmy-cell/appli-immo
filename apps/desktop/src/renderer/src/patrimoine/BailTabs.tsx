@@ -40,7 +40,8 @@ import {
   type Garant,
   type Locataire
 } from "../locataires/api";
-import { EditGarantForm, NewGarantForm } from "../locataires/GarantForms";
+import { EditGarantForm, MentionCautionDe, NewGarantForm } from "../locataires/GarantForms";
+import { mentionCautionDe } from "../locataires/garant-formulaire";
 import type { Appartement } from "./api";
 
 const BAIL_TYPES: BailTypeBail[] = ["vide", "meuble"];
@@ -345,6 +346,9 @@ function BailActuelDetail({
     Array<{ lien: BailLocataire; locataire: Locataire | null }>
   >([]);
   const [garants, setGarants] = useState<Garant[]>([]);
+  // Noms de tous les locataires passés par ce bail, liens archivés compris
+  // (« caution de X (n'est plus au bail) »).
+  const [nomsLocataires, setNomsLocataires] = useState<Map<string, string>>(new Map());
   const [locatairesDisponibles, setLocatairesDisponibles] = useState<Locataire[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -376,14 +380,16 @@ function BailActuelDetail({
         listGarants(bail.id),
         listLocataires()
       ]);
-      const liensActifs = liens.filter((lien) => lien.archivedAt === null);
-      const colocatairesResolus = await Promise.all(
-        liensActifs.map(async (lien) => ({
+      const liensResolus = await Promise.all(
+        liens.map(async (lien) => ({
           lien,
           locataire: await getLocataire(lien.locataireId).catch(() => null)
         }))
       );
-      setColocataires(colocatairesResolus);
+      setColocataires(liensResolus.filter(({ lien }) => lien.archivedAt === null));
+      setNomsLocataires(
+        new Map(liensResolus.flatMap(({ locataire }) => (locataire ? [[locataire.id, `${locataire.prenom} ${locataire.nom}`] as const] : [])))
+      );
       setGarants(garantsData);
       setLocatairesDisponibles(tousLesLocataires);
       setError(null);
@@ -470,6 +476,9 @@ function BailActuelDetail({
     await archiveBailLocataire(lienId);
     await refresh();
   }
+
+  const locatairesDuBail = colocataires.flatMap(({ locataire }) => (locataire ? [locataire] : []));
+  const locataireIdsAuBail = colocataires.map(({ lien }) => lien.locataireId);
 
   async function handleRetirerGarant(garantId: string): Promise<void> {
     await archiveGarant(garantId);
@@ -713,6 +722,7 @@ function BailActuelDetail({
         {showGarantForm && (
           <NewGarantForm
             bailId={bail.id}
+            locatairesDuBail={locatairesDuBail}
             idPrefix="bail-garant"
             onCreated={() => {
               setShowGarantForm(false);
@@ -733,6 +743,8 @@ function BailActuelDetail({
                     <li key={garant.id} className="py-0.5">
                       <EditGarantForm
                         garant={garant}
+                        locatairesDuBail={locatairesDuBail}
+                        nomsLocataires={nomsLocataires}
                         onSaved={() => {
                           setEditingGarantId(null);
                           void refresh();
@@ -749,6 +761,7 @@ function BailActuelDetail({
                       <span>
                         {garant.prenom} {garant.nom}{" "}
                         <span className="text-slate-400">({garant.typeGarantie})</span>
+                        <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                       </span>
                       <span className="flex items-center gap-3">
                         <button

@@ -38,7 +38,7 @@ describe("UpdateGarantDto", () => {
     expect(erreurs.some((e) => e.property === "prenom")).toBe(true);
   });
 
-  for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance", "lieuNaissance", "nationalite"]) {
+  for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance", "lieuNaissance", "nationalite", "locataireId"]) {
     it(`${champ} accepte null (champ à effacer)`, async () => {
       const dto = plainToInstance(UpdateGarantDto, { [champ]: null });
       const erreurs = await validate(dto);
@@ -62,6 +62,12 @@ describe("UpdateGarantDto", () => {
     const dto = plainToInstance(UpdateGarantDto, { dateNaissance: "pas-une-date" });
     const erreurs = await validate(dto);
     expect(erreurs.some((e) => e.property === "dateNaissance")).toBe(true);
+  });
+
+  it("locataireId qui n'est pas un UUID est rejeté", async () => {
+    const dto = plainToInstance(UpdateGarantDto, { locataireId: "pas-un-uuid" });
+    const erreurs = await validate(dto);
+    expect(erreurs.some((e) => e.property === "locataireId")).toBe(true);
   });
 
   it("adresse non textuelle est rejetée", async () => {

@@ -1,6 +1,7 @@
 import { date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
+import { locataires } from "./locataires";
 import { organisations } from "./organisations";
 
 export const garantTypeGarantieEnum = pgEnum("garant_type_garantie", [
@@ -43,5 +44,13 @@ export const garants = pgTable("garants", {
   // de figement à la création que les champs ci-dessus.
   dateNaissance: date("date_naissance"),
   lieuNaissance: text("lieu_naissance"),
-  nationalite: text("nationalite")
+  nationalite: text("nationalite"),
+  // Locataire du même bail dont ce garant se porte caution (facultatif,
+  // ajouté le 2026-11-08, migration 0077, sans backfill : null = « non
+  // précisé »). Le backend n'accepte qu'un locataire rattaché au bail du
+  // garant (lien bail_locataires non archivé) au moment où il est choisi
+  // (GarantsService). Si ce locataire quitte ensuite le bail, la valeur est
+  // conservée : la mention « caution de … » est alors omise du bail généré
+  // et l'écran indique « (n'est plus au bail) ».
+  locataireId: uuid("locataire_id").references(() => locataires.id)
 });

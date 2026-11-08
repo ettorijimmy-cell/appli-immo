@@ -6,8 +6,12 @@ import {
   champsGarantVides,
   creationGarant,
   GARANT_TYPES,
+  MENTION_PLUS_AU_BAIL,
   modificationGarant,
-  type ChampsGarant
+  optionsCautionDe,
+  type ChampsGarant,
+  type LocataireDuBail,
+  type OptionCautionDe
 } from "./garant-formulaire";
 
 // Formulaires d'ajout et de modification d'un garant, partagés par la fiche
@@ -15,16 +19,22 @@ import {
 // (patrimoine/BailTabs.tsx), qui en avaient chacun une copie jusqu'au
 // 2026-11-07. `idPrefix` conserve les id DOM que portait la copie de
 // l'onglet « Bail actuel » (ex. "bail-garant-nom") ; sans lui, aucun id.
+// « Caution de » (2026-11-08) : locataire du bail dont le garant se porte
+// caution, choisi parmi `locatairesDuBail` (liens non archivés) ;
+// « Non précisé » par défaut, sauf depuis la fiche d'un locataire où la
+// création est préremplie avec ce locataire (`locataireIdParDefaut`).
 
 const CLASSE_CHAMP = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 function ChampsGarantFormulaire({
   champs,
   onChange,
+  optionsCaution,
   idPrefix
 }: {
   champs: ChampsGarant;
   onChange: (modif: Partial<ChampsGarant>) => void;
+  optionsCaution: OptionCautionDe[];
   idPrefix?: string | undefined;
 }): React.JSX.Element {
   const id =(suffixe: string): string | undefined => (idPrefix ? `${idPrefix}-${suffixe}` : undefined);
@@ -73,9 +83,23 @@ function ChampsGarantFormulaire({
           </option>
         ))}
       </select>
-      {/* Grille de 3 colonnes : cellule vide pour que l'adresse occupe une
-          ligne entière (adresse, code postal, ville). */}
-      <span aria-hidden="true" />
+      {/* Troisième cellule de la ligne : l'adresse occupe ainsi une ligne
+          entière (adresse, code postal, ville). */}
+      <label className="flex items-center gap-2 text-sm text-slate-600">
+        <span className="whitespace-nowrap">Caution de</span>
+        <select
+          id={id("caution-de")}
+          value={champs.locataireId}
+          onChange={(event) => onChange({ locataireId: event.target.value })}
+          className={`${CLASSE_CHAMP} min-w-0 flex-1`}
+        >
+          {optionsCaution.map((option) => (
+            <option key={option.valeur} value={option.valeur}>
+              {option.libelle}
+            </option>
+          ))}
+        </select>
+      </label>
       <input
         id={id("adresse")}
         placeholder="Adresse"
@@ -125,14 +149,18 @@ function ChampsGarantFormulaire({
 
 export function NewGarantForm({
   bailId,
+  locatairesDuBail,
+  locataireIdParDefaut,
   onCreated,
   idPrefix
 }: {
   bailId: string;
+  locatairesDuBail: readonly LocataireDuBail[];
+  locataireIdParDefaut?: string;
   onCreated: () => void;
   idPrefix?: string;
 }): React.JSX.Element {
-  const [champs, setChamps] = useState<ChampsGarant>(champsGarantVides);
+  const [champs, setChamps] = useState<ChampsGarant>(() => champsGarantVides(locataireIdParDefaut));
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -160,6 +188,7 @@ export function NewGarantForm({
       <ChampsGarantFormulaire
         champs={champs}
         onChange={(modif) => setChamps((precedent) => ({ ...precedent, ...modif }))}
+        optionsCaution={optionsCautionDe(locatairesDuBail, "", new Map())}
         idPrefix={idPrefix}
       />
       {error && (
@@ -180,10 +209,14 @@ export function NewGarantForm({
 
 export function EditGarantForm({
   garant,
+  locatairesDuBail,
+  nomsLocataires,
   onSaved,
   onCancel
 }: {
   garant: Garant;
+  locatairesDuBail: readonly LocataireDuBail[];
+  nomsLocataires: ReadonlyMap<string, string>;
   onSaved: () => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -215,6 +248,7 @@ export function EditGarantForm({
       <ChampsGarantFormulaire
         champs={champs}
         onChange={(modif) => setChamps((precedent) => ({ ...precedent, ...modif }))}
+        optionsCaution={optionsCautionDe(locatairesDuBail, garant.locataireId ?? "", nomsLocataires)}
       />
       {error && (
         <p role="alert" className="text-xs text-red-600">
@@ -234,5 +268,20 @@ export function EditGarantForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// Mention « caution de X » affichée après le nom d'un garant dans les listes
+// (fiche locataire, onglet « Bail actuel ») ; rien si non précisé. Texte
+// calculé par mentionCautionDe (garant-formulaire.ts).
+export function MentionCautionDe({ texte }: { texte: string | null }): React.JSX.Element | null {
+  if (texte === null) {
+    return null;
+  }
+  return (
+    <span className={texte.endsWith(MENTION_PLUS_AU_BAIL) ? "text-amber-700" : "text-slate-500"}>
+      {" "}
+      — {texte}
+    </span>
   );
 }

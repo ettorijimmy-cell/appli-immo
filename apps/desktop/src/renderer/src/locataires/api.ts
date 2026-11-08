@@ -115,6 +115,8 @@ export interface Garant {
   dateNaissance: string | null;
   lieuNaissance: string | null;
   nationalite: string | null;
+  // Locataire du bail dont ce garant se porte caution (null = non précisé).
+  locataireId: string | null;
   archivedAt: string | null;
 }
 
@@ -131,6 +133,7 @@ export interface CreateGarantInput {
   dateNaissance?: string;
   lieuNaissance?: string;
   nationalite?: string;
+  locataireId?: string;
 }
 
 // `| null` sur les champs optionnels : contrairement à CreateGarantInput, un
@@ -150,6 +153,8 @@ export interface UpdateGarantInput {
   dateNaissance?: string | null;
   lieuNaissance?: string | null;
   nationalite?: string | null;
+  // null efface le lien « Caution de » (non précisé).
+  locataireId?: string | null;
 }
 
 export type BailLocataireRole = "titulaire" | "colocataire";

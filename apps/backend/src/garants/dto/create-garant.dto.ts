@@ -53,4 +53,11 @@ export class CreateGarantDto {
   @IsOptional()
   @IsString()
   nationalite?: string;
+
+  // Locataire dont ce garant se porte caution (facultatif) : doit être
+  // rattaché au même bail (lien bail_locataires non archivé), sinon refus
+  // (GarantsService). Absent = « non précisé ».
+  @IsOptional()
+  @IsUUID()
+  locataireId?: string;
 }

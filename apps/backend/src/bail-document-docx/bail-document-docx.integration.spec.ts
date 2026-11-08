@@ -693,6 +693,75 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     expect(texte.indexOf("1 rue du Locataire")).toBeLessThan(texte.indexOf("2 rue du Colocataire"));
   });
 
+  // « Caution de » (commit 4 garants, 2026-11-08) : « , caution de [Prénom
+  // Nom] » après le nom de la caution, dans le bloc identité et dans sa
+  // ligne d'annexe, quand le garant est rattaché à un locataire du bail.
+  async function creerColocationAvecGarantsRattaches() {
+    const { bail, locataire } = await creerDossierComplet();
+    const colocataire = await locatairesService.create(userId, { nom: "Petit", prenom: "Hugo" });
+    await locatairesService.update(colocataire.id, { adresse: "2 rue du Colocataire", codePostal: "19100", ville: "Brive" });
+    const lienColocataire = await bailLocatairesService.create({
+      bailId: bail.id,
+      locataireId: colocataire.id,
+      role: "colocataire"
+    });
+    const [claire] = await db.select().from(garantsTable).where(eq(garantsTable.bailId, bail.id));
+    await garantsService.update(claire!.id, { locataireId: locataire.id });
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Martin",
+      prenom: "Paul",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1960-01-15",
+      lieuNaissance: "Tulle",
+      nationalite: "Française",
+      locataireId: colocataire.id
+    });
+    return { bail, locataire, colocataire, lienColocataire };
+  }
+
+  it("imprime « caution de [Prénom Nom] » après le nom de chaque caution rattachée, dans l'identité et dans sa ligne d'annexe", async () => {
+    const { bail } = await creerColocationAvecGarantsRattaches();
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    expect(texte).toContain("Claire Durand, caution de Ilan Devos");
+    expect(texte).toContain("Paul Martin, caution de Hugo Petit");
+    expect(texte.split(", caution de Ilan Devos").length - 1).toBe(2);
+    expect(texte.split(", caution de Hugo Petit").length - 1).toBe(2);
+    expect(texte).toContain("Acte de caution solidaire. Nom de la caution : Claire Durand, caution de Ilan Devos");
+    expect(texte).toContain("Acte de caution solidaire. Nom de la caution : Paul Martin, caution de Hugo Petit");
+  });
+
+  it("omet la mention pour un garant non rattaché et pour un garant dont le locataire a quitté le bail, le garant restant listé", async () => {
+    const { bail, lienColocataire } = await creerColocationAvecGarantsRattaches();
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Sans",
+      prenom: "Rattachement",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1970-06-01",
+      lieuNaissance: "Brive",
+      nationalite: "Française"
+    });
+    await bailLocatairesService.archive(lienColocataire.id);
+
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    const texte = texteDuDocx(buffer);
+
+    expect(texte).toContain("Claire Durand, caution de Ilan Devos");
+    expect(texte).not.toContain("Hugo Petit");
+    expect(texte).toContain("Acte de caution solidaire. Nom de la caution : Paul Martin ");
+    expect(texte).toContain("Acte de caution solidaire. Nom de la caution : Rattachement Sans ");
+    expect(texte.split(", caution de").length - 1).toBe(2);
+    expect(texte.split("Acte de caution solidaire. Nom de la caution :").length - 1).toBe(3);
+  });
+
   it("bloque si un garant rattaché a des champs manquants (date/lieu de naissance, nationalité)", async () => {
     const { bail } = await creerDossierComplet({ avecGarant: false });
     await garantsService.create({

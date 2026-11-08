@@ -22,6 +22,7 @@ import {
   libelleMoisDepuisDate,
   ordonnerGarantsDuBail,
   ordonnerLocatairesDuBail,
+  situationLocataireCautionne,
   regimesDureeApplicables,
   validerCompletudeGenerationBail,
   type ChoixDureeBail,
@@ -346,8 +347,20 @@ export class BailDocumentDocxService {
     // dans le contexte de chaque itération.
     // « numero caution » : intitulé « Caution 1 », « Caution 2 »… imprimé
     // en tête de chaque bloc, seulement à partir de deux garants.
+    // « locataire cautionne » : « , caution de [Prénom Nom] » imprimé après
+    // le nom de la caution (bloc identité et ligne d'annexe) quand le garant
+    // est rattaché à un locataire encore au bail ; null sinon (non précisé,
+    // ou locataire retiré du bail : mention omise, le garant reste listé —
+    // packages/core, situationLocataireCautionne).
+    const locataireIdsAuBail = liensLocataires.map((lien) => lien.locataireId);
+    const nomsLocatairesAuBail = new Map(locatairesDuBail.map((l) => [l.id, `${l.prenom} ${l.nom}`]));
     const cautions = garantsDuBail.map((caution, index) => ({
       "numero caution": String(index + 1),
+      "locataire cautionne":
+        caution.locataireId !== null &&
+        situationLocataireCautionne(caution.locataireId, locataireIdsAuBail) === "au_bail"
+          ? (nomsLocatairesAuBail.get(caution.locataireId) ?? null)
+          : null,
       "Nom prénom de la personne caution": `${caution.prenom} ${caution.nom}`,
       "adresse caution": caution.adresse ?? VIDE,
       "code postale caution": caution.codePostal ?? VIDE,
@@ -548,7 +561,7 @@ export class BailDocumentDocxService {
 
   private rendreDocument(
     donneesBalises: Record<string, string>,
-    cautions: Record<string, string>[],
+    cautions: Record<string, string | null>[],
     drapeaux: {
       clauseResolutoireAvant: boolean;
       clauseResolutoireApres: boolean;

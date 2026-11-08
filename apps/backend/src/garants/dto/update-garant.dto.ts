@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateIf } from "class-validator";
+import { IsDateString, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateIf } from "class-validator";
 
 const GARANT_TYPES_GARANTIE = ["personne_physique", "garantie_visale", "autre"] as const;
 
@@ -70,4 +70,13 @@ export class UpdateGarantDto {
   @IsOptional()
   @IsString()
   nationalite?: string | null;
+
+  // Locataire dont ce garant se porte caution (voir CreateGarantDto) :
+  // `null` efface le lien (« non précisé »). Une nouvelle valeur doit être
+  // un locataire rattaché au bail du garant ; la valeur déjà enregistrée
+  // reste acceptée telle quelle, même si ce locataire a quitté le bail
+  // depuis (GarantsService.update).
+  @IsOptional()
+  @IsUUID()
+  locataireId?: string | null;
 }

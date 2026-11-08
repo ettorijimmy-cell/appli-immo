@@ -27,6 +27,7 @@ export * from "./paiements/valider-completude-generation-quittance";
 export * from "./baux/valider-completude-generation-bail";
 export * from "./baux/calculer-libelle-depot-garantie";
 export * from "./baux/ordonner-parties-bail";
+export * from "./baux/locataire-cautionne";
 export * from "./baux/formater-fourchette-depenses-energie";
 export * from "./baux/valider-fraicheur-irl";
 export * from "./baux/deduire-nombre-pieces-depuis-type";

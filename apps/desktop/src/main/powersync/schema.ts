@@ -164,6 +164,8 @@ const garants = new Table({
   date_naissance: column.text,
   lieu_naissance: column.text,
   nationalite: column.text,
+  // Locataire du bail dont ce garant se porte caution (migration 0077).
+  locataire_id: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text

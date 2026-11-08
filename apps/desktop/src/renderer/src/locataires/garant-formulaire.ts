@@ -1,3 +1,4 @@
+import { situationLocataireCautionne } from "core";
 import { valeurOuNull } from "../lib/valeur-ou-null";
 import type { CreateGarantInput, Garant, GarantTypeGarantie, UpdateGarantInput } from "./api";
 
@@ -19,9 +20,11 @@ export interface ChampsGarant {
   dateNaissance: string;
   lieuNaissance: string;
   nationalite: string;
+  // Locataire du bail dont le garant se porte caution ("" = non précisé).
+  locataireId: string;
 }
 
-export function champsGarantVides(): ChampsGarant {
+export function champsGarantVides(locataireIdParDefaut = ""): ChampsGarant {
   return {
     nom: "",
     prenom: "",
@@ -33,7 +36,8 @@ export function champsGarantVides(): ChampsGarant {
     ville: "",
     dateNaissance: "",
     lieuNaissance: "",
-    nationalite: ""
+    nationalite: "",
+    locataireId: locataireIdParDefaut
   };
 }
 
@@ -49,7 +53,8 @@ export function champsGarantDepuis(garant: Garant): ChampsGarant {
     ville: garant.ville ?? "",
     dateNaissance: garant.dateNaissance ?? "",
     lieuNaissance: garant.lieuNaissance ?? "",
-    nationalite: garant.nationalite ?? ""
+    nationalite: garant.nationalite ?? "",
+    locataireId: garant.locataireId ?? ""
   };
 }
 
@@ -67,7 +72,8 @@ export function creationGarant(bailId: string, champs: ChampsGarant): CreateGara
     ...(champs.ville && { ville: champs.ville }),
     ...(champs.dateNaissance && { dateNaissance: champs.dateNaissance }),
     ...(champs.lieuNaissance && { lieuNaissance: champs.lieuNaissance }),
-    ...(champs.nationalite && { nationalite: champs.nationalite })
+    ...(champs.nationalite && { nationalite: champs.nationalite }),
+    ...(champs.locataireId && { locataireId: champs.locataireId })
   };
 }
 
@@ -85,6 +91,60 @@ export function modificationGarant(champs: ChampsGarant): UpdateGarantInput {
     ville: valeurOuNull(champs.ville),
     dateNaissance: valeurOuNull(champs.dateNaissance),
     lieuNaissance: valeurOuNull(champs.lieuNaissance),
-    nationalite: valeurOuNull(champs.nationalite)
+    nationalite: valeurOuNull(champs.nationalite),
+    locataireId: valeurOuNull(champs.locataireId)
   };
+}
+
+// Locataire proposé dans le champ « Caution de » : un locataire rattaché
+// au bail (lien non archivé).
+export interface LocataireDuBail {
+  id: string;
+  prenom: string;
+  nom: string;
+}
+
+export interface OptionCautionDe {
+  valeur: string;
+  libelle: string;
+}
+
+export const LIBELLE_NON_PRECISE = "Non précisé";
+export const MENTION_PLUS_AU_BAIL = "(n'est plus au bail)";
+
+// Options du champ « Caution de » : « Non précisé », puis les locataires
+// du bail. Si la valeur déjà enregistrée désigne un locataire qui a quitté
+// le bail, elle reste proposée (et sélectionnée) avec la mention « (n'est
+// plus au bail) », pour qu'un enregistrement sans changement ne la perde
+// pas — le backend l'accepte telle quelle (GarantsService.update).
+export function optionsCautionDe(
+  locatairesDuBail: readonly LocataireDuBail[],
+  valeurEnregistree: string,
+  nomsLocataires: ReadonlyMap<string, string>
+): OptionCautionDe[] {
+  const options: OptionCautionDe[] = [
+    { valeur: "", libelle: LIBELLE_NON_PRECISE },
+    ...locatairesDuBail.map((l) => ({ valeur: l.id, libelle: `${l.prenom} ${l.nom}` }))
+  ];
+  if (valeurEnregistree && !locatairesDuBail.some((l) => l.id === valeurEnregistree)) {
+    const nom = nomsLocataires.get(valeurEnregistree) ?? "Locataire";
+    options.push({ valeur: valeurEnregistree, libelle: `${nom} ${MENTION_PLUS_AU_BAIL}` });
+  }
+  return options;
+}
+
+// Mention affichée dans la liste des garants : « caution de Marie Dupont »,
+// suivie de « (n'est plus au bail) » si ce locataire a été retiré du bail ;
+// null si le garant n'est rattaché à personne (non précisé).
+export function mentionCautionDe(
+  locataireId: string | null,
+  locataireIdsAuBail: readonly string[],
+  nomsLocataires: ReadonlyMap<string, string>
+): string | null {
+  const situation = situationLocataireCautionne(locataireId, locataireIdsAuBail);
+  if (situation === "non_precise" || locataireId === null) {
+    return null;
+  }
+  const mention = `caution de ${nomsLocataires.get(locataireId) ?? "locataire inconnu"}`;
+  return situation === "plus_au_bail" ? `${mention} ${MENTION_PLUS_AU_BAIL}` : mention;
 }

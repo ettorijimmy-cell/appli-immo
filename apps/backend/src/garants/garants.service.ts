@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, baux, bien, garants, mettreAJourAvecAudit, type Database } from "db";
-import { and, eq } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { appartements, bailLocataires, baux, bien, garants, mettreAJourAvecAudit, type Database } from "db";
+import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateGarantDto } from "./dto/create-garant.dto";
@@ -44,6 +44,9 @@ export class GarantsService {
     if (!ligne) {
       throw new NotFoundException("Bail introuvable");
     }
+    if (dto.locataireId) {
+      await this.verifierLocataireAuBail(dto.bailId, dto.locataireId);
+    }
 
     const [garant] = await this.db
       .insert(garants)
@@ -60,6 +63,7 @@ export class GarantsService {
         dateNaissance: dto.dateNaissance,
         lieuNaissance: dto.lieuNaissance,
         nationalite: dto.nationalite,
+        locataireId: dto.locataireId ?? null,
         organisationId: ligne.organisationId
       })
       .returning();
@@ -106,7 +110,14 @@ export class GarantsService {
   async update(id: string, dto: UpdateGarantDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreGarantAvecAppartenance(id);
+    const existant = await this.resoudreGarantAvecAppartenance(id);
+    // Rattachement « caution de » : seule une NOUVELLE valeur est contrôlée.
+    // La valeur déjà enregistrée reste acceptée telle quelle, même si ce
+    // locataire a quitté le bail depuis (le formulaire la renvoie avec le
+    // reste des champs) ; null efface le lien.
+    if (dto.locataireId && dto.locataireId !== existant.locataireId) {
+      await this.verifierLocataireAuBail(existant.bailId, dto.locataireId);
+    }
 
     const [garant] = await mettreAJourAvecAudit(
       this.db,
@@ -137,6 +148,29 @@ export class GarantsService {
       throw new NotFoundException("Garant introuvable");
     }
     return this.versDto(garant as GarantRow);
+  }
+
+  // Le locataire dont le garant se porte caution doit être rattaché au même
+  // bail (lien bail_locataires non archivé). Le contrôle porte sur le bail
+  // du garant, déjà vérifié dans l'organisation courante : un locataire
+  // d'une autre organisation ne peut donc jamais y être rattaché.
+  private async verifierLocataireAuBail(bailId: string, locataireId: string): Promise<void> {
+    const [lien] = await this.db
+      .select({ id: bailLocataires.id })
+      .from(bailLocataires)
+      .where(
+        and(
+          eq(bailLocataires.bailId, bailId),
+          eq(bailLocataires.locataireId, locataireId),
+          isNull(bailLocataires.archivedAt)
+        )
+      )
+      .limit(1);
+    if (!lien) {
+      throw new BadRequestException(
+        "Le locataire choisi pour « Caution de » n'est pas rattaché à ce bail."
+      );
+    }
   }
 
   // Contrôle d'appartenance partagé (Sous-commit 5a pour findById(), étendu
@@ -175,7 +209,8 @@ export class GarantsService {
       ville: garant.ville,
       dateNaissance: garant.dateNaissance,
       lieuNaissance: garant.lieuNaissance,
-      nationalite: garant.nationalite
+      nationalite: garant.nationalite,
+      locataireId: garant.locataireId
     };
   }
 }

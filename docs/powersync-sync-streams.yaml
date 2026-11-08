@@ -66,6 +66,9 @@
 #         ce redéploiement.
 #       - etat_des_lieux_cles, etat_des_lieux_equipements_divers,
 #         etat_des_lieux_inventaire : commentaire_sortie.
+#   - Stream MODIFIÉ EN CODE le 2026-11-08, À REDÉPLOYER après la migration
+#     0077 (rattachement « caution de », 1 stream) :
+#       - garants : locataire_id. La migration passe avant ce redéploiement.
 #
 # indices_irl a longtemps été considérée comme jamais confirmée
 # fonctionnelle (voir son historique de bug de backfill plus bas dans ce
@@ -275,11 +278,13 @@ streams:
   # profession et revenus EXCLUS volontairement (donnée financière précise
   # du garant, pas de besoin hors-ligne — décision du 2026-08-15). Toutes
   # les autres colonnes métier incluses.
+  # locataire_id ajouté le 2026-11-08 (migration 0077, locataire du bail
+  # dont le garant se porte caution) : simple UUID, aucune donnée sensible.
   garants:
     query: >
       SELECT id, bail_id, nom, prenom, email, telephone, type_garantie,
       adresse, code_postal, ville, date_naissance, lieu_naissance,
-      nationalite, archived_at, version, updated_at FROM garants
+      nationalite, locataire_id, archived_at, version, updated_at FROM garants
       WHERE garants.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
