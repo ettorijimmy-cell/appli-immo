@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:17.11
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -11,7 +11,7 @@ services:
       # sur 5432 (voir DEFAULT_DEV_DATABASE_URL, packages/db/src/client.ts).
       - "5433:5432"
     volumes:
-      - appli_immo_pg_data:/var/lib/postgresql/data
+      - appli_immo_pg17_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -19,4 +19,4 @@ services:
       retries: 10
 
 volumes:
-  appli_immo_pg_data:
+  appli_immo_pg17_data:

@@ -2,7 +2,7 @@ name: appli-immo-test
 
 services:
   postgres-test:
-    image: postgres:16
+    image: postgres:17.11
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
