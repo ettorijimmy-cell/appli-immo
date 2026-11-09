@@ -36,6 +36,12 @@
  */
 
 import { estTypeResidentiel, type TypeBien } from "../biens/type-bien";
+import {
+  verifierGarantiesBail,
+  type CodeViolationGarantie,
+  type ContexteGarantiesBail,
+  type TypeGarantie
+} from "../garants/regles-garanties";
 
 export interface DonneesCompletudeSci {
   telephone: string | null;
@@ -69,6 +75,11 @@ export interface DonneesCompletudeGarant {
   dateNaissance: string | null;
   lieuNaissance: string | null;
   nationalite: string | null;
+  // Chantier garants (2026-11-08) : champs exigés selon le type. Facultatifs
+  // le temps que le backend les fournisse (commit 3) : absent = caution
+  // personne physique, comportement d'avant.
+  typeGarantie?: TypeGarantie;
+  numeroContratVisale?: string | null;
 }
 
 export interface DonneesCompletudeGenerationBail {
@@ -85,6 +96,20 @@ export interface DonneesCompletudeGenerationBail {
   locataires: DonneesCompletudeLocataire[];
   garants: DonneesCompletudeGarant[];
   irlIndisponible: boolean;
+  // Règles d'acceptation des garanties (verifierGarantiesBail, chantier
+  // garants, 2026-11-08). Facultatif le temps que le backend le fournisse
+  // (commit 3) : absent, aucune de ces règles n'est vérifiée.
+  garanties?: ContexteGarantiesBail;
+}
+
+// Violations déjà couvertes par un message de cette fonction, jamais
+// répétées : le numéro de contrat Visale (contrôle de champ ci-dessous) et
+// « SCI familiale ou non » quand il manque déjà au bloc SCI.
+function violationDejaSignalee(code: CodeViolationGarantie, donnees: DonneesCompletudeGenerationBail): boolean {
+  if (code === "visale_numero_contrat_manquant") {
+    return true;
+  }
+  return code === "sci_familiale_non_renseignee" && donnees.sci !== null && donnees.sci.estFamiliale === null;
 }
 
 export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenerationBail): string[] {
@@ -160,6 +185,18 @@ export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenera
   // pas si `garants` est vide, aucune vérification n'est alors faite.
   donnees.garants.forEach((garant, index) => {
     const label = donnees.garants.length > 1 ? `Garant ${index + 1}` : "Garant";
+    // Garantie Visale : seul le numéro de contrat est exigé, jamais
+    // l'identité d'une personne (naissance, nationalité). Type « autre » :
+    // refusé par verifierGarantiesBail, aucun champ à exiger ici.
+    if (garant.typeGarantie === "garantie_visale") {
+      if (!garant.numeroContratVisale || garant.numeroContratVisale.trim() === "") {
+        manquants.push(`${label} — numéro de contrat Visale`);
+      }
+      return;
+    }
+    if (garant.typeGarantie === "autre") {
+      return;
+    }
     if (garant.dateNaissance === null) {
       manquants.push(`${label} — date de naissance`);
     }
@@ -170,6 +207,14 @@ export function validerCompletudeGenerationBail(donnees: DonneesCompletudeGenera
       manquants.push(`${label} — nationalité`);
     }
   });
+
+  if (donnees.garanties) {
+    for (const violation of verifierGarantiesBail(donnees.garanties)) {
+      if (!violationDejaSignalee(violation.code, donnees)) {
+        manquants.push(violation.message);
+      }
+    }
+  }
 
   return manquants;
 }

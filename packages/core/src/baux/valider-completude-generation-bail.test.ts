@@ -189,3 +189,102 @@ describe("validerCompletudeGenerationBail", () => {
     }
   );
 });
+
+// Chantier garants (2026-11-08) : champs exigés selon le type de garant, et
+// règles d'acceptation (verifierGarantiesBail) intégrées au contrôle.
+describe("validerCompletudeGenerationBail — garants selon leur type", () => {
+  const cautionIncomplete = { dateNaissance: null, lieuNaissance: null, nationalite: null };
+
+  it("sans type (appel d'avant le commit 3) : caution personne physique, messages inchangés", () => {
+    expect(validerCompletudeGenerationBail({ ...DONNEES_COMPLETES, garants: [cautionIncomplete] })).toEqual([
+      "Garant — date de naissance",
+      "Garant — lieu de naissance",
+      "Garant — nationalité"
+    ]);
+  });
+
+  it("Visale : naissance et nationalité jamais exigées, numéro de contrat exigé", () => {
+    expect(
+      validerCompletudeGenerationBail({
+        ...DONNEES_COMPLETES,
+        garants: [{ ...cautionIncomplete, typeGarantie: "garantie_visale", numeroContratVisale: "V0001" }]
+      })
+    ).toEqual([]);
+    expect(
+      validerCompletudeGenerationBail({
+        ...DONNEES_COMPLETES,
+        garants: [{ ...cautionIncomplete, typeGarantie: "garantie_visale", numeroContratVisale: null }]
+      })
+    ).toEqual(["Garant — numéro de contrat Visale"]);
+  });
+
+  it("intègre les règles d'acceptation, sans répéter le numéro Visale", () => {
+    const manquants = validerCompletudeGenerationBail({
+      ...DONNEES_COMPLETES,
+      locataires: [
+        { adresse: "1 rue Test", codePostal: "75001", ville: "Paris" },
+        { adresse: "2 rue Test", codePostal: "75001", ville: "Paris" }
+      ],
+      garants: [{ ...cautionIncomplete, typeGarantie: "garantie_visale", numeroContratVisale: null }],
+      garanties: {
+        assuranceLoyersImpayes: false,
+        bailleur: { type: "sci", estFamiliale: true },
+        locataires: [
+          { id: "L1", statutEtudes: "aucun" },
+          { id: "L2", statutEtudes: "aucun" }
+        ],
+        garants: [{ id: "V1", typeGarantie: "garantie_visale", locataireId: null, numeroContratVisale: null }]
+      }
+    });
+    expect(manquants).toEqual([
+      "Garant — numéro de contrat Visale",
+      "Garant — garantie Visale impossible sur un bail à plusieurs locataires"
+    ]);
+  });
+
+  it("SCI familiale non renseignée : un seul message (celui du bloc SCI)", () => {
+    const manquants = validerCompletudeGenerationBail({
+      ...DONNEES_COMPLETES,
+      sci: { ...DONNEES_COMPLETES.sci!, estFamiliale: null },
+      garants: [{ dateNaissance: "1965-03-20", lieuNaissance: "Lyon", nationalite: "Française", typeGarantie: "personne_physique" }],
+      garanties: {
+        assuranceLoyersImpayes: false,
+        bailleur: { type: "sci", estFamiliale: null },
+        locataires: [{ id: "L1", statutEtudes: "aucun" }],
+        garants: [{ id: "G1", typeGarantie: "personne_physique", locataireId: null, numeroContratVisale: null }]
+      }
+    });
+    expect(manquants).toEqual(["SCI familiale ou non (détermine la durée légale du bail)"]);
+  });
+
+  it("caution bloquée par l'assurance loyers impayés : message de la règle", () => {
+    const manquants = validerCompletudeGenerationBail({
+      ...DONNEES_COMPLETES,
+      garants: [{ dateNaissance: "1965-03-20", lieuNaissance: "Lyon", nationalite: "Française", typeGarantie: "personne_physique" }],
+      garanties: {
+        assuranceLoyersImpayes: true,
+        bailleur: { type: "sci", estFamiliale: true },
+        locataires: [{ id: "L1", statutEtudes: "aucun" }],
+        garants: [{ id: "G1", typeGarantie: "personne_physique", locataireId: null, numeroContratVisale: null }]
+      }
+    });
+    expect(manquants).toHaveLength(1);
+    expect(manquants[0]).toMatch(/^Garant — caution personne physique impossible : le bail est couvert par une assurance loyers impayés/);
+  });
+
+  it("type « autre » : aucun champ exigé, refus par la règle", () => {
+    const manquants = validerCompletudeGenerationBail({
+      ...DONNEES_COMPLETES,
+      garants: [{ ...cautionIncomplete, typeGarantie: "autre" }],
+      garanties: {
+        assuranceLoyersImpayes: false,
+        bailleur: { type: "personne_physique" },
+        locataires: [{ id: "L1", statutEtudes: "aucun" }],
+        garants: [{ id: "G1", typeGarantie: "autre", locataireId: null, numeroContratVisale: null }]
+      }
+    });
+    expect(manquants).toEqual([
+      "Garant — type « autre » non accepté : choisir caution personne physique ou garantie Visale"
+    ]);
+  });
+});

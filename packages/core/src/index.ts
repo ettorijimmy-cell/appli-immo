@@ -57,3 +57,7 @@ export * from "./candidats/calculer-taux-effort";
 export * from "./messagerie/resoudre-classification-email";
 export * from "./charges/calculer-bilan-regularisation";
 export * from "./charges/repartir-proportionnellement";
+export * from "./texte/montant-en-lettres";
+export * from "./garants/calculs-cautionnement";
+export * from "./garants/regles-garanties";
+export * from "./garants/valider-completude-acte-cautionnement";
