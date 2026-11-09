@@ -141,6 +141,7 @@ module/UI ne lit ni n'écrit `diagnostics` à ce jour.
 | Champ | Type | Description |
 |---|---|---|
 | statut | enum | `actif` \| `ancien` \| `archive` |
+| statut_etudes | enum `locataire_statut_etudes`, NOT NULL, défaut `non_renseigne` | `non_renseigne` \| `aucun` \| `etudiant_boursier` \| `etudiant_non_boursier` \| `apprenti`. Ajouté le 2026-11-08 (migration 0078, chantier garants) pour les règles d'acceptation d'une caution personne physique (loi n° 89-462, art. 22-1) : `non_renseigne` compte comme `aucun`, avec un message invitant à le renseigner. Synchronisé par le stream PowerSync `locataires` |
 | anonymise_le | timestamp, nullable | Colonne présente depuis la création de la table (2026-07-27) mais **non reliée à aucune logique** — aucun endpoint, job planifié ou code ne la lit ni ne l'écrit. Anonymisation RGPD en attente d'un avis juridique sur ce qu'exige concrètement le droit à l'effacement (délai de conservation, déclencheur) ; aucun engagement de calendrier. Colonne conservée en base dans cette attente — voir docs/backlog.md pour le suivi de cette décision |
 | adresse, code_postal, ville | text, nullable | Identité du LOCATAIRE dans le modèle de bail, renseignables progressivement |
 | date_naissance | date, nullable | Mention du modèle de bail |
@@ -149,10 +150,35 @@ module/UI ne lit ni n'écrit `diagnostics` à ce jour.
 | Champ | Type | Description |
 |---|---|---|
 | type_garantie | enum | `personne_physique` \| `garantie_visale` \| `autre` |
+| prenom | text, **nullable depuis la migration 0078** | Obligatoire pour une caution personne physique : CHECK `garants_prenom_personne_physique` (`type_garantie <> 'personne_physique' OR prenom IS NOT NULL`). Vide pour un garant Visale (nom = « Action Logement Services (Visale) ») |
+| numero_contrat_visale | text, nullable | Numéro du contrat de cautionnement Visale (type `garantie_visale`), ajouté le 2026-11-08 (migration 0078). Le PDF du contrat est une pièce du garant (`documents.categorie = 'contrat_cautionnement_visale'`). Synchronisé par le stream PowerSync `garants` |
 | adresse, code_postal, ville | text, nullable | Adresse du garant, imprimée dans le bail (section « Garants solidaires ») si renseignée. Colonnes présentes depuis la création de la table mais **saisissables seulement depuis le 2026-11-07** (`CreateGarantDto`/`UpdateGarantDto`, formulaire garant partagé `locataires/GarantForms.tsx`) — avant, absentes des DTO, donc supprimées par `whitelist: true` et toujours `null`. **Jamais exigées** par `validerCompletudeGenerationBail` (décision du 2026-11-07, option A, en attendant la lecture du texte sur les mentions de l'acte de cautionnement). Déjà synchronisées par le stream PowerSync `garants` |
 | profession, revenus | text / decimal, nullable | Ni saisissables, ni renvoyés par l'API, ni synchronisés (donnée financière précise, décision du 2026-08-15) |
 | date_naissance, lieu_naissance, nationalite | text/date, nullable | Mentions manuscrites de l'acte de cautionnement, sous peine de nullité absolue (loi ALUR) — figées à la création, même principe que adresse/profession/revenus |
 | locataire_id | uuid, nullable, FK → locataires | Locataire du bail dont ce garant se porte caution (« Caution de »), ajouté le 2026-11-08 (migration 0077, sans backfill : `null` = « non précisé »). Le backend n'accepte qu'un locataire **rattaché au même bail** (lien `bail_locataires` non archivé) au moment où il est choisi, sinon 400 ; `null` efface le lien ; la valeur déjà enregistrée reste acceptée telle quelle en modification (`GarantsService`). Si le locataire quitte ensuite le bail, la valeur est conservée : le bail généré omet alors la mention « , caution de [Prénom Nom] » (le garant reste listé) et l'écran affiche « (n'est plus au bail) » (`situationLocataireCautionne`, packages/core). Synchronisée par le stream PowerSync `garants` (configuration PowerSync complète à redéployer après la migration et le backend, voir docs/backlog.md) |
+
+## garant_remise_bail
+Remise d'un exemplaire du bail à la caution (2026-11-08, migration 0078,
+chantier garants) : déclaration datée par le bailleur, gardée comme trace.
+Même modèle que `etat_des_lieux_entree_papier` : une correction écrit une
+nouvelle ligne et archive la précédente. **Hors publication et hors
+PowerSync**, lue par l'API uniquement.
+| Champ | Type | Description |
+|---|---|---|
+| garant_id | uuid, FK `garants` | |
+| organisation_id | uuid, FK `organisations` | Dénormalisé depuis `garants.organisation_id` |
+| date_remise | date | Date de remise déclarée |
+| mode | enum `garant_remise_bail_mode` | `main_propre` \| `lettre_recommandee` \| `courrier_simple` \| `email` |
+| declaree_le | timestamptz | |
+| declaree_par | uuid, FK `utilisateurs` | Auteur de la déclaration |
+| archived_at | timestamptz, nullable | Posé quand une correction remplace la ligne |
+
+Garanties portées par la base (triggers posés à la main dans la migration
+0078) : aucune suppression (`garant_remise_bail_sans_suppression`) ni vidage
+(`garant_remise_bail_sans_vidage`) ; une ligne n'est jamais modifiée, sauf
+pour être archivée une seule fois (`garant_remise_bail_sans_modification`),
+erreur `restrict_violation` sinon. Index unique partiel
+`garant_remise_bail_active_unique` : une seule déclaration active par garant.
 
 ## baux
 Le passage du statut à `actif` (activation) et `resilie` (résiliation)
@@ -190,6 +216,7 @@ l'existence du bail compte, jamais le chemin par lequel il y est arrivé.
 | travaux_realises | text, nullable | Mention obligatoire du contrat-type ("travaux effectués depuis le dernier bail") — texte libre par nature, aucun vocabulaire fermé possible côté décret. Modifiable via `UpdateBailDto`, contrairement à `date_activation`/`date_resiliation` (docs/backlog.md, section "Édition d'un bail") |
 | honoraires_bailleur, honoraires_locataire | decimal, nullable (les deux) | Section IX du contrat-type ("Honoraires de location"). Rattachés au bail, pas à la SCI/organisation : un même bailleur peut ou non recourir à un professionnel selon la location. Les deux `null` → section affichée "néant" dans le document généré. Sans objet dans l'usage actuel (particulier/SCI gérant en direct), prêt sans changement de code le jour où un professionnel intervient |
 | trimestre_reference_revision | integer, nullable, 1-4 | Trimestre IRL de référence de la clause d'indexation (Module Tâches, Étape 5, 2026-08-30) — propre à chaque contrat, **non déductible automatiquement de façon fiable**, jamais deviné en silence : `null` tant que non renseigné explicitement, aucune révision de loyer générée pour ce bail dans ce cas. `CHECK` en base (`baux_trimestre_reference_revision_valide`) en plus de la validation applicative |
+| assurance_loyers_impayes | boolean, NOT NULL, défaut `false` | Le bailleur a souscrit une assurance loyers impayés pour ce bail (2026-11-08, migration 0078, chantier garants). Une caution personne physique est alors refusée à la génération, sauf locataire garanti étudiant (boursier ou non) ou apprenti (loi n° 89-462, art. 22-1). Synchronisé par le stream PowerSync `baux` |
 
 **Décision produit (génération des échéances à l'activation, tranchée avec l'utilisateur — révisée après un bug réel constaté en test manuel)** :
 - Chaque échéance de loyer correspond à un **mois calendaire complet** (1er au dernier jour). Seule la **première** est proratisée, et uniquement si `date_debut` ne tombe pas le 1er du mois — jamais en fonction du jour d'activation ni de `jour_echeance`, qui n'ont d'effet sur AUCUNE des deux lignes générées à l'activation.
@@ -279,6 +306,7 @@ Table de liaison pour gérer la colocation.
 | Champ | Type | Description |
 |---|---|---|
 | role | enum | `titulaire` \| `colocataire` |
+| date_effet_conge | date, nullable | Date d'effet du congé donné par ce locataire (2026-11-08, migration 0078, chantier garants). Sert à afficher la fin d'engagement de sa caution en colocation (loi n° 89-462, art. 8-1, VI). Distincte d'`archived_at`, date de retrait du lien dans l'appli. Synchronisé par le stream PowerSync `bail_locataires` |
 
 **Unicité du titulaire (2026-08-31, Module Tâches — extension notifications)** :
 index unique partiel `bail_locataires_bail_id_titulaire_actif_unique` sur
@@ -300,7 +328,7 @@ notification (`TachesJobService`) doit le gérer explicitement (retourne
 |---|---|---|
 | entite_type | enum | `sci` \| `immeuble` \| `bien` \| `appartement` \| `locataire` \| `bail` \| `etat_des_lieux` \| `garant` — lien polymorphe. Pas de contrainte de clé étrangère possible (8 tables cibles) : `DocumentsService.verifierEntiteExiste()` vérifie applicativement que `entite_id` existe bien dans la table correspondant à `entite_type` avant d'insérer. `etat_des_lieux` ajouté pour les photos prises pendant la saisie numérique (module État des lieux, 2026-08-03). `garant` ajouté le 2026-08-24 (checklist documentaire, pièce d'identité du garant). `bien` ajouté le 2026-08-26 (migration bien) : seul chemin possible pour rattacher un document à un bien non-immeuble (maison, parking, bureau, local_commercial) ou à un immeuble créé après cette date via `BienService` — `immeuble` reste réservé aux documents déjà rattachés à une ligne `immeubles` existante (table conservée, voir section `bien` ci-dessous) |
 | entite_id | uuid | Voir `entite_type` ci-dessus |
-| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` \| `signature` \| `etat_des_lieux_docx` \| `etat_des_lieux_pdf` \| `etat_des_lieux_entree_papier` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous). `signature` ajoutée le 2026-10-24 (chantier Signatures, voir section `etat_des_lieux_signature` ci-dessous) : toujours `entiteType='etat_des_lieux'`, l'image étant référencée par `etat_des_lieux_signature.document_id`, jamais affichée par ailleurs. `etat_des_lieux_entree_papier` ajoutée le 2026-11-06 (migration 0075) : scan PDF d'une entrée papier, catégorie réservée, voir section `etat_des_lieux_entree_papier` |
+| categorie | enum | `bail` \| `assurance` \| `etat_des_lieux` \| `diagnostic` \| `dpe` \| `elec_gaz` \| `crep_plomb` \| `erp` \| `piece_identite` \| `rib` \| `caf` \| `quittance` \| `courrier` \| `photo` \| `fiche_de_paie` \| `contrat_travail` \| `avis_imposition` \| `signature` \| `etat_des_lieux_docx` \| `etat_des_lieux_pdf` \| `etat_des_lieux_entree_papier` — `diagnostic` reste le seau générique pour tout diagnostic non encore distingué (ex. amiante, hors périmètre à ce jour) ; `dpe`/`elec_gaz`/`crep_plomb`/`erp` existent en valeurs dédiées uniquement pour permettre à `BailDocumentDocxService` de détecter leur présence en pièce annexée — aucun résultat structuré stocké ici (voir table `diagnostics`, 1:1 avec `documents`, encore non reliée à aucun module/UI à ce jour). `fiche_de_paie`/`contrat_travail`/`avis_imposition` ajoutées le 2026-09-15 (checklist documentaire candidat, voir section `candidat` ci-dessous). `signature` ajoutée le 2026-10-24 (chantier Signatures, voir section `etat_des_lieux_signature` ci-dessous) : toujours `entiteType='etat_des_lieux'`, l'image étant référencée par `etat_des_lieux_signature.document_id`, jamais affichée par ailleurs. `etat_des_lieux_entree_papier` ajoutée le 2026-11-06 (migration 0075) : scan PDF d'une entrée papier, catégorie réservée, voir section `etat_des_lieux_entree_papier`. `contrat_cautionnement_visale` et `acte_cautionnement_signe` ajoutées le 2026-11-08 (migration 0078, chantier garants) : pièces d'un garant (`entite_type = 'garant'`), le PDF du contrat Visale et le scan de l'acte de cautionnement signé |
 | statut | enum | `valide` \| `expire` \| `archive` — voir décision produit ci-dessous : `archive` seul est réellement écrit en base, `valide`/`expire` sont calculés à la lecture |
 | date_expiration | date, nullable | Alimente le moteur d'alertes (Module 6) et le calcul de `statut` |
 | nom_fichier | text | Nom original du fichier, affiché et utilisé pour la recherche plein texte de l'écran Documents |

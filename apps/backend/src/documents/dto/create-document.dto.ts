@@ -72,7 +72,12 @@ export const DOCUMENT_CATEGORIES = [
   // Scan PDF d'une entrée établie et signée sur papier (2026-11-06) : même
   // principe, seul EtatDesLieuxEntreePapierService le crée, dans la
   // transaction de déclaration.
-  "etat_des_lieux_entree_papier"
+  "etat_des_lieux_entree_papier",
+  // Pièces d'un garant (chantier garants, 2026-11-08, migration 0078),
+  // déposées par cette route générique (entiteType='garant') : PDF du
+  // contrat de cautionnement Visale, scan de l'acte de cautionnement signé.
+  "contrat_cautionnement_visale",
+  "acte_cautionnement_signe"
 ] as const;
 export type DocumentCategorie = (typeof DOCUMENT_CATEGORIES)[number];
 

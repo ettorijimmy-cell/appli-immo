@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgEnum, pgTable, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { date, pgEnum, pgTable, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
 import { locataires } from "./locataires";
@@ -19,7 +19,12 @@ export const bailLocataires = pgTable(
     locataireId: uuid("locataire_id")
       .notNull()
       .references(() => locataires.id),
-    role: bailLocataireRoleEnum("role").notNull()
+    role: bailLocataireRoleEnum("role").notNull(),
+    // Date d'effet du congé donné par ce locataire (2026-11-08, chantier
+    // garants, migration 0078). Sert à afficher la fin d'engagement de sa
+    // caution en colocation (loi n° 89-462, art. 8-1, VI). Distincte
+    // d'archived_at, qui est la date de retrait du lien dans l'appli.
+    dateEffetConge: date("date_effet_conge")
   },
   (table) => [
     // Audit de données réalisé le 2026-08-31 (avant ajout de cette

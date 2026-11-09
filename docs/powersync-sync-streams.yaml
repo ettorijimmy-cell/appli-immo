@@ -71,6 +71,15 @@
 #     À redéployer après la migration 0077 et le backend : ce fichier
 #     COMPLET, jamais ce seul stream — le Deploy du dashboard remplace
 #     toute la configuration (ordre complet : docs/backlog.md).
+#   - Streams MODIFIÉS EN CODE le 2026-11-08 (chantier garants complet,
+#     migration 0078, 4 streams) :
+#       - garants : numero_contrat_visale ;
+#       - baux : assurance_loyers_impayes ;
+#       - locataires : statut_etudes ;
+#       - bail_locataires : date_effet_conge.
+#     La nouvelle table garant_remise_bail n'est PAS synchronisée (lue par
+#     l'API). À redéployer après la migration 0078 et le backend : ce
+#     fichier COMPLET, jamais ces seuls streams.
 #
 # indices_irl a longtemps été considérée comme jamais confirmée
 # fonctionnelle (voir son historique de bug de backfill plus bas dans ce
@@ -263,7 +272,7 @@ streams:
       depot_garantie, provisions_charges, jour_echeance, date_debut,
       date_fin, date_activation, date_signature, date_resiliation,
       travaux_realises, honoraires_bailleur, honoraires_locataire,
-      trimestre_reference_revision,
+      trimestre_reference_revision, assurance_loyers_impayes,
       archived_at, version, updated_at FROM baux
       WHERE baux.appartement_id IN (
         SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -286,7 +295,8 @@ streams:
     query: >
       SELECT id, bail_id, nom, prenom, email, telephone, type_garantie,
       adresse, code_postal, ville, date_naissance, lieu_naissance,
-      nationalite, locataire_id, archived_at, version, updated_at FROM garants
+      nationalite, locataire_id, numero_contrat_visale, archived_at, version,
+      updated_at FROM garants
       WHERE garants.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -304,7 +314,8 @@ streams:
   # deux UUID + un enum de rôle. Toutes les colonnes incluses.
   bail_locataires:
     query: >
-      SELECT id, bail_id, locataire_id, role, archived_at, version, updated_at FROM bail_locataires
+      SELECT id, bail_id, locataire_id, role, date_effet_conge, archived_at, version, updated_at
+      FROM bail_locataires
       WHERE bail_locataires.bail_id IN (
         SELECT id FROM baux WHERE baux.appartement_id IN (
           SELECT id FROM appartements WHERE appartements.bien_id IN (
@@ -337,7 +348,8 @@ streams:
   locataires:
     query: >
       SELECT id, nom, prenom, email, telephone, adresse, code_postal, ville,
-      date_naissance, lieu_naissance, statut, anonymise_le, archived_at, version, updated_at
+      date_naissance, lieu_naissance, statut, statut_etudes, anonymise_le, archived_at,
+      version, updated_at
       FROM locataires
       WHERE locataires.id IN (
         SELECT locataire_id FROM bail_locataires WHERE bail_locataires.bail_id IN (

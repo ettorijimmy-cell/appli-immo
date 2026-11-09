@@ -4,6 +4,18 @@ import { organisations } from "./organisations";
 
 export const locataireStatutEnum = pgEnum("locataire_statut", ["actif", "ancien", "archive"]);
 
+// Statut d'études du locataire (2026-11-08, chantier garants, migration
+// 0078) : sert aux règles d'acceptation d'une caution personne physique
+// (loi n° 89-462, art. 22-1 — voir packages/core). non_renseigne compte
+// comme aucun, avec un message invitant à le renseigner.
+export const locataireStatutEtudesEnum = pgEnum("locataire_statut_etudes", [
+  "non_renseigne",
+  "aucun",
+  "etudiant_boursier",
+  "etudiant_non_boursier",
+  "apprenti"
+]);
+
 export const locataires = pgTable("locataires", {
   ...auditColumns,
   nom: text("nom").notNull(),
@@ -38,6 +50,7 @@ export const locataires = pgTable("locataires", {
   // documentaire.
   lieuNaissance: text("lieu_naissance"),
   statut: locataireStatutEnum("statut").notNull().default("actif"),
+  statutEtudes: locataireStatutEtudesEnum("statut_etudes").notNull().default("non_renseigne"),
   // Renseigné lors d'une anonymisation RGPD : les champs identifiants sont
   // alors neutralisés applicativement, la ligne elle-même n'est jamais
   // supprimée (voir docs/data-dictionary.md).

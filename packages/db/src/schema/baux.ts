@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, decimal, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, date, decimal, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { appartements } from "./appartements";
 import { auditColumns } from "./columns.helpers";
 
@@ -84,7 +84,12 @@ export const baux = pgTable(
     // chaque contrat — non déductible automatiquement de façon fiable
     // (Module Tâches, Étape 5, docs/backlog.md), jamais deviné en silence.
     // Nullable : tous les baux n'ont pas de clause d'indexation.
-    trimestreReferenceRevision: integer("trimestre_reference_revision")
+    trimestreReferenceRevision: integer("trimestre_reference_revision"),
+    // Le bailleur a souscrit une assurance loyers impayés pour ce bail
+    // (2026-11-08, chantier garants, migration 0078) : une caution personne
+    // physique est alors refusée à la génération, sauf locataire garanti
+    // étudiant ou apprenti (loi n° 89-462, art. 22-1 — packages/core).
+    assuranceLoyersImpayes: boolean("assurance_loyers_impayes").notNull().default(false)
   },
   (table) => [
     // Concurrence (docs/backlog.md, dette technique Module 3) : garantit au

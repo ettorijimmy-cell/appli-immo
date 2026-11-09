@@ -143,6 +143,8 @@ const baux = new Table({
   honoraires_bailleur: column.real,
   honoraires_locataire: column.real,
   trimestre_reference_revision: column.integer,
+  // Booléen Postgres synchronisé en 0/1 (migration 0078).
+  assurance_loyers_impayes: column.integer,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -166,6 +168,8 @@ const garants = new Table({
   nationalite: column.text,
   // Locataire du bail dont ce garant se porte caution (migration 0077).
   locataire_id: column.text,
+  // Numéro du contrat de cautionnement Visale (migration 0078).
+  numero_contrat_visale: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -175,6 +179,8 @@ const bail_locataires = new Table({
   bail_id: column.text,
   locataire_id: column.text,
   role: column.text,
+  // Date d'effet du congé du locataire (migration 0078).
+  date_effet_conge: column.text,
   archived_at: column.text,
   version: column.integer,
   updated_at: column.text
@@ -195,6 +201,8 @@ const locataires = new Table({
   date_naissance: column.text,
   lieu_naissance: column.text,
   statut: column.text,
+  // Statut d'études (migration 0078).
+  statut_etudes: column.text,
   anonymise_le: column.text,
   archived_at: column.text,
   version: column.integer,

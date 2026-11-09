@@ -547,6 +547,13 @@
       "when": 1794134266251,
       "tag": "0077_cuddly_squadron_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794171471022,
+      "tag": "0078_lively_eddie_brock",
+      "breakpoints": true
     }
   ]
 }

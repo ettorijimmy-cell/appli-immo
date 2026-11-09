@@ -97,7 +97,13 @@ export const documentCategorieEnum = pgEnum("document_categorie", [
   // etat_des_lieux_entree_papier.document_id. Catégorie réservée : jamais
   // créé, modifié ni archivé par les routes génériques, jamais effacé
   // (une correction de la déclaration garde l'ancien scan).
-  "etat_des_lieux_entree_papier"
+  "etat_des_lieux_entree_papier",
+  // Chantier garants (2026-11-08, migration 0078), pièces du garant
+  // (entite_type='garant') déposées par la route générique : PDF du
+  // contrat de cautionnement Visale, et scan de l'acte de cautionnement
+  // signé (mention manuscrite de la caution personne physique).
+  "contrat_cautionnement_visale",
+  "acte_cautionnement_signe"
 ]);
 
 // 'valide'/'expire' sont calculés à la lecture (packages/core,

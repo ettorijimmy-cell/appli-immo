@@ -1,4 +1,5 @@
-import { date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, date, decimal, pgEnum, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { baux } from "./baux";
 import { auditColumns } from "./columns.helpers";
 import { locataires } from "./locataires";
@@ -10,47 +11,66 @@ export const garantTypeGarantieEnum = pgEnum("garant_type_garantie", [
   "autre"
 ]);
 
-export const garants = pgTable("garants", {
-  ...auditColumns,
-  bailId: uuid("bail_id")
-    .notNull()
-    .references(() => baux.id),
-  nom: text("nom").notNull(),
-  prenom: text("prenom").notNull(),
-  email: text("email"),
-  telephone: text("telephone"),
-  // Ajouté nullable puis backfillé, même méthode et même raison que
-  // locataires.organisation_id — corrige GarantsService.findAll(), non
-  // scopé jusqu'ici. Résolu depuis bail.appartementId -> bien.
-  // organisationId à la création (GarantsService.create()) : toujours
-  // déterminable puisque bail_id est NOT NULL (jamais de garant
-  // orphelin), migration suivant tout de même le même schéma en deux
-  // phases pour rester uniforme avec locataires.
-  organisationId: uuid("organisation_id")
-    .notNull()
-    .references(() => organisations.id),
-  typeGarantie: garantTypeGarantieEnum("type_garantie").notNull(),
-  // Mentions obligatoires de l'acte de cautionnement sous peine de nullité
-  // absolue (loi ALUR) — sans risque à ajouter ici : contrairement à
-  // locataires, garants est déjà une ligne par bail (pas une entité
-  // partagée), ces champs sont donc figés au moment de la création du
-  // cautionnement (docs/backlog.md, section "Édition d'un bail").
-  adresse: text("adresse"),
-  codePostal: text("code_postal"),
-  ville: text("ville"),
-  profession: text("profession"),
-  revenus: decimal("revenus", { precision: 10, scale: 2 }),
-  // Acte de cautionnement (mentions manuscrites légales) — même principe
-  // de figement à la création que les champs ci-dessus.
-  dateNaissance: date("date_naissance"),
-  lieuNaissance: text("lieu_naissance"),
-  nationalite: text("nationalite"),
-  // Locataire du même bail dont ce garant se porte caution (facultatif,
-  // ajouté le 2026-11-08, migration 0077, sans backfill : null = « non
-  // précisé »). Le backend n'accepte qu'un locataire rattaché au bail du
-  // garant (lien bail_locataires non archivé) au moment où il est choisi
-  // (GarantsService). Si ce locataire quitte ensuite le bail, la valeur est
-  // conservée : la mention « caution de … » est alors omise du bail généré
-  // et l'écran indique « (n'est plus au bail) ».
-  locataireId: uuid("locataire_id").references(() => locataires.id)
-});
+export const garants = pgTable(
+  "garants",
+  {
+    ...auditColumns,
+    bailId: uuid("bail_id")
+      .notNull()
+      .references(() => baux.id),
+    nom: text("nom").notNull(),
+    // Nullable depuis la migration 0078 (chantier garants complet,
+    // 2026-11-08) : un garant Visale n'a pas de prénom (nom = « Action
+    // Logement Services (Visale) »). Toujours obligatoire pour une caution
+    // personne physique (CHECK garants_prenom_personne_physique ci-dessous).
+    prenom: text("prenom"),
+    email: text("email"),
+    telephone: text("telephone"),
+    // Ajouté nullable puis backfillé, même méthode et même raison que
+    // locataires.organisation_id — corrige GarantsService.findAll(), non
+    // scopé jusqu'ici. Résolu depuis bail.appartementId -> bien.
+    // organisationId à la création (GarantsService.create()) : toujours
+    // déterminable puisque bail_id est NOT NULL (jamais de garant
+    // orphelin), migration suivant tout de même le même schéma en deux
+    // phases pour rester uniforme avec locataires.
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id),
+    typeGarantie: garantTypeGarantieEnum("type_garantie").notNull(),
+    // Mentions obligatoires de l'acte de cautionnement sous peine de nullité
+    // absolue (loi ALUR) — sans risque à ajouter ici : contrairement à
+    // locataires, garants est déjà une ligne par bail (pas une entité
+    // partagée), ces champs sont donc figés au moment de la création du
+    // cautionnement (docs/backlog.md, section "Édition d'un bail").
+    adresse: text("adresse"),
+    codePostal: text("code_postal"),
+    ville: text("ville"),
+    profession: text("profession"),
+    revenus: decimal("revenus", { precision: 10, scale: 2 }),
+    // Acte de cautionnement (mentions manuscrites légales) — même principe
+    // de figement à la création que les champs ci-dessus.
+    dateNaissance: date("date_naissance"),
+    lieuNaissance: text("lieu_naissance"),
+    nationalite: text("nationalite"),
+    // Locataire du même bail dont ce garant se porte caution (facultatif,
+    // ajouté le 2026-11-08, migration 0077, sans backfill : null = « non
+    // précisé »). Le backend n'accepte qu'un locataire rattaché au bail du
+    // garant (lien bail_locataires non archivé) au moment où il est choisi
+    // (GarantsService). Si ce locataire quitte ensuite le bail, la valeur est
+    // conservée : la mention « caution de … » est alors omise du bail généré
+    // et l'écran indique « (n'est plus au bail) ».
+    locataireId: uuid("locataire_id").references(() => locataires.id),
+    // Numéro du contrat de cautionnement Visale (type garantie_visale),
+    // ajouté le 2026-11-08 (migration 0078). Le PDF du contrat est une pièce
+    // du garant (documents.categorie='contrat_cautionnement_visale').
+    numeroContratVisale: text("numero_contrat_visale")
+  },
+  (table) => [
+    // Prénom obligatoire pour une caution personne physique ; facultatif
+    // pour Visale (et pour les lignes « autre » existantes).
+    check(
+      "garants_prenom_personne_physique",
+      sql`${table.typeGarantie} <> 'personne_physique' OR ${table.prenom} IS NOT NULL`
+    )
+  ]
+);
