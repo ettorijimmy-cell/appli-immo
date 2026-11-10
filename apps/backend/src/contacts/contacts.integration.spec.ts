@@ -275,6 +275,19 @@ describe("ContactsService (intégration Postgres réelle)", () => {
     });
   });
 
+  // Chantier garants (2026-11-08) : prénom null pour une garantie Visale,
+  // jamais « null Action Logement… » dans le carnet.
+  it("findAllUnifie : garant Visale affiché sous son seul nom", async () => {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+    const visale = await garantsService.create({ bailId: bail.id, typeGarantie: "garantie_visale", numeroContratVisale: "V0001" });
+
+    const unifie = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      contactsService.findAllUnifie()
+    );
+
+    expect(unifie.find((c) => c.id === visale.id)).toMatchObject({ type: "garant", nom: "Action Logement Services (Visale)" });
+  });
+
   it("findAllUnifie exclut les entités archivées (locataire, garant, contact pro et candidat)", async () => {
     const locataire = await locatairesService.create(userId, { nom: "Archivé", prenom: "Locataire" });
     await locatairesService.archive(locataire.id);

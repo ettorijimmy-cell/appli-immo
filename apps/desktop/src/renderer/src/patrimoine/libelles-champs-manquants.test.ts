@@ -54,4 +54,45 @@ describe("resoudreAffichageChampManquant", () => {
       lieu: ""
     });
   });
+
+  // Chantier garants (2026-11-08) : messages de la génération et de
+  // GET /baux/:id/verification-garanties.
+  it("traduit le numéro de contrat Visale manquant comme un champ du garant", () => {
+    expect(resoudreAffichageChampManquant("Garant — numéro de contrat Visale")).toEqual({
+      libelle: "Numéro de contrat Visale du garant",
+      lieu: "Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »"
+    });
+  });
+
+  it("traduit le contrat Visale manquant vers les documents du garant", () => {
+    expect(resoudreAffichageChampManquant("Garant Visale — contrat de cautionnement Visale (PDF) à joindre")).toEqual({
+      libelle: "Contrat de cautionnement Visale (PDF) à joindre",
+      lieu: "Section Garants, bouton « Documents » du garant Visale"
+    });
+  });
+
+  it("traduit une règle d'acceptation, avec le numéro du garant et l'écran selon la règle", () => {
+    expect(
+      resoudreAffichageChampManquant(
+        "Garant 2 — caution personne physique impossible : le bail est couvert par une assurance loyers impayés (sauf locataire garanti étudiant ou apprenti)."
+      )
+    ).toEqual({
+      libelle:
+        "Caution personne physique impossible : le bail est couvert par une assurance loyers impayés (sauf locataire garanti étudiant ou apprenti). (garant 2)",
+      lieu: "Onglet « Bail actuel », bouton « Modifier » (assurance loyers impayés), ou fiche du locataire (statut d'études)"
+    });
+    expect(
+      resoudreAffichageChampManquant("Garant — caution personne physique impossible : le bailleur est une SCI non familiale (sauf locataire garanti étudiant non boursier).").lieu
+    ).toBe("Fiche de la SCI (SCI familiale), ou fiche du locataire (statut d'études)");
+    expect(resoudreAffichageChampManquant("Garant — la garantie Visale doit être le seul garant du bail")).toEqual({
+      libelle: "La garantie Visale doit être le seul garant du bail",
+      lieu: "Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »"
+    });
+  });
+
+  it("traduit la SCI familiale non renseignée vers la fiche de la SCI", () => {
+    expect(
+      resoudreAffichageChampManquant("SCI familiale ou non : à renseigner pour vérifier la caution personne physique").lieu
+    ).toBe("Fiche de la SCI, bouton « Modifier »");
+  });
 });

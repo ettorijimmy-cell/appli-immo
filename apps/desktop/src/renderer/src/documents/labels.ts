@@ -17,7 +17,9 @@ export const CATEGORIE_LABELS: Record<DocumentCategorie, string> = {
   photo: "Photo",
   fiche_de_paie: "Fiche de paie",
   contrat_travail: "Contrat de travail",
-  avis_imposition: "Avis d'imposition"
+  avis_imposition: "Avis d'imposition",
+  contrat_cautionnement_visale: "Contrat de cautionnement Visale",
+  acte_cautionnement_signe: "Acte de cautionnement signé"
 };
 
 export const ENTITE_TYPE_LABELS: Record<DocumentEntiteType, string> = {

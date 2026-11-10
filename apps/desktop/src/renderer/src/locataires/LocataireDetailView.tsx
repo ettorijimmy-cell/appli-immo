@@ -20,8 +20,10 @@ import {
   type Locataire,
   type LocataireStatutModifiable
 } from "./api";
-import { EditGarantForm, MentionCautionDe, NewGarantForm } from "./GarantForms";
-import { mentionCautionDe } from "./garant-formulaire";
+import { ChampStatutEtudes } from "./ChampStatutEtudes";
+import { EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "./GarantForms";
+import { mentionCautionDe, nomAfficheGarant } from "./garant-formulaire";
+import { LIBELLES_STATUT_ETUDES } from "./statut-etudes";
 
 const LOCATAIRE_STATUTS_MODIFIABLES: LocataireStatutModifiable[] = ["actif", "ancien"];
 
@@ -175,6 +177,10 @@ export function LocataireDetailView({
                 <div className="flex justify-between border-b border-slate-100 py-1">
                   <dt className="text-slate-500">Statut</dt>
                   <dd>{locataire.statut}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Statut d'études</dt>
+                  <dd>{LIBELLES_STATUT_ETUDES[locataire.statutEtudes]}</dd>
                 </div>
               </dl>
               <button
@@ -339,7 +345,7 @@ function BailDetail({
                 ) : (
                   <li key={garant.id} className="flex items-center justify-between py-0.5">
                     <span>
-                      {garant.prenom} {garant.nom} <span className="text-slate-400">({garant.typeGarantie})</span>
+                      {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
                       <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                     </span>
                     {!readOnly && (
@@ -390,6 +396,7 @@ function EditLocataireForm({
   const [statut, setStatut] = useState<LocataireStatutModifiable>(
     locataire.statut === "archive" ? "actif" : locataire.statut
   );
+  const [statutEtudes, setStatutEtudes] = useState(locataire.statutEtudes);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -402,6 +409,7 @@ function EditLocataireForm({
         nom,
         prenom,
         statut,
+        statutEtudes,
         email: valeurOuNull(email),
         telephone: valeurOuNull(telephone),
         adresse: valeurOuNull(adresse),
@@ -534,6 +542,7 @@ function EditLocataireForm({
             ))}
           </select>
         </div>
+        <ChampStatutEtudes id="locataire-edit-statut-etudes" valeur={statutEtudes} onChange={setStatutEtudes} />
       </div>
 
       {error && (

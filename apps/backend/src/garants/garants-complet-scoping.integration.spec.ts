@@ -5,6 +5,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   baux,
   createDbClient,
+  documents,
   DEFAULT_DEV_DATABASE_URL,
   garants,
   locataires,
@@ -19,7 +20,7 @@ import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { BailDocumentDocxModule } from "../bail-document-docx/bail-document-docx.module";
-import { BailDocumentDocxService } from "../bail-document-docx/bail-document-docx.service";
+import { BailDocumentDocxService, MESSAGE_CONTRAT_VISALE_MANQUANT } from "../bail-document-docx/bail-document-docx.service";
 import { BailLocatairesModule } from "../bail-locataires/bail-locataires.module";
 import { BailLocatairesService } from "../bail-locataires/bail-locataires.service";
 import { BauxModule } from "../baux/baux.module";
@@ -272,13 +273,54 @@ describe("Garants complet — contrôle d'appartenance à l'organisation (intég
     it("son bail : renvoie les violations de verifierGarantiesBail", async () => {
       // Rien à signaler : une caution « Caution de » renseignée, bailleur
       // personne physique, sans assurance.
-      expect(await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId))).toEqual([]);
+      expect(await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId))).toEqual({
+        violations: [],
+        piecesManquantes: []
+      });
 
       await depuis(orgA, () => bauxService.update(orgA.bailId, { assuranceLoyersImpayes: true }));
-      const violations = await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId));
-      expect(violations).toEqual([
-        expect.objectContaining({ code: "caution_interdite_assurance_loyers_impayes", garantId: orgA.garantId })
+      const verification = await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId));
+      expect(verification).toEqual({
+        violations: [expect.objectContaining({ code: "caution_interdite_assurance_loyers_impayes", garantId: orgA.garantId })],
+        piecesManquantes: []
+      });
+    });
+
+    it("garant Visale sans contrat (PDF) valide : pièce manquante, distincte des violations", async () => {
+      const [garantA] = await db.select().from(garants).where(eq(garants.id, orgA.garantId));
+      await depuis(orgA, () => garantsService.archive(garantA!.id));
+      const visale = await depuis(orgA, () =>
+        garantsService.create({ bailId: orgA.bailId, typeGarantie: "garantie_visale", numeroContratVisale: "V0001" })
+      );
+      const piece = {
+        code: "contrat_visale_manquant",
+        garantId: visale.id,
+        categorie: "contrat_cautionnement_visale",
+        message: MESSAGE_CONTRAT_VISALE_MANQUANT
+      };
+      expect(await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId))).toEqual({
+        violations: [],
+        piecesManquantes: [piece]
+      });
+
+      // Contrat expiré : toujours manquant (même règle que la génération).
+      const contrat = {
+        entiteType: "garant" as const,
+        entiteId: visale.id,
+        categorie: "contrat_cautionnement_visale" as const,
+        nomFichier: "contrat-visale.pdf",
+        mimeType: "application/pdf",
+        tailleOctets: 1
+      };
+      await db.insert(documents).values({ ...contrat, cheminStockage: `test/${randomUUID()}.enc`, dateExpiration: "2020-01-01" });
+      expect((await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId))).piecesManquantes).toEqual([
+        piece
       ]);
+
+      await db.insert(documents).values({ ...contrat, cheminStockage: `test/${randomUUID()}.enc` });
+      expect((await depuis(orgA, () => bailDocumentDocxService.verifierGarantiesDuBail(orgA.bailId))).piecesManquantes).toEqual(
+        []
+      );
     });
 
     it("bail d'une autre organisation : 404, même message qu'un bail inexistant", async () => {

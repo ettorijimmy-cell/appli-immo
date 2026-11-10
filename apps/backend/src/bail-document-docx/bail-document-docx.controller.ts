@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Res } from "@nestjs/common";
-import type { ViolationGarantie } from "core";
 import type { Response } from "express";
-import { BailDocumentDocxService } from "./bail-document-docx.service";
+import { BailDocumentDocxService, type VerificationGarantiesBail } from "./bail-document-docx.service";
 import { GenererDocumentBailDocxDto } from "./dto/generer-document-bail-docx.dto";
 
 const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -12,9 +11,10 @@ export class BailDocumentDocxController {
 
   // Lecture seule : violations des règles d'acceptation des garanties
   // (packages/core, verifierGarantiesBail), dans le même contexte que la
-  // génération du bail. 404 pour un bail d'une autre organisation.
+  // génération du bail, et pièces manquantes (contrat Visale). 404 pour un
+  // bail d'une autre organisation.
   @Get(":id/verification-garanties")
-  async verifierGaranties(@Param("id", ParseUUIDPipe) id: string): Promise<ViolationGarantie[]> {
+  async verifierGaranties(@Param("id", ParseUUIDPipe) id: string): Promise<VerificationGarantiesBail> {
     return this.bailDocumentDocxService.verifierGarantiesDuBail(id);
   }
 

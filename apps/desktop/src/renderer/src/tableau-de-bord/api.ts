@@ -112,6 +112,9 @@ export interface ChecklistLocataire {
 export interface ChecklistGarant {
   garantId: string;
   bailId: string;
+  // Pièce attendue selon le type du garant (TableauDeBordService,
+  // categorieAttendueGarant) : contrat Visale ou pièce d'identité.
+  categorieManquante: "piece_identite" | "contrat_cautionnement_visale";
 }
 
 export interface ChecklistDocumentaire {

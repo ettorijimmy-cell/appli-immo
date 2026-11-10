@@ -16,6 +16,7 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
 import { getRemboursementsEnAttente, type RemboursementEnAttente } from "../tableau-de-bord/api";
@@ -27,6 +28,7 @@ import {
   createBailLocataire,
   genererDocumentBail,
   getLocataire,
+  getVerificationGaranties,
   listBailLocataires,
   listBaux,
   listGarants,
@@ -38,10 +40,11 @@ import {
   type BailLocataireRole,
   type BailTypeBail,
   type Garant,
-  type Locataire
+  type Locataire,
+  type VerificationGarantiesBail
 } from "../locataires/api";
-import { EditGarantForm, MentionCautionDe, NewGarantForm } from "../locataires/GarantForms";
-import { mentionCautionDe } from "../locataires/garant-formulaire";
+import { EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "../locataires/GarantForms";
+import { mentionCautionDe, nomAfficheGarant } from "../locataires/garant-formulaire";
 import type { Appartement } from "./api";
 
 const BAIL_TYPES: BailTypeBail[] = ["vide", "meuble"];
@@ -171,6 +174,31 @@ export function BailActuelTab({
   );
 }
 
+// Assurance loyers impayés (chantier garants, 2026-11-08) : aide courte,
+// partagée par la création et la modification du bail.
+const AIDE_ASSURANCE_LOYERS_IMPAYES =
+  "Interdit de demander une caution personne physique en plus, sauf locataire étudiant ou apprenti — loi n° 89-462, art. 22-1";
+
+function CaseAssuranceLoyersImpayes({
+  id,
+  coche,
+  onChange
+}: {
+  id: string;
+  coche: boolean;
+  onChange: (coche: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <div className="col-span-2 space-y-1">
+      <label htmlFor={id} className="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input id={id} type="checkbox" checked={coche} onChange={(event) => onChange(event.target.checked)} />
+        Assurance loyers impayés souscrite
+      </label>
+      <p className="text-xs text-slate-500">{AIDE_ASSURANCE_LOYERS_IMPAYES}</p>
+    </div>
+  );
+}
+
 function NewBailForm({
   appartement,
   onCreated
@@ -185,6 +213,7 @@ function NewBailForm({
   const [depotGarantie, setDepotGarantie] = useState("");
   const [provisionsCharges, setProvisionsCharges] = useState("");
   const [jourEcheance, setJourEcheance] = useState("");
+  const [assuranceLoyersImpayes, setAssuranceLoyersImpayes] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -194,6 +223,7 @@ function NewBailForm({
     setIsSubmitting(true);
     try {
       await createBail({
+        ...(assuranceLoyersImpayes && { assuranceLoyersImpayes }),
         appartementId: appartement.id,
         typeBail,
         dateDebut,
@@ -314,6 +344,12 @@ function NewBailForm({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+
+        <CaseAssuranceLoyersImpayes
+          id="bail-assurance-loyers-impayes"
+          coche={assuranceLoyersImpayes}
+          onChange={setAssuranceLoyersImpayes}
+        />
       </div>
 
       {error && (
@@ -346,6 +382,9 @@ function BailActuelDetail({
     Array<{ lien: BailLocataire; locataire: Locataire | null }>
   >([]);
   const [garants, setGarants] = useState<Garant[]>([]);
+  // Règles d'acceptation et pièces manquantes (GET
+  // /baux/:id/verification-garanties) ; null si non chargées.
+  const [verificationGaranties, setVerificationGaranties] = useState<VerificationGarantiesBail | null>(null);
   // Noms de tous les locataires passés par ce bail, liens archivés compris
   // (« caution de X (n'est plus au bail) »).
   const [nomsLocataires, setNomsLocataires] = useState<Map<string, string>>(new Map());
@@ -396,7 +435,13 @@ function BailActuelDetail({
     } catch {
       setError("Impossible de charger les détails du bail");
     }
-  }, [bail.id]);
+    // À part : un échec de la vérification masque seulement l'encadré,
+    // jamais le détail du bail (la génération bloque de toute façon).
+    setVerificationGaranties(await getVerificationGaranties(bail.id).catch(() => null));
+    // bail.updatedAt : recharge aussi après une modification du bail
+    // (assurance loyers impayés), qui remplace l'objet bail sans changer
+    // son id.
+  }, [bail.id, bail.updatedAt]);
 
   useEffect(() => {
     void refresh();
@@ -560,6 +605,10 @@ function BailActuelDetail({
             <dt className="text-slate-500">Signature</dt>
             <dd>{bail.dateSignature ?? "—"}</dd>
           </div>
+          <div className="flex justify-between border-b border-slate-100 py-1">
+            <dt className="text-slate-500">Assurance loyers impayés</dt>
+            <dd>{bail.assuranceLoyersImpayes ? "Souscrite" : "Non"}</dd>
+          </div>
         </dl>
       )}
 
@@ -719,6 +768,8 @@ function BailActuelDetail({
           </button>
         </div>
 
+        <AvertissementsGaranties verification={verificationGaranties} />
+
         {showGarantForm && (
           <NewGarantForm
             bailId={bail.id}
@@ -759,8 +810,7 @@ function BailActuelDetail({
                   <li key={garant.id} className="rounded-md border border-transparent py-0.5">
                     <div className="flex items-center justify-between">
                       <span>
-                        {garant.prenom} {garant.nom}{" "}
-                        <span className="text-slate-400">({garant.typeGarantie})</span>
+                        {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
                         <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                       </span>
                       <span className="flex items-center gap-3">
@@ -801,7 +851,16 @@ function BailActuelDetail({
                     </div>
                     {documentsOuverts && (
                       <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-                        <DocumentsForEntite entiteType="garant" entiteId={garant.id} />
+                        {/* Clé avec le type : la pièce attendue change avec lui
+                            (pièce d'identité ou contrat Visale). */}
+                        <DocumentsForEntite
+                          key={`${garant.id}-${garant.typeGarantie}`}
+                          entiteType="garant"
+                          entiteId={garant.id}
+                          onChanged={() => {
+                            void refresh();
+                          }}
+                        />
                       </div>
                     )}
                   </li>
@@ -818,6 +877,37 @@ function BailActuelDetail({
         onRemboursementCreated={() => setRemboursementsVersion((v) => v + 1)}
       />
       <RemboursementsSection bail={bail} version={remboursementsVersion} />
+    </div>
+  );
+}
+
+// Encadré « Garanties » : violations des règles d'acceptation et pièces
+// manquantes, telles que la génération du bail les bloquera. Rien si tout
+// va bien (ou si la vérification n'a pas pu être chargée).
+function AvertissementsGaranties({
+  verification
+}: {
+  verification: VerificationGarantiesBail | null;
+}): React.JSX.Element | null {
+  const lignes = lignesAvertissementsGaranties(verification);
+  if (lignes.length === 0) {
+    return null;
+  }
+  return (
+    <div
+      role="status"
+      aria-label="Avertissements sur les garanties"
+      className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      <p className="font-medium">Garanties : à régler avant la génération du bail</p>
+      <ul className="mt-1 list-disc pl-5">
+        {lignes.map((ligne) => (
+          <li key={ligne.cle}>
+            {ligne.libelle}
+            {ligne.lieu && <span className="text-amber-800/70"> — {ligne.lieu}</span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1365,6 +1455,7 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
   const [trimestreReferenceRevision, setTrimestreReferenceRevision] = useState(
     bail.trimestreReferenceRevision?.toString() ?? ""
   );
+  const [assuranceLoyersImpayes, setAssuranceLoyersImpayes] = useState(bail.assuranceLoyersImpayes);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1382,7 +1473,8 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
         ...(depotGarantie && { depotGarantie }),
         ...(provisionsCharges && { provisionsCharges }),
         ...(jourEcheance && { jourEcheance: Number(jourEcheance) }),
-        ...(trimestreReferenceRevision && { trimestreReferenceRevision: Number(trimestreReferenceRevision) })
+        ...(trimestreReferenceRevision && { trimestreReferenceRevision: Number(trimestreReferenceRevision) }),
+        assuranceLoyersImpayes
       });
       onSaved();
     } catch {
@@ -1523,6 +1615,12 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+
+        <CaseAssuranceLoyersImpayes
+          id="bail-edit-assurance-loyers-impayes"
+          coche={assuranceLoyersImpayes}
+          onChange={setAssuranceLoyersImpayes}
+        />
       </div>
 
       {error && (

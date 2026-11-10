@@ -63,6 +63,21 @@ const NEANT = "Néant";
 
 export const MESSAGE_CONTRAT_VISALE_MANQUANT = "Garant Visale — contrat de cautionnement Visale (PDF) à joindre";
 
+// Pièce à joindre avant la génération du bail (GET
+// /baux/:id/verification-garanties) : distincte des violations des règles
+// d'acceptation, pour que le desktop l'annonce avant la génération.
+export interface PieceManquanteGarant {
+  code: "contrat_visale_manquant";
+  garantId: string;
+  categorie: "contrat_cautionnement_visale";
+  message: string;
+}
+
+export interface VerificationGarantiesBail {
+  violations: ViolationGarantie[];
+  piecesManquantes: PieceManquanteGarant[];
+}
+
 // Contexte des règles d'acceptation des garanties (packages/core,
 // verifierGarantiesBail) : assurance loyers impayés, bailleur (SCI familiale
 // ou non, ou personne physique), statut d'études des locataires au bail,
@@ -141,10 +156,22 @@ export class BailDocumentDocxService {
   // pour l'écran du bail (GET /baux/:id/verification-garanties) : même
   // lecture et même contexte que la génération (chargerPartiesDuBail,
   // contexteGarantiesDuBail), donc jamais d'écart entre l'avertissement
-  // affiché et le blocage à la génération. Le contrat Visale (PDF) n'y
-  // figure pas : c'est une pièce à joindre, pas une règle d'acceptation.
-  async verifierGarantiesDuBail(bailId: string): Promise<ViolationGarantie[]> {
-    return verifierGarantiesBail(contexteGarantiesDuBail(await this.chargerPartiesDuBail(bailId)));
+  // affiché et le blocage à la génération. Le contrat Visale (PDF) manquant
+  // est renvoyé à part (piecesManquantes) : c'est une pièce à joindre, pas
+  // une règle d'acceptation, mais il bloque aussi la génération (même
+  // calcul, garantsVisaleSansContrat).
+  async verifierGarantiesDuBail(bailId: string): Promise<VerificationGarantiesBail> {
+    const parties = await this.chargerPartiesDuBail(bailId);
+    const sansContrat = await this.garantsVisaleSansContrat(parties.garantsDuBail);
+    return {
+      violations: verifierGarantiesBail(contexteGarantiesDuBail(parties)),
+      piecesManquantes: sansContrat.map((garantId) => ({
+        code: "contrat_visale_manquant",
+        garantId,
+        categorie: "contrat_cautionnement_visale",
+        message: MESSAGE_CONTRAT_VISALE_MANQUANT
+      }))
+    };
   }
 
   // Lecture des parties du bail, contrôle d'organisation compris, partagée
@@ -227,9 +254,10 @@ export class BailDocumentDocxService {
   // Chantier garants (décision du 2026-11-10) : la génération est bloquée
   // tant qu'un garant Visale n'a pas de contrat de cautionnement Visale
   // (PDF) valide, c'est-à-dire ni archivé ni expiré (calculerStatutDocument,
-  // même définition que la checklist du Tableau de bord). Un seul message,
-  // Visale devant être le seul garant du bail.
-  private async contratsVisaleManquants(garantsDuBail: readonly (typeof garants.$inferSelect)[]): Promise<string[]> {
+  // même définition que la checklist du Tableau de bord). Renvoie les
+  // garants Visale sans contrat valide ; la génération en fait un seul
+  // message, Visale devant être le seul garant du bail.
+  private async garantsVisaleSansContrat(garantsDuBail: readonly (typeof garants.$inferSelect)[]): Promise<string[]> {
     const visaleIds = garantsDuBail.filter((g) => g.typeGarantie === "garantie_visale").map((g) => g.id);
     if (visaleIds.length === 0) {
       return [];
@@ -250,7 +278,7 @@ export class BailDocumentDocxService {
         .filter((c) => calculerStatutDocument(c.dateExpiration, c.archivedAt !== null, aujourdhui) === "valide")
         .map((c) => c.entiteId)
     );
-    return visaleIds.some((id) => !garantsCouverts.has(id)) ? [MESSAGE_CONTRAT_VISALE_MANQUANT] : [];
+    return visaleIds.filter((id) => !garantsCouverts.has(id));
   }
 
   async genererDocumentBailDocx(
@@ -336,7 +364,7 @@ export class BailDocumentDocxService {
     };
     const champsManquants = [
       ...validerCompletudeGenerationBail(donneesCompletude),
-      ...(await this.contratsVisaleManquants(garantsDuBail))
+      ...((await this.garantsVisaleSansContrat(garantsDuBail)).length > 0 ? [MESSAGE_CONTRAT_VISALE_MANQUANT] : [])
     ];
     if (champsManquants.length > 0) {
       throw new BadRequestException({

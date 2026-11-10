@@ -3,6 +3,7 @@ import type { DocumentCategorie } from "../documents/api";
 import { CATEGORIE_LABELS } from "../documents/labels";
 import { chargerContexteBail, creerCachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
+import { nomAfficheGarant } from "../locataires/garant-formulaire";
 import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getChecklistDocumentaire, type ChecklistDocumentaire } from "./api";
 
@@ -70,7 +71,7 @@ export function ChecklistDocumentaireCard(): React.JSX.Element | null {
             ]);
             libellesGar.set(
               g.garantId,
-              `${garant.prenom} ${garant.nom} — ${contexte.bienNom} n°${contexte.appartementNumero}`
+              `${nomAfficheGarant(garant)} — ${contexte.bienNom} n°${contexte.appartementNumero}`
             );
           } catch {
             libellesGar.set(g.garantId, "Garant introuvable");
@@ -131,7 +132,12 @@ export function ChecklistDocumentaireCard(): React.JSX.Element | null {
           </h3>
           <ul className="space-y-1 text-sm text-amber-900">
             {checklist.garants.map((g) => (
-              <li key={g.garantId}>{libellesGarants.get(g.garantId) ?? "…"} : pièce d'identité manquante</li>
+              <li key={g.garantId}>
+                {libellesGarants.get(g.garantId) ?? "…"} :{" "}
+                {g.categorieManquante === "contrat_cautionnement_visale"
+                  ? "contrat Visale (PDF) manquant"
+                  : "pièce d'identité manquante"}
+              </li>
             ))}
           </ul>
         </div>

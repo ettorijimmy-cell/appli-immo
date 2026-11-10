@@ -2,6 +2,15 @@ import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated
 
 export type LocataireStatut = "actif" | "ancien" | "archive";
 export type LocataireStatutModifiable = "actif" | "ancien";
+// Statut d'études (chantier garants, 2026-11-08) : sert aux règles de la
+// caution personne physique (loi n° 89-462, art. 22-1). « non_renseigne »
+// compte comme « aucun ».
+export type LocataireStatutEtudes =
+  | "non_renseigne"
+  | "aucun"
+  | "etudiant_boursier"
+  | "etudiant_non_boursier"
+  | "apprenti";
 
 export interface Locataire {
   id: string;
@@ -14,6 +23,7 @@ export interface Locataire {
   ville: string | null;
   dateNaissance: string | null;
   statut: LocataireStatut;
+  statutEtudes: LocataireStatutEtudes;
 }
 
 export interface CreateLocataireInput {
@@ -25,6 +35,7 @@ export interface CreateLocataireInput {
   codePostal?: string;
   ville?: string;
   dateNaissance?: string;
+  statutEtudes?: LocataireStatutEtudes;
 }
 
 // `| null` sur les champs optionnels : un champ vidé dans le formulaire de
@@ -42,6 +53,7 @@ export interface UpdateLocataireInput {
   ville?: string | null;
   dateNaissance?: string | null;
   statut?: LocataireStatutModifiable;
+  statutEtudes?: LocataireStatutEtudes;
 }
 
 export type BailTypeBail = "vide" | "meuble";
@@ -72,6 +84,10 @@ export interface Bail {
   // chaque contrat — jamais déduit automatiquement (Module Tâches, Étape 5,
   // docs/data-dictionary.md, section baux).
   trimestreReferenceRevision: number | null;
+  // Assurance loyers impayés souscrite par le bailleur (chantier garants,
+  // 2026-11-08) : interdit une caution personne physique en plus, sauf
+  // locataire garanti étudiant ou apprenti (loi n° 89-462, art. 22-1).
+  assuranceLoyersImpayes: boolean;
   updatedAt: string;
 }
 
@@ -85,6 +101,7 @@ export interface CreateBailInput {
   depotGarantie?: string;
   provisionsCharges?: string;
   jourEcheance?: number;
+  assuranceLoyersImpayes?: boolean;
 }
 
 export interface UpdateBailInput {
@@ -97,15 +114,21 @@ export interface UpdateBailInput {
   provisionsCharges?: string;
   jourEcheance?: number;
   trimestreReferenceRevision?: number;
+  assuranceLoyersImpayes?: boolean;
 }
 
+// « autre » : ancien type, refusé à la saisie depuis le chantier garants
+// (2026-11-08) ; les lignes existantes restent lisibles.
 export type GarantTypeGarantie = "personne_physique" | "garantie_visale" | "autre";
+export type GarantTypeSaisissable = Exclude<GarantTypeGarantie, "autre">;
 
 export interface Garant {
   id: string;
   bailId: string;
+  // Garantie Visale : nom imposé par le backend (« Action Logement
+  // Services (Visale) »), prénom null.
   nom: string;
-  prenom: string;
+  prenom: string | null;
   email: string | null;
   telephone: string | null;
   typeGarantie: GarantTypeGarantie;
@@ -117,16 +140,20 @@ export interface Garant {
   nationalite: string | null;
   // Locataire du bail dont ce garant se porte caution (null = non précisé).
   locataireId: string | null;
+  // Garantie Visale uniquement (null pour une caution).
+  numeroContratVisale: string | null;
   archivedAt: string | null;
 }
 
+// Garantie Visale : nom et prénom omis (imposés par le backend).
 export interface CreateGarantInput {
   bailId: string;
-  nom: string;
-  prenom: string;
+  nom?: string;
+  prenom?: string;
   email?: string;
   telephone?: string;
-  typeGarantie: GarantTypeGarantie;
+  typeGarantie: GarantTypeSaisissable;
+  numeroContratVisale?: string;
   adresse?: string;
   codePostal?: string;
   ville?: string;
@@ -146,7 +173,10 @@ export interface UpdateGarantInput {
   prenom?: string;
   email?: string | null;
   telephone?: string | null;
-  typeGarantie?: GarantTypeGarantie;
+  // Omis pour une ligne « autre » dont on ne change pas le type (le
+  // backend refuse « autre » en écriture).
+  typeGarantie?: GarantTypeSaisissable;
+  numeroContratVisale?: string | null;
   adresse?: string | null;
   codePostal?: string | null;
   ville?: string | null;
@@ -288,6 +318,31 @@ export async function genererDocumentBail(id: string): Promise<void> {
     }
   }
   await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "bail.docx");
+}
+
+// Règles d'acceptation des garanties (packages/core, verifierGarantiesBail)
+// et pièces manquantes (contrat Visale), dans le même contexte que la
+// génération du bail : GET /baux/:id/verification-garanties.
+export interface ViolationGarantieBail {
+  code: string;
+  garantId: string | null;
+  message: string;
+}
+
+export interface PieceManquanteGarant {
+  code: "contrat_visale_manquant";
+  garantId: string;
+  categorie: "contrat_cautionnement_visale";
+  message: string;
+}
+
+export interface VerificationGarantiesBail {
+  violations: ViolationGarantieBail[];
+  piecesManquantes: PieceManquanteGarant[];
+}
+
+export function getVerificationGaranties(bailId: string): Promise<VerificationGarantiesBail> {
+  return authenticatedFetch<VerificationGarantiesBail>(`/baux/${bailId}/verification-garanties`);
 }
 
 export function listGarants(bailId: string): Promise<Garant[]> {

@@ -3,6 +3,7 @@ import { libelleCandidat } from "../candidats/CandidatsView";
 import { getEtatDesLieuxById } from "../etats-des-lieux/api";
 import { chargerContexteBail, creerCachesContexteBail, type CachesContexteBail } from "../finances/contexte-bail";
 import { getGarant, getLocataire } from "../locataires/api";
+import { nomAfficheGarant } from "../locataires/garant-formulaire";
 import { getAppartement, getBien, libelleBien } from "../patrimoine/api";
 import { getSci } from "../scis/api";
 import { getSinistre, SINISTRE_TYPE_LABELS } from "../sinistres/api";
@@ -73,7 +74,7 @@ export async function resoudreLibelleEntite(
         }
         case "garant": {
           const garant = await getGarant(entiteId);
-          return `${garant.prenom} ${garant.nom} (garant)`;
+          return `${nomAfficheGarant(garant)} (garant)`;
         }
         case "candidat": {
           const candidat = await getCandidat(entiteId);

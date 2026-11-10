@@ -9,12 +9,17 @@ import { useDocumentApercu } from "./use-document-apercu";
 // Section Documents embarquée dans une fiche (locataire, appartement...) —
 // même composant que l'écran centralisé (documents/api.ts), scopé à une
 // seule entité via entiteType/entiteId (lien polymorphe, Module 4).
+// `onChanged` : appelé après un ajout, un remplacement ou un archivage, pour
+// que la fiche parente se mette à jour (ex. contrat Visale joint, onglet
+// « Bail actuel »).
 export function DocumentsForEntite({
   entiteType,
-  entiteId
+  entiteId,
+  onChanged
 }: {
   entiteType: DocumentEntiteType;
   entiteId: string;
+  onChanged?: () => void;
 }): React.JSX.Element {
   const [documents, setDocuments] = useState<DocumentMetier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,16 +38,33 @@ export function DocumentsForEntite({
     void refresh();
   }, [refresh]);
 
+  async function refreshApresModification(): Promise<void> {
+    await refresh();
+    onChanged?.();
+  }
+
   async function handleArchive(id: string): Promise<void> {
     await archiveDocument(id);
-    await refresh();
+    await refreshApresModification();
   }
 
   return (
     <div className="space-y-3">
-      <ChecklistCategoriesEntite entiteType={entiteType} entiteId={entiteId} onChanged={refresh} />
+      <ChecklistCategoriesEntite
+        entiteType={entiteType}
+        entiteId={entiteId}
+        onChanged={() => {
+          void refreshApresModification();
+        }}
+      />
 
-      <DocumentUploadDropzone entiteType={entiteType} entiteId={entiteId} onUploaded={refresh} />
+      <DocumentUploadDropzone
+        entiteType={entiteType}
+        entiteId={entiteId}
+        onUploaded={() => {
+          void refreshApresModification();
+        }}
+      />
 
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>

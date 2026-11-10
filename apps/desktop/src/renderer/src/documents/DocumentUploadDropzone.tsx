@@ -1,23 +1,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import { uploadDocument, type DocumentCategorie, type DocumentEntiteType } from "./api";
+import { categoriesProposees } from "./categories-proposees";
 import { CATEGORIE_LABELS } from "./labels";
-
-const CATEGORIES: DocumentCategorie[] = [
-  "bail",
-  "assurance",
-  "etat_des_lieux",
-  "diagnostic",
-  "dpe",
-  "elec_gaz",
-  "crep_plomb",
-  "erp",
-  "piece_identite",
-  "rib",
-  "caf",
-  "quittance",
-  "courrier",
-  "photo"
-];
 
 // Glisser-déposer depuis une fiche (parcours cible de la Phase 6,
 // docs/backlog.md, Module 4) — réutilisable sur n'importe laquelle des 5
@@ -35,7 +19,8 @@ export function DocumentUploadDropzone({
 }): React.JSX.Element {
   const [isDragging, setIsDragging] = useState(false);
   const [fichierEnAttente, setFichierEnAttente] = useState<File | null>(null);
-  const [categorie, setCategorie] = useState<DocumentCategorie>("bail");
+  const categories = categoriesProposees(entiteType);
+  const [categorie, setCategorie] = useState<DocumentCategorie>(categories[0]!);
   const [dateExpiration, setDateExpiration] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,7 +51,7 @@ export function DocumentUploadDropzone({
       });
       setFichierEnAttente(null);
       setDateExpiration("");
-      setCategorie("bail");
+      setCategorie(categories[0]!);
       if (inputRef.current) {
         inputRef.current.value = "";
       }
@@ -91,7 +76,7 @@ export function DocumentUploadDropzone({
             onChange={(event) => setCategorie(event.target.value as DocumentCategorie)}
             className="rounded-md border border-slate-300 px-2 py-1 text-sm"
           >
-            {CATEGORIES.map((valeur) => (
+            {categories.map((valeur) => (
               <option key={valeur} value={valeur}>
                 {CATEGORIE_LABELS[valeur]}
               </option>

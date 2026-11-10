@@ -36,7 +36,9 @@ export type DocumentCategorie =
   | "photo"
   | "fiche_de_paie"
   | "contrat_travail"
-  | "avis_imposition";
+  | "avis_imposition"
+  | "contrat_cautionnement_visale"
+  | "acte_cautionnement_signe";
 export type DocumentStatut = "valide" | "expire" | "archive";
 // Distingue un document du candidat de celui de son garant — obligatoire
 // pour entiteType='candidat', absent sinon (extension checklist candidat,

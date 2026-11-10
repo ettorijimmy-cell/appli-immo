@@ -69,7 +69,7 @@ export function ChecklistCategoriesEntite({
   return (
     <div className="space-y-1 rounded-md border border-slate-200 p-3">
       <h3 className="text-sm font-semibold text-slate-700">
-        {titre ?? (entiteType === "appartement" ? "Diagnostics" : "Pièce d'identité")}
+        {titre ?? titreChecklist(entiteType, completude)}
       </h3>
       <ul className="space-y-1">
         {completude.map((c) => (
@@ -96,6 +96,15 @@ export function ChecklistCategoriesEntite({
       )}
     </div>
   );
+}
+
+// Garant Visale : la pièce attendue est le contrat Visale, pas une pièce
+// d'identité (TableauDeBordService, categorieAttendueGarant).
+function titreChecklist(entiteType: DocumentEntiteType, completude: CompletudeCategorie[]): string {
+  if (entiteType === "appartement") {
+    return "Diagnostics";
+  }
+  return completude.some((c) => c.categorie === "contrat_cautionnement_visale") ? "Contrat Visale" : "Pièce d'identité";
 }
 
 function CategorieRow({

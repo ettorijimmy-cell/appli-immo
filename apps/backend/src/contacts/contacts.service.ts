@@ -158,7 +158,9 @@ export class ContactsService {
       resultat.push({
         type: "garant",
         id: g.id,
-        nom: `${g.prenom} ${g.nom}`,
+        // Garantie Visale : prénom null (chantier garants, 2026-11-08),
+        // le nom seul est affiché.
+        nom: g.prenom ? `${g.prenom} ${g.nom}` : g.nom,
         telephone: g.telephone,
         email: g.email,
         bailId: g.bailId

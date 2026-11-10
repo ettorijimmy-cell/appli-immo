@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { ApiError } from "../lib/authenticated-fetch";
-import { archiveLocataire, createLocataire, listLocataires, type Locataire } from "./api";
+import { archiveLocataire, createLocataire, listLocataires, type Locataire, type LocataireStatutEtudes } from "./api";
+import { ChampStatutEtudes } from "./ChampStatutEtudes";
 
 export function LocatairesListView({
   onSelect
@@ -136,6 +137,7 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
   const [codePostal, setCodePostal] = useState("");
   const [ville, setVille] = useState("");
   const [dateNaissance, setDateNaissance] = useState("");
+  const [statutEtudes, setStatutEtudes] = useState<LocataireStatutEtudes>("non_renseigne");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -152,7 +154,8 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
         ...(adresse && { adresse }),
         ...(codePostal && { codePostal }),
         ...(ville && { ville }),
-        ...(dateNaissance && { dateNaissance })
+        ...(dateNaissance && { dateNaissance }),
+        ...(statutEtudes !== "non_renseigne" && { statutEtudes })
       });
       setNom("");
       setPrenom("");
@@ -162,6 +165,7 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
       setCodePostal("");
       setVille("");
       setDateNaissance("");
+      setStatutEtudes("non_renseigne");
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Impossible de créer le locataire");
@@ -277,6 +281,8 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+
+        <ChampStatutEtudes id="locataire-statut-etudes" valeur={statutEtudes} onChange={setStatutEtudes} />
       </div>
 
       {error && (

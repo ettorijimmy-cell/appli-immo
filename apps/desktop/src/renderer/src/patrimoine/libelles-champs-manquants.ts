@@ -15,6 +15,10 @@ const LIEU_LOCATAIRE = "Fiche du locataire, bouton « Modifier »";
 // même formulaire garant depuis le 2026-11-07 (locataires/GarantForms.tsx) :
 // les deux permettent de renseigner ces informations.
 const LIEU_GARANT = "Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »";
+const LIEU_DOCUMENTS_GARANT = "Section Garants, bouton « Documents » du garant Visale";
+const LIEU_ASSURANCE =
+  "Onglet « Bail actuel », bouton « Modifier » (assurance loyers impayés), ou fiche du locataire (statut d'études)";
+const LIEU_SCI_NON_FAMILIALE = "Fiche de la SCI (SCI familiale), ou fiche du locataire (statut d'études)";
 const LIEU_IRL = "Aucune action possible dans l'application — contactez l'administrateur";
 const LIEU_TYPE_BIEN = "Aucune action possible : ce document ne s'applique pas à ce type de bien";
 
@@ -62,6 +66,17 @@ const CORRESPONDANCES_FIXES: Record<string, AffichageChampManquant> = {
     libelle: "Indice de référence des loyers (IRL) indisponible ou périmé",
     lieu: LIEU_IRL
   },
+  // Chantier garants (2026-11-08) : contrat Visale manquant
+  // (bail-document-docx.service.ts, MESSAGE_CONTRAT_VISALE_MANQUANT) et
+  // SCI familiale non renseignée (packages/core, verifierGarantiesBail).
+  "Garant Visale — contrat de cautionnement Visale (PDF) à joindre": {
+    libelle: "Contrat de cautionnement Visale (PDF) à joindre",
+    lieu: LIEU_DOCUMENTS_GARANT
+  },
+  "SCI familiale ou non : à renseigner pour vérifier la caution personne physique": {
+    libelle: "SCI : SCI familiale à renseigner (nécessaire pour vérifier la caution)",
+    lieu: LIEU_SCI
+  },
   "Génération de bail non disponible pour ce type de bien": {
     libelle: "Génération de bail non disponible pour ce type de bien",
     lieu: LIEU_TYPE_BIEN
@@ -69,7 +84,20 @@ const CORRESPONDANCES_FIXES: Record<string, AffichageChampManquant> = {
 };
 
 const REGEX_LOCATAIRE = /^(Locataire(?: \d+)?) — (adresse|code postal|ville)$/;
-const REGEX_GARANT = /^(Garant(?: \d+)?) — (date de naissance|lieu de naissance|nationalité)$/;
+const REGEX_GARANT = /^(Garant(?: \d+)?) — (date de naissance|lieu de naissance|nationalité|numéro de contrat Visale)$/;
+// Règles d'acceptation des garanties (packages/core, verifierGarantiesBail) :
+// « Garant 2 — caution personne physique impossible : … ».
+const REGEX_REGLE_GARANT = /^(Garant(?: \d+)?) — ([\s\S]+)$/;
+
+function lieuRegleGarant(regle: string): string {
+  if (regle.includes("assurance loyers impayés")) {
+    return LIEU_ASSURANCE;
+  }
+  if (regle.includes("SCI non familiale")) {
+    return LIEU_SCI_NON_FAMILIALE;
+  }
+  return LIEU_GARANT;
+}
 
 function majusculeInitiale(texte: string): string {
   return texte.charAt(0).toUpperCase() + texte.slice(1);
@@ -91,6 +119,14 @@ export function resoudreAffichageChampManquant(champ: string): AffichageChampMan
   if (matchGarant) {
     const [, label, sousChamp] = matchGarant;
     return { libelle: `${majusculeInitiale(sousChamp!)} du ${label!.toLowerCase()}`, lieu: LIEU_GARANT };
+  }
+
+  const matchRegle = REGEX_REGLE_GARANT.exec(champ);
+  if (matchRegle) {
+    const [, label, regle] = matchRegle;
+    // Numéro du garant seulement s'il y en a plusieurs (« Garant 2 »).
+    const suffixe = label === "Garant" ? "" : ` (${label!.toLowerCase()})`;
+    return { libelle: `${majusculeInitiale(regle!)}${suffixe}`, lieu: lieuRegleGarant(regle!) };
   }
 
   // Repli défensif : le backend a introduit un nouveau libellé sans mise à
