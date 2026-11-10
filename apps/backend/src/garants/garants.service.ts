@@ -8,6 +8,28 @@ import type { UpdateGarantDto } from "./dto/update-garant.dto";
 
 type GarantRow = typeof garants.$inferSelect;
 
+// Garantie Visale (chantier garants, 2026-11-08) : le garant est
+// l'organisme, jamais une personne. Nom imposé par le serveur, prénom vide.
+export const NOM_GARANT_VISALE = "Action Logement Services (Visale)";
+
+// Champs propres à une personne : toujours vidés (null) pour un garant
+// Visale, à la création comme à la modification ou au passage en Visale.
+// Vidés plutôt qu'ignorés : aucune donnée personnelle ne doit rester
+// attachée à un organisme (une ancienne caution passée en Visale ne garde
+// pas sa date de naissance), et le bail comme l'acte n'en impriment jamais
+// pour Visale. Le lien « Caution de » est aussi vidé : Visale est
+// interdit en colocation.
+const CHAMPS_PERSONNE_VIDES_POUR_VISALE = {
+  prenom: null,
+  adresse: null,
+  codePostal: null,
+  ville: null,
+  dateNaissance: null,
+  lieuNaissance: null,
+  nationalite: null,
+  locataireId: null
+} as const;
+
 @Injectable()
 export class GarantsService {
   constructor(
@@ -44,27 +66,24 @@ export class GarantsService {
     if (!ligne) {
       throw new NotFoundException("Bail introuvable");
     }
-    if (dto.locataireId) {
-      await this.verifierLocataireAuBail(dto.bailId, dto.locataireId);
-    }
+    const valeurs =
+      dto.typeGarantie === "garantie_visale"
+        ? {
+            ...CHAMPS_PERSONNE_VIDES_POUR_VISALE,
+            nom: NOM_GARANT_VISALE,
+            numeroContratVisale: dto.numeroContratVisale ?? null
+          }
+        : await this.valeursCautionPersonnePhysique(dto.bailId, dto);
 
     const [garant] = await this.db
       .insert(garants)
       .values({
         bailId: dto.bailId,
-        nom: dto.nom,
-        prenom: dto.prenom,
         email: dto.email,
         telephone: dto.telephone,
         typeGarantie: dto.typeGarantie,
-        adresse: dto.adresse,
-        codePostal: dto.codePostal,
-        ville: dto.ville,
-        dateNaissance: dto.dateNaissance,
-        lieuNaissance: dto.lieuNaissance,
-        nationalite: dto.nationalite,
-        locataireId: dto.locataireId ?? null,
-        organisationId: ligne.organisationId
+        organisationId: ligne.organisationId,
+        ...valeurs
       })
       .returning();
     if (!garant) {
@@ -111,19 +130,14 @@ export class GarantsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudreGarantAvecAppartenance(id);
-    // Rattachement « caution de » : seule une NOUVELLE valeur est contrôlée.
-    // La valeur déjà enregistrée reste acceptée telle quelle, même si ce
-    // locataire a quitté le bail depuis (le formulaire la renvoie avec le
-    // reste des champs) ; null efface le lien.
-    if (dto.locataireId && dto.locataireId !== existant.locataireId) {
-      await this.verifierLocataireAuBail(existant.bailId, dto.locataireId);
-    }
+    const typeFinal = dto.typeGarantie ?? existant.typeGarantie;
+    const modifications = await this.modificationsSelonType(existant, typeFinal, dto);
 
     const [garant] = await mettreAJourAvecAudit(
       this.db,
       garants,
       id,
-      { ...dto },
+      modifications,
       this.requestContext.getUtilisateurId()
     );
     if (!garant) {
@@ -148,6 +162,75 @@ export class GarantsService {
       throw new NotFoundException("Garant introuvable");
     }
     return this.versDto(garant as GarantRow);
+  }
+
+  // Création d'une caution personne physique : nom et prénom déjà exigés
+  // par CreateGarantDto. Seul un NOUVEAU « Caution de » est contrôlé.
+  private async valeursCautionPersonnePhysique(bailId: string, dto: CreateGarantDto) {
+    if (dto.locataireId) {
+      await this.verifierLocataireAuBail(bailId, dto.locataireId);
+    }
+    return {
+      nom: dto.nom!,
+      prenom: dto.prenom!,
+      adresse: dto.adresse,
+      codePostal: dto.codePostal,
+      ville: dto.ville,
+      dateNaissance: dto.dateNaissance,
+      lieuNaissance: dto.lieuNaissance,
+      nationalite: dto.nationalite,
+      locataireId: dto.locataireId ?? null,
+      numeroContratVisale: null
+    };
+  }
+
+  // Règles de modification selon le type final (chantier garants,
+  // 2026-11-08) :
+  // - Visale (y compris passage d'une caution en Visale) : nom imposé,
+  //   champs de personne vidés, seuls numéro de contrat, e-mail et
+  //   téléphone restent modifiables ;
+  // - personne physique, passage depuis Visale (ou depuis une ligne
+  //   « autre » existante) : nom et prénom à fournir dans la même requête
+  //   (le nom enregistré est celui de l'organisme), numéro Visale effacé ;
+  // - personne physique sans changement de type : comportement d'avant,
+  //   numéro Visale toujours vide ;
+  // - ligne « autre » existante, type inchangé : lisible et modifiable,
+  //   mais jamais créée ni choisie (refusé par le DTO).
+  private async modificationsSelonType(
+    existant: GarantRow,
+    typeFinal: GarantRow["typeGarantie"],
+    dto: UpdateGarantDto
+  ): Promise<Partial<typeof garants.$inferInsert>> {
+    if (typeFinal === "garantie_visale") {
+      return {
+        typeGarantie: typeFinal,
+        ...CHAMPS_PERSONNE_VIDES_POUR_VISALE,
+        nom: NOM_GARANT_VISALE,
+        numeroContratVisale:
+          dto.numeroContratVisale !== undefined ? dto.numeroContratVisale : existant.numeroContratVisale,
+        email: dto.email,
+        telephone: dto.telephone
+      };
+    }
+
+    // Le numéro Visale n'est jamais écrit pour un autre type que Visale.
+    const reste: UpdateGarantDto = { ...dto };
+    delete reste.numeroContratVisale;
+    if (typeFinal === "personne_physique" && existant.typeGarantie !== "personne_physique") {
+      if (!dto.nom || !dto.prenom) {
+        throw new BadRequestException(
+          "Passage en caution personne physique : nom et prénom de la caution requis."
+        );
+      }
+    }
+    // Rattachement « caution de » : seule une NOUVELLE valeur est contrôlée.
+    // La valeur déjà enregistrée reste acceptée telle quelle, même si ce
+    // locataire a quitté le bail depuis (le formulaire la renvoie avec le
+    // reste des champs) ; null efface le lien.
+    if (dto.locataireId && dto.locataireId !== existant.locataireId) {
+      await this.verifierLocataireAuBail(existant.bailId, dto.locataireId);
+    }
+    return typeFinal === "personne_physique" ? { ...reste, numeroContratVisale: null } : reste;
   }
 
   // Le locataire dont le garant se porte caution doit être rattaché au même
@@ -210,7 +293,8 @@ export class GarantsService {
       dateNaissance: garant.dateNaissance,
       lieuNaissance: garant.lieuNaissance,
       nationalite: garant.nationalite,
-      locataireId: garant.locataireId
+      locataireId: garant.locataireId,
+      numeroContratVisale: garant.numeroContratVisale
     };
   }
 }

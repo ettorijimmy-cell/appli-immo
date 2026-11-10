@@ -12,6 +12,7 @@ import { ConfigService } from "@nestjs/config";
 import {
   ajouterMois,
   calculerDureeBail,
+  calculerStatutDocument,
   calculerLibelleDepotGarantie,
   calculerLoyerPrecedentLocataire,
   calculerMontantEcheanceLoyer,
@@ -25,8 +26,11 @@ import {
   situationLocataireCautionne,
   regimesDureeApplicables,
   validerCompletudeGenerationBail,
+  verifierGarantiesBail,
   type ChoixDureeBail,
-  type DonneesCompletudeGenerationBail
+  type ContexteGarantiesBail,
+  type DonneesCompletudeGenerationBail,
+  type ViolationGarantie
 } from "core";
 import {
   appartements,
@@ -56,6 +60,37 @@ import { nettoyerMiseEnFormeBail } from "./nettoyer-mise-en-forme-bail";
 // "undefined" littéral dans le document final.
 const VIDE = "";
 const NEANT = "Néant";
+
+export const MESSAGE_CONTRAT_VISALE_MANQUANT = "Garant Visale — contrat de cautionnement Visale (PDF) à joindre";
+
+// Contexte des règles d'acceptation des garanties (packages/core,
+// verifierGarantiesBail) : assurance loyers impayés, bailleur (SCI familiale
+// ou non, ou personne physique), statut d'études des locataires au bail,
+// tous les garants non archivés. Partagé par la génération du bail et la
+// route de vérification.
+function contexteGarantiesDuBail(parties: {
+  bail: typeof baux.$inferSelect;
+  bienRow: typeof bien.$inferSelect;
+  sci: typeof scis.$inferSelect | null;
+  locatairesDuBail: readonly (typeof locataires.$inferSelect)[];
+  garantsDuBail: readonly (typeof garants.$inferSelect)[];
+}): ContexteGarantiesBail {
+  const { bail, bienRow, sci, locatairesDuBail, garantsDuBail } = parties;
+  return {
+    assuranceLoyersImpayes: bail.assuranceLoyersImpayes,
+    bailleur:
+      bienRow.proprietaireType === "sci"
+        ? { type: "sci", estFamiliale: sci?.estFamiliale ?? null }
+        : { type: "personne_physique" },
+    locataires: locatairesDuBail.map((l) => ({ id: l.id, statutEtudes: l.statutEtudes })),
+    garants: garantsDuBail.map((g) => ({
+      id: g.id,
+      typeGarantie: g.typeGarantie,
+      locataireId: g.locataireId,
+      numeroContratVisale: g.numeroContratVisale
+    }))
+  };
+}
 
 // Mentions de performance énergétique (décret n° 2015-587) — décision
 // Jimmy (2026-10-04) : jamais de blocage de la génération pour ces champs
@@ -102,10 +137,19 @@ export class BailDocumentDocxService {
       path.join(__dirname, "assets", "modele-bail.docx");
   }
 
-  async genererDocumentBailDocx(
-    bailId: string,
-    dto: GenererDocumentBailDocxDto
-  ): Promise<{ buffer: Buffer; champsManquantsEnergie: string[] }> {
+  // Règles d'acceptation des garanties (packages/core, verifierGarantiesBail)
+  // pour l'écran du bail (GET /baux/:id/verification-garanties) : même
+  // lecture et même contexte que la génération (chargerPartiesDuBail,
+  // contexteGarantiesDuBail), donc jamais d'écart entre l'avertissement
+  // affiché et le blocage à la génération. Le contrat Visale (PDF) n'y
+  // figure pas : c'est une pièce à joindre, pas une règle d'acceptation.
+  async verifierGarantiesDuBail(bailId: string): Promise<ViolationGarantie[]> {
+    return verifierGarantiesBail(contexteGarantiesDuBail(await this.chargerPartiesDuBail(bailId)));
+  }
+
+  // Lecture des parties du bail, contrôle d'organisation compris, partagée
+  // par la génération et la vérification des garanties.
+  private async chargerPartiesDuBail(bailId: string) {
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, bailId)).limit(1);
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
@@ -142,21 +186,11 @@ export class BailDocumentDocxService {
       throw new NotFoundException("Bail introuvable");
     }
 
-    // Bailleur : sci.nom (bien en SCI) ou bien.nomProprietaire (nom propre,
-    // atteignable depuis la migration Bien, 2026-08-25) — résolu via le
-    // service partagé BienService.resoudreNomBailleur (corrige le bug
-    // découvert lors de l'audit Étape 4 quittance, docs/backlog.md,
-    // 2026-08-31 : cette méthode levait NotFoundException dès que
-    // bien.sciId était NULL, cas réel et valide pour un bien en nom
-    // propre, pas seulement théorique). `sci` reste chargé séparément
-    // (uniquement quand bienRow.sciId est renseigné) pour les balises de
-    // siège social propres à une SCI (adresse/CP/ville/téléphone), qui
-    // n'ont pas d'équivalent pour un bailleur en nom propre.
+    // `sci` (uniquement quand bienRow.sciId est renseigné) : balises de
+    // siège social propres à une SCI (adresse/CP/ville/téléphone) et SCI
+    // familiale ou non. Le nom du bailleur est résolu à part, dans
+    // genererDocumentBailDocx.
     const sci = bienRow.sciId ? ((await this.db.select().from(scis).where(eq(scis.id, bienRow.sciId)).limit(1))[0] ?? null) : null;
-    const nomBailleur = await this.bienService.resoudreNomBailleur(bienRow.id);
-    if (!nomBailleur) {
-      throw new NotFoundException("Bailleur introuvable (nom de la SCI ou du propriétaire manquant)");
-    }
 
     // Ordre d'impression (titulaire d'abord, puis ordre de saisie ; garants
     // dans l'ordre de saisie) : packages/core, ordonner-parties-bail.ts —
@@ -186,6 +220,64 @@ export class BailDocumentDocxService {
         .from(garants)
         .where(and(eq(garants.bailId, bailId), isNull(garants.archivedAt)))
     );
+
+    return { bail, appartement, bienRow, sci, liensLocataires, locatairesDuBail, garantsDuBail };
+  }
+
+  // Chantier garants (décision du 2026-11-10) : la génération est bloquée
+  // tant qu'un garant Visale n'a pas de contrat de cautionnement Visale
+  // (PDF) valide, c'est-à-dire ni archivé ni expiré (calculerStatutDocument,
+  // même définition que la checklist du Tableau de bord). Un seul message,
+  // Visale devant être le seul garant du bail.
+  private async contratsVisaleManquants(garantsDuBail: readonly (typeof garants.$inferSelect)[]): Promise<string[]> {
+    const visaleIds = garantsDuBail.filter((g) => g.typeGarantie === "garantie_visale").map((g) => g.id);
+    if (visaleIds.length === 0) {
+      return [];
+    }
+    const contrats = await this.db
+      .select({ entiteId: documents.entiteId, dateExpiration: documents.dateExpiration, archivedAt: documents.archivedAt })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.entiteType, "garant"),
+          inArray(documents.entiteId, visaleIds),
+          eq(documents.categorie, "contrat_cautionnement_visale")
+        )
+      );
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    const garantsCouverts = new Set(
+      contrats
+        .filter((c) => calculerStatutDocument(c.dateExpiration, c.archivedAt !== null, aujourdhui) === "valide")
+        .map((c) => c.entiteId)
+    );
+    return visaleIds.some((id) => !garantsCouverts.has(id)) ? [MESSAGE_CONTRAT_VISALE_MANQUANT] : [];
+  }
+
+  async genererDocumentBailDocx(
+    bailId: string,
+    dto: GenererDocumentBailDocxDto
+  ): Promise<{ buffer: Buffer; champsManquantsEnergie: string[] }> {
+    const { bail, appartement, bienRow, sci, liensLocataires, locatairesDuBail, garantsDuBail } =
+      await this.chargerPartiesDuBail(bailId);
+
+    // Bailleur : sci.nom (bien en SCI) ou bien.nomProprietaire (nom propre,
+    // atteignable depuis la migration Bien, 2026-08-25) — résolu via le
+    // service partagé BienService.resoudreNomBailleur (corrige le bug
+    // découvert lors de l'audit Étape 4 quittance, docs/backlog.md,
+    // 2026-08-31 : cette méthode levait NotFoundException dès que
+    // bien.sciId était NULL, cas réel et valide pour un bien en nom
+    // propre, pas seulement théorique).
+    const nomBailleur = await this.bienService.resoudreNomBailleur(bienRow.id);
+    if (!nomBailleur) {
+      throw new NotFoundException("Bailleur introuvable (nom de la SCI ou du propriétaire manquant)");
+    }
+
+    // Seules les cautions personne physique sont imprimées dans le bail
+    // (bloc GARANTS SOLIDAIRES, numérotation, accords, lignes d'annexe) :
+    // une garantie Visale n'y figure pas (chantier garants, décisions du
+    // 2026-11-08). Les règles d'acceptation portent, elles, sur tous les
+    // garants (validerCompletudeGenerationBail, contexte garanties).
+    const cautionsPersonnePhysique = garantsDuBail.filter((g) => g.typeGarantie === "personne_physique");
 
     const [derniereValeurIrl] = await this.db
       .select()
@@ -232,11 +324,20 @@ export class BailDocumentDocxService {
       garants: garantsDuBail.map((g) => ({
         dateNaissance: g.dateNaissance,
         lieuNaissance: g.lieuNaissance,
-        nationalite: g.nationalite
+        nationalite: g.nationalite,
+        typeGarantie: g.typeGarantie,
+        numeroContratVisale: g.numeroContratVisale
       })),
-      irlIndisponible
+      irlIndisponible,
+      // Règles d'acceptation (packages/core, verifierGarantiesBail) :
+      // assurance loyers impayés, bailleur (SCI familiale ou non, ou
+      // personne physique), statut d'études des locataires au bail.
+      garanties: contexteGarantiesDuBail({ bail, bienRow, sci, locatairesDuBail, garantsDuBail })
     };
-    const champsManquants = validerCompletudeGenerationBail(donneesCompletude);
+    const champsManquants = [
+      ...validerCompletudeGenerationBail(donneesCompletude),
+      ...(await this.contratsVisaleManquants(garantsDuBail))
+    ];
     if (champsManquants.length > 0) {
       throw new BadRequestException({
         message: "Génération impossible : champs obligatoires manquants",
@@ -354,14 +455,16 @@ export class BailDocumentDocxService {
     // packages/core, situationLocataireCautionne).
     const locataireIdsAuBail = liensLocataires.map((lien) => lien.locataireId);
     const nomsLocatairesAuBail = new Map(locatairesDuBail.map((l) => [l.id, `${l.prenom} ${l.nom}`]));
-    const cautions = garantsDuBail.map((caution, index) => ({
+    const cautions = cautionsPersonnePhysique.map((caution, index) => ({
       "numero caution": String(index + 1),
       "locataire cautionne":
         caution.locataireId !== null &&
         situationLocataireCautionne(caution.locataireId, locataireIdsAuBail) === "au_bail"
           ? (nomsLocatairesAuBail.get(caution.locataireId) ?? null)
           : null,
-      "Nom prénom de la personne caution": `${caution.prenom} ${caution.nom}`,
+      // prénom toujours renseigné pour une caution personne physique
+      // (CHECK garants_prenom_personne_physique).
+      "Nom prénom de la personne caution": `${caution.prenom ?? ""} ${caution.nom}`.trim(),
       "adresse caution": caution.adresse ?? VIDE,
       "code postale caution": caution.codePostal ?? VIDE,
       "ville caution": caution.ville ?? VIDE,
@@ -505,14 +608,14 @@ export class BailDocumentDocxService {
       // mentions "caution solidaire" restaient imprimées avec des champs
       // vides plutôt que masquées, un vrai gap constaté sur le bail
       // Ilan Devos (aucun garant).
-      aGarant: garantsDuBail.length > 0,
+      aGarant: cautionsPersonnePhysique.length > 0,
       // Accord de l'introduction (« la personne désignée… en qualité de
       // caution » / « les personnes désignées… en qualité de cautions »),
       // du paragraphe d'engagement, imprimé une seule fois après la liste
       // (« La caution se porte » / « Les cautions se portent »), et de la
       // phrase sur l'exemplaire annexé ; intitulés « Caution n » seulement
       // à partir de deux garants.
-      plusieursCautions: garantsDuBail.length > 1,
+      plusieursCautions: cautionsPersonnePhysique.length > 1,
       // Mention "représentée par {gérant}" dans l'en-tête LE BAILLEUR
       // (chantier bail — corrections juridiques, commit C) : uniquement
       // pour un bailleur SCI, jamais pour un bailleur en nom propre — voir

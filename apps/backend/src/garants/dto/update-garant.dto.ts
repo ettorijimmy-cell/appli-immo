@@ -1,6 +1,5 @@
 import { IsDateString, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateIf } from "class-validator";
-
-const GARANT_TYPES_GARANTIE = ["personne_physique", "garantie_visale", "autre"] as const;
+import { GARANT_TYPES_SAISISSABLES, MESSAGE_TYPE_GARANTIE_REFUSE, type GarantTypeSaisissable } from "./create-garant.dto";
 
 export class UpdateGarantDto {
   // @ValidateIf (pas @IsOptional) : nom/prenom ne doivent jamais pouvoir
@@ -37,9 +36,11 @@ export class UpdateGarantDto {
   @IsString()
   telephone?: string | null;
 
+  // « autre » refusé (voir CreateGarantDto). Changement de type : voir
+  // GarantsService.update.
   @IsOptional()
-  @IsIn(GARANT_TYPES_GARANTIE)
-  typeGarantie?: (typeof GARANT_TYPES_GARANTIE)[number];
+  @IsIn(GARANT_TYPES_SAISISSABLES, { message: MESSAGE_TYPE_GARANTIE_REFUSE })
+  typeGarantie?: GarantTypeSaisissable;
 
   // Adresse du garant (voir CreateGarantDto), effaçable par `null`.
   @IsOptional()
@@ -79,4 +80,9 @@ export class UpdateGarantDto {
   @IsOptional()
   @IsUUID()
   locataireId?: string | null;
+
+  // Numéro du contrat Visale, effaçable par null (garantie_visale seulement).
+  @IsOptional()
+  @IsString()
+  numeroContratVisale?: string | null;
 }

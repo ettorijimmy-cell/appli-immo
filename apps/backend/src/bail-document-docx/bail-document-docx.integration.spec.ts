@@ -45,7 +45,7 @@ import { UsersModule } from "../users/users.module";
 import { VersementsModule } from "../versements/versements.module";
 import { VersementsService } from "../versements/versements.service";
 import { BailDocumentDocxModule } from "./bail-document-docx.module";
-import { BailDocumentDocxService } from "./bail-document-docx.service";
+import { BailDocumentDocxService, MESSAGE_CONTRAT_VISALE_MANQUANT } from "./bail-document-docx.service";
 
 // Fixture committée, délibérément distincte du modèle réel
 // (apps/backend/src/bail-document-docx/assets/modele-bail.docx, utilisé
@@ -663,7 +663,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // toujours le premier emplacement du modèle, même rattaché après le
   // colocataire.
   it("imprime le titulaire en premier même s'il a été rattaché au bail après le colocataire", async () => {
-    const { bail, locataire } = await creerDossierComplet();
+    // Sans garant (chantier garants, 2026-11-08) : une caution sur un bail
+    // en colocation doit préciser « Caution de », hors sujet ici.
+    const { bail, locataire } = await creerDossierComplet({ avecGarant: false });
     // Le lien titulaire créé par creerDossierComplet est archivé puis
     // recréé APRÈS le lien colocataire : sans tri, la base renverrait le
     // colocataire en premier (ordre d'insertion) et l'imprimerait à la
@@ -843,7 +845,9 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   });
 
   it("mentionne la clause d'extinction de solidarité (art. 8-1) en cas de colocation réelle", async () => {
-    const { bail, locataire } = await creerDossierComplet();
+    // Sans garant (chantier garants, 2026-11-08) : une caution sur un bail
+    // en colocation doit préciser « Caution de », hors sujet ici.
+    const { bail, locataire } = await creerDossierComplet({ avecGarant: false });
     const colocataire = await locatairesService.create(userId, { nom: "Colocataire", prenom: "Second" });
     await locatairesService.update(colocataire.id, { adresse: "X", codePostal: "X", ville: "X" });
     await bailLocatairesService.create({
@@ -1251,6 +1255,192 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
   // les 5 régimes, ajouté le 2026-10-09. Les valeurs viennent de
   // calculerDureeBail/formaterDureeBail (packages/core), jamais écrites
   // en dur ici.
+  // Chantier garants complet (2026-11-08), commit 3 : seules les cautions
+  // personne physique sont imprimées ; règles d'acceptation appliquées à la
+  // génération (packages/core, verifierGarantiesBail).
+  describe("garants selon leur type (chantier garants, commit 3)", () => {
+    async function generer(bailId: string) {
+      return requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bailDocumentDocxService.genererDocumentBailDocx(bailId, {})
+      );
+    }
+
+    async function champsManquantsDe(bailId: string): Promise<string[]> {
+      let erreur: unknown;
+      try {
+        await generer(bailId);
+      } catch (err) {
+        erreur = err;
+      }
+      expect(erreur).toBeInstanceOf(BadRequestException);
+      return ((erreur as BadRequestException).getResponse() as { champsManquants: string[] }).champsManquants;
+    }
+
+    // Texte de la section GARANTS SOLIDAIRES, jusqu'au titre suivant.
+    function sectionGarants(texte: string): string {
+      const debut = texte.indexOf("GARANTS SOLIDAIRES");
+      const fin = texte.indexOf("LA DUREE", debut);
+      return texte.slice(debut, fin);
+    }
+
+    async function ajouterVisale(bailId: string, numeroContratVisale?: string) {
+      return garantsService.create({
+        bailId,
+        typeGarantie: "garantie_visale",
+        ...(numeroContratVisale !== undefined && { numeroContratVisale })
+      });
+    }
+
+    // Contrat de cautionnement Visale (PDF) joint au garant : exigé à la
+    // génération (décision du 2026-11-10).
+    async function joindreContratVisale(
+      garantId: string,
+      options: { archive?: boolean; dateExpiration?: string } = {}
+    ) {
+      await db.insert(documents).values({
+        entiteType: "garant",
+        entiteId: garantId,
+        categorie: "contrat_cautionnement_visale",
+        nomFichier: "contrat-visale.pdf",
+        mimeType: "application/pdf",
+        tailleOctets: 1,
+        cheminStockage: `test/${randomUUID()}.enc`,
+        archivedAt: options.archive ? new Date() : null,
+        dateExpiration: options.dateExpiration ?? null
+      });
+    }
+
+    async function ajouterColocataire(bailId: string) {
+      const colocataire = await locatairesService.create(userId, { nom: "Petit", prenom: "Hugo" });
+      await locatairesService.update(colocataire.id, { adresse: "2 rue Test", codePostal: "19100", ville: "Brive" });
+      await bailLocatairesService.create({ bailId, locataireId: colocataire.id, role: "colocataire" });
+      return colocataire;
+    }
+
+    it("Visale seul : « Néant », aucune caution, aucune ligne d'annexe, rien de Visale imprimé", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      const visale = await ajouterVisale(bail.id, "V123456789");
+      await joindreContratVisale(visale.id);
+
+      const texte = texteDuDocx((await generer(bail.id)).buffer);
+
+      expect(sectionGarants(texte)).toContain("Néant");
+      expect(sectionGarants(texte)).not.toContain("garantie par");
+      expect(texte).not.toContain("caution solidaire du locataire");
+      expect(texte).not.toContain("Acte de caution solidaire");
+      expect(texte).not.toContain("Action Logement");
+      expect(texte).not.toContain("V123456789");
+    });
+
+    it("Visale sans numéro de contrat : génération bloquée", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      const visale = await ajouterVisale(bail.id);
+      await joindreContratVisale(visale.id);
+      expect(await champsManquantsDe(bail.id)).toEqual(["Garant — numéro de contrat Visale"]);
+    });
+
+    it("Visale sans contrat de cautionnement (PDF) valide : bloqué ; archivé ou expiré ne compte pas", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      const visale = await ajouterVisale(bail.id, "V0001");
+      expect(await champsManquantsDe(bail.id)).toEqual([MESSAGE_CONTRAT_VISALE_MANQUANT]);
+      expect(MESSAGE_CONTRAT_VISALE_MANQUANT).toBe("Garant Visale — contrat de cautionnement Visale (PDF) à joindre");
+
+      await joindreContratVisale(visale.id, { archive: true });
+      await joindreContratVisale(visale.id, { dateExpiration: "2020-01-01" });
+      expect(await champsManquantsDe(bail.id)).toEqual([MESSAGE_CONTRAT_VISALE_MANQUANT]);
+
+      await joindreContratVisale(visale.id);
+      expect(sectionGarants(texteDuDocx((await generer(bail.id)).buffer))).toContain("Néant");
+    });
+
+    it("Visale sans numéro ni contrat : les deux manques listés en un seul appel", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      await ajouterVisale(bail.id);
+      expect(await champsManquantsDe(bail.id)).toEqual([
+        "Garant — numéro de contrat Visale",
+        MESSAGE_CONTRAT_VISALE_MANQUANT
+      ]);
+    });
+
+    it("Visale avec une caution personne physique : bloqué (Visale doit être le seul garant)", async () => {
+      const { bail } = await creerDossierComplet();
+      await ajouterVisale(bail.id, "V0001");
+      const manquants = await champsManquantsDe(bail.id);
+      expect(manquants.some((m) => m.includes("la garantie Visale doit être le seul garant du bail"))).toBe(true);
+    });
+
+    it("Visale sur un bail à plusieurs locataires : bloqué", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      await ajouterColocataire(bail.id);
+      await ajouterVisale(bail.id, "V0001");
+      const manquants = await champsManquantsDe(bail.id);
+      expect(manquants.some((m) => m.includes("garantie Visale impossible sur un bail à plusieurs locataires"))).toBe(
+        true
+      );
+    });
+
+    it("une caution personne physique : imprimée seule, au singulier", async () => {
+      const { bail } = await creerDossierComplet();
+      const texte = texteDuDocx((await generer(bail.id)).buffer);
+      expect(sectionGarants(texte)).toContain("Claire Durand");
+      expect(texte).toContain("La caution se porte caution solidaire du locataire");
+      expect(texte.split("Acte de caution solidaire. Nom de la caution :").length - 1).toBe(1);
+    });
+
+    it("colocation : caution sans « Caution de » bloquée, avec « Caution de » imprimée", async () => {
+      const { bail, locataire } = await creerDossierComplet();
+      await ajouterColocataire(bail.id);
+
+      expect(await champsManquantsDe(bail.id)).toEqual([
+        "Garant — colocation : préciser le locataire garanti (« Caution de »)"
+      ]);
+
+      const [claire] = await db.select().from(garantsTable).where(eq(garantsTable.bailId, bail.id));
+      await garantsService.update(claire!.id, { locataireId: locataire.id });
+      expect(texteDuDocx((await generer(bail.id)).buffer)).toContain("Claire Durand, caution de Ilan Devos");
+    });
+
+    it("assurance loyers impayés : caution bloquée, sauf locataire garanti apprenti", async () => {
+      const { bail, locataire } = await creerDossierComplet();
+      await bauxService.update(bail.id, { assuranceLoyersImpayes: true });
+
+      const manquants = await champsManquantsDe(bail.id);
+      expect(manquants).toHaveLength(1);
+      expect(manquants[0]).toMatch(
+        /^Garant — caution personne physique impossible : le bail est couvert par une assurance loyers impayés/
+      );
+      // Statut d'études non renseigné : le message invite à le renseigner.
+      expect(manquants[0]).toContain("à renseigner s'il est étudiant ou apprenti");
+
+      await locatairesService.update(locataire.id, { statutEtudes: "apprenti" });
+      expect(texteDuDocx((await generer(bail.id)).buffer)).toContain("Claire Durand");
+    });
+
+    it("bailleur SCI non familiale : caution bloquée, sauf locataire garanti étudiant non boursier", async () => {
+      const { bail, locataire } = await creerDossierComplet({ estFamiliale: false });
+
+      await locatairesService.update(locataire.id, { statutEtudes: "etudiant_boursier" });
+      const manquants = await champsManquantsDe(bail.id);
+      expect(manquants).toHaveLength(1);
+      expect(manquants[0]).toMatch(/^Garant — caution personne physique impossible : le bailleur est une SCI non familiale/);
+
+      await locatairesService.update(locataire.id, { statutEtudes: "etudiant_non_boursier" });
+      expect(texteDuDocx((await generer(bail.id)).buffer)).toContain("Claire Durand");
+    });
+
+    it("ligne « autre » existante : génération bloquée, jamais imprimée", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      const visale = await ajouterVisale(bail.id, "V0001");
+      await db
+        .update(garantsTable)
+        .set({ typeGarantie: "autre", nom: "Garantie bancaire" })
+        .where(eq(garantsTable.id, visale.id));
+      expect(await champsManquantsDe(bail.id)).toEqual([
+        "Garant — type « autre » non accepté : choisir caution personne physique ou garantie Visale"
+      ]);
+    });
+  });
+
   describe("durée du contrat et reconduction tacite (section III)", () => {
     it("SCI familiale (vide) : 3 ans, reconductible par périodes de 3 ans", async () => {
       const { bail } = await creerDossierComplet({ estFamiliale: true });
@@ -1270,7 +1460,10 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
     });
 
     it("SCI non familiale (vide) : 6 ans, reconductible par périodes de 6 ans", async () => {
-      const { bail } = await creerDossierComplet({ estFamiliale: false });
+      // Sans garant (chantier garants, 2026-11-08) : une caution personne
+      // physique est refusée avec un bailleur SCI non familiale, hors sujet
+      // ici (durée du bail).
+      const { bail } = await creerDossierComplet({ estFamiliale: false, avecGarant: false });
 
       const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
         bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})

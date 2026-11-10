@@ -1,4 +1,5 @@
 import { IsDateString, IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateIf } from "class-validator";
+import { LOCATAIRE_STATUTS_ETUDES } from "./create-locataire.dto";
 
 // "archive" en est exclu : l'archivage passe exclusivement par l'endpoint
 // dédié /locataires/:id/archiver (même principe que les autres entités).
@@ -55,4 +56,10 @@ export class UpdateLocataireDto {
   @IsOptional()
   @IsIn(LOCATAIRE_STATUTS_MODIFIABLES)
   statut?: (typeof LOCATAIRE_STATUTS_MODIFIABLES)[number];
+
+  // Statut d'études (chantier garants, 2026-11-08) : règles d'acceptation
+  // d'une caution personne physique (packages/core, verifierGarantiesBail).
+  @IsOptional()
+  @IsIn(LOCATAIRE_STATUTS_ETUDES)
+  statutEtudes?: (typeof LOCATAIRE_STATUTS_ETUDES)[number];
 }

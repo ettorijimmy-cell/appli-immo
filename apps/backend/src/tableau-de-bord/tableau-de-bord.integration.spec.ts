@@ -914,7 +914,16 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
   async function creerDocumentTest(
     entiteType: "appartement" | "bien" | "locataire" | "garant" | "candidat",
     entiteId: string,
-    categorie: "dpe" | "elec_gaz" | "crep_plomb" | "erp" | "piece_identite" | "fiche_de_paie" | "contrat_travail" | "avis_imposition",
+    categorie:
+      | "dpe"
+      | "elec_gaz"
+      | "crep_plomb"
+      | "erp"
+      | "piece_identite"
+      | "fiche_de_paie"
+      | "contrat_travail"
+      | "avis_imposition"
+      | "contrat_cautionnement_visale",
     options: { archive?: boolean; dateExpiration?: string; candidatRole?: "candidat" | "garant" } = {}
   ) {
     await db.insert(documents).values({
@@ -1194,6 +1203,52 @@ describe("Tableau de bord — agrégations (intégration Postgres réelle)", () 
       await creerDocumentTest("garant", garant.id, "piece_identite");
       completude = await tableauDeBordService.getCompletudeDocumentaire("garant", garant.id);
       expect(completude[0]?.document).not.toBeNull();
+    });
+
+    // Chantier garants (2026-11-08) : pour une garantie Visale, la pièce
+    // attendue est le PDF du contrat, jamais une pièce d'identité.
+    it("garant Visale : contrat de cautionnement attendu, une pièce d'identité ne suffit pas", async () => {
+      const appartement = await appartementsService.create({
+        bienId,
+        numero: "62",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "700.00"
+      });
+      const bail = await bauxService.create({
+        appartementId: appartement.id,
+        typeBail: "vide",
+        dateDebut: "2026-01-01",
+        loyerMensuel: "700.00",
+        jourEcheance: 5
+      });
+      const visale = await garantsService.create({
+        bailId: bail.id,
+        typeGarantie: "garantie_visale",
+        numeroContratVisale: "V0001"
+      });
+
+      let completude = await tableauDeBordService.getCompletudeDocumentaire("garant", visale.id);
+      expect(completude).toEqual([{ categorie: "contrat_cautionnement_visale", document: null }]);
+
+      await creerDocumentTest("garant", visale.id, "piece_identite");
+      completude = await tableauDeBordService.getCompletudeDocumentaire("garant", visale.id);
+      expect(completude[0]?.document).toBeNull();
+
+      await creerDocumentTest("garant", visale.id, "contrat_cautionnement_visale");
+      completude = await tableauDeBordService.getCompletudeDocumentaire("garant", visale.id);
+      expect(completude[0]?.document).not.toBeNull();
+
+      // Checklist (bail actif) : la catégorie manquante est indiquée.
+      await bauxService.activer(bail.id);
+      const visaleSansContrat = await garantsService.create({ bailId: bail.id, typeGarantie: "garantie_visale" });
+      const checklist = await tableauDeBordService.getChecklistDocumentaire();
+      expect(checklist.garants.find((g) => g.garantId === visaleSansContrat.id)).toMatchObject({
+        categorieManquante: "contrat_cautionnement_visale"
+      });
+      expect(checklist.garants.some((g) => g.garantId === visale.id)).toBe(false);
     });
 
     // Extension checklist candidat (2026-09-15) : 4 catégories (piece_identite

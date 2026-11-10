@@ -62,6 +62,14 @@ const CATEGORIES_DIAGNOSTIC_APPARTEMENT = ["dpe", "elec_gaz", "crep_plomb", "erp
 // sont pas bloquantes.
 const CATEGORIES_CANDIDAT = ["piece_identite", "fiche_de_paie", "contrat_travail", "avis_imposition"] as const;
 
+// Pièce attendue pour un garant, selon son type (chantier garants,
+// 2026-11-08) : pièce d'identité pour une caution personne physique (et
+// pour une ligne « autre » existante, comportement d'avant), PDF du
+// contrat pour une garantie Visale, qui n'a pas d'identité de personne.
+function categorieAttendueGarant(typeGarantie: "personne_physique" | "garantie_visale" | "autre") {
+  return typeGarantie === "garantie_visale" ? "contrat_cautionnement_visale" : "piece_identite";
+}
+
 // Adapte une ligne `documents` brute vers la forme attendue par
 // evaluerCompletudeCategories (packages/core) — même fonction de détection
 // que getChecklistDocumentaire()/getCompletudeDocumentaire() ci-dessous,
@@ -581,7 +589,7 @@ export class TableauDeBordService {
     // à la création) : condition directe, aucune jointure supplémentaire.
     const conditionsGarantsActifs = and(isNull(garants.archivedAt), inArray(baux.statut, ["actif", "preavis"]));
     const garantsActifs = await this.db
-      .select({ id: garants.id, bailId: garants.bailId })
+      .select({ id: garants.id, bailId: garants.bailId, typeGarantie: garants.typeGarantie })
       .from(garants)
       .innerJoin(baux, eq(garants.bailId, baux.id))
       .where(
@@ -600,7 +608,7 @@ export class TableauDeBordService {
               and(
                 eq(documents.entiteType, "garant"),
                 inArray(documents.entiteId, garantIds),
-                eq(documents.categorie, "piece_identite")
+                inArray(documents.categorie, ["piece_identite", "contrat_cautionnement_visale"])
               )
             )
             .orderBy(desc(documents.createdAt))
@@ -610,10 +618,13 @@ export class TableauDeBordService {
     const garantsChecklist = garantsActifs
       .filter(
         (g) =>
-          evaluerCompletudeCategories(documentsParGarant.get(g.id) ?? [], ["piece_identite"], dateReference)[0]
-            ?.document === null
+          evaluerCompletudeCategories(
+            documentsParGarant.get(g.id) ?? [],
+            [categorieAttendueGarant(g.typeGarantie)],
+            dateReference
+          )[0]?.document === null
       )
-      .map((g) => ({ garantId: g.id, bailId: g.bailId }));
+      .map((g) => ({ garantId: g.id, bailId: g.bailId, categorieManquante: categorieAttendueGarant(g.typeGarantie) }));
 
     return { appartements: appartementsChecklist, locataires: locatairesChecklist, garants: garantsChecklist };
   }
@@ -734,7 +745,18 @@ export class TableauDeBordService {
       .from(documents)
       .where(and(eq(documents.entiteType, entiteType), eq(documents.entiteId, entiteId)))
       .orderBy(desc(documents.createdAt));
-    return evaluerCompletudeCategories(documentsDeLEntite.map(mapDocumentPourCompletude), ["piece_identite"], dateReference);
+    let categorieAttendue = "piece_identite";
+    if (entiteType === "garant") {
+      const [garant] = await this.db
+        .select({ typeGarantie: garants.typeGarantie })
+        .from(garants)
+        .where(eq(garants.id, entiteId))
+        .limit(1);
+      if (garant) {
+        categorieAttendue = categorieAttendueGarant(garant.typeGarantie);
+      }
+    }
+    return evaluerCompletudeCategories(documentsDeLEntite.map(mapDocumentPourCompletude), [categorieAttendue], dateReference);
   }
 
   async getSynthese(periodeDebut: string, periodeFin: string) {

@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsInt, IsNumberString, IsOptional, IsUUID, Max, Min } from "class-validator";
+import { IsBoolean, IsDateString, IsIn, IsInt, IsNumberString, IsOptional, IsUUID, Max, Min } from "class-validator";
 import { normaliserMontant } from "core";
 
 const BAIL_TYPES = ["vide", "meuble"] as const;
@@ -49,4 +49,12 @@ export class CreateBailDto {
   @Min(1)
   @Max(28)
   jourEcheance?: number;
+
+  // Le bailleur a souscrit une assurance loyers impayés pour ce bail
+  // (chantier garants, 2026-11-08) : une caution personne physique est
+  // alors refusée à la génération, sauf locataire garanti étudiant ou
+  // apprenti (packages/core, verifierGarantiesBail).
+  @IsOptional()
+  @IsBoolean()
+  assuranceLoyersImpayes?: boolean;
 }

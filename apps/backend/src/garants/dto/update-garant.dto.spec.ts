@@ -76,12 +76,31 @@ describe("UpdateGarantDto", () => {
     expect(erreurs.map((e) => e.property).sort()).toEqual(["adresse", "codePostal", "ville"]);
   });
 
-  it("typeGarantie accepte les 3 valeurs valides", async () => {
-    for (const valeur of ["personne_physique", "garantie_visale", "autre"]) {
+  // Chantier garants (2026-11-08) : « autre » n'est plus accepté à la saisie.
+  it("typeGarantie accepte personne_physique et garantie_visale", async () => {
+    for (const valeur of ["personne_physique", "garantie_visale"]) {
       const dto = plainToInstance(UpdateGarantDto, { typeGarantie: valeur });
       const erreurs = await validate(dto);
       expect(erreurs.some((e) => e.property === "typeGarantie")).toBe(false);
     }
+  });
+
+  it("typeGarantie refuse « autre », avec un message clair", async () => {
+    const dto = plainToInstance(UpdateGarantDto, { typeGarantie: "autre" });
+    const erreurs = await validate(dto);
+    const erreur = erreurs.find((e) => e.property === "typeGarantie");
+    expect(Object.values(erreur?.constraints ?? {})).toContain(
+      "typeGarantie doit être personne_physique (caution) ou garantie_visale : le type « autre » n'est plus accepté"
+    );
+  });
+
+  it("numeroContratVisale accepte une chaîne, null (effacer) ou l'absence, refuse un nombre", async () => {
+    for (const valeur of ["V0001", null, undefined]) {
+      const erreurs = await validate(plainToInstance(UpdateGarantDto, { numeroContratVisale: valeur }));
+      expect(erreurs.some((e) => e.property === "numeroContratVisale")).toBe(false);
+    }
+    const erreurs = await validate(plainToInstance(UpdateGarantDto, { numeroContratVisale: 12 }));
+    expect(erreurs.some((e) => e.property === "numeroContratVisale")).toBe(true);
   });
 
   it("typeGarantie rejette une valeur hors enum", async () => {

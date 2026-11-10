@@ -79,7 +79,8 @@ export class BauxService {
         loyerMensuel,
         depotGarantie: dto.depotGarantie,
         provisionsCharges: dto.provisionsCharges,
-        jourEcheance: dto.jourEcheance
+        jourEcheance: dto.jourEcheance,
+        assuranceLoyersImpayes: dto.assuranceLoyersImpayes
       })
       .returning();
     if (!bail) {
@@ -184,7 +185,8 @@ export class BauxService {
         travauxRealises: dto.travauxRealises,
         honorairesBailleur: dto.honorairesBailleur,
         honorairesLocataire: dto.honorairesLocataire,
-        trimestreReferenceRevision: dto.trimestreReferenceRevision
+        trimestreReferenceRevision: dto.trimestreReferenceRevision,
+        assuranceLoyersImpayes: dto.assuranceLoyersImpayes
       },
       this.requestContext.getUtilisateurId()
     );
@@ -630,7 +632,8 @@ export class BauxService {
       travauxRealises: bail.travauxRealises,
       honorairesBailleur: bail.honorairesBailleur,
       honorairesLocataire: bail.honorairesLocataire,
-      trimestreReferenceRevision: bail.trimestreReferenceRevision
+      trimestreReferenceRevision: bail.trimestreReferenceRevision,
+      assuranceLoyersImpayes: bail.assuranceLoyersImpayes
     };
   }
 }
