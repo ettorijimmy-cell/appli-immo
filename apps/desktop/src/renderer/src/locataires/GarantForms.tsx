@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { uploadDocument } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
-import { createGarant, updateGarant, type Garant, type GarantTypeSaisissable } from "./api";
+import { resoudreAffichageChampManquant } from "../patrimoine/libelles-champs-manquants";
+import { createGarant, genererActeCautionnement, updateGarant, type Garant, type GarantTypeSaisissable } from "./api";
 import {
   cautionDeObligatoire,
   champsGarantDepuis,
@@ -387,6 +388,66 @@ export function EditGarantForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// Bouton « Générer l'acte de cautionnement » d'une caution personne
+// physique (onglet « Bail actuel » et fiche locataire) : ouvre l'acte dans
+// Word ; un dossier incomplet affiche la liste des manques, traduits comme
+// pour le bail (resoudreAffichageChampManquant).
+export function BoutonActeCautionnement({ garant }: { garant: Pick<Garant, "id" | "typeGarantie"> }): React.JSX.Element | null {
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [manquants, setManquants] = useState<string[] | null>(null);
+  if (garant.typeGarantie !== "personne_physique") {
+    return null;
+  }
+
+  async function generer(): Promise<void> {
+    setErreur(null);
+    setManquants(null);
+    setEnCours(true);
+    try {
+      await genererActeCautionnement(garant.id);
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : "Impossible de générer l'acte de cautionnement");
+      setManquants(err instanceof ApiError && err.champsManquants && err.champsManquants.length > 0 ? err.champsManquants : null);
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <span className="flex flex-col items-end">
+      <button
+        type="button"
+        disabled={enCours}
+        onClick={() => {
+          void generer();
+        }}
+        className="text-xs text-indigo-700 hover:text-indigo-800 disabled:opacity-50"
+      >
+        {enCours ? "Génération…" : "Générer l'acte de cautionnement"}
+      </button>
+      {erreur && (
+        <div role="alert" className="mt-1 max-w-md text-left text-xs text-red-600">
+          <p>{erreur}</p>
+          {manquants && (
+            <ul className="mt-1 list-disc pl-5">
+              {manquants.map((champ) => {
+                const { libelle, lieu } = resoudreAffichageChampManquant(champ);
+                return (
+                  <li key={champ}>
+                    {libelle}
+                    {lieu && <span className="text-slate-500"> — {lieu}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </span>
   );
 }
 

@@ -21,7 +21,7 @@ import {
   type LocataireStatutModifiable
 } from "./api";
 import { ChampStatutEtudes } from "./ChampStatutEtudes";
-import { EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "./GarantForms";
+import { BoutonActeCautionnement, EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "./GarantForms";
 import { mentionCautionDe, nomAfficheGarant } from "./garant-formulaire";
 import { LIBELLES_STATUT_ETUDES } from "./statut-etudes";
 
@@ -343,13 +343,14 @@ function BailDetail({
                     />
                   </li>
                 ) : (
-                  <li key={garant.id} className="flex items-center justify-between py-0.5">
+                  <li key={garant.id} className="flex items-start justify-between py-0.5">
                     <span>
                       {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
                       <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                     </span>
                     {!readOnly && (
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-start gap-2">
+                        <BoutonActeCautionnement garant={garant} />
                         <button
                           type="button"
                           onClick={() => setEditingGarantId(garant.id)}

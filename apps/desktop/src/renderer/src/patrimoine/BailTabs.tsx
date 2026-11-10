@@ -43,7 +43,13 @@ import {
   type Locataire,
   type VerificationGarantiesBail
 } from "../locataires/api";
-import { EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "../locataires/GarantForms";
+import {
+  BoutonActeCautionnement,
+  EditGarantForm,
+  LibelleTypeGarant,
+  MentionCautionDe,
+  NewGarantForm
+} from "../locataires/GarantForms";
 import { mentionCautionDe, nomAfficheGarant } from "../locataires/garant-formulaire";
 import type { Appartement } from "./api";
 
@@ -808,12 +814,13 @@ function BailActuelDetail({
                 const documentsOuverts = garantsDocumentsOuverts.has(garant.id);
                 return (
                   <li key={garant.id} className="rounded-md border border-transparent py-0.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-start justify-between">
                       <span>
                         {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
                         <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                       </span>
-                      <span className="flex items-center gap-3">
+                      <span className="flex items-start gap-3">
+                        <BoutonActeCautionnement garant={garant} />
                         <button
                           type="button"
                           onClick={() =>

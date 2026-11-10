@@ -83,7 +83,7 @@ export interface VerificationGarantiesBail {
 // ou non, ou personne physique), statut d'études des locataires au bail,
 // tous les garants non archivés. Partagé par la génération du bail et la
 // route de vérification.
-function contexteGarantiesDuBail(parties: {
+export function contexteGarantiesDuBail(parties: {
   bail: typeof baux.$inferSelect;
   bienRow: typeof bien.$inferSelect;
   sci: typeof scis.$inferSelect | null;
@@ -105,6 +105,33 @@ function contexteGarantiesDuBail(parties: {
       numeroContratVisale: g.numeroContratVisale
     }))
   };
+}
+
+// Durée légale du bail (calculerDureeBail, packages/core), partagée avec
+// l'acte de cautionnement. Bail vide : automatique pour un bailleur en nom
+// propre (regime 'personne_physique', aucun choix), sinon dérivée de
+// scis.est_familiale — null tant que ce caractère familial n'est pas
+// renseigné (la génération du bail le bloque avant, l'acte le signale).
+// `sci` est non-null dès que proprietaireType='sci' (contrainte
+// bien_sci_id_coherent). Bail meublé : rien dans le schéma ne distingue
+// standard/étudiant — choix explicite (DTO), "standard" par défaut si omis.
+export function choixDureeDuBail(parties: {
+  bail: typeof baux.$inferSelect;
+  bienRow: typeof bien.$inferSelect;
+  sci: typeof scis.$inferSelect | null;
+  regimeDureeMeuble: "standard" | "etudiant" | undefined;
+}): ChoixDureeBail | null {
+  const { bail, bienRow, sci, regimeDureeMeuble } = parties;
+  if (bail.typeBail === "meuble") {
+    return { typeBail: "meuble", regime: regimeDureeMeuble ?? (regimesDureeApplicables("meuble").parDefaut as "standard") };
+  }
+  if (bienRow.proprietaireType === "personne_physique") {
+    return { typeBail: "vide", regime: "personne_physique" };
+  }
+  if (sci?.estFamiliale === null || sci?.estFamiliale === undefined) {
+    return null;
+  }
+  return { typeBail: "vide", regime: sci.estFamiliale ? "sci_familiale" : "sci_non_familiale" };
 }
 
 // Mentions de performance énergétique (décret n° 2015-587) — décision
@@ -174,9 +201,24 @@ export class BailDocumentDocxService {
     };
   }
 
+  // Dernière valeur de l'IRL et sa fraîcheur : même contrôle pour le bail et
+  // l'acte de cautionnement (conditions de révision du loyer).
+  async chargerIrl(): Promise<{ derniereValeurIrl: typeof indicesIrl.$inferSelect | null; irlIndisponible: boolean }> {
+    const [derniereValeurIrl] = await this.db
+      .select()
+      .from(indicesIrl)
+      .orderBy(desc(indicesIrl.annee), desc(indicesIrl.trimestre))
+      .limit(1);
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    const irlIndisponible =
+      !derniereValeurIrl || irlEstPerime(derniereValeurIrl.dateRecuperation.toISOString().slice(0, 10), aujourdhui);
+    return { derniereValeurIrl: derniereValeurIrl ?? null, irlIndisponible };
+  }
+
   // Lecture des parties du bail, contrôle d'organisation compris, partagée
-  // par la génération et la vérification des garanties.
-  private async chargerPartiesDuBail(bailId: string) {
+  // par la génération du bail, la vérification des garanties et l'acte de
+  // cautionnement (même contexte partout).
+  async chargerPartiesDuBail(bailId: string) {
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, bailId)).limit(1);
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
@@ -307,14 +349,7 @@ export class BailDocumentDocxService {
     // garants (validerCompletudeGenerationBail, contexte garanties).
     const cautionsPersonnePhysique = garantsDuBail.filter((g) => g.typeGarantie === "personne_physique");
 
-    const [derniereValeurIrl] = await this.db
-      .select()
-      .from(indicesIrl)
-      .orderBy(desc(indicesIrl.annee), desc(indicesIrl.trimestre))
-      .limit(1);
-    const aujourdhui = new Date().toISOString().slice(0, 10);
-    const irlIndisponible =
-      !derniereValeurIrl || irlEstPerime(derniereValeurIrl.dateRecuperation.toISOString().slice(0, 10), aujourdhui);
+    const { derniereValeurIrl, irlIndisponible } = await this.chargerIrl();
 
     // Étape obligatoire AVANT toute génération : liste complète des champs
     // manquants en un seul appel, jamais un blocage au premier trouvé
@@ -446,23 +481,12 @@ export class BailDocumentDocxService {
       );
     const categoriesDiagnosticsPresentes = new Set(documentsDiagnostics.map((d) => d.categorie));
 
-    // Durée légale, bail vide : automatique pour un bailleur en nom propre
-    // (regime 'personne_physique', aucun choix — voir calculerDureeBail,
-    // packages/core), sinon dérivée de scis.est_familiale (déjà validé
-    // non-null ci-dessus, aucun choix humain requis non plus — `sci` est
-    // garanti non-null ici par la contrainte bien_sci_id_coherent dès que
-    // proprietaireType='sci'). Bail meublé : rien dans le schéma ne
-    // distingue standard/étudiant — choix explicite (DTO), "standard" par
-    // défaut si omis.
-    const choixDuree: ChoixDureeBail =
-      bail.typeBail === "vide"
-        ? bienRow.proprietaireType === "personne_physique"
-          ? { typeBail: "vide", regime: "personne_physique" }
-          : { typeBail: "vide", regime: sci!.estFamiliale ? "sci_familiale" : "sci_non_familiale" }
-        : {
-            typeBail: "meuble",
-            regime: dto.regimeDureeMeuble ?? (regimesDureeApplicables("meuble").parDefaut as "standard")
-          };
+    // Durée légale (choixDureeDuBail) : le caractère familial d'une SCI est
+    // déjà validé non-null ci-dessus, aucun choix humain requis.
+    const choixDuree = choixDureeDuBail({ bail, bienRow, sci, regimeDureeMeuble: dto.regimeDureeMeuble });
+    if (choixDuree === null) {
+      throw new InternalServerErrorException("Durée du bail indéterminable après validation");
+    }
     const duree = calculerDureeBail(choixDuree);
     const dateFin = ajouterMois(bail.dateDebut, duree.dureeMois);
 

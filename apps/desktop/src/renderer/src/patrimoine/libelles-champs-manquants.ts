@@ -19,6 +19,8 @@ const LIEU_DOCUMENTS_GARANT = "Section Garants, bouton « Documents » du garant
 const LIEU_ASSURANCE =
   "Onglet « Bail actuel », bouton « Modifier » (assurance loyers impayés), ou fiche du locataire (statut d'études)";
 const LIEU_SCI_NON_FAMILIALE = "Fiche de la SCI (SCI familiale), ou fiche du locataire (statut d'études)";
+const LIEU_BAIL = "Onglet « Bail actuel », bouton « Modifier » du bail";
+const LIEU_COLOCATAIRES = "Onglet « Bail actuel », section Colocataires";
 const LIEU_IRL = "Aucune action possible dans l'application — contactez l'administrateur";
 const LIEU_TYPE_BIEN = "Aucune action possible : ce document ne s'applique pas à ce type de bien";
 
@@ -77,6 +79,20 @@ const CORRESPONDANCES_FIXES: Record<string, AffichageChampManquant> = {
     libelle: "SCI : SCI familiale à renseigner (nécessaire pour vérifier la caution)",
     lieu: LIEU_SCI
   },
+  // Acte de cautionnement (packages/core, validerCompletudeActeCautionnement).
+  "Locataire garanti — nom et prénom": { libelle: "Nom et prénom du locataire garanti", lieu: LIEU_LOCATAIRE },
+  "Locataire garanti — aucun locataire au bail": {
+    libelle: "Aucun locataire rattaché au bail",
+    lieu: LIEU_COLOCATAIRES
+  },
+  "Loyer du bail": { libelle: "Loyer du bail", lieu: LIEU_BAIL },
+  "Date d'effet du bail": { libelle: "Date d'effet du bail", lieu: LIEU_BAIL },
+  "Durée du bail (SCI familiale ou non)": { libelle: "SCI : SCI familiale à renseigner (durée du bail)", lieu: LIEU_SCI },
+  "Trimestre IRL de référence du bail": { libelle: "Trimestre IRL de référence du bail", lieu: LIEU_BAIL },
+  "Bailleur — nom": {
+    libelle: "Nom du bailleur (SCI ou propriétaire)",
+    lieu: "Fiche de la SCI ou du bien, bouton « Modifier »"
+  },
   "Génération de bail non disponible pour ce type de bien": {
     libelle: "Génération de bail non disponible pour ce type de bien",
     lieu: LIEU_TYPE_BIEN
@@ -85,6 +101,8 @@ const CORRESPONDANCES_FIXES: Record<string, AffichageChampManquant> = {
 
 const REGEX_LOCATAIRE = /^(Locataire(?: \d+)?) — (adresse|code postal|ville)$/;
 const REGEX_GARANT = /^(Garant(?: \d+)?) — (date de naissance|lieu de naissance|nationalité|numéro de contrat Visale)$/;
+const REGEX_CAUTION =
+  /^Caution — (nom|prénom|date de naissance|lieu de naissance|nationalité|adresse|code postal|ville)$/;
 // Règles d'acceptation des garanties (packages/core, verifierGarantiesBail) :
 // « Garant 2 — caution personne physique impossible : … ».
 const REGEX_REGLE_GARANT = /^(Garant(?: \d+)?) — ([\s\S]+)$/;
@@ -119,6 +137,11 @@ export function resoudreAffichageChampManquant(champ: string): AffichageChampMan
   if (matchGarant) {
     const [, label, sousChamp] = matchGarant;
     return { libelle: `${majusculeInitiale(sousChamp!)} du ${label!.toLowerCase()}`, lieu: LIEU_GARANT };
+  }
+
+  const matchCaution = REGEX_CAUTION.exec(champ);
+  if (matchCaution) {
+    return { libelle: `${majusculeInitiale(matchCaution[1]!)} de la caution`, lieu: LIEU_GARANT };
   }
 
   const matchRegle = REGEX_REGLE_GARANT.exec(champ);

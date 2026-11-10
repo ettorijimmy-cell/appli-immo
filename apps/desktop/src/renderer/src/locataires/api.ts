@@ -345,6 +345,17 @@ export function getVerificationGaranties(bailId: string): Promise<VerificationGa
   return authenticatedFetch<VerificationGarantiesBail>(`/baux/${bailId}/verification-garanties`);
 }
 
+// Acte de cautionnement d'une caution personne physique (chantier garants,
+// commit 5) : même parcours que genererDocumentBail — .docx produit par le
+// backend, ouvert dans Word, jamais archivé. Un dossier incomplet remonte
+// en ApiError avec champsManquants.
+export async function genererActeCautionnement(garantId: string): Promise<void> {
+  const { blob, nomFichier } = await authenticatedFetchBlob(`/garants/${garantId}/acte-cautionnement-docx`, {
+    method: "POST"
+  });
+  await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "acte-cautionnement.docx");
+}
+
 export function listGarants(bailId: string): Promise<Garant[]> {
   return authenticatedFetch<Garant[]>(`/garants?bailId=${encodeURIComponent(bailId)}`);
 }

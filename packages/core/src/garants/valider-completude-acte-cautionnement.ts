@@ -38,6 +38,11 @@ export interface DonneesCompletudeActeCautionnement {
     // null quand la durée légale ne peut pas être déterminée (SCI dont le
     // caractère familial n'est pas renseigné).
     choixDuree: ChoixDureeBail | null;
+    // Conditions de révision du loyer, mention exigée dans l'acte (loi
+    // n° 89-462, art. 22-1) : trimestre de référence de l'IRL (1 à 4) et
+    // indice disponible (même contrôle que la génération du bail).
+    trimestreReferenceRevision: number | null;
+    irlIndisponible: boolean;
   };
   bailleur: { nom: string | null };
   garanties: ContexteGarantiesBail;
@@ -92,6 +97,13 @@ export function validerCompletudeActeCautionnement(donnees: DonneesCompletudeAct
   }
   if (donnees.bail.choixDuree === null) {
     manquants.push("Durée du bail (SCI familiale ou non)");
+  }
+  if (donnees.bail.trimestreReferenceRevision === null) {
+    manquants.push("Trimestre IRL de référence du bail");
+  }
+  if (donnees.bail.irlIndisponible) {
+    // Libellé identique à celui de validerCompletudeGenerationBail.
+    manquants.push("Indice de référence des loyers (IRL) — aucune valeur récente disponible");
   }
   if (vide(donnees.bailleur.nom)) {
     manquants.push("Bailleur — nom");

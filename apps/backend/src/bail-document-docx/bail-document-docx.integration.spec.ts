@@ -1379,6 +1379,29 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
       );
     });
 
+    // Commit 5 : colonne de signature des cautions seulement s'il y a au
+    // moins une caution personne physique (tableau à deux colonnes sinon).
+    it("signatures : colonne « LA OU LES CAUTION(S) » absente sans caution, même avec une garantie Visale", async () => {
+      const { bail } = await creerDossierComplet({ avecGarant: false });
+      const texteSansGarant = texteDuDocx((await generer(bail.id)).buffer);
+      expect(texteSansGarant).not.toContain("LA OU LES CAUTION(S)");
+      expect(texteSansGarant).not.toContain("je me porte caution solidaire");
+      expect(texteSansGarant.split("LE(S) PRENEUR(S)").length - 1).toBe(1);
+      expect(texteSansGarant.split("LE(S) BAILLEUR(S)").length - 1).toBe(1);
+
+      const visale = await ajouterVisale(bail.id, "V0001");
+      await joindreContratVisale(visale.id);
+      expect(texteDuDocx((await generer(bail.id)).buffer)).not.toContain("LA OU LES CAUTION(S)");
+    });
+
+    it("signatures : colonne « LA OU LES CAUTION(S) » présente avec une caution, une seule fois", async () => {
+      const { bail } = await creerDossierComplet();
+      const texte = texteDuDocx((await generer(bail.id)).buffer);
+      expect(texte.split("LA OU LES CAUTION(S)").length - 1).toBe(1);
+      expect(texte).toContain("reconnais avoir pris connaissance du présent contrat pour lequel je me porte caution solidaire");
+      expect(texte.split("LE(S) PRENEUR(S)").length - 1).toBe(1);
+    });
+
     it("une caution personne physique : imprimée seule, au singulier", async () => {
       const { bail } = await creerDossierComplet();
       const texte = texteDuDocx((await generer(bail.id)).buffer);

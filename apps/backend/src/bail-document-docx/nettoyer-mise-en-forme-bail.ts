@@ -58,18 +58,39 @@ const PARA_ID_KEEP_NEXT_ET_LINES = [
   "52FE45C2", // (Signatures précédées de la mention « lu et approuvé »)
   "7FC711FE", // (vide)
   "130A3A68", // (vide)
-  "0A6F6873", // (vide)
-  "6F06ADE2", // LE(S) BAILLEUR(S)
-  "6E49BA73", // LE(S) PRENEUR(S)
-  "1D82B7A7", // LA OU LES CAUTION(S)
-  "4AEB3267", // « lu et approuvé »
-  "3BF966F8", // (vide)
-  "69F011DB", // (vide)
-  "39E9EFA0" // « lu et approuvé »
+  "0A6F6873" // (vide)
 ] as const;
-// Dernière ligne du bloc signatures : rien à garder avec la suite, mais
-// toujours keepLines pour ne pas être coupée en plein milieu.
-const PARA_ID_KEEP_LINES_SEUL = "5E9AAAA2";
+
+// Tableau des signatures, en deux variantes exclusives (chantier garants,
+// commit 5) : avec la colonne « LA OU LES CAUTION(S) » s'il y a au moins
+// une caution personne physique ({#aGarant}), sinon une copie à deux
+// colonnes ({^aGarant}). Exactement une des deux est rendue. Dans chacune,
+// la dernière ligne n'a rien à garder avec la suite : keepLines seul, pour
+// ne pas être coupée en plein milieu.
+export const VARIANTES_TABLEAU_SIGNATURES = {
+  avecCaution: {
+    keepNextEtLines: [
+      "6F06ADE2", // LE(S) BAILLEUR(S)
+      "6E49BA73", // LE(S) PRENEUR(S)
+      "1D82B7A7", // LA OU LES CAUTION(S)
+      "4AEB3267", // « lu et approuvé »
+      "3BF966F8", // (vide)
+      "69F011DB", // (vide)
+      "39E9EFA0" // « lu et approuvé »
+    ],
+    keepLinesSeul: "5E9AAAA2" // « lu et approuvé, reconnais… caution solidaire »
+  },
+  sansCaution: {
+    keepNextEtLines: [
+      "10A70001", // LE(S) BAILLEUR(S)
+      "10A70002", // LE(S) PRENEUR(S)
+      "10A70004", // « lu et approuvé »
+      "10A70005", // (vide)
+      "10A70006" // (vide)
+    ],
+    keepLinesSeul: "10A70007" // « lu et approuvé » (preneur)
+  }
+} as const;
 // Titre "LES CHARGES" (page 3 du modèle) : ne doit jamais rester seul en
 // bas de page.
 const PARA_ID_KEEP_NEXT_SEUL = "00BF507F";
@@ -191,9 +212,23 @@ export function nettoyerMiseEnFormeBail(xmlModele: string, xmlRendu: string): st
   }
   resultat = resultat.replace(REGEX_SAUT_DE_PAGE, "");
 
+  const variantesPresentes = Object.values(VARIANTES_TABLEAU_SIGNATURES).filter((variante) =>
+    resultat.includes(`w14:paraId="${variante.keepLinesSeul}"`)
+  );
+  if (variantesPresentes.length !== 1) {
+    throw new Error(
+      `nettoyerMiseEnFormeBail : ${variantesPresentes.length} variante(s) du tableau des signatures trouvée(s), 1 attendue — le modèle a changé, cette fonction doit être revue.`
+    );
+  }
+  const tableauSignatures = variantesPresentes[0]!;
+
   resultat = appliquerProprietesParParaId(resultat, [PARA_ID_KEEP_NEXT_SEUL], ["keepNext"]);
-  resultat = appliquerProprietesParParaId(resultat, PARA_ID_KEEP_NEXT_ET_LINES, ["keepNext", "keepLines"]);
-  resultat = appliquerProprietesParParaId(resultat, [PARA_ID_KEEP_LINES_SEUL], ["keepLines"]);
+  resultat = appliquerProprietesParParaId(
+    resultat,
+    [...PARA_ID_KEEP_NEXT_ET_LINES, ...tableauSignatures.keepNextEtLines],
+    ["keepNext", "keepLines"]
+  );
+  resultat = appliquerProprietesParParaId(resultat, [tableauSignatures.keepLinesSeul], ["keepLines"]);
 
   return resultat;
 }

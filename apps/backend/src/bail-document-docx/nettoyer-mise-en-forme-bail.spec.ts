@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nettoyerMiseEnFormeBail } from "./nettoyer-mise-en-forme-bail";
+import { nettoyerMiseEnFormeBail, VARIANTES_TABLEAU_SIGNATURES } from "./nettoyer-mise-en-forme-bail";
 
 // w14:paraId réels du modèle, ciblés en dur par nettoyerMiseEnFormeBail — le
 // fixture doit toujours les inclure, même quand le test porte sur autre
@@ -193,10 +193,12 @@ describe("nettoyerMiseEnFormeBail", () => {
 
   it("lève une erreur si un paragraphe cible keepNext/keepLines est introuvable", () => {
     const { xmlModele, xmlRendu } = construireFixture([]);
-    const retirer = (xml: string) => xml.replace(new RegExp(`<w:p\\b[^>]*w14:paraId="${PARA_ID_DERNIERE_LIGNE_SIGNATURES}"[^>]*>[\\s\\S]*?<\\/w:p>`), "");
-    expect(() => nettoyerMiseEnFormeBail(retirer(xmlModele), retirer(xmlRendu))).toThrow(
-      new RegExp(PARA_ID_DERNIERE_LIGNE_SIGNATURES)
-    );
+    // Dernier paragraphe keepNext du tableau des signatures (la dernière
+    // ligne, elle, sert à reconnaître la variante rendue : voir les tests
+    // des deux variantes plus bas).
+    const cible = PARA_ID_SIGNATURES[12]!;
+    const retirer = (xml: string) => xml.replace(new RegExp(`<w:p\\b[^>]*w14:paraId="${cible}"[^>]*>[\\s\\S]*?<\\/w:p>`), "");
+    expect(() => nettoyerMiseEnFormeBail(retirer(xmlModele), retirer(xmlRendu))).toThrow(new RegExp(cible));
   });
 
   it('ajoute keepNext sur "LES CHARGES" sans toucher au texte', () => {
@@ -248,5 +250,54 @@ describe("nettoyerMiseEnFormeBail", () => {
     expect(texteConserve).toContain("Servitude.");
     expect(texteConserve).toContain("Garanti...");
     expect(texteConserve).toContain("Nom : X");
+  });
+
+  // Chantier garants, commit 5 : tableau des signatures en deux variantes
+  // (avec ou sans la colonne des cautions), exactement une rendue.
+  function remplacerTableauSignatures(xml: string): string {
+    const avec = VARIANTES_TABLEAU_SIGNATURES.avecCaution;
+    const sans = VARIANTES_TABLEAU_SIGNATURES.sansCaution;
+    let resultat = xml;
+    avec.keepNextEtLines.forEach((id, i) => {
+      // La colonne des cautions (3e id) n'a pas d'équivalent sans caution.
+      const remplacant = i < 2 ? sans.keepNextEtLines[i] : i === 2 ? null : sans.keepNextEtLines[i - 1];
+      resultat = remplacant
+        ? resultat.replace(`w14:paraId="${id}"`, `w14:paraId="${remplacant}"`)
+        : resultat.replace(new RegExp(`<w:p w14:paraId="${id}">[\\s\\S]*?</w:p>`), "");
+    });
+    return resultat.replace(`w14:paraId="${avec.keepLinesSeul}"`, `w14:paraId="${sans.keepLinesSeul}"`);
+  }
+
+  it("bail sans caution : keepNext/keepLines appliqués à la variante à deux colonnes", () => {
+    const fixture = construireFixture([]);
+    const xmlModele = fixture.xmlModele + remplacerTableauSignatures(fixture.xmlModele);
+    const resultat = nettoyerMiseEnFormeBail(xmlModele, remplacerTableauSignatures(fixture.xmlRendu));
+    expect(resultat).not.toContain("LA OU LES CAUTION(S)");
+    for (const id of VARIANTES_TABLEAU_SIGNATURES.sansCaution.keepNextEtLines) {
+      expect(resultat).toMatch(new RegExp(`w14:paraId="${id}"><w:pPr><w:keepNext/><w:keepLines/>`));
+    }
+    expect(resultat).toMatch(
+      new RegExp(`w14:paraId="${VARIANTES_TABLEAU_SIGNATURES.sansCaution.keepLinesSeul}"><w:pPr><w:keepLines/><w:rPr/>`)
+    );
+  });
+
+  it("lève une erreur si aucune variante du tableau des signatures, ou les deux, sont rendues", () => {
+    const { xmlModele, xmlRendu } = construireFixture([]);
+    const sansTableau = xmlRendu.replace(
+      `w14:paraId="${VARIANTES_TABLEAU_SIGNATURES.avecCaution.keepLinesSeul}"`,
+      `w14:paraId="${PARA_ID_DERNIERE_LIGNE_SIGNATURES}X"`
+    );
+    const modeleSansTableau = xmlModele.replace(
+      `w14:paraId="${VARIANTES_TABLEAU_SIGNATURES.avecCaution.keepLinesSeul}"`,
+      `w14:paraId="${PARA_ID_DERNIERE_LIGNE_SIGNATURES}X"`
+    );
+    expect(() => nettoyerMiseEnFormeBail(modeleSansTableau, sansTableau)).toThrow(
+      "0 variante(s) du tableau des signatures trouvée(s), 1 attendue"
+    );
+    const lesDeux = xmlRendu.replace("<w:sectPr/>", `<w:p w14:paraId="${VARIANTES_TABLEAU_SIGNATURES.sansCaution.keepLinesSeul}"><w:pPr><w:rPr/></w:pPr></w:p><w:sectPr/>`);
+    const modeleLesDeux = xmlModele.replace("<w:sectPr/>", `<w:p w14:paraId="${VARIANTES_TABLEAU_SIGNATURES.sansCaution.keepLinesSeul}"><w:pPr><w:rPr/></w:pPr></w:p><w:sectPr/>`);
+    expect(() => nettoyerMiseEnFormeBail(modeleLesDeux, lesDeux)).toThrow(
+      "2 variante(s) du tableau des signatures trouvée(s), 1 attendue"
+    );
   });
 });

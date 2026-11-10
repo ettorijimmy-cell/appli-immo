@@ -22,7 +22,9 @@ const COMPLET: DonneesCompletudeActeCautionnement = {
     loyerMensuel: "650.00",
     provisionsCharges: null,
     dateDebut: "2026-12-01",
-    choixDuree: { typeBail: "vide", regime: "personne_physique" }
+    choixDuree: { typeBail: "vide", regime: "personne_physique" },
+    trimestreReferenceRevision: 2,
+    irlIndisponible: false
   },
   bailleur: { nom: "Jean Exemple" },
   garanties: {
@@ -70,16 +72,25 @@ describe("validerCompletudeActeCautionnement", () => {
     ]);
   });
 
-  it("bail : loyer, date d'effet, durée et bailleur", () => {
+  it("bail : loyer, date d'effet, durée, révision et bailleur", () => {
     const manquants = validerCompletudeActeCautionnement({
       ...COMPLET,
-      bail: { loyerMensuel: null, provisionsCharges: null, dateDebut: null, choixDuree: null },
+      bail: {
+        loyerMensuel: null,
+        provisionsCharges: null,
+        dateDebut: null,
+        choixDuree: null,
+        trimestreReferenceRevision: null,
+        irlIndisponible: true
+      },
       bailleur: { nom: null }
     });
     expect(manquants).toEqual([
       "Loyer du bail",
       "Date d'effet du bail",
       "Durée du bail (SCI familiale ou non)",
+      "Trimestre IRL de référence du bail",
+      "Indice de référence des loyers (IRL) — aucune valeur récente disponible",
       "Bailleur — nom"
     ]);
   });

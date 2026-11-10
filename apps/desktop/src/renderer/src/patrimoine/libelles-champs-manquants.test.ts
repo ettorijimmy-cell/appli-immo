@@ -95,4 +95,29 @@ describe("resoudreAffichageChampManquant", () => {
       resoudreAffichageChampManquant("SCI familiale ou non : à renseigner pour vérifier la caution personne physique").lieu
     ).toBe("Fiche de la SCI, bouton « Modifier »");
   });
+
+  // Commit 5 : messages de l'acte de cautionnement
+  // (validerCompletudeActeCautionnement).
+  it("acte de cautionnement : champs de la caution vers la section Garants", () => {
+    expect(resoudreAffichageChampManquant("Caution — lieu de naissance")).toEqual({
+      libelle: "Lieu de naissance de la caution",
+      lieu: "Section Garants (fiche du locataire ou onglet « Bail actuel »), bouton « Modifier »"
+    });
+    expect(resoudreAffichageChampManquant("Caution — code postal").libelle).toBe("Code postal de la caution");
+  });
+
+  it("acte de cautionnement : bail, locataire garanti et bailleur vers leur écran", () => {
+    expect(resoudreAffichageChampManquant("Trimestre IRL de référence du bail")).toEqual({
+      libelle: "Trimestre IRL de référence du bail",
+      lieu: "Onglet « Bail actuel », bouton « Modifier » du bail"
+    });
+    expect(resoudreAffichageChampManquant("Loyer du bail").lieu).toBe("Onglet « Bail actuel », bouton « Modifier » du bail");
+    expect(resoudreAffichageChampManquant("Date d'effet du bail").lieu).toBe("Onglet « Bail actuel », bouton « Modifier » du bail");
+    expect(resoudreAffichageChampManquant("Durée du bail (SCI familiale ou non)").lieu).toBe("Fiche de la SCI, bouton « Modifier »");
+    expect(resoudreAffichageChampManquant("Locataire garanti — nom et prénom").lieu).toBe("Fiche du locataire, bouton « Modifier »");
+    expect(resoudreAffichageChampManquant("Locataire garanti — aucun locataire au bail").lieu).toBe(
+      "Onglet « Bail actuel », section Colocataires"
+    );
+    expect(resoudreAffichageChampManquant("Bailleur — nom").libelle).toBe("Nom du bailleur (SCI ou propriétaire)");
+  });
 });

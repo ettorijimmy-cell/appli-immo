@@ -6,6 +6,7 @@ import { AppController } from "./app.controller";
 import { AppartementsModule } from "./appartements/appartements.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
+import { ActeCautionnementDocxModule } from "./acte-cautionnement-docx/acte-cautionnement-docx.module";
 import { BailDocumentDocxModule } from "./bail-document-docx/bail-document-docx.module";
 import { BailLocatairesModule } from "./bail-locataires/bail-locataires.module";
 import { BauxModule } from "./baux/baux.module";
@@ -88,6 +89,7 @@ import { VersementsModule } from "./versements/versements.module";
     FiscaliteModule,
     IndicesIrlModule,
     BailDocumentDocxModule,
+    ActeCautionnementDocxModule,
     EtatsDesLieuxModule,
     EtatsDesLieuxSignatureModule,
     EtatDesLieuxEntreePapierModule,

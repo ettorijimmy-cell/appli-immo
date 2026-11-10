@@ -13,6 +13,10 @@
       {
         "include": "etat-des-lieux-document-docx/assets/**/*",
         "watchAssets": true
+      },
+      {
+        "include": "acte-cautionnement-docx/assets/**/*",
+        "watchAssets": true
       }
     ]
   }
