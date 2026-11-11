@@ -20,7 +20,7 @@ import {
 import { eq } from "drizzle-orm";
 import PizZip from "pizzip";
 import sharp from "sharp";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -54,6 +54,15 @@ import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.
 // place, aucune correction nécessaire contrairement à la fixture du bail.
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-etat-des-lieux-test.docx");
 process.env["ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
+
+// Même motif que etat-des-lieux-document-docx-ligne-sans-entree.integration.spec.ts
+// (voir son commentaire), sans signature ici : le rendu docx (inventaire,
+// photos réencodées par sharp) est lourd par nature. Seuls, les tests les
+// plus longs prennent 1,9 à 2,7 s sur le poste de dev ; sous la charge de
+// la suite complète, jusqu'à 5,6 s, et « génère un .docx complet (bail
+// meublé, colocation) » a dépassé le défaut Vitest (5000ms) — audit du
+// 2026-11-11 (tmp/), vert seul et en CI.
+vi.setConfig({ testTimeout: 20000 });
 
 function texteDuDocx(buffer: Buffer): string {
   const zip = new PizZip(buffer);

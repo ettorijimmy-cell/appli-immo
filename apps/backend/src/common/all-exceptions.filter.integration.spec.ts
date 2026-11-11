@@ -14,6 +14,17 @@ import { UsersModule } from "../users/users.module";
 import { AllExceptionsFilter } from "./all-exceptions.filter";
 import { CommonModule } from "./common.module";
 
+// Hash du mot de passe de test à coût argon2id réduit : le test du 429
+// vérifie le comptage des tentatives et la réponse du filtre, pas le coût
+// du hash. argon2.verify relit les paramètres dans le hash, donc chaque
+// vérification devient quasi instantanée ; le code de production
+// (AuthService, paramètres par défaut) n'est pas modifié. Avec les
+// paramètres par défaut, un hash ou une vérification coûte environ 250 ms
+// sur le poste de dev, et le 429 (6 connexions HTTP) dépassait le défaut
+// Vitest (5000ms) sous la charge de la suite complète (audit du
+// 2026-11-11, tmp/).
+const PARAMETRES_ARGON2_TEST = { type: argon2.argon2id, memoryCost: 1024, timeCost: 1, parallelism: 1 } as const;
+
 // Jamais une route réelle de production : sert uniquement à provoquer une
 // exception VRAIMENT inattendue (jamais une HttpException), au même titre
 // que ControleurApiTest dans mobile-web.spec.ts — même convention pour ce
@@ -111,7 +122,7 @@ describe("AllExceptionsFilter — non-régression sur de vraies routes (intégra
       email,
       nom: "Test",
       prenom: "Filtre",
-      motDePasseHash: await argon2.hash(password),
+      motDePasseHash: await argon2.hash(password, PARAMETRES_ARGON2_TEST),
       statut: "actif"
     });
     appDeTest = await demarrerApp(db);

@@ -20,7 +20,7 @@ import {
 } from "db";
 import { and, eq } from "drizzle-orm";
 import PizZip from "pizzip";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -60,6 +60,14 @@ import { BailDocumentDocxService, MESSAGE_CONTRAT_VISALE_MANQUANT } from "./bail
 // ligne "Etat descriptif et inventaire du mobilier" pour un bail vide.
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-bail-test.docx");
 process.env["BAIL_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
+
+// Même motif que etat-des-lieux-document-docx.integration.spec.ts (voir
+// son commentaire) : chaque test rend un bail docx complet. Seuls, les plus
+// longs prennent jusqu'à 1,2 s sur le poste de dev, jusqu'à 3 s sous la
+// charge de la suite complète, et l'un d'eux a dépassé le défaut Vitest
+// (5000ms) une fois en suite complète locale (chantier garants, commit 3),
+// vert seul et en CI — audit du 2026-11-11 (tmp/).
+vi.setConfig({ testTimeout: 20000 });
 
 function texteDuDocx(buffer: Buffer): string {
   const zip = new PizZip(buffer);

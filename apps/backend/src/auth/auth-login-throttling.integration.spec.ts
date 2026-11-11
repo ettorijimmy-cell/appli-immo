@@ -19,6 +19,16 @@ function requeteDepuisIp(ip: string): Request {
   return { headers: { "x-real-ip": ip }, ip } as unknown as Request;
 }
 
+// Hash du mot de passe de test à coût argon2id réduit : ces tests vérifient
+// le comptage des tentatives, pas le coût du hash. argon2.verify relit les
+// paramètres dans le hash, donc chaque vérification devient quasi
+// instantanée ; le code de production (AuthService, paramètres par défaut)
+// n'est pas modifié. Avec les paramètres par défaut, un hash ou une
+// vérification coûte environ 250 ms sur le poste de dev : « remise à
+// zéro » (1 hash + 6 vérifications) dépassait le défaut Vitest (5000ms)
+// sous la charge de la suite complète (audit du 2026-11-11, tmp/).
+const PARAMETRES_ARGON2_TEST = { type: argon2.argon2id, memoryCost: 1024, timeCost: 1, parallelism: 1 } as const;
+
 // Même dispositif que auth.integration.spec.ts (vrai Postgres
 // transactionnel, voir ce fichier pour le détail) — fichier séparé car il
 // exerce AuthController (vérification du seuil AVANT argon2), pas
@@ -67,7 +77,7 @@ describe("AuthController — limitation des tentatives de connexion (intégratio
       email,
       nom: "Test",
       prenom: "Intégration",
-      motDePasseHash: await argon2.hash(password),
+      motDePasseHash: await argon2.hash(password, PARAMETRES_ARGON2_TEST),
       statut: "actif"
     });
   });
