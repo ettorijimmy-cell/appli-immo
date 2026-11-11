@@ -170,4 +170,48 @@ describe("BailLocatairesService.archive — contrôle d'appartenance à l'organi
     );
     expect(archive.archivedAt).not.toBeNull();
   });
+
+  // Date d'effet du congé (chantier garants, commit 6) : même contrôle
+  // d'appartenance que archive().
+  describe("update (date d'effet du congé)", () => {
+    it("pose puis vide la date d'effet du congé", async () => {
+      const pose = await contexteOrgA(() => bailLocatairesService.update(orgA.lienId, { dateEffetConge: "2027-03-15" }));
+      expect(pose.dateEffetConge).toBe("2027-03-15");
+      const vide = await contexteOrgA(() => bailLocatairesService.update(orgA.lienId, { dateEffetConge: null }));
+      expect(vide.dateEffetConge).toBeNull();
+    });
+
+    it("retrait avec la date d'effet du congé, dans la même requête", async () => {
+      const lien = await contexteOrgA(() => bailLocatairesService.archive(orgA.lienId, { dateEffetConge: "2027-03-15" }));
+      expect(lien.archivedAt).not.toBeNull();
+      expect(lien.dateEffetConge).toBe("2027-03-15");
+    });
+
+    it("retrait sans date : la date déjà enregistrée est conservée", async () => {
+      await contexteOrgA(() => bailLocatairesService.update(orgA.lienId, { dateEffetConge: "2027-03-15" }));
+      const lien = await contexteOrgA(() => bailLocatairesService.archive(orgA.lienId, {}));
+      expect(lien.dateEffetConge).toBe("2027-03-15");
+    });
+
+    it("reste modifiable sur un lien déjà retiré du bail", async () => {
+      await contexteOrgA(() => bailLocatairesService.archive(orgA.lienId));
+      const lien = await contexteOrgA(() => bailLocatairesService.update(orgA.lienId, { dateEffetConge: "2027-03-15" }));
+      expect(lien.dateEffetConge).toBe("2027-03-15");
+      expect(lien.archivedAt).not.toBeNull();
+    });
+
+    it("404 sur le lienId d'une autre organisation, ligne inchangée", async () => {
+      await expect(
+        contexteOrgB(() => bailLocatairesService.update(orgA.lienId, { dateEffetConge: "2027-03-15" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(bailLocataires).where(eq(bailLocataires.id, orgA.lienId));
+      expect(inchange?.dateEffetConge).toBeNull();
+    });
+
+    it("404 sur un lienId inexistant", async () => {
+      await expect(
+        contexteOrgA(() => bailLocatairesService.update(randomUUID(), { dateEffetConge: "2027-03-15" }))
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });

@@ -137,6 +137,7 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
   const [codePostal, setCodePostal] = useState("");
   const [ville, setVille] = useState("");
   const [dateNaissance, setDateNaissance] = useState("");
+  const [lieuNaissance, setLieuNaissance] = useState("");
   const [statutEtudes, setStatutEtudes] = useState<LocataireStatutEtudes>("non_renseigne");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -155,6 +156,7 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
         ...(codePostal && { codePostal }),
         ...(ville && { ville }),
         ...(dateNaissance && { dateNaissance }),
+        ...(lieuNaissance.trim() && { lieuNaissance: lieuNaissance.trim() }),
         ...(statutEtudes !== "non_renseigne" && { statutEtudes })
       });
       setNom("");
@@ -278,6 +280,18 @@ function NewLocataireForm({ onCreated }: { onCreated: () => void }): React.JSX.E
             type="date"
             value={dateNaissance}
             onChange={(event) => setDateNaissance(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-lieu-naissance" className="text-sm font-medium text-slate-700">
+            Lieu de naissance
+          </label>
+          <input
+            id="locataire-lieu-naissance"
+            value={lieuNaissance}
+            onChange={(event) => setLieuNaissance(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

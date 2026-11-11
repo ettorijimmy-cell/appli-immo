@@ -45,6 +45,7 @@ import { ReglesCategorisationModule } from "./regles-categorisation/regles-categ
 import { RemboursementsModule } from "./remboursements/remboursements.module";
 import { ScisModule } from "./scis/scis.module";
 import { SinistresModule } from "./sinistres/sinistres.module";
+import { SuiviCautionModule } from "./suivi-caution/suivi-caution.module";
 import { TableauDeBordModule } from "./tableau-de-bord/tableau-de-bord.module";
 import { TachesModule } from "./taches/taches.module";
 import { VersementsModule } from "./versements/versements.module";
@@ -90,6 +91,7 @@ import { VersementsModule } from "./versements/versements.module";
     IndicesIrlModule,
     BailDocumentDocxModule,
     ActeCautionnementDocxModule,
+    SuiviCautionModule,
     EtatsDesLieuxModule,
     EtatsDesLieuxSignatureModule,
     EtatDesLieuxEntreePapierModule,

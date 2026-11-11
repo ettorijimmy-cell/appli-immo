@@ -34,6 +34,7 @@ export class LocatairesService {
         codePostal: dto.codePostal,
         ville: dto.ville,
         dateNaissance: dto.dateNaissance,
+        lieuNaissance: dto.lieuNaissance,
         statutEtudes: dto.statutEtudes,
         organisationId: user.organisationId
       })
@@ -146,6 +147,7 @@ export class LocatairesService {
       codePostal: locataire.codePostal,
       ville: locataire.ville,
       dateNaissance: locataire.dateNaissance,
+      lieuNaissance: locataire.lieuNaissance,
       statut: locataire.statut,
       statutEtudes: locataire.statutEtudes
     };

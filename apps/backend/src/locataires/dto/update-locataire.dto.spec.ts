@@ -37,7 +37,7 @@ describe("UpdateLocataireDto", () => {
     expect(erreurs.some((e) => e.property === "prenom")).toBe(true);
   });
 
-  for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance"]) {
+  for (const champ of ["email", "telephone", "adresse", "codePostal", "ville", "dateNaissance", "lieuNaissance"]) {
     it(`${champ} accepte null (champ à effacer)`, async () => {
       const dto = plainToInstance(UpdateLocataireDto, { [champ]: null });
       const erreurs = await validate(dto);

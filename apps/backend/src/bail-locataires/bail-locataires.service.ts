@@ -3,7 +3,9 @@ import { appartements, bailLocataires, baux, bien, mettreAJourAvecAudit, type Da
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
+import type { ArchiverBailLocataireDto } from "./dto/archiver-bail-locataire.dto";
 import type { CreateBailLocataireDto } from "./dto/create-bail-locataire.dto";
+import type { UpdateBailLocataireDto } from "./dto/update-bail-locataire.dto";
 
 type BailLocataireRow = typeof bailLocataires.$inferSelect;
 
@@ -58,9 +60,28 @@ export class BailLocatairesService {
     return lignes.map((lien) => this.versDto(lien));
   }
 
+  // Date d'effet du congé (chantier garants, commit 6) : sert à la fin
+  // d'engagement de la caution du colocataire (loi n° 89-462, art. 8-1, VI).
+  // Modifiable aussi sur un lien déjà retiré : le congé précède souvent le
+  // retrait du locataire dans l'appli.
+  async update(id: string, dto: UpdateBailLocataireDto) {
+    await this.resoudreLienAvecAppartenance(id);
+    const [lien] = await mettreAJourAvecAudit(
+      this.db,
+      bailLocataires,
+      id,
+      { dateEffetConge: dto.dateEffetConge },
+      this.requestContext.getUtilisateurId()
+    );
+    if (!lien) {
+      throw new NotFoundException("Rattachement introuvable");
+    }
+    return this.versDto(lien as BailLocataireRow);
+  }
+
   // Retire un locataire d'un bail — archive le lien, ne le supprime jamais
   // physiquement (CLAUDE.md).
-  async archive(id: string) {
+  async archive(id: string, dto: ArchiverBailLocataireDto = {}) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19) : ce service n'a
     // jamais eu de findById() (aucun endpoint de lecture à l'unité), donc
@@ -71,7 +92,8 @@ export class BailLocatairesService {
       this.db,
       bailLocataires,
       id,
-      { archivedAt: new Date() },
+      // Date d'effet du congé écrite avec le retrait, dans la même requête.
+      { archivedAt: new Date(), ...(dto.dateEffetConge !== undefined ? { dateEffetConge: dto.dateEffetConge } : {}) },
       this.requestContext.getUtilisateurId()
     );
     if (!lien) {
@@ -116,7 +138,8 @@ export class BailLocatairesService {
       archivedAt: lien.archivedAt,
       bailId: lien.bailId,
       locataireId: lien.locataireId,
-      role: lien.role
+      role: lien.role,
+      dateEffetConge: lien.dateEffetConge
     };
   }
 }

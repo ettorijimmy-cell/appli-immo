@@ -259,7 +259,7 @@ describe("Acte de cautionnement (intégration Postgres réelle, modèle embarqu�
       const texte = await generer(caution.id);
 
       // Aucune balise restante ; une seule mention à compléter : le lieu de
-      // naissance du locataire, qui ne peut pas être saisi aujourd'hui.
+      // naissance du locataire, non renseigné dans ce dossier.
       expect(texte).not.toMatch(/[{}]/);
       expect(texte.split("[À COMPLÉTER").length - 1).toBe(1);
 
@@ -336,6 +336,14 @@ describe("Acte de cautionnement (intégration Postgres réelle, modèle embarqu�
         "Nom :",
         "Signature précédée de la mention « Lu et approuvé, bon pour caution solidaire »."
       ]);
+    });
+
+    it("lieu de naissance du locataire renseigné : imprimé, plus aucune mention à compléter", async () => {
+      const { titulaire, caution } = await creerDossier();
+      await dans(() => locatairesService.update(titulaire.id, { lieuNaissance: "Tulle" }));
+      const texte = await generer(caution.id);
+      expect(texte).toContain("Date et lieu de naissance : 12/05/1990 à Tulle");
+      expect(texte).not.toContain("[À COMPLÉTER");
     });
 
     it("colocation : le colocataire garanti est le locataire de l'acte et la section 8-1, VI le désigne", async () => {

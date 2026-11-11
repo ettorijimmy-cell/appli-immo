@@ -13,6 +13,14 @@ export interface LogAccesDonneeSensibleInput {
   utilisateurId: string;
 }
 
+export interface LogCreationInput {
+  entiteType: string;
+  entiteId: string;
+  utilisateurId: string;
+  donneesAvant?: Record<string, unknown> | null;
+  donneesApres: Record<string, unknown>;
+}
+
 /**
  * Écrit dans journal_audit (table transverse, append-only — voir
  * docs/data-dictionary.md). Point d'entrée commun pour tout futur module
@@ -34,5 +42,19 @@ export class AuditService {
 
   async logAccesDocumentSensible(input: LogAccesDocumentSensibleInput): Promise<void> {
     await this.logAccesDonneeSensible({ ...input, entiteType: "document_sensible" });
+  }
+
+  // Création d'une déclaration à valeur de preuve (remise du bail à la
+  // caution, chantier garants, commit 6), écrite dans la transaction de
+  // l'appelant : la ligne de journal n'existe jamais sans la déclaration.
+  async logCreation(input: LogCreationInput, executeur: Pick<Database, "insert"> = this.db): Promise<void> {
+    await executeur.insert(journalAudit).values({
+      entiteType: input.entiteType,
+      entiteId: input.entiteId,
+      action: "creation",
+      donneesAvant: input.donneesAvant ?? null,
+      donneesApres: input.donneesApres,
+      utilisateurId: input.utilisateurId
+    });
   }
 }

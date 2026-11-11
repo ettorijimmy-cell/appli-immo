@@ -41,6 +41,12 @@ export class CreateLocataireDto {
   @IsDateString()
   dateNaissance?: string;
 
+  // Lieu de naissance (chantier garants, commit 6) : imprimé dans l'acte de
+  // cautionnement (identité du locataire garanti).
+  @IsOptional()
+  @IsString()
+  lieuNaissance?: string;
+
   // Statut d'études (chantier garants, 2026-11-08) : règles d'acceptation
   // d'une caution personne physique (packages/core, verifierGarantiesBail).
   @IsOptional()

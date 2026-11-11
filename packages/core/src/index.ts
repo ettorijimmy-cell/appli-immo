@@ -60,5 +60,6 @@ export * from "./charges/repartir-proportionnellement";
 export * from "./texte/montant-en-lettres";
 export * from "./garants/calculs-cautionnement";
 export * from "./garants/regles-garanties";
+export * from "./garants/remise-bail";
 export * from "./garants/valider-completude-acte-cautionnement";
 export * from "./texte/formater-montant";

@@ -9,21 +9,26 @@ import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
   archiveGarant,
   archiveLocataire,
+  chargerSuivisCautions,
   getBail,
   getLocataire,
   listBailLocataires,
   listGarants,
+  updateDateEffetConge,
   updateLocataire,
   type Bail,
   type BailLocataire,
   type Garant,
   type Locataire,
-  type LocataireStatutModifiable
+  type LocataireStatutModifiable,
+  type SuiviCaution
 } from "./api";
 import { ChampStatutEtudes } from "./ChampStatutEtudes";
 import { BoutonActeCautionnement, EditGarantForm, LibelleTypeGarant, MentionCautionDe, NewGarantForm } from "./GarantForms";
 import { mentionCautionDe, nomAfficheGarant } from "./garant-formulaire";
 import { LIBELLES_STATUT_ETUDES } from "./statut-etudes";
+import { lienRetireDuGaranti } from "./suivi-caution";
+import { BlocSuiviCaution } from "./SuiviCaution";
 
 const LOCATAIRE_STATUTS_MODIFIABLES: LocataireStatutModifiable[] = ["actif", "ancien"];
 
@@ -36,6 +41,10 @@ interface BailAvecContexte {
   // un garant peut rester rattaché à un locataire retiré du bail
   // (« caution de X (n'est plus au bail) »).
   nomsLocataires: Map<string, string>;
+  // Remise du bail et fin d'engagement des cautions personne physique.
+  suivisCautions: Map<string, SuiviCaution>;
+  // Liens du bail, retirés compris (congé d'un colocataire garanti retiré).
+  tousLesLiens: BailLocataire[];
 }
 
 export function LocataireDetailView({
@@ -78,7 +87,16 @@ export function LocataireDetailView({
           const nomsLocataires = new Map(
             tousLesLiens.flatMap(({ locataire: l }) => (l ? [[l.id, `${l.prenom} ${l.nom}`] as const] : []))
           );
-          return { bail, appartement, colocataires, garants, nomsLocataires };
+          const suivisCautions = await chargerSuivisCautions(garants);
+          return {
+            bail,
+            appartement,
+            colocataires,
+            garants,
+            nomsLocataires,
+            suivisCautions,
+            tousLesLiens: colocatairesLiens
+          };
         })
       );
 
@@ -175,6 +193,10 @@ export function LocataireDetailView({
                   <dd>{locataire.dateNaissance ?? "—"}</dd>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 py-1">
+                  <dt className="text-slate-500">Lieu de naissance</dt>
+                  <dd>{locataire.lieuNaissance ?? "—"}</dd>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 py-1">
                   <dt className="text-slate-500">Statut</dt>
                   <dd>{locataire.statut}</dd>
                 </div>
@@ -244,7 +266,7 @@ function BailDetail({
   onChanged: () => void;
   readOnly?: boolean;
 }): React.JSX.Element {
-  const { bail, appartement, colocataires, garants, nomsLocataires } = contexte;
+  const { bail, appartement, colocataires, garants, nomsLocataires, suivisCautions, tousLesLiens } = contexte;
   const locatairesDuBail = colocataires.flatMap(({ locataire: l }) => (l ? [l] : []));
   const locataireIdsAuBail = colocataires.map(({ lien }) => lien.locataireId);
   const [showGarantForm, setShowGarantForm] = useState(false);
@@ -343,32 +365,45 @@ function BailDetail({
                     />
                   </li>
                 ) : (
-                  <li key={garant.id} className="flex items-start justify-between py-0.5">
-                    <span>
-                      {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
-                      <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
-                    </span>
-                    {!readOnly && (
-                      <span className="flex items-start gap-2">
-                        <BoutonActeCautionnement garant={garant} />
-                        <button
-                          type="button"
-                          onClick={() => setEditingGarantId(garant.id)}
-                          className="text-xs text-slate-500 hover:text-slate-700"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleArchiveGarant(garant.id);
-                          }}
-                          className="text-xs text-slate-500 hover:text-red-600"
-                        >
-                          Retirer
-                        </button>
+                  <li key={garant.id} className="py-0.5">
+                    <div className="flex items-start justify-between">
+                      <span>
+                        {nomAfficheGarant(garant)} <LibelleTypeGarant garant={garant} />
+                        <MentionCautionDe texte={mentionCautionDe(garant.locataireId, locataireIdsAuBail, nomsLocataires)} />
                       </span>
-                    )}
+                      {!readOnly && (
+                        <span className="flex items-start gap-2">
+                          <BoutonActeCautionnement garant={garant} />
+                          <button
+                            type="button"
+                            onClick={() => setEditingGarantId(garant.id)}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleArchiveGarant(garant.id);
+                            }}
+                            className="text-xs text-slate-500 hover:text-red-600"
+                          >
+                            Retirer
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <BlocSuiviCaution
+                      garant={garant}
+                      suivi={suivisCautions.get(garant.id)}
+                      readOnly={readOnly}
+                      lienColocataireRetire={lienRetireDuGaranti(garant, tousLesLiens)}
+                      onEnregistrerConge={async (lienId, valeur) => {
+                        await updateDateEffetConge(lienId, valeur);
+                        onChanged();
+                      }}
+                      onChanged={onChanged}
+                    />
                   </li>
                 )
               )}
@@ -394,6 +429,7 @@ function EditLocataireForm({
   const [codePostal, setCodePostal] = useState(locataire.codePostal ?? "");
   const [ville, setVille] = useState(locataire.ville ?? "");
   const [dateNaissance, setDateNaissance] = useState(locataire.dateNaissance ?? "");
+  const [lieuNaissance, setLieuNaissance] = useState(locataire.lieuNaissance ?? "");
   const [statut, setStatut] = useState<LocataireStatutModifiable>(
     locataire.statut === "archive" ? "actif" : locataire.statut
   );
@@ -416,7 +452,8 @@ function EditLocataireForm({
         adresse: valeurOuNull(adresse),
         codePostal: valeurOuNull(codePostal),
         ville: valeurOuNull(ville),
-        dateNaissance: valeurOuNull(dateNaissance)
+        dateNaissance: valeurOuNull(dateNaissance),
+        lieuNaissance: valeurOuNull(lieuNaissance)
       });
       onSaved();
     } catch (err) {
@@ -523,6 +560,18 @@ function EditLocataireForm({
             type="date"
             value={dateNaissance}
             onChange={(event) => setDateNaissance(event.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="locataire-edit-lieu-naissance" className="text-sm font-medium text-slate-700">
+            Lieu de naissance
+          </label>
+          <input
+            id="locataire-edit-lieu-naissance"
+            value={lieuNaissance}
+            onChange={(event) => setLieuNaissance(event.target.value)}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>

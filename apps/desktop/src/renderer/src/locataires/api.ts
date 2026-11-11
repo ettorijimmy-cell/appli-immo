@@ -1,3 +1,4 @@
+import type { FinEngagementColocation, ModeRemiseBail } from "core";
 import { authenticatedFetch, authenticatedFetchBlob } from "../lib/authenticated-fetch";
 
 export type LocataireStatut = "actif" | "ancien" | "archive";
@@ -22,6 +23,8 @@ export interface Locataire {
   codePostal: string | null;
   ville: string | null;
   dateNaissance: string | null;
+  // Imprimé dans l'acte de cautionnement (chantier garants, commit 6).
+  lieuNaissance: string | null;
   statut: LocataireStatut;
   statutEtudes: LocataireStatutEtudes;
 }
@@ -35,6 +38,7 @@ export interface CreateLocataireInput {
   codePostal?: string;
   ville?: string;
   dateNaissance?: string;
+  lieuNaissance?: string;
   statutEtudes?: LocataireStatutEtudes;
 }
 
@@ -52,6 +56,7 @@ export interface UpdateLocataireInput {
   codePostal?: string | null;
   ville?: string | null;
   dateNaissance?: string | null;
+  lieuNaissance?: string | null;
   statut?: LocataireStatutModifiable;
   statutEtudes?: LocataireStatutEtudes;
 }
@@ -194,6 +199,9 @@ export interface BailLocataire {
   bailId: string;
   locataireId: string;
   role: BailLocataireRole;
+  // Date d'effet du congé donné par ce locataire (chantier garants, commit
+  // 6) : fin d'engagement de sa caution en colocation (art. 8-1, VI).
+  dateEffetConge: string | null;
   archivedAt: string | null;
 }
 
@@ -356,6 +364,73 @@ export async function genererActeCautionnement(garantId: string): Promise<void> 
   await window.api.documents.ouvrirTemporaire(await blob.arrayBuffer(), nomFichier ?? "acte-cautionnement.docx");
 }
 
+// Suivi d'une caution personne physique (chantier garants, commit 6) :
+// remise d'un exemplaire du bail (loi n° 89-462, art. 22-1) et fin
+// d'engagement. Hors PowerSync, lus en REST (garant_remise_bail).
+export interface DeclarationRemiseBail {
+  id: string;
+  dateRemise: string;
+  mode: ModeRemiseBail;
+  declareeLe: string;
+  declareePar: string;
+  archivedAt: string | null;
+}
+
+export interface RemiseBailCaution {
+  active: DeclarationRemiseBail | null;
+  // Déclarations remplacées par une correction, la plus récente en premier.
+  historique: DeclarationRemiseBail[];
+}
+
+export interface EngagementCaution {
+  dateFinEngagement: string | null;
+  motifIndisponible: string | null;
+  colocation: (FinEngagementColocation & { dateEffetConge: string }) | null;
+}
+
+export function getRemiseBail(garantId: string): Promise<RemiseBailCaution> {
+  return authenticatedFetch<RemiseBailCaution>(`/garants/${garantId}/remise-bail`);
+}
+
+// Déclaration, ou correction quand une déclaration est déjà active (le
+// backend archive l'ancienne et en crée une nouvelle).
+export function declarerRemiseBail(
+  garantId: string,
+  input: { dateRemise: string; mode: ModeRemiseBail }
+): Promise<RemiseBailCaution> {
+  return authenticatedFetch<RemiseBailCaution>(`/garants/${garantId}/remise-bail`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getEngagementCaution(garantId: string): Promise<EngagementCaution> {
+  return authenticatedFetch<EngagementCaution>(`/garants/${garantId}/engagement`);
+}
+
+export interface SuiviCaution {
+  remise: RemiseBailCaution;
+  engagement: EngagementCaution;
+}
+
+// Suivi de chaque caution personne physique non archivée d'un bail. Un
+// échec de lecture n'empêche pas le reste de la fiche : la caution
+// concernée est simplement absente de la table.
+export async function chargerSuivisCautions(garants: readonly Garant[]): Promise<Map<string, SuiviCaution>> {
+  const cautions = garants.filter((g) => g.typeGarantie === "personne_physique" && g.archivedAt === null);
+  const suivis = await Promise.all(
+    cautions.map(async (garant) => {
+      try {
+        const [remise, engagement] = await Promise.all([getRemiseBail(garant.id), getEngagementCaution(garant.id)]);
+        return [[garant.id, { remise, engagement }] as const];
+      } catch {
+        return [];
+      }
+    })
+  );
+  return new Map(suivis.flat());
+}
+
 export function listGarants(bailId: string): Promise<Garant[]> {
   return authenticatedFetch<Garant[]>(`/garants?bailId=${encodeURIComponent(bailId)}`);
 }
@@ -393,6 +468,19 @@ export function createBailLocataire(input: CreateBailLocataireInput): Promise<Ba
   });
 }
 
-export function archiveBailLocataire(id: string): Promise<BailLocataire> {
-  return authenticatedFetch<BailLocataire>(`/bail-locataires/${id}/archiver`, { method: "PATCH" });
+// Date d'effet du congé : null l'efface.
+export function updateDateEffetConge(lienId: string, dateEffetConge: string | null): Promise<BailLocataire> {
+  return authenticatedFetch<BailLocataire>(`/bail-locataires/${lienId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ dateEffetConge })
+  });
+}
+
+// Retrait du locataire ; la date d'effet de son congé, si elle est saisie,
+// est enregistrée dans la même requête.
+export function archiveBailLocataire(id: string, dateEffetConge?: string): Promise<BailLocataire> {
+  return authenticatedFetch<BailLocataire>(`/bail-locataires/${id}/archiver`, {
+    method: "PATCH",
+    body: JSON.stringify(dateEffetConge ? { dateEffetConge } : {})
+  });
 }

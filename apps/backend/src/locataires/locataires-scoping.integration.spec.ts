@@ -127,6 +127,15 @@ describe("LocatairesService — contrôle d'appartenance à l'organisation (find
       expect(locataire.ville).toBe("Paris");
       expect(locataire.dateNaissance).toBe("1990-05-12");
     });
+
+    it("écrit le lieu de naissance dès la création (chantier garants, commit 6)", async () => {
+      const locataire = await contexteOrgA(() =>
+        locatairesService.create(orgA.userId, { nom: "Durand", prenom: "Claire", lieuNaissance: "Tulle" })
+      );
+      expect(locataire.lieuNaissance).toBe("Tulle");
+      const [ligne] = await db.select().from(locataires).where(eq(locataires.id, locataire.id));
+      expect(ligne?.lieuNaissance).toBe("Tulle");
+    });
   });
 
   describe("findById", () => {
@@ -184,6 +193,21 @@ describe("LocatairesService — contrôle d'appartenance à l'organisation (find
       await contexteOrgA(() => locatairesService.update(orgA.locataireId, { ville: "Lyon" }));
       const locataire = await contexteOrgA(() => locatairesService.update(orgA.locataireId, { ville: null }));
       expect(locataire.ville).toBeNull();
+    });
+
+    it("modifie puis vide le lieu de naissance (chantier garants, commit 6)", async () => {
+      const modifie = await contexteOrgA(() => locatairesService.update(orgA.locataireId, { lieuNaissance: "Brive" }));
+      expect(modifie.lieuNaissance).toBe("Brive");
+      const vide = await contexteOrgA(() => locatairesService.update(orgA.locataireId, { lieuNaissance: null }));
+      expect(vide.lieuNaissance).toBeNull();
+    });
+
+    it("404 sur le lieu de naissance d'un locataire d'une autre organisation, ligne inchangée", async () => {
+      await expect(
+        contexteOrgB(() => locatairesService.update(orgA.locataireId, { lieuNaissance: "Brive" }))
+      ).rejects.toThrow(NotFoundException);
+      const [inchange] = await db.select().from(locataires).where(eq(locataires.id, orgA.locataireId));
+      expect(inchange?.lieuNaissance).toBeNull();
     });
   });
 

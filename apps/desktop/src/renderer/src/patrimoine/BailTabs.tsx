@@ -24,6 +24,7 @@ import {
   activerBail,
   archiveBailLocataire,
   archiveGarant,
+  chargerSuivisCautions,
   createBail,
   createBailLocataire,
   genererDocumentBail,
@@ -35,12 +36,14 @@ import {
   listLocataires,
   resilierBail,
   updateBail,
+  updateDateEffetConge,
   type Bail,
   type BailLocataire,
   type BailLocataireRole,
   type BailTypeBail,
   type Garant,
   type Locataire,
+  type SuiviCaution,
   type VerificationGarantiesBail
 } from "../locataires/api";
 import {
@@ -51,6 +54,13 @@ import {
   NewGarantForm
 } from "../locataires/GarantForms";
 import { mentionCautionDe, nomAfficheGarant } from "../locataires/garant-formulaire";
+import {
+  lienRetireDuGaranti,
+  lignesRemiseNonDeclaree,
+  proposerDateEffetConge,
+  type LigneRemiseNonDeclaree
+} from "../locataires/suivi-caution";
+import { BlocSuiviCaution, ChampDateEffetConge, ConfirmationRetraitColocataire } from "../locataires/SuiviCaution";
 import type { Appartement } from "./api";
 
 const BAIL_TYPES: BailTypeBail[] = ["vide", "meuble"];
@@ -391,6 +401,14 @@ function BailActuelDetail({
   // Règles d'acceptation et pièces manquantes (GET
   // /baux/:id/verification-garanties) ; null si non chargées.
   const [verificationGaranties, setVerificationGaranties] = useState<VerificationGarantiesBail | null>(null);
+  // Remise du bail et fin d'engagement de chaque caution personne physique
+  // (chantier garants, commit 6).
+  const [suivisCautions, setSuivisCautions] = useState<Map<string, SuiviCaution>>(new Map());
+  // Tous les liens du bail, retirés compris : date d'effet du congé d'un
+  // colocataire garanti déjà retiré, saisie depuis sa caution.
+  const [tousLesLiens, setTousLesLiens] = useState<BailLocataire[]>([]);
+  // Colocataire dont le retrait attend confirmation (lien).
+  const [retraitAConfirmer, setRetraitAConfirmer] = useState<string | null>(null);
   // Noms de tous les locataires passés par ce bail, liens archivés compris
   // (« caution de X (n'est plus au bail) »).
   const [nomsLocataires, setNomsLocataires] = useState<Map<string, string>>(new Map());
@@ -432,10 +450,12 @@ function BailActuelDetail({
         }))
       );
       setColocataires(liensResolus.filter(({ lien }) => lien.archivedAt === null));
+      setTousLesLiens(liens);
       setNomsLocataires(
         new Map(liensResolus.flatMap(({ locataire }) => (locataire ? [[locataire.id, `${locataire.prenom} ${locataire.nom}`] as const] : [])))
       );
       setGarants(garantsData);
+      setSuivisCautions(await chargerSuivisCautions(garantsData));
       setLocatairesDisponibles(tousLesLocataires);
       setError(null);
     } catch {
@@ -523,8 +543,14 @@ function BailActuelDetail({
     }
   }
 
-  async function handleRetirerColocataire(lienId: string): Promise<void> {
-    await archiveBailLocataire(lienId);
+  async function handleRetirerColocataire(lienId: string, dateEffetConge: string | undefined): Promise<void> {
+    await archiveBailLocataire(lienId, dateEffetConge);
+    setRetraitAConfirmer(null);
+    await refresh();
+  }
+
+  async function handleEnregistrerConge(lienId: string, valeur: string | null): Promise<void> {
+    await updateDateEffetConge(lienId, valeur);
     await refresh();
   }
 
@@ -742,20 +768,40 @@ function BailActuelDetail({
         ) : (
           <ul className="mt-1 text-sm">
             {colocataires.map(({ lien, locataire }) => (
-              <li key={lien.id} className="flex items-center justify-between py-0.5">
-                <span>
-                  {locataire ? `${locataire.prenom} ${locataire.nom}` : "—"}{" "}
-                  <span className="text-slate-400">({lien.role})</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleRetirerColocataire(lien.id);
-                  }}
-                  className="text-xs text-slate-500 hover:text-red-600"
-                >
-                  Retirer
-                </button>
+              <li key={lien.id} className="py-0.5">
+                <div className="flex items-center justify-between">
+                  <span>
+                    {locataire ? `${locataire.prenom} ${locataire.nom}` : "—"}{" "}
+                    <span className="text-slate-400">({lien.role})</span>
+                  </span>
+                  {retraitAConfirmer !== lien.id && (
+                    <button
+                      type="button"
+                      onClick={() => setRetraitAConfirmer(lien.id)}
+                      className="text-xs text-slate-500 hover:text-red-600"
+                    >
+                      Retirer
+                    </button>
+                  )}
+                </div>
+                {retraitAConfirmer === lien.id && (
+                  <ConfirmationRetraitColocataire
+                    nom={locataire ? `${locataire.prenom} ${locataire.nom}` : "ce locataire"}
+                    dateEffetConge={lien.dateEffetConge}
+                    onConfirmer={(date) => handleRetirerColocataire(lien.id, date)}
+                    onAnnuler={() => setRetraitAConfirmer(null)}
+                  />
+                )}
+                {/* Colocation (art. 8-1, VI) : fin d'engagement de la caution
+                    de ce colocataire. Clé avec la valeur : le champ repart de
+                    la date enregistrée après chaque rechargement. */}
+                {retraitAConfirmer !== lien.id && proposerDateEffetConge(colocataires.length, lien.dateEffetConge) && (
+                  <ChampDateEffetConge
+                    key={`${lien.id}-${lien.dateEffetConge ?? ""}`}
+                    dateEffetConge={lien.dateEffetConge}
+                    onEnregistrer={(valeur) => handleEnregistrerConge(lien.id, valeur)}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -774,7 +820,10 @@ function BailActuelDetail({
           </button>
         </div>
 
-        <AvertissementsGaranties verification={verificationGaranties} />
+        <AvertissementsGaranties
+          verification={verificationGaranties}
+          remisesNonDeclarees={lignesRemiseNonDeclaree(bail, garants, suivisCautions)}
+        />
 
         {showGarantForm && (
           <NewGarantForm
@@ -856,6 +905,15 @@ function BailActuelDetail({
                         </button>
                       </span>
                     </div>
+                    <BlocSuiviCaution
+                      garant={garant}
+                      suivi={suivisCautions.get(garant.id)}
+                      lienColocataireRetire={lienRetireDuGaranti(garant, tousLesLiens)}
+                      onEnregistrerConge={handleEnregistrerConge}
+                      onChanged={() => {
+                        void refresh();
+                      }}
+                    />
                     {documentsOuverts && (
                       <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
                         {/* Clé avec le type : la pièce attendue change avec lui
@@ -889,15 +947,18 @@ function BailActuelDetail({
 }
 
 // Encadré « Garanties » : violations des règles d'acceptation et pièces
-// manquantes, telles que la génération du bail les bloquera. Rien si tout
-// va bien (ou si la vérification n'a pas pu être chargée).
+// manquantes, telles que la génération du bail les bloquera, puis remises
+// du bail non déclarées (jamais bloquantes, bail signé seulement). Rien si
+// tout va bien (ou si rien n'a pu être chargé).
 function AvertissementsGaranties({
-  verification
+  verification,
+  remisesNonDeclarees
 }: {
   verification: VerificationGarantiesBail | null;
+  remisesNonDeclarees: LigneRemiseNonDeclaree[];
 }): React.JSX.Element | null {
   const lignes = lignesAvertissementsGaranties(verification);
-  if (lignes.length === 0) {
+  if (lignes.length === 0 && remisesNonDeclarees.length === 0) {
     return null;
   }
   return (
@@ -906,15 +967,32 @@ function AvertissementsGaranties({
       aria-label="Avertissements sur les garanties"
       className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
     >
-      <p className="font-medium">Garanties : à régler avant la génération du bail</p>
-      <ul className="mt-1 list-disc pl-5">
-        {lignes.map((ligne) => (
-          <li key={ligne.cle}>
-            {ligne.libelle}
-            {ligne.lieu && <span className="text-amber-800/70"> — {ligne.lieu}</span>}
-          </li>
-        ))}
-      </ul>
+      {lignes.length > 0 && (
+        <>
+          <p className="font-medium">Garanties : à régler avant la génération du bail</p>
+          <ul className="mt-1 list-disc pl-5">
+            {lignes.map((ligne) => (
+              <li key={ligne.cle}>
+                {ligne.libelle}
+                {ligne.lieu && <span className="text-amber-800/70"> — {ligne.lieu}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {remisesNonDeclarees.length > 0 && (
+        <>
+          <p className={lignes.length > 0 ? "mt-2 font-medium" : "font-medium"}>Garanties : à faire (non bloquant)</p>
+          <ul className="mt-1 list-disc pl-5">
+            {remisesNonDeclarees.map((ligne) => (
+              <li key={ligne.cle}>
+                {ligne.libelle}
+                <span className="text-amber-800/70"> — {ligne.lieu}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

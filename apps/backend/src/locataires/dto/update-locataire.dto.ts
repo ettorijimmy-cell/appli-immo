@@ -53,6 +53,11 @@ export class UpdateLocataireDto {
   @IsDateString()
   dateNaissance?: string | null;
 
+  // Lieu de naissance (chantier garants, commit 6), vidable.
+  @IsOptional()
+  @IsString()
+  lieuNaissance?: string | null;
+
   @IsOptional()
   @IsIn(LOCATAIRE_STATUTS_MODIFIABLES)
   statut?: (typeof LOCATAIRE_STATUTS_MODIFIABLES)[number];
