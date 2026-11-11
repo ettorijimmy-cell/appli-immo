@@ -1293,8 +1293,8 @@ les trois parcours ci-dessus).
   ce même chantier — un dépassement notable de cette fenêtre est déjà
   signalé à l'utilisateur, pas silencieux.
 
-- **Garant Visale/autre dans la génération du bail — non résolu, cause
-  identifiée (2026-10-13).** `packages/core/src/baux/valider-completude-
+- **Garant Visale/autre dans la génération du bail — résolu (2026-11-11,
+  commits 954532f à c7df5ff) ; cause identifiée le 2026-10-13.** `packages/core/src/baux/valider-completude-
   generation-bail.ts:161-172` exige `dateNaissance`/`lieuNaissance`/
   `nationalite` pour **tout** garant du bail, sans filtrer par
   `typeGarantie`.
@@ -1340,9 +1340,28 @@ les trois parcours ci-dessus).
   5. vérifications : synchronisation de `garants` avec `locataire_id`
      dans la base locale, champ « Caution de » et mention dans la liste,
      bail généré avec « , caution de … ».
+  *Résolu le 2026-11-11 (chantier garants complet, commits `954532f` à
+  `c7df5ff`, arbitrages du 2026-11-08) :*
+  - types proposés à la saisie : `personne_physique` et
+    `garantie_visale`. `autre` reste dans l'enum (lignes existantes
+    lisibles) mais l'API le refuse en création et en modification ;
+  - champs exigés selon le type (`validerCompletudeGenerationBail`) :
+    date et lieu de naissance et nationalité pour une caution personne
+    physique seulement ; numéro de contrat (`garants.numero_contrat_visale`)
+    pour Visale, jamais l'identité d'une personne. Le PDF du contrat Visale
+    se joint en pièce du garant (catégorie `contrat_cautionnement_visale`) ;
+  - règles d'acceptation (`verifierGarantiesBail`, packages/core, art.
+    22-1 et 8-1) bloquantes à la génération du bail et de l'acte, de simples
+    avertissements pendant la saisie : Visale seul garant et un seul
+    locataire ; assurance loyers impayés (`baux.assurance_loyers_impayes`)
+    sauf étudiant ou apprenti (`locataires.statut_etudes`) ; SCI non
+    familiale sauf étudiant non boursier ; « caution de » obligatoire en
+    colocation ;
+  - bail : seules les cautions personne physique sont imprimées ; la
+    section « GARANTS SOLIDAIRES » affiche « Néant » s'il n'y en a aucune.
 
-- **Acte de cautionnement — chantier en attente (textes lus sur
-  Légifrance le 2026-11-08).** Le chantier garants s'arrête au commit 4
+- **Acte de cautionnement — résolu (2026-11-11, commits 954532f à
+  c7df5ff ; textes lus sur Légifrance le 2026-11-08).** Le chantier garants s'arrête au commit 4
   (garant rattaché au locataire, mention « caution de » dans le bail) :
   l'acte de cautionnement lui-même n'est pas généré. Synthèse des textes
   lus, à relire à la source avant toute reprise :
@@ -1387,6 +1406,108 @@ les trois parcours ci-dessus).
   **À rouvrir avant le premier bail réel avec garant.** Faire relire
   l'acte par l'ADIL avant tout usage. Voir aussi l'entrée « Garant
   Visale/autre » ci-dessus, dont la question juridique recoupe celle-ci.
+
+  *Résolu le 2026-11-11 (commits `954532f` à `c7df5ff`) :* les pistes
+  ci-dessus sont faites.
+  - **Acte de cautionnement** (commit `cdccf01`) : généré pour une caution
+    personne physique et ouvert dans Word comme le bail, non archivé
+    (modèle `apps/backend/src/acte-cautionnement-docx/assets/`). Il
+    contient : identité des parties ; loyer, charges et conditions de
+    révision (IRL avec virgule décimale) ; plafond de 36 mois (loyer +
+    provisions) en chiffres et en lettres ; durée déterminée jusqu'à la fin
+    du bail initial plus 2 renouvellements (dernier jour inclus) ;
+    reproduction de l'avant-dernier alinéa de l'art. 22-1 ; colocataire
+    garanti en colocation (art. 8-1, VI) ; modèle de mention à recopier
+    au-dessus d'un cadre vide (art. 2297). Génération bloquée si une
+    mention manque (`validerCompletudeActeCautionnement`) et tracée dans
+    `journal_audit`. Profession retirée, nationalité exigée mais non
+    imprimée. L'acte signé se joint en pièce du garant (catégorie
+    `acte_cautionnement_signe`).
+  - **Remise du bail à la caution** (commit `c7df5ff`) : déclaration
+    datée, corrigeable avec historique (`garant_remise_bail`) ;
+    avertissement non bloquant « Remise du bail non déclarée » hors
+    brouillon.
+  - **Contrôles d'acceptation** : voir l'entrée « Garant Visale/autre »
+    ci-dessus.
+  - **Fin d'engagement** : « Engagement jusqu'au … » sous chaque caution
+    personne physique ; en colocation, date d'effet du congé du colocataire
+    (`bail_locataires.date_effet_conge`, saisissable aussi au retrait) et
+    fin au plus tard 6 mois après.
+  - **Toujours à faire avant le premier acte réel** : relecture par l'ADIL,
+    questions dans `docs/questions-adil-acte-cautionnement.md`.
+
+- **Bail et acte : deux conventions pour la date de fin — décision de
+  Jimmy (ouvert, 2026-11-11).** Le bail imprime sa date de fin comme le
+  lendemain du dernier jour (`ajouterMois`,
+  `apps/backend/src/bail-document-docx/bail-document-docx.service.ts:491`,
+  ex. 01/09/2028 pour un bail de 3 ans au 01/09/2025). L'acte de
+  cautionnement compte le dernier jour inclus
+  (`calculerDateFinEngagementCaution`, décision du 2026-11-09). Aligner le
+  bail sur l'acte ou non : à trancher. L'acte garde sa convention.
+
+- **IRL du bail avec un point décimal — décision de Jimmy (ouvert,
+  2026-11-11).** Le bail imprime la valeur brute de l'indice (146.23,
+  `bail-document-docx.service.ts:606-607`) ; l'acte imprime une virgule
+  (146,23, décision du 2026-11-10). Passer le bail en virgule : à trancher.
+
+- **`validerCompletudeGenerationBail` : nouveaux champs encore facultatifs
+  (ouvert, 2026-11-11).** `typeGarantie`, `numeroContratVisale`
+  (`DonneesCompletudeGarant`) et `garanties`
+  (`DonneesCompletudeGenerationBail`) sont optionnels
+  (`packages/core/src/baux/valider-completude-generation-bail.ts:78-102`),
+  avec un commentaire « le temps que le backend les fournisse (commit 3) »
+  devenu faux : le backend les fournit toujours. Absents, la fonction
+  traite le garant en caution personne physique et ne vérifie aucune règle
+  d'acceptation. Les rendre obligatoires : mettre à jour les tests de core
+  et `apps/backend/scripts/completer-fixture-generation-bail.ts`, qui ne
+  les fournit pas.
+
+- **Adresse d'un bailleur personne physique non stockée (ouvert,
+  2026-11-11).** Aucune colonne ne porte l'adresse d'un propriétaire en nom
+  propre (`biens.nom_proprietaire` seulement). L'acte de cautionnement
+  imprime « [À COMPLÉTER] » (`acte-cautionnement-docx.service.ts:177`).
+  Le bail, lui, laisse les champs d'adresse **vides** (balises « Adresse de
+  la SCI », etc., `bail-document-docx.service.ts:554-557`), sans marque
+  « [À COMPLÉTER] ». À ajouter au schéma avant le premier bail réel en nom
+  propre.
+
+- **Information annuelle de la caution (Code civil, art. 2302) — non
+  faite, décision de Jimmy (ouvert, 2026-11-11).** Aucun envoi ni rappel
+  annuel à la caution. À revoir selon la réponse de l'ADIL (question 8 de
+  `docs/questions-adil-acte-cautionnement.md` : une SCI familiale est-elle
+  un « créancier professionnel » ?).
+
+- **Commentaire du schéma `garants` : « sous peine de nullité absolue (loi
+  ALUR) » non confirmé (ouvert, 2026-11-11).**
+  `packages/db/src/schema/garants.ts:40-44` présente adresse, profession
+  et revenus comme « mentions obligatoires de l'acte de cautionnement sous
+  peine de nullité absolue (loi ALUR) », et les lignes 50-51 étendent ce
+  principe à la date et au lieu de naissance et à la nationalité
+  (« mentions manuscrites légales »). La lecture de Légifrance du
+  2026-11-08 ne le confirme pas : art. 22-1 et 2297 n'exigent ni
+  profession, ni revenus, ni date ou lieu de naissance, ni nationalité.
+  Ce sont des choix du projet (identification de la caution), pas des
+  conditions de validité. Fichier de code : à corriger au prochain commit
+  qui touche ce fichier, pas avant.
+
+- **Tests d'intégration instables en local : dépassement de 5 s dans la
+  suite complète (ouvert, 2026-11-11, priorité juste après le chantier
+  garants).** Pendant le chantier, `pnpm test:integration:clean` a échoué
+  en local par `Error: Test timed out in 5000ms.`, sur des modules non
+  touchés, chaque fois sur des fichiers différents :
+  - génération docx de l'état des lieux
+    (`etat-des-lieux-document-docx.integration.spec.ts`, génération avec
+    photos et inventaire ; aussi `…-modele-embarque` au commit 3) ;
+  - `bail-document-docx.integration.spec.ts` (1 test, au commit 3) ;
+  - `auth-login-throttling.integration.spec.ts` (3 tests, dont « bloque
+    avec un 429 après 5 échecs depuis la même IP… ») ;
+  - `all-exceptions.filter.integration.spec.ts` (« 429 de /auth/login
+    avec en-tête Retry-After… »).
+
+  Chaque fichier lancé seul passe (1,7 à 3 s par test), et la CI est verte
+  à chaque commit. Piste : charge de la suite complète sur le poste
+  (délai par défaut de Vitest à 5 s) ; ne pas simplement allonger le
+  délai sans comprendre.
 
 - **Bail généré : au-delà de deux locataires, les suivants ne sont pas
   imprimés — non résolu (constaté le 2026-11-07, chantier garants).** Le
@@ -1637,7 +1758,10 @@ production" ci-dessous pour le détail confirmé de chaque point.
 
 ## État de la production
 
-**Dernière mise à jour confirmée : 2026-11-05 (étape 5 déployée, voir plus bas).**
+**Dernière mise à jour confirmée : 2026-11-08 (commit 4 du chantier garants
+déployé, voir plus bas). Dernière migration en production :
+`0077_cuddly_squadron_sinister.sql`.** Source : runbook de déploiement
+(hors dépôt), qui fait foi.
 
 - Migrations Drizzle `0058` à `0065` appliquées en base de production
   (confirmé par Jimmy après test manuel réel).
@@ -1692,8 +1816,16 @@ pièces ajoutées après l'entrée, photos par phase) — déployée le
   le serveur d'envoi ; un rebond arrive ensuite dans la Messagerie).
 
 **Chantier « entrée papier, confirmation, abandon » — code terminé le
-2026-11-06 (commits `0970ffa` à `1f02f18`, sur `main`), non déployé.**
-Ordre impératif :
+2026-11-06 (commits `0970ffa` à `1f02f18`, sur `main`), déployé le
+2026-11-07 :**
+
+- Contrôle préalable de la `0074` fait : 1 état des lieux, 0 archivé,
+  verdict « OK pour la 0074 ».
+- Migrations `0074`, `0075` et `0076` appliquées en base de production.
+- Image backend déployée : tag `64d5bed`.
+- Pas de redéploiement PowerSync (voir l'étape 4 ci-dessous).
+
+Ordre impératif suivi :
 
 1. **Contrôle préalable, en lecture seule, sur la production** : lancer
    `verifier-archives-etats-des-lieux-avant-0074.ts`
@@ -1795,6 +1927,97 @@ Limites connues du chantier entrée papier, confirmation, abandon :
   versionné ; seules les fonctions pures et le typecheck sont en CI. Le
   mobile, lui, a ses tests Playwright (CI).
 
+**Chantier garants, commit 4 (garant rattaché à un locataire du bail,
+« caution de ») — déployé le 2026-11-08 :**
+
+- Migration `0077_cuddly_squadron_sinister.sql` appliquée en base de
+  production.
+- Image backend déployée : tag `b5b4f3b` (hash complet
+  `b5b4f3b9d58fdaed845abd4297ade6952cfdf9a8`).
+- Configuration PowerSync complète redéployée (stream `garants`,
+  colonne `locataire_id`).
+- Installeur desktop reconstruit sur `b5b4f3b`.
+
+**Chantier garants complet (Visale, acte de cautionnement, remise du bail)
+— code terminé le 2026-11-11 (commits `954532f` à `c7df5ff`, sur
+`main`), non déployé.** La production est à `0077` : seule la `0078` sera
+appliquée. Ordre impératif :
+
+1. **Sauvegarde** de la base de production avant la migration.
+2. **Migration `0078_lively_eddie_brock.sql` AVANT le nouveau backend.**
+   Elle n'est pas réversible simplement : deux valeurs ajoutées à l'enum
+   `document_categorie` (`contrat_cautionnement_visale`,
+   `acte_cautionnement_signe`) ne se retirent pas d'un enum Postgres. Elle
+   crée aussi les enums `locataire_statut_etudes` et
+   `garant_remise_bail_mode`, la table `garant_remise_bail` et ses
+   triggers, quatre colonnes (`locataires.statut_etudes`,
+   `baux.assurance_loyers_impayes`, `garants.numero_contrat_visale`,
+   `bail_locataires.date_effet_conge`), rend `garants.prenom` facultatif
+   et ajoute la CHECK `garants_prenom_personne_physique` (vraie pour les
+   lignes existantes, dont le prénom était obligatoire). Le nouveau backend
+   lit et écrit ces colonnes : déployé avant, il échouerait.
+3. **Image backend.** Le modèle d'acte
+   (`apps/backend/src/acte-cautionnement-docx/assets/modele-acte-cautionnement.docx`)
+   est copié dans `dist/` au build (`nest-cli.json`, `compilerOptions.assets`,
+   vérifié : présent dans `apps/backend/dist/acte-cautionnement-docx/assets/`
+   après le build local) ; le Dockerfile copie `apps/backend/dist` dans
+   l'image, le modèle y est donc.
+4. **Configuration PowerSync COMPLÈTE** : le fichier
+   `docs/powersync-sync-streams.yaml` entier collé dans le dashboard, puis
+   « Deploy ». Quatre streams modifiés : `garants`
+   (`numero_contrat_visale`), `baux` (`assurance_loyers_impayes`),
+   `locataires` (`statut_etudes`), `bail_locataires`
+   (`date_effet_conge`). Jamais ces seuls streams : le Deploy remplace
+   toute la configuration.
+5. **Installeur desktop** reconstruit.
+
+**Retour arrière : image `b5b4f3b`** (installeur `b5b4f3b`), sans toucher à
+la base. La `0078` est additive et l'ancien backend reste compatible,
+vérifié dans le code de `b5b4f3b` le 2026-11-11 :
+
+- les nouvelles colonnes ont une valeur par défaut ou sont facultatives, et
+  les requêtes Drizzle de l'ancien code nomment leurs colonnes : il les
+  ignore ;
+- `garants.prenom` facultatif : l'ancien code exige toujours un prénom à la
+  création (`CreateGarantDto`), donc il n'écrit jamais de ligne qui viole
+  la CHECK ;
+- `garant_remise_bail` n'est pas lue par l'ancien code. La configuration
+  PowerSync complète reste valable : elle ne lit que des colonnes qui
+  existent.
+
+Limites, seulement pour les données créées par le nouveau backend avant le
+retour arrière :
+
+- **garant Visale sans prénom (`prenom` null)** : l'ancien code affiche
+  « null Action Logement Services (Visale) » dans le bail généré
+  (`bail-document-docx.service.ts:364` à `b5b4f3b`), dans le libellé de ses
+  documents et dans la checklist documentaire. L'ancien desktop ne peut
+  pas le modifier sans saisir un prénom : il envoie `prenom: null`, que
+  l'ancien `UpdateGarantDto` refuse (400) ;
+- **règles perdues** : assurance loyers impayés, SCI non familiale, Visale
+  seul garant ne sont plus vérifiées à la génération du bail ; aucun acte
+  de cautionnement, aucune remise du bail ;
+- **documents des catégories `contrat_cautionnement_visale` et
+  `acte_cautionnement_signe`** : conservés, mais l'ancien desktop n'a pas
+  de libellé pour elles.
+
+À confirmer, vérifié dans le code le 2026-11-11 :
+
+- **Aucune nouvelle variable d'environnement à définir.**
+  `ACTE_CAUTIONNEMENT_DOCX_TEMPLATE_PATH` existe, mais seulement comme
+  surcharge facultative du chemin du modèle (même mécanisme que
+  `BAIL_DOCUMENT_DOCX_TEMPLATE_PATH`), à ne pas définir en production.
+- **Aucune nouvelle table publiée, aucun GRANT.** La `0078` ne touche ni
+  à la publication `powersync` (liste explicite de tables) ni aux droits ;
+  `garant_remise_bail` est hors publication et hors Sync Streams, lue par
+  l'API seulement.
+- **Vérifications après déploiement** : synchronisation des quatre
+  colonnes dans la base locale ; création d'un garant Visale (numéro de
+  contrat) ; génération d'un bail avec caution personne physique ;
+  génération d'un acte de cautionnement ; déclaration de la remise du bail.
+  Relecture de l'acte par l'ADIL avant le premier usage réel
+  (`docs/questions-adil-acte-cautionnement.md`).
+
 ---
 
 ## Hors backlog MVP (rappel, voir docs/app-spec.md section 5)
@@ -1881,7 +2104,9 @@ Table `diagnostics`, en 1:1 avec `documents` (FK `document_id`,
 Décisions actées à l'époque sur les champs restants, toujours valables :
 - `garants` : adresse, code_postal, ville, profession, revenus — tous
   confirmés mentions obligatoires de l'acte de cautionnement sous peine de
-  nullité absolue (loi ALUR), pas seulement l'adresse initialement
+  nullité absolue (loi ALUR) [NON CONFIRMÉ par la lecture de Légifrance du
+  2026-11-08 : art. 22-1 et 2297 n'exigent ni profession ni revenus ;
+  profession retirée de l'acte], pas seulement l'adresse initialement
   demandée. Sans risque à ajouter directement sur `garants` : contrairement
   à `locataires`, cette table est déjà une ligne par bail (pas une entité
   partagée), ces champs sont donc naturellement figés au moment de la

@@ -154,7 +154,7 @@ module/UI ne lit ni n'écrit `diagnostics` à ce jour.
 | numero_contrat_visale | text, nullable | Numéro du contrat de cautionnement Visale (type `garantie_visale`), ajouté le 2026-11-08 (migration 0078). Le PDF du contrat est une pièce du garant (`documents.categorie = 'contrat_cautionnement_visale'`). Synchronisé par le stream PowerSync `garants` |
 | adresse, code_postal, ville | text, nullable | Adresse du garant, imprimée dans le bail (section « Garants solidaires ») si renseignée. Colonnes présentes depuis la création de la table mais **saisissables seulement depuis le 2026-11-07** (`CreateGarantDto`/`UpdateGarantDto`, formulaire garant partagé `locataires/GarantForms.tsx`) — avant, absentes des DTO, donc supprimées par `whitelist: true` et toujours `null`. **Jamais exigées** par `validerCompletudeGenerationBail` (décision du 2026-11-07, option A, en attendant la lecture du texte sur les mentions de l'acte de cautionnement). Déjà synchronisées par le stream PowerSync `garants` |
 | profession, revenus | text / decimal, nullable | Ni saisissables, ni renvoyés par l'API, ni synchronisés (donnée financière précise, décision du 2026-08-15) |
-| date_naissance, lieu_naissance, nationalite | text/date, nullable | Mentions manuscrites de l'acte de cautionnement, sous peine de nullité absolue (loi ALUR) — figées à la création, même principe que adresse/profession/revenus |
+| date_naissance, lieu_naissance, nationalite | text/date, nullable | Mentions manuscrites de l'acte de cautionnement, sous peine de nullité absolue (loi ALUR) [NON CONFIRMÉ par la lecture de Légifrance du 2026-11-08 : art. 22-1 et 2297 ne les exigent pas ; exigées pour une caution personne physique par choix du projet, nationalité non imprimée dans l'acte] — figées à la création, même principe que adresse/profession/revenus |
 | locataire_id | uuid, nullable, FK → locataires | Locataire du bail dont ce garant se porte caution (« Caution de »), ajouté le 2026-11-08 (migration 0077, sans backfill : `null` = « non précisé »). Le backend n'accepte qu'un locataire **rattaché au même bail** (lien `bail_locataires` non archivé) au moment où il est choisi, sinon 400 ; `null` efface le lien ; la valeur déjà enregistrée reste acceptée telle quelle en modification (`GarantsService`). Si le locataire quitte ensuite le bail, la valeur est conservée : le bail généré omet alors la mention « , caution de [Prénom Nom] » (le garant reste listé) et l'écran affiche « (n'est plus au bail) » (`situationLocataireCautionne`, packages/core). Synchronisée par le stream PowerSync `garants` (configuration PowerSync complète à redéployer après la migration et le backend, voir docs/backlog.md) |
 
 ## garant_remise_bail
@@ -179,6 +179,15 @@ Garanties portées par la base (triggers posés à la main dans la migration
 pour être archivée une seule fois (`garant_remise_bail_sans_modification`),
 erreur `restrict_violation` sinon. Index unique partiel
 `garant_remise_bail_active_unique` : une seule déclaration active par garant.
+
+API (commit `c7df5ff`, module `suivi-caution`) : `POST /garants/:id/remise-bail`
+déclare ou corrige (caution personne physique seulement, 400 pour Visale ;
+404 hors organisation ou garant archivé ; date future refusée).
+`declaree_le` et `declaree_par` sont posés par le serveur. Une correction
+archive la ligne active puis insère la nouvelle dans une même transaction,
+avec une ligne `journal_audit` (action `creation`, voir cette table) ; une
+déclaration concurrente (index unique) renvoie 409. `GET
+/garants/:id/remise-bail` renvoie la déclaration active et l'historique.
 
 ## baux
 Le passage du statut à `actif` (activation) et `resilie` (résiliation)
@@ -306,7 +315,7 @@ Table de liaison pour gérer la colocation.
 | Champ | Type | Description |
 |---|---|---|
 | role | enum | `titulaire` \| `colocataire` |
-| date_effet_conge | date, nullable | Date d'effet du congé donné par ce locataire (2026-11-08, migration 0078, chantier garants). Sert à afficher la fin d'engagement de sa caution en colocation (loi n° 89-462, art. 8-1, VI). Distincte d'`archived_at`, date de retrait du lien dans l'appli. Synchronisé par le stream PowerSync `bail_locataires` |
+| date_effet_conge | date, nullable | Date d'effet du congé donné par ce locataire (2026-11-08, migration 0078, chantier garants). Sert à afficher la fin d'engagement de sa caution en colocation (loi n° 89-462, art. 8-1, VI). Distincte d'`archived_at`, date de retrait du lien dans l'appli. Saisie par `PATCH /bail-locataires/:id` (vidable avec `null`, aussi sur un lien déjà retiré) ou avec le retrait (`PATCH /bail-locataires/:id/archiver`, facultative, date future acceptée : le colocataire peut partir avant la fin de son préavis) — commit `c7df5ff`. Synchronisé par le stream PowerSync `bail_locataires` |
 
 **Unicité du titulaire (2026-08-31, Module Tâches — extension notifications)** :
 index unique partiel `bail_locataires_bail_id_titulaire_actif_unique` sur
@@ -1238,7 +1247,9 @@ avec l'utilisateur avant tout code :
   précis) — `journal_audit` n'intervient pas ici : cette table est
   réservée aux événements d'**accès** à une donnée sensible (déchiffrement
   IBAN/BIC, action `acces`, voir `AuditService`), jamais à la trace
-  générale des créations/modifications/archivages des tables métier.
+  générale des créations/modifications/archivages des tables métier
+  (exception : déclarations de remise du bail à la caution, voir
+  `journal_audit`).
 - **Trop-perçu à la résiliation** : `resilier()` calcule et expose le
   trop-perçu (`somme des versements actifs − nouveau montant proratisé`,
   si positif), mais ne crée **jamais** de ligne `remboursements`
@@ -1401,7 +1412,11 @@ le pendant desktop de la checklist.
 **`locataires.lieu_naissance`** (colonne ajoutée dans le même chantier) :
 même besoin que `garants.lieu_naissance`, absent jusqu'ici côté
 locataires — déclaration fiscale annuelle du bailleur, date + lieu de
-naissance du locataire requis.
+naissance du locataire requis. Saisissable depuis le 2026-11-11 (commit
+`c7df5ff` : `CreateLocataireDto`/`UpdateLocataireDto`, formulaires et
+fiche locataire du desktop) et imprimé dans l'acte de cautionnement
+(« Date et lieu de naissance » du locataire) ; avant, l'acte imprimait
+« [À COMPLÉTER] ».
 
 ## alertes
 | Champ | Type | Description |
@@ -2585,12 +2600,29 @@ standard (`updated_at`/`version`/`archived_at`) : une ligne de journal n'est
 jamais modifiée après écriture.
 | Champ | Type | Description |
 |---|---|---|
-| entite_type | text | Nom de la table concernée, ou `authentification` / `document_sensible` pour les événements de sécurité |
+| entite_type | text | Nom de la table concernée, ou `authentification` / `document_sensible` pour les événements de sécurité, ou `acte_cautionnement_genere` pour la génération d'un acte de cautionnement |
 | entite_id | uuid, nullable | Identifiant de la ligne concernée ; nullable car certains événements de sécurité n'ont pas d'entité métier identifiable |
 | action | enum | `creation` \| `modification` \| `archivage` \| `acces` — `acces` pour la consultation d'un document sensible (ex. déchiffrement d'IBAN/BIC, `GET /scis/:id/comptes-bancaires`) |
 | donnees_avant / donnees_apres | jsonb | État avant/après, pour audit complet |
 | utilisateur_id | uuid, nullable | Auteur de l'action ; nullable pour les événements non attribuables à un utilisateur résolu |
 | created_at | timestamp | Horodatage de l'événement |
+
+Usages ajoutés par le chantier garants (2026-11-11) :
+- **Génération d'un acte de cautionnement** (commit `cdccf01`) : une ligne
+  `entite_type = 'acte_cautionnement_genere'`, `entite_id` = le garant,
+  action `acces` (`AuditService.logAccesDonneeSensible`), à chaque
+  génération réussie. L'acte n'est pas archivé : cette ligne est la
+  seule trace de sa génération.
+- **Déclaration de la remise du bail à la caution** (commit `c7df5ff`) :
+  une ligne `entite_type = 'garant_remise_bail'`, `entite_id` = la
+  nouvelle déclaration, action `creation` (`AuditService.logCreation`),
+  `donnees_avant` = la déclaration remplacée (ou `null`), `donnees_apres`
+  = garant, date et mode. Écrite dans la même transaction que la
+  déclaration : l'une n'existe jamais sans l'autre. C'est le premier
+  usage de l'action `creation` ; il déroge à la règle « réservée aux
+  accès » énoncée plus haut (« versements & remboursements », annulation
+  d'un versement), par décision de Jimmy, parce que la déclaration a valeur
+  de preuve. Cette règle reste valable pour les autres tables métier.
 
 ## utilisateurs
 | Champ | Type | Description |
