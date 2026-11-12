@@ -20,7 +20,7 @@ import {
   type PhaseEtatDesLieux,
   type ResultatEnvoi
 } from "./api";
-import { messageErreurCartePdf } from "./message-erreur-carte-pdf";
+import { messageErreurApi } from "../lib/message-erreur-api";
 
 type Vue = "chargement" | "liste" | "confirmation" | "envoi" | "reprise" | "resultats";
 
@@ -72,7 +72,7 @@ export function EnvoiEtatDesLieuxPanel({
       })
       .catch((err: unknown) => {
         if (!annule) {
-          setErreur(messageErreurCartePdf(err, "Impossible de charger les destinataires."));
+          setErreur(messageErreurApi(err, "Impossible de charger les destinataires."));
           setVue("liste");
         }
       });
@@ -116,7 +116,7 @@ export function EnvoiEtatDesLieuxPanel({
         setVue("reprise");
       } else {
         demandeRef.current = null;
-        setErreur(messageErreurCartePdf(err, "L'envoi a été refusé."));
+        setErreur(messageErreurApi(err, "L'envoi a été refusé."));
         setVue("liste");
       }
     } finally {

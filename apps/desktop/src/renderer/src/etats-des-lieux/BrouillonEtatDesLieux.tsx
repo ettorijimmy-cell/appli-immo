@@ -1,21 +1,11 @@
 import { formaterDateCourteFr, LONGUEUR_MAX_MOTIF_ABANDON, motifAbandonValide } from "core";
 import { useEffect, useState } from "react";
 import { ArchiveBadge } from "../components/ArchiveFilter";
+import { Modale } from "../components/Modale";
 import { ApiError } from "../lib/authenticated-fetch";
 import type { Bail } from "../locataires/api";
 import type { Appartement } from "../patrimoine/api";
 import { abandonnerEtatDesLieux, listerEtatsDesLieuxAbandonnes, type EtatDesLieuxAbandonne } from "./api";
-
-export function Modale({ titre, children }: { titre: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={titre} className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-lg">
-        <h2 className="text-base font-semibold">{titre}</h2>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 // Confirmation avant création (décision du 2026-11-05) : un état des lieux
 // n'est plus jamais créé d'un seul clic, sans savoir pour quel logement.

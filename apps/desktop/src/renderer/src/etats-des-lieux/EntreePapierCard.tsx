@@ -19,7 +19,7 @@ import {
   type EtatDesLieuxComplet,
   type SignatairesAttendus
 } from "./api";
-import { Modale } from "./BrouillonEtatDesLieux";
+import { Modale } from "../components/Modale";
 import {
   erreursSaisieEntreePapier,
   fichierEstUnPdf,

@@ -1,7 +1,7 @@
 import { libelleResultatRemise } from "core";
 import { useEffect, useState } from "react";
 import { getHistoriqueEnvois, type EnvoiHistorique } from "./api";
-import { messageErreurCartePdf } from "./message-erreur-carte-pdf";
+import { messageErreurApi } from "../lib/message-erreur-api";
 
 const LABEL_PHASE: Record<"entree" | "sortie", string> = { entree: "Entrée", sortie: "Sortie" };
 
@@ -28,7 +28,7 @@ export function HistoriqueEnvoisEtatDesLieux({
       })
       .catch((err: unknown) => {
         if (!annule) {
-          setErreur(messageErreurCartePdf(err, "Impossible de récupérer l'historique des envois."));
+          setErreur(messageErreurApi(err, "Impossible de récupérer l'historique des envois."));
         }
       });
     return () => {

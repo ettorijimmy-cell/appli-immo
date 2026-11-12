@@ -4,7 +4,7 @@ import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { listerDocumentsFigesEtatDesLieux, produirePdfEtatDesLieux, type StatutDocumentsFigesPhase } from "./api";
 import { EnvoiEtatDesLieuxPanel } from "./EnvoiEtatDesLieuxPanel";
 import { HistoriqueEnvoisEtatDesLieux } from "./HistoriqueEnvoisEtatDesLieux";
-import { messageErreurCartePdf } from "./message-erreur-carte-pdf";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { libelleStatutPdf } from "./statut-pdf-etat-des-lieux";
 import { useEtatDesLieuxPdfApercu } from "./use-etat-des-lieux-pdf-apercu";
 
@@ -19,7 +19,7 @@ const LABEL_PHASE: Record<"entree" | "sortie", string> = { entree: "Entrée", so
 // PDF" visible dans tous les cas où le PDF manque (idempotent côté
 // backend — ne produit que ce qui manque), jamais pour une phase non
 // signée. Tout message d'erreur affiché est celui du backend quand il est
-// exploitable, jamais le générique NestJS brut (voir message-erreur-carte-pdf.ts).
+// exploitable, jamais le générique NestJS brut (voir lib/message-erreur-api.ts).
 export function DocumentsFigesCard({
   etatDesLieuxId,
   entreeSigneeNumeriquement,
@@ -51,7 +51,7 @@ export function DocumentsFigesCard({
       })
       .catch((err: unknown) => {
         if (!annule) {
-          setErreur(messageErreurCartePdf(err, "Impossible de récupérer l'état des documents PDF."));
+          setErreur(messageErreurApi(err, "Impossible de récupérer l'état des documents PDF."));
         }
       });
     return () => {
@@ -72,7 +72,7 @@ export function DocumentsFigesCard({
       await produirePdfEtatDesLieux(etatDesLieuxId, phase);
       setVersion((v) => v + 1);
     } catch (err) {
-      setErreur(messageErreurCartePdf(err, "Une erreur est survenue lors de la production du PDF."));
+      setErreur(messageErreurApi(err, "Une erreur est survenue lors de la production du PDF."));
     } finally {
       setPhaseEnCours(null);
     }

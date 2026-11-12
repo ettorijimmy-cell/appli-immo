@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../lib/authenticated-fetch";
-import { confirmationArchivageRequise, messageErreurArchivage } from "./archivage-document";
+import { confirmationArchivageRequise, messageErreurArchivage, messageRepliArchivage } from "./archivage-document";
 
 describe("confirmationArchivageRequise", () => {
   it("une photo demande une confirmation", () => {
@@ -34,5 +34,12 @@ describe("messageErreurArchivage", () => {
     expect(messageErreurArchivage(new ApiError(500, "Internal server error"), { categorie: "assurance" })).toBe(
       "Impossible d'archiver ce document."
     );
+  });
+});
+
+describe("messageRepliArchivage", () => {
+  it("repli propre à une photo ou à un autre document", () => {
+    expect(messageRepliArchivage({ categorie: "photo" })).toBe("Impossible d'archiver cette photo.");
+    expect(messageRepliArchivage({ categorie: "assurance" })).toBe("Impossible d'archiver ce document.");
   });
 });
