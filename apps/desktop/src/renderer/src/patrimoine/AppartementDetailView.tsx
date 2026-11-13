@@ -19,9 +19,11 @@ import {
   type EquipementType
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageEquipement } from "../lib/textes-confirmation";
 import { valeurNumeriqueOuNull, valeurOuNull } from "../lib/valeur-ou-null";
 import { BailActuelTab, HistoriqueBauxTab } from "./BailTabs";
 
@@ -57,6 +59,7 @@ export function AppartementDetailView({
   const [isEditing, setIsEditing] = useState(false);
   const [editingEquipementId, setEditingEquipementId] = useState<string | null>(null);
   const [showArchivedEquipements, setShowArchivedEquipements] = useState(false);
+  const [equipementAArchiver, setEquipementAArchiver] = useState<Equipement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -79,11 +82,6 @@ export function AppartementDetailView({
   }, [refresh]);
 
   useBreadcrumbSegments(appartement ? [`Appartement ${appartement.numero}`] : []);
-
-  async function handleArchive(id: string): Promise<void> {
-    await archiveEquipement(id);
-    await refresh();
-  }
 
   if (error) {
     return (
@@ -363,9 +361,7 @@ export function AppartementDetailView({
                           {equipement.archivedAt === null && (
                             <button
                               type="button"
-                              onClick={() => {
-                                void handleArchive(equipement.id);
-                              }}
+                              onClick={() => setEquipementAArchiver(equipement)}
                               className="text-sm text-slate-500 hover:text-red-600"
                             >
                               Archiver
@@ -380,6 +376,18 @@ export function AppartementDetailView({
             );
           })()}
         </div>
+      )}
+
+      {equipementAArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageEquipement(equipementAArchiver)}
+          action={() => archiveEquipement(equipementAArchiver.id)}
+          onTermine={() => {
+            setEquipementAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setEquipementAArchiver(null)}
+        />
       )}
     </div>
   );

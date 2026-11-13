@@ -1,6 +1,7 @@
 import { calculerMontantRecuTotal, centimesVersMontant, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
 import {
@@ -16,6 +17,7 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteRetraitGarant } from "../lib/textes-confirmation";
 import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
@@ -418,6 +420,8 @@ function BailActuelDetail({
   const [showAttachForm, setShowAttachForm] = useState(false);
   const [showGarantForm, setShowGarantForm] = useState(false);
   const [editingGarantId, setEditingGarantId] = useState<string | null>(null);
+  // Garant dont le retrait attend confirmation.
+  const [garantARetirer, setGarantARetirer] = useState<Garant | null>(null);
   const [garantsDocumentsOuverts, setGarantsDocumentsOuverts] = useState<Set<string>>(new Set());
   const [showEditForm, setShowEditForm] = useState(false);
   const [dateFinResiliation, setDateFinResiliation] = useState("");
@@ -556,11 +560,6 @@ function BailActuelDetail({
 
   const locatairesDuBail = colocataires.flatMap(({ locataire }) => (locataire ? [locataire] : []));
   const locataireIdsAuBail = colocataires.map(({ lien }) => lien.locataireId);
-
-  async function handleRetirerGarant(garantId: string): Promise<void> {
-    await archiveGarant(garantId);
-    await refresh();
-  }
 
   if (error) {
     return (
@@ -896,9 +895,7 @@ function BailActuelDetail({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            void handleRetirerGarant(garant.id);
-                          }}
+                          onClick={() => setGarantARetirer(garant)}
                           className="text-xs text-slate-500 hover:text-red-600"
                         >
                           Retirer
@@ -934,6 +931,23 @@ function BailActuelDetail({
           </ul>
         )}
       </div>
+      {/* Engagement de la caution (fin, colocation) : celui déjà lu avec le bail (GET
+          /garants/:id/engagement, chargerSuivisCautions) — jamais un appel
+          qui retarderait l'ouverture ; absente si la lecture a échoué. */}
+      {garantARetirer && (
+        <ConfirmationActionModal
+          {...texteRetraitGarant(
+            garantARetirer,
+            suivisCautions.get(garantARetirer.id)?.engagement ?? null
+          )}
+          action={() => archiveGarant(garantARetirer.id)}
+          onTermine={() => {
+            setGarantARetirer(null);
+            void refresh();
+          }}
+          onAnnuler={() => setGarantARetirer(null)}
+        />
+      )}
 
       <EtatDesLieuxSection bail={bail} appartement={appartement} />
 

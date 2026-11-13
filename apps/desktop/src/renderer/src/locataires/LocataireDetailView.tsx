@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { ArchiveBadge } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageLocataire, texteRetraitGarant } from "../lib/textes-confirmation";
 import { valeurOuNull } from "../lib/valeur-ou-null";
 import { getAppartement, type Appartement } from "../patrimoine/api";
 import {
@@ -59,6 +61,7 @@ export function LocataireDetailView({
   const [bauxHistorique, setBauxHistorique] = useState<BailAvecContexte[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [archivageAConfirmer, setArchivageAConfirmer] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -114,11 +117,6 @@ export function LocataireDetailView({
 
   useBreadcrumbSegments(locataire ? [`${locataire.prenom} ${locataire.nom}`] : []);
 
-  async function handleArchiveLocataire(): Promise<void> {
-    await archiveLocataire(locataireId);
-    await refresh();
-  }
-
   if (error) {
     return (
       <p role="alert" className="text-sm text-red-600">
@@ -145,15 +143,24 @@ export function LocataireDetailView({
         {locataire.statut !== "archive" && (
           <button
             type="button"
-            onClick={() => {
-              void handleArchiveLocataire();
-            }}
+            onClick={() => setArchivageAConfirmer(true)}
             className="text-sm text-slate-500 hover:text-red-600"
           >
             Archiver
           </button>
         )}
       </div>
+      {archivageAConfirmer && (
+        <ConfirmationActionModal
+          {...texteArchivageLocataire(locataire)}
+          action={() => archiveLocataire(locataireId)}
+          onTermine={() => {
+            setArchivageAConfirmer(false);
+            void refresh();
+          }}
+          onAnnuler={() => setArchivageAConfirmer(false)}
+        />
+      )}
 
       <div className="space-y-4">
         <CollapsibleSection title="Coordonnées">
@@ -271,11 +278,7 @@ function BailDetail({
   const locataireIdsAuBail = colocataires.map(({ lien }) => lien.locataireId);
   const [showGarantForm, setShowGarantForm] = useState(false);
   const [editingGarantId, setEditingGarantId] = useState<string | null>(null);
-
-  async function handleArchiveGarant(id: string): Promise<void> {
-    await archiveGarant(id);
-    onChanged();
-  }
+  const [garantARetirer, setGarantARetirer] = useState<Garant | null>(null);
 
   return (
     <div className="rounded-md border border-slate-100 p-3">
@@ -383,9 +386,7 @@ function BailDetail({
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              void handleArchiveGarant(garant.id);
-                            }}
+                            onClick={() => setGarantARetirer(garant)}
                             className="text-xs text-slate-500 hover:text-red-600"
                           >
                             Retirer
@@ -410,6 +411,23 @@ function BailDetail({
           </ul>
         )}
       </div>
+      {/* Engagement de la caution (fin, colocation) : celui déjà lu avec la fiche (GET
+          /garants/:id/engagement, chargerSuivisCautions) — jamais un appel
+          qui retarderait l'ouverture ; absente si la lecture a échoué. */}
+      {garantARetirer && (
+        <ConfirmationActionModal
+          {...texteRetraitGarant(
+            garantARetirer,
+            suivisCautions.get(garantARetirer.id)?.engagement ?? null
+          )}
+          action={() => archiveGarant(garantARetirer.id)}
+          onTermine={() => {
+            setGarantARetirer(null);
+            onChanged();
+          }}
+          onAnnuler={() => setGarantARetirer(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { texteArchivageDocument } from "../lib/textes-confirmation";
 import { archiveDocument, listDocuments, type DocumentEntiteType, type DocumentMetier } from "./api";
 import { ChecklistCategoriesEntite } from "./ChecklistCategoriesEntite";
 import { DocumentApercuModal } from "./DocumentApercuModal";
@@ -23,6 +25,7 @@ export function DocumentsForEntite({
 }): React.JSX.Element {
   const [documents, setDocuments] = useState<DocumentMetier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [aArchiver, setAArchiver] = useState<DocumentMetier | null>(null);
   const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
 
   const refresh = useCallback(async () => {
@@ -41,11 +44,6 @@ export function DocumentsForEntite({
   async function refreshApresModification(): Promise<void> {
     await refresh();
     onChanged?.();
-  }
-
-  async function handleArchive(id: string): Promise<void> {
-    await archiveDocument(id);
-    await refreshApresModification();
   }
 
   return (
@@ -94,9 +92,7 @@ export function DocumentsForEntite({
               {document.statut !== "archive" && (
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleArchive(document.id);
-                  }}
+                  onClick={() => setAArchiver(document)}
                   className="text-xs text-slate-500 hover:text-red-600"
                 >
                   Archiver
@@ -108,6 +104,19 @@ export function DocumentsForEntite({
       )}
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
+      {/* Confirmation avant tout archivage, photo comprise : l'appel ne part
+          qu'au clic dans la modale, un refus du backend y reste affiché. */}
+      {aArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageDocument(aArchiver)}
+          action={() => archiveDocument(aArchiver.id)}
+          onTermine={() => {
+            setAArchiver(null);
+            void refreshApresModification();
+          }}
+          onAnnuler={() => setAArchiver(null)}
+        />
+      )}
       {erreurApercu && (
         <p role="alert" className="mt-2 text-sm text-red-600">
           {erreurApercu}

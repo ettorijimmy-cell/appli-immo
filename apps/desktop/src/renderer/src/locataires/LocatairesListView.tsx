@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageLocataire } from "../lib/textes-confirmation";
 import { archiveLocataire, createLocataire, listLocataires, type Locataire, type LocataireStatutEtudes } from "./api";
 import { ChampStatutEtudes } from "./ChampStatutEtudes";
 
@@ -14,6 +16,7 @@ export function LocatairesListView({
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [aArchiver, setAArchiver] = useState<Locataire | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -30,11 +33,6 @@ export function LocatairesListView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function handleArchive(id: string): Promise<void> {
-    await archiveLocataire(id);
-    await refresh();
-  }
 
   return (
     <div className="space-y-6">
@@ -109,9 +107,7 @@ export function LocatairesListView({
                     {locataire.statut !== "archive" && (
                       <button
                         type="button"
-                        onClick={() => {
-                          void handleArchive(locataire.id);
-                        }}
+                        onClick={() => setAArchiver(locataire)}
                         className="text-sm text-slate-500 hover:text-red-600"
                       >
                         Archiver
@@ -124,6 +120,18 @@ export function LocatairesListView({
           </table>
         );
       })()}
+
+      {aArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageLocataire(aArchiver)}
+          action={() => archiveLocataire(aArchiver.id)}
+          onTermine={() => {
+            setAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setAArchiver(null)}
+        />
+      )}
     </div>
   );
 }

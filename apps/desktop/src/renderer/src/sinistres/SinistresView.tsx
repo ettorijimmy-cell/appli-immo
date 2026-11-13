@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { listEvenements, type EvenementCalendrier } from "../calendrier/api";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { listContacts, type Contact } from "../contacts/api";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
+import { texteArchivageSinistre } from "../lib/textes-confirmation";
 import { libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import {
   archiveSinistre,
@@ -71,6 +73,10 @@ export function SinistresView(): React.JSX.Element {
   const [formulaire, setFormulaire] = useState<FormulaireSinistre>(FORMULAIRE_VIDE);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Sinistre dont l'archivage attend confirmation : type et statut
+  // enregistrés (pas ceux du formulaire, peut-être modifiés sans être
+  // enregistrés).
+  const [aArchiver, setAArchiver] = useState<Pick<Sinistre, "id" | "type" | "statut"> | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -152,11 +158,16 @@ export function SinistresView(): React.JSX.Element {
     }
   }
 
-  async function archiver(sinistreId: string): Promise<void> {
-    await archiveSinistre(sinistreId);
+  function demanderArchivage(sinistreId: string): void {
+    const enregistre = sinistres.find((s) => s.id === sinistreId);
+    setAArchiver(enregistre ?? { id: sinistreId, type: formulaire.type, statut: formulaire.statut });
+  }
+
+  function apresArchivage(): void {
+    setAArchiver(null);
     setVue({ niveau: "liste" });
     setFormulaire(FORMULAIRE_VIDE);
-    await refresh();
+    void refresh();
   }
 
   // Ouvre le formulaire de création d'événement déjà existant (Calendrier),
@@ -354,7 +365,7 @@ export function SinistresView(): React.JSX.Element {
             {vue.niveau === "edition" && (
               <button
                 type="button"
-                onClick={() => void archiver(vue.sinistreId)}
+                onClick={() => demanderArchivage(vue.sinistreId)}
                 className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
               >
                 Archiver
@@ -394,6 +405,15 @@ export function SinistresView(): React.JSX.Element {
             <h2 className="text-sm font-semibold text-slate-700">Pièces jointes</h2>
             <DocumentsForEntite entiteType="sinistre" entiteId={vue.sinistreId} />
           </div>
+        )}
+
+        {aArchiver && (
+          <ConfirmationActionModal
+            {...texteArchivageSinistre(aArchiver)}
+            action={() => archiveSinistre(aArchiver.id)}
+            onTermine={apresArchivage}
+            onAnnuler={() => setAArchiver(null)}
+          />
         )}
       </div>
     );

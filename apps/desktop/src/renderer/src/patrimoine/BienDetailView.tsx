@@ -18,8 +18,10 @@ import {
   type BienTypeHabitat
 } from "./api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageAppartement } from "../lib/textes-confirmation";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
 const TYPES_HABITAT: BienTypeHabitat[] = ["collectif", "individuel"];
@@ -45,6 +47,7 @@ export function BienDetailView({
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showArchivedAppartements, setShowArchivedAppartements] = useState(false);
+  const [aArchiver, setAArchiver] = useState<Appartement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -62,11 +65,6 @@ export function BienDetailView({
   }, [refresh]);
 
   useBreadcrumbSegments(bien ? [libelleBien(bien)] : []);
-
-  async function handleArchive(id: string): Promise<void> {
-    await archiveAppartement(id);
-    await refresh();
-  }
 
   if (error) {
     return (
@@ -231,9 +229,7 @@ export function BienDetailView({
                       {appartement.statut !== "archive" && (
                         <button
                           type="button"
-                          onClick={() => {
-                            void handleArchive(appartement.id);
-                          }}
+                          onClick={() => setAArchiver(appartement)}
                           className="text-sm text-slate-500 hover:text-red-600"
                         >
                           Archiver
@@ -247,6 +243,18 @@ export function BienDetailView({
           );
         })()}
       </div>
+
+      {aArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageAppartement(aArchiver)}
+          action={() => archiveAppartement(aArchiver.id)}
+          onTermine={() => {
+            setAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setAArchiver(null)}
+        />
+      )}
     </div>
   );
 }
