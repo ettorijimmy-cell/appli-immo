@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { texteArchivageDocument } from "../lib/textes-confirmation";
 import { archiveDocument, listDocuments, type DocumentCategorie, type DocumentMetier, type DocumentStatut } from "./api";
-import { confirmationArchivageRequise, messageErreurArchivage } from "./archivage-document";
-import { ConfirmationArchivagePhotoModal } from "./ConfirmationArchivagePhotoModal";
 import { DocumentApercuModal } from "./DocumentApercuModal";
 import { creerCacheLibellesEntites, resoudreLibelleEntite } from "./libelle-entite";
 import { CATEGORIE_LABELS, ENTITE_TYPE_LABELS, STATUT_BADGE_CLASSNAMES, STATUT_LABELS } from "./labels";
@@ -39,8 +39,7 @@ export function DocumentsListView(): React.JSX.Element {
   const [filtreStatut, setFiltreStatut] = useState<DocumentStatut | "tous">("tous");
   const [recherche, setRecherche] = useState("");
   const { apercu, erreur: erreurApercu, ouvrir, fermer } = useDocumentApercu();
-  const [photoAArchiver, setPhotoAArchiver] = useState<DocumentMetier | null>(null);
-  const [erreurArchivage, setErreurArchivage] = useState<string | null>(null);
+  const [aArchiver, setAArchiver] = useState<DocumentMetier | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -65,24 +64,6 @@ export function DocumentsListView(): React.JSX.Element {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  // Une photo passe par une confirmation (ConfirmationArchivagePhotoModal,
-  // qui affiche elle-même un refus) ; les autres documents s'archivent
-  // directement, avec un message visible en cas d'échec.
-  async function handleArchive(document: DocumentMetier): Promise<void> {
-    setErreurArchivage(null);
-    if (confirmationArchivageRequise(document)) {
-      setPhotoAArchiver(document);
-      return;
-    }
-    try {
-      await archiveDocument(document.id);
-    } catch (err) {
-      setErreurArchivage(messageErreurArchivage(err, document));
-      return;
-    }
-    await refresh();
-  }
 
   const rechercheNormalisee = recherche.trim().toLowerCase();
   const visibles = documents
@@ -143,11 +124,6 @@ export function DocumentsListView(): React.JSX.Element {
           {error}
         </p>
       )}
-      {erreurArchivage && (
-        <p role="alert" className="text-sm text-red-600">
-          {erreurArchivage}
-        </p>
-      )}
 
       {isLoading ? (
         <p className="text-sm text-slate-500">Chargement…</p>
@@ -195,9 +171,7 @@ export function DocumentsListView(): React.JSX.Element {
                   {document.statut !== "archive" && (
                     <button
                       type="button"
-                      onClick={() => {
-                        void handleArchive(document);
-                      }}
+                      onClick={() => setAArchiver(document)}
                       className="text-sm text-slate-500 hover:text-red-600"
                     >
                       Archiver
@@ -211,14 +185,18 @@ export function DocumentsListView(): React.JSX.Element {
       )}
 
       {apercu && <DocumentApercuModal apercu={apercu} onClose={fermer} />}
-      {photoAArchiver && (
-        <ConfirmationArchivagePhotoModal
-          document={photoAArchiver}
-          onAnnuler={() => setPhotoAArchiver(null)}
-          onArchive={() => {
-            setPhotoAArchiver(null);
+      {/* Confirmation avant tout archivage, photo comprise : mêmes textes
+          que la section Documents des fiches (texteArchivageDocument), refus
+          de l'API affiché dans la modale. */}
+      {aArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageDocument(aArchiver)}
+          action={() => archiveDocument(aArchiver.id)}
+          onTermine={() => {
+            setAArchiver(null);
             void refresh();
           }}
+          onAnnuler={() => setAArchiver(null)}
         />
       )}
       {erreurApercu && (

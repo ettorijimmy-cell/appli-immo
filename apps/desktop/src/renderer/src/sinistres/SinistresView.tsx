@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { listEvenements, type EvenementCalendrier } from "../calendrier/api";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { estArchive, lignesVisibles } from "../lib/archives";
 import { listContacts, type Contact } from "../contacts/api";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { texteArchivageSinistre } from "../lib/textes-confirmation";
@@ -69,6 +71,8 @@ export function SinistresView(): React.JSX.Element {
   const [libellesBien, setLibellesBien] = useState<Map<string, string>>(new Map());
   const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>("");
   const [filtreBienId, setFiltreBienId] = useState<string>("");
+  // Archivés masqués par défaut, comme sur les autres listes.
+  const [showArchived, setShowArchived] = useState(false);
   const [vue, setVue] = useState<Vue>({ niveau: "liste" });
   const [formulaire, setFormulaire] = useState<FormulaireSinistre>(FORMULAIRE_VIDE);
   const [isLoading, setIsLoading] = useState(true);
@@ -189,14 +193,20 @@ export function SinistresView(): React.JSX.Element {
     navigate(`/calendrier?${params.toString()}`);
   }
 
-  const visibles = sinistres.filter(
+  const visibles = lignesVisibles(sinistres, showArchived).filter(
     (s) => (filtreStatut === "" ? true : s.statut === filtreStatut) && (filtreBienId === "" ? true : s.bienId === filtreBienId)
   );
 
   const appartementsDuBien = appartements.filter((a) => a.bienId === formulaire.bienId);
   const contactsAssureur = contacts.filter((c) => c.role === "assureur");
+  // Rendez-vous archivés exclus : ils ne doivent ni s'afficher ici ni
+  // empêcher d'en créer un nouveau.
   const evenementsDuSinistre =
-    vue.niveau === "edition" ? evenements.filter((e) => e.sinistreId === vue.sinistreId) : [];
+    vue.niveau === "edition"
+      ? evenements.filter((e) => e.sinistreId === vue.sinistreId && e.archivedAt === null)
+      : [];
+  const sinistreOuvertArchive =
+    vue.niveau === "edition" && estArchive(sinistres.find((s) => s.id === vue.sinistreId));
 
   if (vue.niveau !== "liste") {
     return (
@@ -362,7 +372,7 @@ export function SinistresView(): React.JSX.Element {
             >
               Annuler
             </button>
-            {vue.niveau === "edition" && (
+            {vue.niveau === "edition" && !sinistreOuvertArchive && (
               <button
                 type="button"
                 onClick={() => demanderArchivage(vue.sinistreId)}
@@ -424,6 +434,7 @@ export function SinistresView(): React.JSX.Element {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Sinistres</h1>
         <div className="flex items-center gap-4 text-sm">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
           <select
             value={filtreStatut}
             onChange={(e) => setFiltreStatut(e.target.value as FiltreStatut)}
@@ -483,12 +494,15 @@ export function SinistresView(): React.JSX.Element {
               <tr
                 key={s.id}
                 onClick={() => void ouvrirSinistre(s.id)}
-                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                  s.archivedAt !== null ? ARCHIVED_ROW_CLASSNAME : ""
+                }`}
               >
                 <td className="py-2">
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                     {SINISTRE_STATUT_LABELS[s.statut]}
                   </span>
+                  {s.archivedAt !== null && <ArchiveBadge />}
                 </td>
                 <td className="py-2">{SINISTRE_TYPE_LABELS[s.type]}</td>
                 <td className="py-2">{s.bienId ? (libellesBien.get(s.bienId) ?? "—") : "—"}</td>

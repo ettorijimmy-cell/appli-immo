@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   PHRASE_ARCHIVAGE_IRREVERSIBLE,
+  texteAnnulationVersement,
   texteArchivageAppartement,
+  texteArchivageBien,
+  texteArchivageCandidat,
+  texteArchivageContact,
   texteArchivageDocument,
   texteArchivageEquipement,
+  texteArchivageEvenement,
   texteArchivageLocataire,
+  texteArchivagePaiement,
+  texteArchivageSci,
   texteArchivageSinistre,
   texteResiliationBail,
+  texteRetraitRegle,
   texteRetraitGarant
 } from "./textes-confirmation";
 
@@ -189,5 +197,113 @@ describe("texteResiliationBail", () => {
     });
     expect(texte.explication).toContain("le bail restera sans date de fin et aucun loyer n'est proratisé.");
     expect(texte.explication).not.toContain("prorata des jours");
+  });
+});
+
+describe("photo : formulation commune une seule fois (décision 13)", () => {
+  it("la phrase n'apparaît qu'une fois dans la modale photo des fiches", () => {
+    const texte = texteArchivageDocument({ nomFichier: "sejour.jpg", categorie: "photo" });
+    expect(texte.explication).toBe(
+      "La photo sera archivée, pas supprimée. Elle reste consultable dans les archives. L'archivage ne peut pas être annulé depuis l'application."
+    );
+    expect(texte.explication.split(PHRASE_ARCHIVAGE_IRREVERSIBLE)).toHaveLength(2);
+  });
+});
+
+describe("texteArchivageSci", () => {
+  it("nomme la SCI, dit ce qui sort et l'absence de cascade", () => {
+    expect(texteArchivageSci({ nom: "SCI Turgot" }).explication).toBe(
+      "SCI Turgot sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Ses biens, appartements et baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+    );
+  });
+});
+
+describe("texteArchivageBien", () => {
+  it("bien d'une SCI : prorata des dépenses communes, pas de cascade", () => {
+    expect(
+      texteArchivageBien({ nom: "Immeuble turgot", adresse: "12 rue Turgot", proprietaireType: "sci" }).explication
+    ).toBe(
+      "Immeuble turgot sera masqué de la liste (visible avec « Afficher les archivés »). Dans la déclaration fiscale de la SCI, ses propres loyers et dépenses restent comptés, mais il ne reçoit plus de part des dépenses communes de la SCI. Ses appartements et leurs baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+    );
+  });
+
+  it("bien en nom propre : sort de l'écran Fiscalité, jamais de mention de SCI", () => {
+    const texte = texteArchivageBien({ nom: null, adresse: "12 rue Turgot", proprietaireType: "personne_physique" });
+    expect(texte.explication).toBe(
+      "12 rue Turgot sera masqué de la liste (visible avec « Afficher les archivés »). Il ne sera plus proposé dans l'écran Fiscalité (déclaration 2044). Ses appartements et leurs baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+    );
+    expect(texte.explication).not.toContain("SCI");
+  });
+});
+
+describe("texteArchivagePaiement", () => {
+  const loyer = { montant: "550.00", dateEcheance: "2026-10-05", type: "loyer" as const };
+
+  it("loyer avec plusieurs versements : nombre, cascade et revenus locatifs", () => {
+    expect(texteArchivagePaiement(loyer, 2).explication).toBe(
+      "Le paiement de 550.00 € (loyer, échéance du 05/10/2026) et ses 2 versements seront archivés. Les sommes versées ne compteront plus dans les revenus locatifs (tableau de bord, fiscalité). Ils restent visibles avec « Afficher les archivés ». L'archivage ne peut pas être annulé depuis l'application."
+    );
+  });
+
+  it("un seul versement : au singulier", () => {
+    expect(texteArchivagePaiement(loyer, 1).explication).toContain("et son versement seront archivés.");
+  });
+
+  it("aucun versement : ni cascade ni revenus", () => {
+    const texte = texteArchivagePaiement(loyer, 0).explication;
+    expect(texte).toContain("sera archivé ; aucun versement n'y est enregistré.");
+    expect(texte).toContain("Il reste visible avec « Afficher les archivés ».");
+    expect(texte).not.toContain("revenus locatifs");
+  });
+
+  it("nombre inconnu (lecture en cours ou en échec) : sans nombre", () => {
+    expect(texteArchivagePaiement(loyer, null).explication).toContain("et ses versements éventuels seront archivés.");
+  });
+
+  it("dépôt de garantie : jamais de phrase sur les revenus locatifs", () => {
+    const texte = texteArchivagePaiement({ ...loyer, type: "depot_garantie" }, 1).explication;
+    expect(texte).toContain("(dépôt de garantie, échéance du 05/10/2026)");
+    expect(texte).not.toContain("revenus locatifs");
+  });
+});
+
+describe("texteAnnulationVersement", () => {
+  it("loyer : sommes reçues, revenus locatifs, statut recalculé", () => {
+    const texte = texteAnnulationVersement({ montant: "550.00", dateVersement: "2026-10-07" }, "loyer");
+    expect(texte.titre).toBe("Annuler ce versement ?");
+    expect(texte.explication).toBe(
+      "Le versement de 550.00 € du 07/10/2026 ne comptera plus dans les sommes reçues ni dans les revenus locatifs, et le statut du paiement sera recalculé. Il reste affiché, grisé, sous le paiement. Cette annulation ne peut pas être défaite depuis l'application."
+    );
+  });
+
+  it("charges : pas de mention des revenus locatifs", () => {
+    expect(
+      texteAnnulationVersement({ montant: "50.00", dateVersement: "2026-10-07" }, "charges").explication
+    ).not.toContain("revenus locatifs");
+  });
+});
+
+describe("événement, candidat, contact, règle", () => {
+  it("événement : titre, calendrier et abonnement", () => {
+    expect(texteArchivageEvenement({ titre: "Visite chaudière" }).explication).toBe(
+      "« Visite chaudière » sera masqué du calendrier (visible avec « Afficher les archivés ») et retiré du calendrier abonné. L'archivage ne peut pas être annulé depuis l'application."
+    );
+  });
+
+  it("candidat : prénom et nom, ou nom seul", () => {
+    expect(texteArchivageCandidat({ prenom: "Léa", nom: "Roux" }).explication).toMatch(/^Léa Roux sera masqué de la liste des candidats/);
+    expect(texteArchivageCandidat({ prenom: null, nom: "Roux" }).explication).toMatch(/^Roux sera masqué/);
+  });
+
+  it("contact : carnet et messagerie", () => {
+    expect(texteArchivageContact({ nom: "Plomberie Martin" }).explication).toContain(
+      "Plomberie Martin sera masqué du carnet de contacts (visible avec « Afficher les archivés ») et ne sera plus proposé comme destinataire dans la messagerie."
+    );
+  });
+
+  it("règle : mot-clé", () => {
+    expect(texteRetraitRegle({ motCle: "EDF" }).explication).toBe(
+      "Le mot-clé « EDF » ne présélectionnera plus de catégorie à l'import CSV. L'archivage ne peut pas être annulé depuis l'application."
+    );
   });
 });

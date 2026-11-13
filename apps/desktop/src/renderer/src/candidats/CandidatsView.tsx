@@ -1,8 +1,12 @@
 import { calculerTauxEffort, centimesVersMontant } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { ChecklistCategoriesEntite } from "../documents/ChecklistCategoriesEntite";
+import { estArchive, lignesVisibles } from "../lib/archives";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageCandidat } from "../lib/textes-confirmation";
 import { getBien, libelleBien, listAppartements, type Appartement, type Bien } from "../patrimoine/api";
 import {
   archiveCandidat,
@@ -67,6 +71,9 @@ export function CandidatsView(): React.JSX.Element {
   const [appartements, setAppartements] = useState<Appartement[]>([]);
   const [libellesAppartement, setLibellesAppartement] = useState<Map<string, string>>(new Map());
   const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>("");
+  // Archivés masqués par défaut, comme sur les autres listes.
+  const [showArchived, setShowArchived] = useState(false);
+  const [aArchiver, setAArchiver] = useState<Candidat | null>(null);
   const [vue, setVue] = useState<Vue>({ niveau: "liste" });
   const [formulaire, setFormulaire] = useState<FormulaireCandidat>(FORMULAIRE_VIDE);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,11 +173,11 @@ export function CandidatsView(): React.JSX.Element {
     }
   }
 
-  async function archiver(candidatId: string): Promise<void> {
-    await archiveCandidat(candidatId);
+  function apresArchivage(): void {
+    setAArchiver(null);
     setVue({ niveau: "liste" });
     setFormulaire(FORMULAIRE_VIDE);
-    await refresh();
+    void refresh();
   }
 
   // Ne génère jamais de bail (dates/loyer réel absents du dossier
@@ -194,7 +201,10 @@ export function CandidatsView(): React.JSX.Element {
     }
   }
 
-  const visibles = candidats.filter((c) => (filtreStatut === "" ? true : c.statut === filtreStatut));
+  const visibles = lignesVisibles(candidats, showArchived).filter((c) =>
+    filtreStatut === "" ? true : c.statut === filtreStatut
+  );
+  const candidatOuvert = vue.niveau === "edition" ? candidats.find((c) => c.id === vue.candidatId) : undefined;
 
   const tauxEffortCentimes =
     formulaire.loyerVise !== "" && formulaire.revenuMensuelNet !== ""
@@ -359,10 +369,10 @@ export function CandidatsView(): React.JSX.Element {
             >
               Annuler
             </button>
-            {vue.niveau === "edition" && (
+            {candidatOuvert && !estArchive(candidatOuvert) && (
               <button
                 type="button"
-                onClick={() => void archiver(vue.candidatId)}
+                onClick={() => setAArchiver(candidatOuvert)}
                 className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
               >
                 Archiver
@@ -370,6 +380,15 @@ export function CandidatsView(): React.JSX.Element {
             )}
           </div>
         </form>
+
+        {aArchiver && (
+          <ConfirmationActionModal
+            {...texteArchivageCandidat(aArchiver)}
+            action={() => archiveCandidat(aArchiver.id)}
+            onTermine={apresArchivage}
+            onAnnuler={() => setAArchiver(null)}
+          />
+        )}
 
         {vue.niveau === "edition" && formulaire.statut !== "converti" && (
           <div className="max-w-md space-y-2 rounded-md border border-slate-200 p-3">
@@ -422,6 +441,7 @@ export function CandidatsView(): React.JSX.Element {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Candidats</h1>
         <div className="flex items-center gap-4 text-sm">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
           <select
             value={filtreStatut}
             onChange={(e) => setFiltreStatut(e.target.value as FiltreStatut)}
@@ -470,12 +490,15 @@ export function CandidatsView(): React.JSX.Element {
               <tr
                 key={c.id}
                 onClick={() => void ouvrirCandidat(c.id)}
-                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                  c.archivedAt !== null ? ARCHIVED_ROW_CLASSNAME : ""
+                }`}
               >
                 <td className="py-2">
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                     {CANDIDAT_STATUT_LABELS[c.statut]}
                   </span>
+                  {c.archivedAt !== null && <ArchiveBadge />}
                 </td>
                 <td className="py-2">{libelleCandidat(c)}</td>
                 <td className="py-2">{c.appartementId ? (libellesAppartement.get(c.appartementId) ?? "—") : "—"}</td>

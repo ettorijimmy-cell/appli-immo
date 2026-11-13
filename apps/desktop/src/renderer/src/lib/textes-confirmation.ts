@@ -1,8 +1,14 @@
 import { formaterDateCourteFr } from "core";
 import { MESSAGE_CONFIRMATION_ARCHIVAGE_PHOTO, messageRepliArchivage } from "../documents/archivage-document";
+import type { EvenementCalendrier } from "../calendrier/api";
+import type { Candidat } from "../candidats/api";
+import type { Contact } from "../contacts/api";
+import type { RegleCategorisation } from "../depenses/api";
 import type { DocumentMetier } from "../documents/api";
+import type { Paiement, PaiementType, Versement } from "../finances/api";
 import type { Garant, Locataire } from "../locataires/api";
-import type { Appartement, Equipement, EquipementType } from "../patrimoine/api";
+import { libelleBien, type Appartement, type Bien, type Equipement, type EquipementType } from "../patrimoine/api";
+import type { Sci } from "../scis/api";
 import { SINISTRE_STATUT_LABELS, SINISTRE_TYPE_LABELS, type Sinistre } from "../sinistres/api";
 
 // Textes des confirmations d'archivage et de retrait (chantier archivage,
@@ -76,11 +82,11 @@ export function texteArchivageDocument(
   return {
     titre: photo ? "Archiver la photo ?" : "Archiver le document ?",
     objet: document.nomFichier,
-    explication: `${
-      photo
-        ? MESSAGE_CONFIRMATION_ARCHIVAGE_PHOTO
-        : "Le document sera archivé, pas supprimé. Il reste consultable dans les archives."
-    } ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    // Le message photo porte déjà la formulation commune (décision 13) :
+    // jamais ajoutée une seconde fois ici.
+    explication: photo
+      ? MESSAGE_CONFIRMATION_ARCHIVAGE_PHOTO
+      : `Le document sera archivé, pas supprimé. Il reste consultable dans les archives. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
     libelleConfirmer: photo ? "Archiver la photo" : "Archiver le document",
     libelleEnCours: "Archivage…",
     messageRepli: messageRepliArchivage(document)
@@ -190,5 +196,155 @@ export function texteResiliationBail({
     libelleConfirmer: "Résilier le bail",
     libelleEnCours: "Résiliation…",
     messageRepli: "Impossible de résilier le bail."
+  };
+}
+
+// Commit 4+5 du chantier archivage : autres archivages. Chaque phrase
+// renvoie à un comportement vérifié dans le code (tmp/reponse.md du
+// 2026-11-13) ; aucune cascade n'existe pour la SCI ni pour le bien.
+
+// SCI : masquée de la liste Patrimoine (ScisListView) et de l'écran
+// Fiscalité, qui ne retient que les SCI « active » (FiscaliteView). Ni ses
+// biens, ni ses appartements, ni ses baux ne sont archivés (ScisService
+// .archive() n'écrit que la SCI).
+export function texteArchivageSci(sci: Pick<Sci, "nom">): TexteConfirmation {
+  return {
+    titre: "Archiver la SCI ?",
+    explication: `${sci.nom} sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Ses biens, appartements et baux ne sont pas archivés. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver la SCI",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver cette SCI."
+  };
+}
+
+// Bien : masqué des listes. Aucune cascade (BienService.archive() n'écrit
+// que le bien).
+// - Bien d'une SCI : dans l'annexe 1, ses propres loyers et dépenses
+//   restent comptés ; il ne reçoit plus de part des dépenses communes de
+//   la SCI (FiscaliteService, biensActifsPourProrata).
+// - Bien en nom propre : il n'est plus proposé dans l'écran Fiscalité
+//   (FiscaliteView ne retient que les biens en nom propre « actif »).
+export function texteArchivageBien(bien: Pick<Bien, "nom" | "adresse" | "proprietaireType">): TexteConfirmation {
+  const fiscalite =
+    bien.proprietaireType === "personne_physique"
+      ? "Il ne sera plus proposé dans l'écran Fiscalité (déclaration 2044)."
+      : "Dans la déclaration fiscale de la SCI, ses propres loyers et dépenses restent comptés, mais il ne reçoit plus de part des dépenses communes de la SCI.";
+  return {
+    titre: "Archiver le bien ?",
+    explication: `${libelleBien(bien)} sera masqué de la liste (visible avec « Afficher les archivés »). ${fiscalite} Ses appartements et leurs baux ne sont pas archivés. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver le bien",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce bien."
+  };
+}
+
+const LIBELLES_TYPE_PAIEMENT: Record<PaiementType, string> = {
+  loyer: "loyer",
+  charges: "charges",
+  depot_garantie: "dépôt de garantie"
+};
+
+// Paiement : PaiementsService.archive() archive aussi, dans la même
+// transaction, tous ses versements actifs. Pour un loyer, ces versements
+// sortent des revenus locatifs (TableauDeBordService.getRevenusLocatifs,
+// repris par la fiscalité). `nbVersementsActifs` : null tant qu'il n'est
+// pas connu (lecture en cours ou en échec) — phrase sans nombre.
+export function texteArchivagePaiement(
+  paiement: Pick<Paiement, "montant" | "dateEcheance" | "type">,
+  nbVersementsActifs: number | null
+): TexteConfirmation {
+  const designation = `Le paiement de ${paiement.montant} € (${LIBELLES_TYPE_PAIEMENT[paiement.type]}, échéance du ${formaterDateCourteFr(paiement.dateEcheance)})`;
+  const phrases: string[] = [];
+  if (nbVersementsActifs === null) {
+    phrases.push(`${designation} et ses versements éventuels seront archivés.`);
+  } else if (nbVersementsActifs === 0) {
+    phrases.push(`${designation} sera archivé ; aucun versement n'y est enregistré.`);
+  } else {
+    phrases.push(
+      nbVersementsActifs === 1
+        ? `${designation} et son versement seront archivés.`
+        : `${designation} et ses ${nbVersementsActifs} versements seront archivés.`
+    );
+  }
+  if (paiement.type === "loyer" && nbVersementsActifs !== 0) {
+    phrases.push("Les sommes versées ne compteront plus dans les revenus locatifs (tableau de bord, fiscalité).");
+  }
+  phrases.push(
+    nbVersementsActifs === 0
+      ? "Il reste visible avec « Afficher les archivés »."
+      : "Ils restent visibles avec « Afficher les archivés ».",
+    PHRASE_ARCHIVAGE_IRREVERSIBLE
+  );
+  return {
+    titre: "Archiver ce paiement ?",
+    explication: phrases.join(" "),
+    libelleConfirmer: "Archiver le paiement",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce paiement."
+  };
+}
+
+// Versement : VersementsService.annuler() l'archive puis recalcule le
+// statut du paiement depuis ses versements restants. Pour un loyer, il
+// sort aussi des revenus locatifs.
+export function texteAnnulationVersement(
+  versement: Pick<Versement, "montant" | "dateVersement">,
+  typePaiement: PaiementType
+): TexteConfirmation {
+  const revenus = typePaiement === "loyer" ? " ni dans les revenus locatifs" : "";
+  return {
+    titre: "Annuler ce versement ?",
+    explication: `Le versement de ${versement.montant} € du ${formaterDateCourteFr(versement.dateVersement)} ne comptera plus dans les sommes reçues${revenus}, et le statut du paiement sera recalculé. Il reste affiché, grisé, sous le paiement. Cette annulation ne peut pas être défaite depuis l'application.`,
+    libelleConfirmer: "Annuler le versement",
+    libelleEnCours: "Annulation…",
+    messageRepli: "Impossible d'annuler ce versement."
+  };
+}
+
+// Événement : masqué du calendrier (liste et mois) et retiré du flux
+// d'abonnement ICS (EvenementsCalendrierService.findAllPourOrganisation).
+export function texteArchivageEvenement(evenement: Pick<EvenementCalendrier, "titre">): TexteConfirmation {
+  return {
+    titre: "Archiver l'événement ?",
+    explication: `« ${evenement.titre} » sera masqué du calendrier (visible avec « Afficher les archivés ») et retiré du calendrier abonné. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver l'événement",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver cet événement."
+  };
+}
+
+// Candidat et contact professionnel : masqués de leur liste et des
+// destinataires proposés par la messagerie (ContactsService
+// .findAllUnifie exclut les archivés).
+export function texteArchivageCandidat(candidat: Pick<Candidat, "prenom" | "nom">): TexteConfirmation {
+  const nom = candidat.prenom ? `${candidat.prenom} ${candidat.nom}` : candidat.nom;
+  return {
+    titre: "Archiver ce candidat ?",
+    explication: `${nom} sera masqué de la liste des candidats (visible avec « Afficher les archivés ») et ne sera plus proposé comme destinataire dans la messagerie. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver le candidat",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce candidat."
+  };
+}
+
+export function texteArchivageContact(contact: Pick<Contact, "nom">): TexteConfirmation {
+  return {
+    titre: "Archiver ce contact ?",
+    explication: `${contact.nom} sera masqué du carnet de contacts (visible avec « Afficher les archivés ») et ne sera plus proposé comme destinataire dans la messagerie. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver le contact",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce contact."
+  };
+}
+
+// Règle de catégorisation : les règles archivées ne sont plus lues à
+// l'import (RegleCategorisationService.findAllActives).
+export function texteRetraitRegle(regle: Pick<RegleCategorisation, "motCle">): TexteConfirmation {
+  return {
+    titre: "Retirer la règle ?",
+    explication: `Le mot-clé « ${regle.motCle} » ne présélectionnera plus de catégorie à l'import CSV. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Retirer la règle",
+    libelleEnCours: "Retrait…",
+    messageRepli: "Impossible de retirer cette règle."
   };
 }

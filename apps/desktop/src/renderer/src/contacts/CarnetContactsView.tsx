@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { texteArchivageContact } from "../lib/textes-confirmation";
 import { getBail } from "../locataires/api";
 import {
   archiveContact,
   createContact,
   getContact,
+  listContacts,
   listContactsUnifies,
   updateContact,
   CONTACT_ROLES,
   CONTACT_ROLE_LABELS,
+  type Contact,
   type ContactRole,
   type ContactTypeEntite,
   type ContactUnifie
 } from "./api";
+import { lignesCarnet, type LigneCarnet } from "./lignes-carnet";
 
 type FiltreType = "" | "locataire" | "garant" | "candidat" | ContactRole;
 
@@ -23,7 +29,12 @@ const LABELS_TYPE: Record<ContactUnifie["type"], string> = {
   ...CONTACT_ROLE_LABELS
 };
 
-type Vue = { niveau: "liste" } | { niveau: "creation" } | { niveau: "edition"; contactId: string };
+// `archive` : contact déjà archivé, ouvert depuis « Afficher les archivés »
+// — plus de bouton « Archiver ».
+type Vue =
+  | { niveau: "liste" }
+  | { niveau: "creation" }
+  | { niveau: "edition"; contactId: string; archive: boolean };
 
 interface FormulaireContact {
   nom: string;
@@ -51,6 +62,10 @@ const FORMULAIRE_VIDE: FormulaireContact = {
 export function CarnetContactsView(): React.JSX.Element {
   const navigate = useNavigate();
   const [contacts, setContacts] = useState<ContactUnifie[]>([]);
+  // Contacts professionnels, archivés compris (« Afficher les archivés »).
+  const [contactsPro, setContactsPro] = useState<Contact[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [aArchiver, setAArchiver] = useState<{ id: string; nom: string } | null>(null);
   const [filtreType, setFiltreType] = useState<FiltreType>("");
   const [vue, setVue] = useState<Vue>({ niveau: "liste" });
   const [formulaire, setFormulaire] = useState<FormulaireContact>(FORMULAIRE_VIDE);
@@ -60,7 +75,9 @@ export function CarnetContactsView(): React.JSX.Element {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      setContacts(await listContactsUnifies());
+      const [unifies, pro] = await Promise.all([listContactsUnifies(), listContacts()]);
+      setContacts(unifies);
+      setContactsPro(pro);
       setError(null);
     } catch {
       setError("Impossible de charger le carnet de contacts");
@@ -73,7 +90,7 @@ export function CarnetContactsView(): React.JSX.Element {
     void refresh();
   }, [refresh]);
 
-  async function ouvrirLigne(c: ContactUnifie): Promise<void> {
+  async function ouvrirLigne(c: LigneCarnet): Promise<void> {
     if (c.type === "locataire") {
       navigate(`/locataires?locataireId=${c.id}`);
       return;
@@ -98,7 +115,7 @@ export function CarnetContactsView(): React.JSX.Element {
       email: contact.email ?? "",
       notes: contact.notes ?? ""
     });
-    setVue({ niveau: "edition", contactId: c.id });
+    setVue({ niveau: "edition", contactId: c.id, archive: contact.archivedAt !== null });
   }
 
   async function soumettreFormulaire(e: FormEvent): Promise<void> {
@@ -125,14 +142,16 @@ export function CarnetContactsView(): React.JSX.Element {
     }
   }
 
-  async function archiver(contactId: string): Promise<void> {
-    await archiveContact(contactId);
+  function apresArchivage(): void {
+    setAArchiver(null);
     setVue({ niveau: "liste" });
     setFormulaire(FORMULAIRE_VIDE);
-    await refresh();
+    void refresh();
   }
 
-  const visibles = contacts.filter((c) => (filtreType === "" ? true : c.type === filtreType));
+  const visibles = lignesCarnet(contacts, contactsPro, showArchived).filter((c) =>
+    filtreType === "" ? true : c.type === filtreType
+  );
 
   if (vue.niveau !== "liste") {
     return (
@@ -217,10 +236,16 @@ export function CarnetContactsView(): React.JSX.Element {
             >
               Annuler
             </button>
-            {vue.niveau === "edition" && (
+            {vue.niveau === "edition" && !vue.archive && (
               <button
                 type="button"
-                onClick={() => void archiver(vue.contactId)}
+                // Nom enregistré, pas celui du formulaire peut-être modifié.
+                onClick={() =>
+                  setAArchiver({
+                    id: vue.contactId,
+                    nom: contactsPro.find((c) => c.id === vue.contactId)?.nom ?? formulaire.nom
+                  })
+                }
                 className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
               >
                 Archiver
@@ -228,6 +253,15 @@ export function CarnetContactsView(): React.JSX.Element {
             )}
           </div>
         </form>
+
+        {aArchiver && (
+          <ConfirmationActionModal
+            {...texteArchivageContact(aArchiver)}
+            action={() => archiveContact(aArchiver.id)}
+            onTermine={apresArchivage}
+            onAnnuler={() => setAArchiver(null)}
+          />
+        )}
       </div>
     );
   }
@@ -237,6 +271,7 @@ export function CarnetContactsView(): React.JSX.Element {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Carnet de contacts</h1>
         <div className="flex items-center gap-4 text-sm">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
           <select
             value={filtreType}
             onChange={(e) => setFiltreType(e.target.value as FiltreType)}
@@ -284,12 +319,15 @@ export function CarnetContactsView(): React.JSX.Element {
               <tr
                 key={`${c.type}-${c.id}`}
                 onClick={() => void ouvrirLigne(c)}
-                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                  c.archive ? ARCHIVED_ROW_CLASSNAME : ""
+                }`}
               >
                 <td className="py-2">
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                     {LABELS_TYPE[c.type]}
                   </span>
+                  {c.archive && <ArchiveBadge />}
                 </td>
                 <td className="py-2">{c.nom}</td>
                 <td className="py-2">{c.telephone ?? "—"}</td>

@@ -1,6 +1,8 @@
 import { calculerMontantRecuTotal } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { texteAnnulationVersement, texteArchivagePaiement } from "../lib/textes-confirmation";
 import { listBaux, type Bail } from "../locataires/api";
 import {
   ajouterVersement,
@@ -24,6 +26,8 @@ const STATUTS_FILTRABLES: Array<PaiementStatut | "tous"> = ["tous", "impaye", "p
 interface PaiementAffichable extends Paiement {
   contexte: ContexteBail;
   montantRecu: string;
+  // Versements actifs, archivés avec le paiement (confirmation d'archivage).
+  nbVersementsActifs: number;
 }
 
 export function FinancesListView({
@@ -67,7 +71,8 @@ export function FinancesListView({
         bruts.map(async (paiement) => ({
           ...paiement,
           contexte: await chargerContexteBail(paiement.bailId, caches),
-          montantRecu: calculerMontantRecuTotal(versementsActifsParPaiement.get(paiement.id) ?? [])
+          montantRecu: calculerMontantRecuTotal(versementsActifsParPaiement.get(paiement.id) ?? []),
+          nbVersementsActifs: (versementsActifsParPaiement.get(paiement.id) ?? []).length
         }))
       );
       setPaiements(enrichis);
@@ -83,10 +88,7 @@ export function FinancesListView({
     void refresh();
   }, [refresh]);
 
-  async function handleArchive(id: string): Promise<void> {
-    await archivePaiement(id);
-    await refresh();
-  }
+  const [paiementAArchiver, setPaiementAArchiver] = useState<PaiementAffichable | null>(null);
 
   const visibles = paiements
     .filter((p) => (showArchived ? true : p.archivedAt === null))
@@ -225,9 +227,7 @@ export function FinancesListView({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  void handleArchive(paiement.id);
-                                }}
+                                onClick={() => setPaiementAArchiver(paiement)}
                                 className="text-sm text-slate-500 hover:text-red-600"
                               >
                                 Archiver
@@ -250,6 +250,18 @@ export function FinancesListView({
             </div>
           ))}
         </div>
+      )}
+
+      {paiementAArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivagePaiement(paiementAArchiver, paiementAArchiver.nbVersementsActifs)}
+          action={() => archivePaiement(paiementAArchiver.id)}
+          onTermine={() => {
+            setPaiementAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setPaiementAArchiver(null)}
+        />
       )}
     </div>
   );
@@ -427,6 +439,7 @@ function VersementsPanel({
   const [versements, setVersements] = useState<Versement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [versementAAnnuler, setVersementAAnnuler] = useState<Versement | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -441,11 +454,6 @@ function VersementsPanel({
     void refresh();
   }, [refresh]);
 
-  async function handleAnnuler(versementId: string): Promise<void> {
-    await annulerVersement(versementId);
-    await refresh();
-    onChanged();
-  }
 
   const versementsActifs = versements.filter((v) => v.archivedAt === null);
   const versementsArchives = versements.filter((v) => v.archivedAt !== null);
@@ -489,9 +497,7 @@ function VersementsPanel({
                 <td className="py-1 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      void handleAnnuler(versement.id);
-                    }}
+                    onClick={() => setVersementAAnnuler(versement)}
                     className="text-xs text-slate-500 hover:text-red-600"
                   >
                     Annuler
@@ -509,6 +515,19 @@ function VersementsPanel({
             ))}
           </tbody>
         </table>
+      )}
+
+      {versementAAnnuler && (
+        <ConfirmationActionModal
+          {...texteAnnulationVersement(versementAAnnuler, paiement.type)}
+          action={() => annulerVersement(versementAAnnuler.id)}
+          onTermine={() => {
+            setVersementAAnnuler(null);
+            void refresh();
+            onChanged();
+          }}
+          onAnnuler={() => setVersementAAnnuler(null)}
+        />
       )}
     </div>
   );

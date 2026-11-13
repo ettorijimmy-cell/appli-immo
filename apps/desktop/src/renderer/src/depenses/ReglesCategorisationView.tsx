@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { texteRetraitRegle } from "../lib/textes-confirmation";
 import {
   archiveRegleCategorisation,
   createRegleCategorisation,
@@ -21,7 +23,7 @@ export function ReglesCategorisationView(): React.JSX.Element {
   const [motCle, setMotCle] = useState("");
   const [categorie, setCategorie] = useState<DepenseCategorie>("autre");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [archivageEnCours, setArchivageEnCours] = useState<string | null>(null);
+  const [regleARetirer, setRegleARetirer] = useState<RegleCategorisation | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -51,18 +53,6 @@ export function ReglesCategorisationView(): React.JSX.Element {
       setError("Impossible de créer cette règle");
     } finally {
       setIsSubmitting(false);
-    }
-  }
-
-  async function handleRetirer(id: string): Promise<void> {
-    setArchivageEnCours(id);
-    try {
-      await archiveRegleCategorisation(id);
-      await refresh();
-    } catch {
-      setError("Impossible de retirer cette règle");
-    } finally {
-      setArchivageEnCours(null);
     }
   }
 
@@ -143,17 +133,28 @@ export function ReglesCategorisationView(): React.JSX.Element {
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  void handleRetirer(regle.id);
-                }}
-                disabled={archivageEnCours === regle.id}
-                className="text-xs text-slate-500 hover:text-red-600 disabled:opacity-50"
+                onClick={() => setRegleARetirer(regle)}
+                className="text-xs text-slate-500 hover:text-red-600"
               >
                 Retirer
               </button>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Le message de l'API (et non plus un message générique) s'affiche
+          dans la modale en cas de refus. */}
+      {regleARetirer && (
+        <ConfirmationActionModal
+          {...texteRetraitRegle(regleARetirer)}
+          action={() => archiveRegleCategorisation(regleARetirer.id)}
+          onTermine={() => {
+            setRegleARetirer(null);
+            void refresh();
+          }}
+          onAnnuler={() => setRegleARetirer(null)}
+        />
       )}
     </div>
   );

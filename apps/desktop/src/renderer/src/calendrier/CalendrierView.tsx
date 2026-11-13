@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { listCandidats, type Candidat } from "../candidats/api";
 import { libelleCandidat } from "../candidats/CandidatsView";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { listContacts, type Contact } from "../contacts/api";
+import { estArchive, lignesVisibles } from "../lib/archives";
+import { texteArchivageEvenement } from "../lib/textes-confirmation";
 import { getBien, libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import { listSinistres, SINISTRE_TYPE_LABELS, type Sinistre } from "../sinistres/api";
 import {
@@ -97,6 +101,10 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
   const [sinistres, setSinistres] = useState<Sinistre[]>([]);
   const [libellesAppartement, setLibellesAppartement] = useState<Map<string, string>>(new Map());
   const [filtreType, setFiltreType] = useState<FiltreType>("");
+  // Archivés masqués par défaut (liste et vue mois), comme sur les autres
+  // listes.
+  const [showArchived, setShowArchived] = useState(false);
+  const [aArchiver, setAArchiver] = useState<EvenementCalendrier | null>(null);
   const [modeAffichage, setModeAffichage] = useState<ModeAffichage>("liste");
   const [vue, setVue] = useState<Vue>({ niveau: "liste" });
   const [formulaire, setFormulaire] = useState<FormulaireEvenement>(FORMULAIRE_VIDE);
@@ -226,14 +234,17 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
     ouvrirCreation({ dateDebut: `${date}T09:00` });
   }
 
-  async function archiver(evenementId: string): Promise<void> {
-    await archiveEvenement(evenementId);
+  function apresArchivage(): void {
+    setAArchiver(null);
     setVue({ niveau: "liste" });
     setFormulaire(FORMULAIRE_VIDE);
-    await refresh();
+    void refresh();
   }
 
-  const visibles = evenements
+  const evenementOuvert =
+    vue.niveau === "edition" ? evenements.find((e) => e.id === vue.evenementId) : undefined;
+
+  const visibles = lignesVisibles(evenements, showArchived)
     .filter((e) => (filtreType === "" ? true : e.type === filtreType))
     .slice()
     .sort((a, b) => a.dateDebut.localeCompare(b.dateDebut));
@@ -388,10 +399,10 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
             >
               Annuler
             </button>
-            {vue.niveau === "edition" && (
+            {evenementOuvert && !estArchive(evenementOuvert) && (
               <button
                 type="button"
-                onClick={() => void archiver(vue.evenementId)}
+                onClick={() => setAArchiver(evenementOuvert)}
                 className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
               >
                 Archiver
@@ -399,6 +410,15 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
             )}
           </div>
         </form>
+
+        {aArchiver && (
+          <ConfirmationActionModal
+            {...texteArchivageEvenement(aArchiver)}
+            action={() => archiveEvenement(aArchiver.id)}
+            onTermine={apresArchivage}
+            onAnnuler={() => setAArchiver(null)}
+          />
+        )}
       </div>
     );
   }
@@ -408,6 +428,7 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Calendrier</h1>
         <div className="flex items-center gap-4 text-sm">
+          <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((v) => !v)} />
           <div className="flex overflow-hidden rounded-md border border-slate-300">
             <button
               type="button"
@@ -481,9 +502,14 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
               <tr
                 key={e.id}
                 onClick={() => void ouvrirEvenement(e.id)}
-                className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                  e.archivedAt !== null ? ARCHIVED_ROW_CLASSNAME : ""
+                }`}
               >
-                <td className="py-2">{formaterDateAffichage(e.dateDebut)}</td>
+                <td className="py-2">
+                  {formaterDateAffichage(e.dateDebut)}
+                  {e.archivedAt !== null && <ArchiveBadge />}
+                </td>
                 <td className="py-2">
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                     {EVENEMENT_TYPE_LABELS[e.type]}

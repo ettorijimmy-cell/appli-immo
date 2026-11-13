@@ -11,8 +11,10 @@ import {
 import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
 import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageBien } from "../lib/textes-confirmation";
 import { valeurOuNull } from "../lib/valeur-ou-null";
 
 export function SciDetailView({
@@ -27,6 +29,7 @@ export function SciDetailView({
   const [sci, setSci] = useState<Sci | null>(null);
   const [comptes, setComptes] = useState<CompteBancaire[]>([]);
   const [biens, setBiens] = useState<Bien[]>([]);
+  const [bienAArchiver, setBienAArchiver] = useState<Bien | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCompteForm, setShowCompteForm] = useState(false);
   const [showBienWizard, setShowBienWizard] = useState(false);
@@ -56,11 +59,6 @@ export function SciDetailView({
   }, [refresh]);
 
   useBreadcrumbSegments(sci ? [sci.nom] : []);
-
-  async function handleArchiveBien(id: string): Promise<void> {
-    await archiveBien(id);
-    await refresh();
-  }
 
   if (error) {
     return (
@@ -217,9 +215,7 @@ export function SciDetailView({
                       {bien.statut === "actif" && (
                         <button
                           type="button"
-                          onClick={() => {
-                            void handleArchiveBien(bien.id);
-                          }}
+                          onClick={() => setBienAArchiver(bien)}
                           className="text-sm text-slate-500 hover:text-red-600"
                         >
                           Archiver
@@ -233,6 +229,18 @@ export function SciDetailView({
           );
         })()}
       </div>
+
+      {bienAArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageBien(bienAArchiver)}
+          action={() => archiveBien(bienAArchiver.id)}
+          onTermine={() => {
+            setBienAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setBienAArchiver(null)}
+        />
+      )}
 
       <div>
         <div className="flex items-center justify-between">

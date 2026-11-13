@@ -3,7 +3,9 @@ import { archiveSci, createSci, listScis, type CreateSciInput, type Sci } from "
 import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
 import { NewBienWizard } from "./NewBienWizard";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { ApiError } from "../lib/authenticated-fetch";
+import { texteArchivageBien, texteArchivageSci } from "../lib/textes-confirmation";
 
 // "" = non renseigné (clé omise à la création, jamais `false`) — distinct
 // de "false", jamais présélectionné par défaut (docs/data-dictionary.md).
@@ -24,6 +26,8 @@ export function ScisListView({
   const [showSciForm, setShowSciForm] = useState(false);
   const [showBienWizard, setShowBienWizard] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  // Archivage en attente de confirmation (SCI ou bien en nom propre).
+  const [aArchiver, setAArchiver] = useState<{ sci: Sci } | { bien: Bien } | null>(null);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -45,16 +49,6 @@ export function ScisListView({
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function handleArchiveSci(id: string): Promise<void> {
-    await archiveSci(id);
-    await refresh();
-  }
-
-  async function handleArchiveBien(id: string): Promise<void> {
-    await archiveBien(id);
-    await refresh();
-  }
 
   return (
     <div className="space-y-8">
@@ -150,9 +144,7 @@ export function ScisListView({
                       {sci.statut === "active" && (
                         <button
                           type="button"
-                          onClick={() => {
-                            void handleArchiveSci(sci.id);
-                          }}
+                          onClick={() => setAArchiver({ sci })}
                           className="text-sm text-slate-500 hover:text-red-600"
                         >
                           Archiver
@@ -212,9 +204,7 @@ export function ScisListView({
                       {bien.statut === "actif" && (
                         <button
                           type="button"
-                          onClick={() => {
-                            void handleArchiveBien(bien.id);
-                          }}
+                          onClick={() => setAArchiver({ bien })}
                           className="text-sm text-slate-500 hover:text-red-600"
                         >
                           Archiver
@@ -228,6 +218,18 @@ export function ScisListView({
           );
         })()}
       </div>
+
+      {aArchiver && (
+        <ConfirmationActionModal
+          {...("sci" in aArchiver ? texteArchivageSci(aArchiver.sci) : texteArchivageBien(aArchiver.bien))}
+          action={() => ("sci" in aArchiver ? archiveSci(aArchiver.sci.id) : archiveBien(aArchiver.bien.id))}
+          onTermine={() => {
+            setAArchiver(null);
+            void refresh();
+          }}
+          onAnnuler={() => setAArchiver(null)}
+        />
+      )}
     </div>
   );
 }
