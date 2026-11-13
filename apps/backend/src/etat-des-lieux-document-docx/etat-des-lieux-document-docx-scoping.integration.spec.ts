@@ -4,7 +4,7 @@ import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -36,6 +36,13 @@ import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.
 // etat-des-lieux-document-docx.integration.spec.ts).
 const FIXTURE_TEMPLATE = path.join(__dirname, "__fixtures__", "modele-etat-des-lieux-test.docx");
 process.env["ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH"] = FIXTURE_TEMPLATE;
+
+// Même motif que etat-des-lieux-document-docx.integration.spec.ts (voir son
+// commentaire) : le rendu docx est lourd par nature. Sous la charge de la
+// suite complète locale, « génère normalement le docx quand l'état des
+// lieux appartient à l'organisation appelante » a dépassé le défaut Vitest
+// (5000ms) le 2026-11-13 (tmp/), vert seul et en CI.
+vi.setConfig({ testTimeout: 20000 });
 
 interface FixtureOrganisation {
   organisationId: string;

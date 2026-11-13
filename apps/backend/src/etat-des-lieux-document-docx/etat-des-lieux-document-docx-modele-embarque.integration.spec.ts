@@ -3,7 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
 import PizZip from "pizzip";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
 import { AuditModule } from "../audit/audit.module";
@@ -39,6 +39,13 @@ import { EtatDesLieuxDocumentDocxService } from "./etat-des-lieux-document-docx.
 // une éventuelle valeur déjà posée par un autre fichier de test exécuté
 // dans le même worker, pour ne jamais dépendre de l'ordre d'exécution.
 delete process.env["ETAT_DES_LIEUX_DOCUMENT_DOCX_TEMPLATE_PATH"];
+
+// Même motif que etat-des-lieux-document-docx.integration.spec.ts (voir son
+// commentaire) : le rendu docx avec le vrai modèle embarqué est lourd par
+// nature. Sous la charge de la suite complète locale, « génère un vrai
+// .docx avec le modèle embarqué » a dépassé le défaut Vitest (5000ms) lors
+// de deux passages le 2026-11-13 (tmp/), vert seul et en CI.
+vi.setConfig({ testTimeout: 20000 });
 
 function texteDuDocx(buffer: Buffer): string {
   const zip = new PizZip(buffer);
