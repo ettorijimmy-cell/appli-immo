@@ -136,3 +136,59 @@ export function texteRetraitGarant(
     messageRepli: "Impossible de retirer ce garant."
   };
 }
+
+// Résiliation du bail (commit 3 du chantier archivage). Chaque phrase
+// décrit ce que fait réellement BauxService.resilier() (apps/backend/src/
+// baux/baux.service.ts), sans rien promettre de plus :
+// - statut « resilie », définitif (activer() n'accepte qu'un brouillon,
+//   UpdateBailDto n'a pas de statut) ;
+// - date de fin : celle saisie ; sans saisie, la date déjà enregistrée sur
+//   le bail est conservée telle quelle, et rien n'est proratisé ;
+// - avec une date : l'échéance de loyer du mois de fin est ajustée au
+//   prorata des jours occupés si elle n'est pas entièrement payée (impayée
+//   ou partielle), créée si elle manque ;
+//   déjà payée, elle n'est pas modifiée et un trop-perçu est seulement
+//   signalé ;
+// - plus aucune échéance générée ensuite (le job mensuel ne traite que
+//   les baux actifs ou en préavis), les échéances existantes restent dues ;
+// - l'appartement repasse vacant seulement s'il était loué.
+export function texteResiliationBail({
+  numeroAppartement,
+  dateDebut,
+  dateFinEnregistree,
+  dateFinSaisie
+}: {
+  numeroAppartement: string;
+  dateDebut: string;
+  // Date de fin déjà enregistrée sur le bail, null si aucune.
+  dateFinEnregistree: string | null;
+  // Date saisie à côté du bouton « Résilier le bail », "" si aucune.
+  dateFinSaisie: string;
+}): TexteConfirmation {
+  const phrases: string[] = [];
+  if (dateFinSaisie !== "") {
+    phrases.push(
+      `Le bail passera en statut résilié, avec une fin d'occupation au ${formaterDateCourteFr(dateFinSaisie)}.`,
+      "Le loyer de ce mois sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée. Un trop-perçu éventuel est signalé, jamais remboursé automatiquement."
+    );
+  } else {
+    phrases.push(
+      dateFinEnregistree
+        ? `Le bail passera en statut résilié. Aucune date de fin n'est saisie : la date déjà enregistrée (${formaterDateCourteFr(dateFinEnregistree)}) est conservée et aucun loyer n'est proratisé.`
+        : "Le bail passera en statut résilié. Aucune date de fin n'est saisie : le bail restera sans date de fin et aucun loyer n'est proratisé."
+    );
+  }
+  phrases.push(
+    "Plus aucune échéance de loyer ne sera générée ; celles déjà créées restent dues.",
+    "L'appartement repassera vacant s'il était loué.",
+    "Cette action est définitive : un bail résilié ne peut pas être réactivé."
+  );
+  return {
+    titre: "Résilier le bail ?",
+    objet: `Logement n° ${numeroAppartement}, bail du ${formaterDateCourteFr(dateDebut)}`,
+    explication: phrases.join(" "),
+    libelleConfirmer: "Résilier le bail",
+    libelleEnCours: "Résiliation…",
+    messageRepli: "Impossible de résilier le bail."
+  };
+}

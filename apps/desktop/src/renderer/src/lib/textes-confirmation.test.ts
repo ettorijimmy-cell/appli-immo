@@ -6,6 +6,7 @@ import {
   texteArchivageEquipement,
   texteArchivageLocataire,
   texteArchivageSinistre,
+  texteResiliationBail,
   texteRetraitGarant
 } from "./textes-confirmation";
 
@@ -133,5 +134,60 @@ describe("texteRetraitGarant", () => {
     expect(texte.explication).toBe(
       "Garantie SCI n'apparaîtra plus sur ce bail ni dans le document de bail généré. Ses documents sont conservés. L'archivage ne peut pas être annulé depuis l'application."
     );
+  });
+});
+
+describe("texteResiliationBail", () => {
+  const FIN_COMMUNE =
+    "Plus aucune échéance de loyer ne sera générée ; celles déjà créées restent dues. L'appartement repassera vacant s'il était loué. Cette action est définitive : un bail résilié ne peut pas être réactivé.";
+
+  it("avec une date saisie : date de fin et prorata du mois de fin", () => {
+    const texte = texteResiliationBail({
+      numeroAppartement: "T2 - 1",
+      dateDebut: "2026-08-01",
+      dateFinEnregistree: null,
+      dateFinSaisie: "2027-01-15"
+    });
+    expect(texte.titre).toBe("Résilier le bail ?");
+    expect(texte.objet).toBe("Logement n° T2 - 1, bail du 01/08/2026");
+    expect(texte.explication).toBe(
+      `Le bail passera en statut résilié, avec une fin d'occupation au 15/01/2027. Le loyer de ce mois sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée. Un trop-perçu éventuel est signalé, jamais remboursé automatiquement. ${FIN_COMMUNE}`
+    );
+    expect(texte.libelleConfirmer).toBe("Résilier le bail");
+    expect(texte.messageRepli).toBe("Impossible de résilier le bail.");
+  });
+
+  it("la date saisie prime sur la date déjà enregistrée", () => {
+    const texte = texteResiliationBail({
+      numeroAppartement: "3B",
+      dateDebut: "2026-08-01",
+      dateFinEnregistree: "2029-07-31",
+      dateFinSaisie: "2027-01-15"
+    });
+    expect(texte.explication).toContain("fin d'occupation au 15/01/2027.");
+    expect(texte.explication).not.toContain("31/07/2029");
+  });
+
+  it("sans date saisie, date déjà enregistrée : conservée, aucun prorata", () => {
+    const texte = texteResiliationBail({
+      numeroAppartement: "3B",
+      dateDebut: "2026-08-01",
+      dateFinEnregistree: "2029-07-31",
+      dateFinSaisie: ""
+    });
+    expect(texte.explication).toBe(
+      `Le bail passera en statut résilié. Aucune date de fin n'est saisie : la date déjà enregistrée (31/07/2029) est conservée et aucun loyer n'est proratisé. ${FIN_COMMUNE}`
+    );
+  });
+
+  it("sans date saisie ni enregistrée : bail sans date de fin, aucun prorata", () => {
+    const texte = texteResiliationBail({
+      numeroAppartement: "3B",
+      dateDebut: "2026-08-01",
+      dateFinEnregistree: null,
+      dateFinSaisie: ""
+    });
+    expect(texte.explication).toContain("le bail restera sans date de fin et aucun loyer n'est proratisé.");
+    expect(texte.explication).not.toContain("prorata des jours");
   });
 });

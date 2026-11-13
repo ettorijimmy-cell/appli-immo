@@ -17,7 +17,7 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
-import { texteRetraitGarant } from "../lib/textes-confirmation";
+import { texteResiliationBail, texteRetraitGarant } from "../lib/textes-confirmation";
 import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
@@ -427,6 +427,7 @@ function BailActuelDetail({
   const [dateFinResiliation, setDateFinResiliation] = useState("");
   const [isActionInProgress, setIsActionInProgress] = useState(false);
   const [tropPercuMessage, setTropPercuMessage] = useState<string | null>(null);
+  const [resiliationAConfirmer, setResiliationAConfirmer] = useState(false);
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [documentChampsManquants, setDocumentChampsManquants] = useState<string[] | null>(null);
@@ -490,26 +491,21 @@ function BailActuelDetail({
     }
   }
 
-  async function handleResilier(): Promise<void> {
+  // Appelée seulement depuis la confirmation (ConfirmationActionModal) :
+  // un refus de l'API y reste affiché, la modale ne se ferme qu'après
+  // succès (voir onTermine, qui appelle onChanged()).
+  async function resilier(): Promise<void> {
     setActionError(null);
-    setIsActionInProgress(true);
-    try {
-      const resultat = await resilierBail(bail.id, dateFinResiliation || undefined);
-      // Signalé seulement, jamais créé automatiquement (décision D3,
-      // docs/data-dictionary.md) — reste visible durablement sur le
-      // Tableau de bord ("Remboursements en attente") au-delà de ce
-      // message ponctuel.
-      setTropPercuMessage(
-        resultat.tropPercu
-          ? `Trop-perçu détecté : ${resultat.tropPercu.montant} € — visible sur le Tableau de bord ("Remboursements en attente") tant qu'aucun remboursement n'est créé.`
-          : null
-      );
-      onChanged();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Impossible de résilier le bail");
-    } finally {
-      setIsActionInProgress(false);
-    }
+    const resultat = await resilierBail(bail.id, dateFinResiliation || undefined);
+    // Signalé seulement, jamais créé automatiquement (décision D3,
+    // docs/data-dictionary.md) — reste visible durablement sur le
+    // Tableau de bord ("Remboursements en attente") au-delà de ce
+    // message ponctuel.
+    setTropPercuMessage(
+      resultat.tropPercu
+        ? `Trop-perçu détecté : ${resultat.tropPercu.montant} € — visible sur le Tableau de bord ("Remboursements en attente") tant qu'aucun remboursement n'est créé.`
+        : null
+    );
   }
 
   async function handleGenererDocument(): Promise<void> {
@@ -704,17 +700,36 @@ function BailActuelDetail({
             />
             <button
               type="button"
-              onClick={() => {
-                void handleResilier();
-              }}
+              onClick={() => setResiliationAConfirmer(true)}
               disabled={isActionInProgress}
               className="rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {isActionInProgress ? "Résiliation…" : "Résilier le bail"}
+              Résilier le bail
             </button>
           </>
         )}
       </div>
+
+      {/* Résiliation : définitive, jamais d'un seul clic. Le texte décrit ce
+          que fait BauxService.resilier() pour la date saisie (ou son
+          absence) — voir texteResiliationBail. */}
+      {resiliationAConfirmer && (
+        <ConfirmationActionModal
+          {...texteResiliationBail({
+            numeroAppartement: appartement.numero,
+            dateDebut: bail.dateDebut,
+            dateFinEnregistree: bail.dateFin,
+            dateFinSaisie: dateFinResiliation
+          })}
+          ton="danger"
+          action={resilier}
+          onTermine={() => {
+            setResiliationAConfirmer(false);
+            onChanged();
+          }}
+          onAnnuler={() => setResiliationAConfirmer(false)}
+        />
+      )}
 
       <div className="flex items-center gap-4">
         <button

@@ -17,7 +17,8 @@ export function ConfirmationActionModal({
   action,
   messageRepli,
   onTermine,
-  onAnnuler
+  onAnnuler,
+  ton = "neutre"
 }: {
   titre: string;
   // Ce sur quoi porte l'action (nom de fichier, nom du locataire...).
@@ -30,6 +31,9 @@ export function ConfirmationActionModal({
   messageRepli: string;
   onTermine: () => void;
   onAnnuler: () => void;
+  // « danger » : bouton de confirmation rouge, pour une action définitive
+  // (résiliation du bail) — même rouge que l'abandon de brouillon.
+  ton?: "neutre" | "danger";
 }): React.JSX.Element {
   const [etat, setEtat] = useState<EtatActionConfirmee>({ statut: "attente" });
   // Dernière version des props : la machine d'état est créée une seule fois
@@ -75,7 +79,9 @@ export function ConfirmationActionModal({
           type="button"
           onClick={() => void confirmer()}
           disabled={enCours}
-          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+          className={`rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+            ton === "danger" ? "bg-red-700 hover:bg-red-800" : "bg-indigo-700 hover:bg-indigo-800"
+          }`}
         >
           {enCours ? libelleEnCours : libelleConfirmer}
         </button>
