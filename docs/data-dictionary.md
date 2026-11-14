@@ -198,6 +198,16 @@ seules voies pour changer `statut` : jamais via une mise à jour générique du
 bail (`apps/backend/src/baux/baux.service.ts`, `UpdateBailDto` ne porte pas
 ce champ).
 
+Depuis le 2026-11-14 (commit `9ac1234`), `resilier()` refuse (409, « Résiliez
+le bail à la date de départ ou après. ») une `date_fin` postérieure à la date
+du jour à Paris (`refusDateFinResiliation`, packages/core ;
+`dateDuJourParis`), avant toute écriture : le bail passerait sinon aussitôt
+en `resilie` et les mois restants ne seraient jamais facturés. Sans
+`date_fin`, comportement inchangé. Les archivages qui casseraient un bail en
+cours sont refusés de la même façon (409) : appartement au bail `actif` ou
+`preavis`, locataire encore rattaché (lien `bail_locataires` non archivé) à
+un tel bail, retrait du dernier locataire non retiré d'un tel bail.
+
 **Concurrence (docs/backlog.md, dette technique Module 3, résolue)** :
 index unique partiel Postgres `baux_appartement_id_actif_unique` sur
 `(appartement_id) WHERE statut IN ('actif', 'preavis')` — garantit au

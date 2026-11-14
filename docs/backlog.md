@@ -289,15 +289,88 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
-- **Archivage sans message d'erreur sur les fiches locataire,
-  appartement, garant et sinistre (constaté le 2026-11-07, à aligner).**
-  La section Documents embarquée dans ces fiches
-  (`apps/desktop/src/renderer/src/documents/DocumentsForEntite.tsx`)
-  archive au clic, sans confirmation, et un échec n'affiche rien (la
-  ligne reste simplement en place). L'écran Documents et l'état des lieux
-  ont été corrigés le même jour (confirmation pour une photo, message
-  d'erreur visible : `ConfirmationArchivagePhotoModal`,
-  `messageErreurArchivage`) ; aligner ces fiches sur le même principe.
+- **PRIORITÉ — chantier financier de la résiliation (ouvert, 2026-11-14,
+  à faire juste après le chantier archivage, avec
+  financial-logic-reviewer).** Deux trous de `BauxService.resilier()`
+  (`apps/backend/src/baux/baux.service.ts`) et du job mensuel
+  (`alertes-job.service.ts`), constatés le 2026-11-13 :
+  - **Échéances générées après une date de fin passée : restent dues.**
+    Résilier avec une date de fin passée n'annule ni n'archive les
+    échéances déjà générées pour les mois suivants : elles restent dues en
+    entier et l'alerte d'impayé les signale. **Aggravé par le refus des
+    dates futures** (commit `9ac1234`) : il faut maintenant résilier le
+    jour du départ ou après, alors que le job de 1 h du matin crée
+    l'échéance du mois le 1er. Une sortie au 31 résiliée le 1er laisse donc
+    le mois suivant dû en entier.
+  - **Résiliation sans date : aucun prorata.** L'échéance du mois reste au
+    montant plein et le bail peut rester sans date de fin.
+
+  Le refus d'une date de fin future (trou 1) est corrigé (commit
+  `9ac1234`) : réserve du financial-logic-reviewer notée par Jimmy, garde-fou
+  gardé, une échéance de trop, visible et annulable, valant mieux que des
+  mois jamais facturés. **Consigne en attendant** : résilier le jour du
+  départ, avec la date de fin réelle, ou annuler à la main l'échéance créée
+  après la date de fin.
+
+- **Archivage sans confirmation ni message d'erreur — résolu (2026-11-14,
+  commits `927013a` à `9ac1234`).** Constaté le 2026-11-07 sur les fiches
+  locataire, appartement, garant et sinistre (archivage au clic, échec
+  silencieux), puis étendu par l'audit du 2026-11-12 à tout le desktop.
+  Résumé :
+  - `927013a` : modale de confirmation commune (`ConfirmationActionModal`,
+    machine d'état `lib/action-confirmee.ts` contre le double clic) et
+    message d'erreur commun (`lib/message-erreur-api.ts` : le message du
+    backend, jamais « Internal server error ») ;
+  - `ac47779` : confirmation et erreur visible à l'archivage depuis les
+    fiches (locataire, appartement, bien, bail et ses garants, sinistre,
+    documents embarqués), textes
+    dans `lib/textes-confirmation.ts`, formulation commune « L'archivage ne
+    peut pas être annulé depuis l'application. » ; pour un garant, rappel
+    que le retrait ne met pas fin à l'engagement de la caution ;
+  - `3f4a494` : confirmation avant la résiliation du bail ;
+  - `38eebab` : confirmation sur les autres archivages (SCI, biens,
+    paiement, versement, calendrier, candidats, contacts, règles de
+    catégorisation, photo) ; sinistres, contacts et candidats archivés
+    masqués par défaut (`lib/archives.ts`, `ArchiveToggle`) ;
+  - `9ac1234` : le backend refuse (409, message qui dit quoi faire,
+    affiché tel quel dans la confirmation, toujours après le 404 d'une autre
+    organisation) l'archivage d'un appartement au bail actif ou en préavis,
+    d'un locataire encore rattaché à un tel bail, le retrait du dernier
+    locataire d'un tel bail, et une date de fin de résiliation future ; le
+    refus d'archiver un document réservé donne un libellé lisible ; le champ
+    date de fin de la résiliation s'arrête à aujourd'hui (Europe/Paris).
+
+  Testé : tests purs desktop et `core`, 21 tests d'intégration des refus et
+  des cas autorisés voisins (`refus-archivage-resiliation.integration.spec.ts`),
+  test manuel de Jimmy le 2026-11-14 (jeu « Jetable » de l'organisation
+  d'essai). Suites ouvertes ci-dessous.
+
+- **Route de désarchivage absente (ouvert, 2026-11-14).** Aucun endpoint
+  ne remet une ligne archivée en service : un archivage par erreur ne se
+  corrige qu'en base. D'où la phrase « L'archivage ne peut pas être annulé
+  depuis l'application. » dans toutes les confirmations, à retirer quand la
+  route existera.
+
+- **Archiver une ligne déjà archivée : accepté (ouvert, 2026-11-14).** Les
+  `archive()` du backend ne refusent pas une ligne déjà archivée :
+  `archived_at` est réécrit, la date d'archivage d'origine est perdue. À
+  refuser (409) ou à rendre sans effet.
+
+- **Formulaire « Modifier » accessible sur une fiche archivée (ouvert,
+  2026-11-14).** Il permet de remettre un statut `actif` sur une ligne qui
+  garde `archived_at` rempli : état incohérent. À masquer sur une fiche
+  archivée, et à refuser côté backend.
+
+- **`archiveBail` et `archiveRemboursement` jamais appelés par le desktop
+  (ouvert, 2026-11-14).** Fonctions d'API présentes mais sans écran : à
+  brancher (avec confirmation) ou à retirer.
+
+- **Bien et SCI archivables avec des appartements loués (ouvert,
+  2026-11-14).** L'archivage d'un bien ou d'une SCI n'est pas refusé quand
+  un de ses appartements a un bail actif ou en préavis, et ne se propage
+  pas (pas de cascade) : les appartements restent actifs sous un parent
+  archivé. À trancher : refus (comme pour l'appartement, commit `9ac1234`)
+  ou cascade.
 
 - **Absence totale de logging des requêtes HTTP côté backend — résolu
   (commit `98a05ed`, 2026-09-27).** Constaté le même jour pendant le
@@ -1758,9 +1831,9 @@ production" ci-dessous pour le détail confirmé de chaque point.
 
 ## État de la production
 
-**Dernière mise à jour confirmée : 2026-11-08 (commit 4 du chantier garants
+**Dernière mise à jour confirmée : 2026-11-11 (chantier garants complet
 déployé, voir plus bas). Dernière migration en production :
-`0077_cuddly_squadron_sinister.sql`.** Source : runbook de déploiement
+`0078_lively_eddie_brock.sql`.** Source : runbook de déploiement
 (hors dépôt), qui fait foi.
 
 - Migrations Drizzle `0058` à `0065` appliquées en base de production
@@ -1940,8 +2013,22 @@ Limites connues du chantier entrée papier, confirmation, abandon :
 
 **Chantier garants complet (Visale, acte de cautionnement, remise du bail)
 — code terminé le 2026-11-11 (commits `954532f` à `c7df5ff`, sur
-`main`), non déployé.** La production est à `0077` : seule la `0078` sera
-appliquée. Ordre impératif :
+`main`), déployé le 2026-11-11 :**
+
+- Sauvegarde de la base de production `avant-deploiement-garants-complet`.
+- Migration `0078_lively_eddie_brock.sql` appliquée en base de production.
+- Image backend déployée : tag `94c0e2c` (hash complet
+  `94c0e2c0c048c02993d0f31353cf51c6bad8ead5`), révision Scaleway 00035,
+  `/health` 200.
+- Configuration PowerSync complète redéployée (streams `baux`, `garants`,
+  `bail_locataires`, `locataires`) ; configuration précédente sauvegardée
+  dans `docs/powersync-deploiement-local/config-avant-garants-complet.yaml`.
+- Installeur desktop reconstruit sur `94c0e2c`.
+- Vérifications faites : connexion, fiches, bail généré sans caution
+  (« Néant » et signatures à deux colonnes), aucun ERROR dans les logs.
+
+Ordre suivi (avant déploiement, la production était à `0077` : seule la
+`0078` a été appliquée) :
 
 1. **Sauvegarde** de la base de production avant la migration.
 2. **Migration `0078_lively_eddie_brock.sql` AVANT le nouveau backend.**
@@ -2017,6 +2104,23 @@ retour arrière :
   génération d'un acte de cautionnement ; déclaration de la remise du bail.
   Relecture de l'acte par l'ADIL avant le premier usage réel
   (`docs/questions-adil-acte-cautionnement.md`).
+
+**Chantier « archivage sans confirmation ni message d'erreur » — code
+terminé le 2026-11-14 (commits `927013a` à `9ac1234`, sur `main`), non
+déployé.** À déployer : image backend + installeur desktop. Le chantier
+n'ajoute ni migration ni changement de `docs/powersync-sync-streams.yaml` :
+aucune migration ni redéploiement PowerSync à faire (production à `0078`).
+
+Vérifications après déploiement :
+- une confirmation s'affiche avant chaque archivage et avant la
+  résiliation ; Annuler ne change rien ;
+- les refus du backend s'affichent dans la confirmation : appartement loué,
+  locataire rattaché à un bail en cours, dernier locataire d'un bail en
+  cours, date de fin de résiliation future ;
+- sinistres, contacts et candidats archivés masqués par défaut.
+
+**Retour arrière** : image `94c0e2c` et installeur `94c0e2c`, sans toucher à
+la base (aucune migration dans ce chantier).
 
 ---
 
