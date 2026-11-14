@@ -1,28 +1,47 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
-  calculerBornesMoisCalendaire,
   calculerDecompositionEcheanceEntree,
-  calculerMontantEcheanceLoyer,
-  calculerMontantRecuTotal,
-  calculerProrataOccupationPartielle,
+  calculerEcheanceMoisFinACreer,
+  calculerResteARembourser,
   calculerStatutAppartementApresResiliation,
-  calculerStatutPaiement,
+  calculerTropPercuTotalResiliation,
   centimesVersMontant,
+  classerEcheancesParRapportAFin,
+  deciderEcheanceApresFin,
+  estDateIsoValide,
   montantEnCentimes,
   peutActiverBail,
   preremplirLoyerBail,
-  refusDateFinResiliation
+  recalculerEcheanceMoisFin,
+  refusDateFinResiliation,
+  type DecisionEcheanceApresFin
 } from "core";
-import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
-import { and, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
+import { appartements, baux, bien, mettreAJourAvecAudit, paiements, remboursements, versements, type Database } from "db";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { dateDuJourParis } from "../common/date-paris";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
-import type { ResilierBailDto } from "./dto/resilier-bail.dto";
+import {
+  MESSAGE_DATE_FIN_RESILIATION_INVALIDE,
+  MESSAGE_DATE_FIN_RESILIATION_OBLIGATOIRE,
+  type ResilierBailDto
+} from "./dto/resilier-bail.dto";
 import type { UpdateBailDto } from "./dto/update-bail.dto";
 
 type BailRow = typeof baux.$inferSelect;
+
+// Échéance de loyer d'un mois après la date de fin, gardée à la
+// résiliation parce qu'elle a au moins un versement actif : tout ce qui a
+// été reçu est un trop-perçu signalé (réponse de resilier()).
+export interface EcheanceConserveeApresFin {
+  paiementId: string;
+  dateEcheance: string;
+  montant: string;
+  tropPercu: string;
+  // Trop-perçu moins les remboursements déjà saisis sur ce paiement.
+  resteARembourser: string;
+}
 
 // Fonction pure, exportée séparément de la classe pour rester testable sans
 // connexion DB (voir baux.service.spec.ts). Le driver `postgres` (utilisé
@@ -359,14 +378,39 @@ export class BauxService {
   // l'appartement est calculé par packages/core : ne repasse à "vacant" que
   // s'il était bien "loue" (garde contre l'écrasement d'un statut modifié
   // manuellement entre-temps, ex. "travaux").
+  //
+  // Clôture financière (chantier financier de la résiliation, décisions 4
+  // à 6 du 2026-11-14 — calculs purs dans packages/core,
+  // cloture-financiere-resiliation.ts) : date de fin obligatoire ; mois de
+  // fin au prorata (Cas A/B, décomposition comprise) ; échéances de loyer
+  // d'un mois après la fin archivées si aucun versement actif, sinon
+  // conservées avec leur trop-perçu signalé. Jamais de suppression, jamais
+  // de remboursement automatique.
   async resilier(id: string, dto: ResilierBailDto) {
     // Contrôle d'appartenance AVANT l'ouverture de la transaction (Priorité 2,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19) : avant
     // toute lecture d'appartement, toute création/modification de paiements
     // (prorata), toute modification du statut de l'appartement.
     await this.verifierAppartenanceBail(id);
+
+    // Revérifié ici (ResilierBailDto le refuse déjà en HTTP) : un appel
+    // direct au service ne doit jamais résilier sans date de fin.
+    if (!dto.dateFin) {
+      throw new BadRequestException(MESSAGE_DATE_FIN_RESILIATION_OBLIGATOIRE);
+    }
+    if (!estDateIsoValide(dto.dateFin)) {
+      throw new BadRequestException(MESSAGE_DATE_FIN_RESILIATION_INVALIDE);
+    }
+    const dateFin = dto.dateFin;
+
     return this.db.transaction(async (tx) => {
-      const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1);
+      // Verrou de la ligne du bail (FOR UPDATE) jusqu'à la fin de la
+      // transaction : le job de génération des échéances
+      // (AlertesJobService.genererEcheancesRecurrentes) prend le même
+      // verrou avant d'insérer. Soit il insère avant (son échéance est
+      // alors lue et traitée ci-dessous), soit il attend la fin de cette
+      // transaction, relit le bail, le voit « resilie » et n'insère rien.
+      const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1).for("update");
       if (!bail) {
         throw new NotFoundException("Bail introuvable");
       }
@@ -378,13 +422,8 @@ export class BauxService {
 
       // date_debut est le vrai début d'occupation (jamais date_activation,
       // purement administrative et absente de tout calcul financier — voir
-      // activer() ci-dessus). Sans ce garde, une dateFin antérieure à
-      // date_debut laissait calculerProrataOccupationPartielle ramener
-      // silencieusement le nombre de jours occupés à 0 (ligne à 0,00 € en
-      // Cas A, aucune ligne en Cas B) au lieu de rejeter explicitement une
-      // résiliation chronologiquement incohérente (docs/backlog.md, dette
-      // technique — corrigé).
-      if (dto.dateFin && dto.dateFin < bail.dateDebut) {
+      // activer() ci-dessus).
+      if (dateFin < bail.dateDebut) {
         throw new ConflictException(
           "La date de fin ne peut pas précéder la date de début du bail."
         );
@@ -392,15 +431,12 @@ export class BauxService {
 
       // Date de fin dans le futur refusée (chantier archivage, décision 16
       // du 2026-11-13 — voir refusDateFinResiliation, packages/core) : le
-      // bail passerait aussitôt en « resilie », le job mensuel cesserait de
-      // générer les échéances et les mois d'occupation restants ne seraient
-      // jamais facturés. « Aujourd'hui » = date du jour à Paris, comme pour
-      // la date d'une entrée papier. Sans date saisie : inchangé.
-      if (dto.dateFin) {
-        const refusDateFuture = refusDateFinResiliation(dto.dateFin, dateDuJourParis());
-        if (refusDateFuture) {
-          throw new ConflictException(refusDateFuture);
-        }
+      // bail passerait aussitôt en « resilie », le job cesserait de générer
+      // les échéances et les mois d'occupation restants ne seraient jamais
+      // facturés. « Aujourd'hui » = date du jour à Paris.
+      const refusDateFuture = refusDateFinResiliation(dateFin, dateDuJourParis());
+      if (refusDateFuture) {
+        throw new ConflictException(refusDateFuture);
       }
 
       const [appartement] = await tx
@@ -411,6 +447,42 @@ export class BauxService {
       if (!appartement) {
         throw new NotFoundException("Appartement introuvable");
       }
+
+      // Échéances de loyer non archivées du bail, classées par rapport au
+      // mois de fin (selon le mois de date_echeance), lues AVANT toute
+      // écriture : une incohérence (deux échéances le mois de fin) annule
+      // la résiliation sans rien avoir modifié.
+      const echeancesLoyer = await tx
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, id), eq(paiements.type, "loyer"), isNull(paiements.archivedAt)));
+      const classees = classerEcheancesParRapportAFin(echeancesLoyer, dateFin);
+      if (classees.moisFin.length > 1) {
+        throw new ConflictException(
+          `Plusieurs échéances de loyer (${classees.moisFin.length}) couvrent le mois de la date de fin. Gardez-en une seule (archivez les autres depuis Finances) avant de résilier.`
+        );
+      }
+
+      const idsAVerifier = [...classees.moisFin, ...classees.apresMoisFin].map((echeance) => echeance.id);
+      const versementsLus =
+        idsAVerifier.length > 0
+          ? await tx.select().from(versements).where(inArray(versements.paiementId, idsAVerifier))
+          : [];
+      const versementsDe = (paiementId: string) => versementsLus.filter((v) => v.paiementId === paiementId);
+      // Remboursements déjà saisis sur ces paiements (revue
+      // financial-logic-reviewer du commit 2) : en attendant le déploiement,
+      // la consigne est de rembourser une échéance payée après la fin ; la
+      // réponse doit alors dire ce qui RESTE à rembourser, comme le tableau
+      // de bord (calculerResteARembourser, paiement par paiement).
+      const remboursementsLus =
+        idsAVerifier.length > 0
+          ? await tx.select().from(remboursements).where(inArray(remboursements.paiementId, idsAVerifier))
+          : [];
+      const resteARembourserSur = (paiementId: string, tropPercuPaiement: string) =>
+        calculerResteARembourser(
+          tropPercuPaiement,
+          remboursementsLus.filter((r) => r.paiementId === paiementId)
+        );
 
       const utilisateurId = this.requestContext.getUtilisateurId();
       // dateResiliation : posée une seule fois ici, jamais retouchée ensuite
@@ -424,7 +496,7 @@ export class BauxService {
         tx,
         baux,
         id,
-        { statut: "resilie", dateFin: dto.dateFin, dateResiliation: new Date() },
+        { statut: "resilie", dateFin, dateResiliation: new Date() },
         utilisateurId
       );
       if (!bailResilie) {
@@ -440,107 +512,93 @@ export class BauxService {
         utilisateurId
       );
 
-      // Exposé dans la réponse si un trop-perçu est détecté ci-dessous
-      // (Cas A uniquement) — jamais écrit en base ici (docs/data-dictionary.md,
-      // section "versements & remboursements").
+      // Mois de fin. Rien à proratiser sans loyer renseigné (toujours vrai
+      // en pratique pour un bail actif/préavis — activer() l'exige — mais
+      // gardé explicite plutôt que supposé).
       let tropPercu: { paiementId: string; montant: string } | null = null;
-
-      // Prorata de l'échéance de loyer du mois de résiliation
-      // (docs/data-dictionary.md, "Décision produit — prorata à la
-      // résiliation"). Rien à proratiser sans date de fin explicite
-      // (dateFin optionnel dans ResilierBailDto) ni sans loyer renseigné
-      // (toujours vrai en pratique pour un bail actif/préavis — activer()
-      // l'exige déjà — mais gardé explicite plutôt que supposé).
-      if (dto.dateFin && bail.loyerMensuel) {
-        const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(dto.dateFin);
-        const [echeanceDuMois] = await tx
-          .select()
-          .from(paiements)
-          .where(
-            and(
-              eq(paiements.bailId, id),
-              eq(paiements.type, "loyer"),
-              isNull(paiements.archivedAt),
-              gte(paiements.dateEcheance, debutMoisInclus),
-              lt(paiements.dateEcheance, debutMoisSuivantExclusif)
-            )
-          )
-          .limit(1);
-
-        // Montant calculé une seule fois, toujours depuis le loyer/les
-        // provisions du bail — jamais depuis une échéance existante — et
-        // toujours avec dateDebut en repère de début d'occupation.
-        // dateDebut ne compte que si son mois calendaire est le MÊME que
-        // celui de dateFin (voir calculerProrataOccupationPartielle) :
-        // sinon le mois est occupé depuis son 1er jour, comme avant.
-        // Corrige un bug réel découvert par financial-logic-reviewer lors
-        // de ce même correctif : l'ancien Cas A reproratisait
-        // `echeanceDuMois.montant`, qui pouvait déjà être partiel (échéance
-        // d'entrée) si la résiliation tombe dans le même mois calendaire
-        // que dateDebut — double-décote silencieuse (docs/backlog.md,
-        // dette technique).
-        const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
-        const montantProratise = calculerProrataOccupationPartielle(montantPlein, dto.dateFin, bail.dateDebut);
-
+      let tropPercuMoisFin: string | null = null;
+      let centimesResteARembourser = 0;
+      if (bail.loyerMensuel) {
+        const bailCloture = {
+          loyerMensuel: bail.loyerMensuel,
+          provisionsCharges: bail.provisionsCharges,
+          dateDebut: bail.dateDebut
+        };
+        const [echeanceDuMois] = classees.moisFin;
         if (echeanceDuMois) {
-          // Cas A : une échéance couvre déjà ce mois. Le statut est
-          // toujours recalculé depuis les versements ACTIFS (docs/data-
-          // dictionary.md, section "versements & remboursements"), jamais
-          // depuis un unique montant_paye.
-          const versementsActifs = await tx
-            .select()
-            .from(versements)
-            .where(and(eq(versements.paiementId, echeanceDuMois.id), isNull(versements.archivedAt)));
-          const montantRecu = calculerMontantRecuTotal(versementsActifs);
-
-          // Le champ `montant` en base n'est mis à jour que si l'échéance
-          // n'est pas déjà réglée intégralement (trop-perçu non traité par
-          // CE chemin précis — voir juste après — docs/backlog.md, dette
-          // technique) : sinon, le montant stocké reste sciemment
-          // inchangé.
-          if (echeanceDuMois.statut === "impaye" || echeanceDuMois.statut === "partiel") {
+          // Cas A : montant, décomposition et statut recalculés si
+          // l'échéance est impayée ou partielle ; payée, elle reste telle
+          // quelle. Trop-perçu toujours comparé au prorata, signalé
+          // seulement (un remboursement reste un acte humain).
+          const resultat = recalculerEcheanceMoisFin(
+            { statut: echeanceDuMois.statut, versements: versementsDe(echeanceDuMois.id) },
+            bailCloture,
+            dateFin
+          );
+          if (resultat.miseAJour) {
+            const { montant, loyerHorsCharges, charges, statut } = resultat.miseAJour;
             await mettreAJourAvecAudit(
               tx,
               paiements,
               echeanceDuMois.id,
-              {
-                montant: montantProratise,
-                statut: calculerStatutPaiement(montantProratise, montantRecu)
-              },
+              { montant, loyerHorsCharges, charges, statut },
               utilisateurId
             );
           }
-
-          // Trop-perçu (docs/data-dictionary.md, docs/backlog.md, dette
-          // technique) : toujours comparé au montant VRAIMENT dû
-          // (montantProratise), que le champ stocké ait été mis à jour ou
-          // non ci-dessus — les deux scénarios documentés du trop-perçu
-          // (échéance déjà payée intégralement, ou partiel dépassant le
-          // nouveau prorata) sont ainsi détectés de la même façon. Signalé
-          // seulement, jamais créé automatiquement en `remboursements` —
-          // un acte humain explicite reste requis
-          // (RemboursementsService.create()), cohérent avec la règle
-          // "jamais d'automatisation silencieuse" déjà appliquée au
-          // rapprochement et aux alertes.
-          const centimesTropPercu = montantEnCentimes(montantRecu) - montantEnCentimes(montantProratise);
-          if (centimesTropPercu > 0) {
-            tropPercu = { paiementId: echeanceDuMois.id, montant: centimesVersMontant(centimesTropPercu) };
+          tropPercuMoisFin = resultat.tropPercu;
+          centimesResteARembourser += montantEnCentimes(resteARembourserSur(echeanceDuMois.id, resultat.tropPercu));
+          if (montantEnCentimes(resultat.tropPercu) > 0) {
+            tropPercu = { paiementId: echeanceDuMois.id, montant: resultat.tropPercu };
           }
         } else {
           // Cas B : aucune échéance ne couvre ce mois — ne jamais laisser
-          // une période d'occupation sans ligne de paiement correspondante.
-          // Jamais de trop-perçu possible ici : une échéance nouvellement
-          // créée n'a par construction aucun versement préexistant.
-          if (montantEnCentimes(montantProratise) > 0) {
+          // une période d'occupation sans ligne de paiement. Décomposition
+          // renseignée (quittance et régularisation des charges en ont
+          // besoin). Rien n'est créé si le prorata est nul.
+          const aCreer = calculerEcheanceMoisFinACreer(bailCloture, dateFin);
+          if (aCreer) {
             await tx.insert(paiements).values({
               bailId: id,
               type: "loyer",
-              montant: montantProratise,
-              dateEcheance: dto.dateFin
+              montant: aCreer.montant,
+              loyerHorsCharges: aCreer.loyerHorsCharges,
+              charges: aCreer.charges,
+              dateEcheance: dateFin
             });
           }
         }
       }
+
+      // Échéances d'un mois strictement après le mois de fin : le mois
+      // n'est pas dû. Sans versement actif : archivée (même écriture que
+      // PaiementsService.archive(), qui n'a ici aucun versement actif à
+      // archiver en cascade). Avec au moins un versement actif : conservée
+      // telle quelle, tout ce qui a été reçu est un trop-perçu signalé.
+      let echeancesArchivees = 0;
+      const echeancesConservees: EcheanceConserveeApresFin[] = [];
+      const decisionsApresFin: DecisionEcheanceApresFin[] = [];
+      for (const echeance of classees.apresMoisFin) {
+        const decision = deciderEcheanceApresFin(versementsDe(echeance.id));
+        decisionsApresFin.push(decision);
+        if (decision.decision === "archiver") {
+          await mettreAJourAvecAudit(tx, paiements, echeance.id, { archivedAt: new Date() }, utilisateurId);
+          echeancesArchivees += 1;
+        } else {
+          const resteARembourser = resteARembourserSur(echeance.id, decision.tropPercu);
+          centimesResteARembourser += montantEnCentimes(resteARembourser);
+          echeancesConservees.push({
+            paiementId: echeance.id,
+            dateEcheance: echeance.dateEcheance,
+            montant: echeance.montant,
+            tropPercu: decision.tropPercu,
+            resteARembourser
+          });
+        }
+      }
+      // Brut (tout ce qui a été reçu en trop) et net (après les
+      // remboursements déjà saisis) : le desktop affiche le net.
+      const tropPercuTotal = calculerTropPercuTotalResiliation(tropPercuMoisFin, decisionsApresFin);
+      const resteARembourserTotal = centimesVersMontant(centimesResteARembourser);
 
       const bailResilieDto = this.versDto(bailResilie as BailRow);
       return {
@@ -565,7 +623,13 @@ export class BauxService {
         travauxRealises: bailResilieDto.travauxRealises,
         honorairesBailleur: bailResilieDto.honorairesBailleur,
         honorairesLocataire: bailResilieDto.honorairesLocataire,
-        tropPercu
+        // Trop-perçu du seul mois de fin (forme inchangée), puis la clôture
+        // des mois suivants et le total à rembourser au locataire.
+        tropPercu,
+        echeancesArchivees,
+        echeancesConservees,
+        tropPercuTotal,
+        resteARembourserTotal
       };
     });
   }

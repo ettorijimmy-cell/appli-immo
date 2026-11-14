@@ -262,14 +262,38 @@ export interface TropPercu {
   montant: string;
 }
 
-// Trop-perçu signalé (jamais écrit en base ici, docs/data-dictionary.md,
-// section "versements & remboursements") : reste visible durablement sur
-// le Tableau de bord ("Remboursements en attente") tant qu'aucun
-// remboursement ne le couvre — pas seulement au moment de cet appel.
-export function resilierBail(id: string, dateFin?: string): Promise<Bail & { tropPercu: TropPercu | null }> {
-  return authenticatedFetch<Bail & { tropPercu: TropPercu | null }>(`/baux/${id}/resilier`, {
+// Échéance d'un mois après la date de fin, gardée parce qu'elle avait
+// déjà reçu un versement : tout le reçu est un trop-perçu.
+export interface EcheanceConserveeApresFin {
+  paiementId: string;
+  dateEcheance: string;
+  montant: string;
+  tropPercu: string;
+  // Trop-perçu moins les remboursements déjà saisis sur ce paiement.
+  resteARembourser: string;
+}
+
+export interface ResultatResiliation extends Bail {
+  // Trop-perçu du seul mois de fin.
+  tropPercu: TropPercu | null;
+  // Échéances d'un mois après la fin, sans versement, archivées.
+  echeancesArchivees: number;
+  echeancesConservees: EcheanceConserveeApresFin[];
+  // Mois de fin + échéances gardées après la fin (brut).
+  tropPercuTotal: string;
+  // Le même, moins les remboursements déjà saisis : ce qui reste à rendre.
+  resteARembourserTotal: string;
+}
+
+// Date de fin obligatoire (chantier financier de la résiliation,
+// 2026-11-14). Trop-perçu signalé, jamais écrit en base ici
+// (docs/data-dictionary.md, section "versements & remboursements") : il
+// reste visible sur le Tableau de bord ("Remboursements en attente") tant
+// qu'aucun remboursement ne le couvre — pas seulement au moment de cet appel.
+export function resilierBail(id: string, dateFin: string): Promise<ResultatResiliation> {
+  return authenticatedFetch<ResultatResiliation>(`/baux/${id}/resilier`, {
     method: "PATCH",
-    body: JSON.stringify(dateFin ? { dateFin } : {})
+    body: JSON.stringify({ dateFin })
   });
 }
 

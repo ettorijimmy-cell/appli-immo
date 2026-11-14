@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import path from "path";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -250,6 +250,70 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
     expect(texte).toContain("100.00");
     expect(texte).toContain("800.00");
     expect(texte).toContain("janvier 2026");
+  });
+
+  // Chantier financier de la résiliation (décision 7 du 2026-11-14).
+  describe("bail résilié", () => {
+    it("refuse (409) la quittance d'un mois postérieur à la fin du bail, même payé", async () => {
+      const { bailId } = await creerBailAvecTitulaire();
+      await alertesJobService.genererEcheancesRecurrentes("2026-02-10");
+      await alertesJobService.genererEcheancesRecurrentes("2026-03-10");
+      const [echeanceMars] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bailId), eq(paiements.dateEcheance, "2026-03-05")));
+      if (!echeanceMars) throw new Error("Échéance de mars attendue introuvable");
+      await versementsService.ajouter({
+        paiementId: echeanceMars.id,
+        montant: "800.00",
+        mode: "virement",
+        dateVersement: "2026-03-05"
+      });
+      // Fin le 15/02 : mars est un mois après la fin, conservé (payé).
+      await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bauxService.resilier(bailId, { dateFin: "2026-02-15" })
+      );
+
+      const generation = () =>
+        requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+          quittanceDocumentDocxService.genererDocumentQuittanceDocx(echeanceMars.id)
+        );
+      await expect(generation()).rejects.toThrow(ConflictException);
+      await expect(generation()).rejects.toThrow(
+        "Ce loyer porte sur un mois postérieur à la fin du bail (15/02/2026) : il n'est pas dû, aucune quittance ne peut être établie. Une somme reçue pour ce mois est un trop-perçu à rembourser."
+      );
+    });
+
+    it("accepte la quittance du mois de fin, avec le montant et la décomposition au prorata", async () => {
+      const { bailId } = await creerBailAvecTitulaire();
+      await alertesJobService.genererEcheancesRecurrentes("2026-02-10");
+      await alertesJobService.genererEcheancesRecurrentes("2026-03-10");
+      const [echeanceMars] = await db
+        .select()
+        .from(paiements)
+        .where(and(eq(paiements.bailId, bailId), eq(paiements.dateEcheance, "2026-03-05")));
+      if (!echeanceMars) throw new Error("Échéance de mars attendue introuvable");
+      // 400 € reçus sur 800 : partiel ; après une fin au 15/03 (prorata
+      // 800 × 15/31 = 387,09 dont charges 48,38 et loyer 338,71), payé.
+      await versementsService.ajouter({
+        paiementId: echeanceMars.id,
+        montant: "400.00",
+        mode: "virement",
+        dateVersement: "2026-03-05"
+      });
+      await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        bauxService.resilier(bailId, { dateFin: "2026-03-15" })
+      );
+
+      const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+        quittanceDocumentDocxService.genererDocumentQuittanceDocx(echeanceMars.id)
+      );
+      const texte = texteDuDocx(buffer);
+      expect(texte).toContain("338.71");
+      expect(texte).toContain("48.38");
+      expect(texte).toContain("387.09");
+      expect(texte).not.toContain("800.00");
+    });
   });
 
   it("bloque si le paiement n'est pas de type loyer ou n'est pas réglé (statut != paye)", async () => {

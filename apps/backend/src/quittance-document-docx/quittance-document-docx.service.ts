@@ -1,10 +1,12 @@
 import { readFileSync } from "fs";
 import path from "path";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   centimesVersMontant,
   decomposerDate,
+  estEcheanceMoisNonDu,
+  formaterDateCourteFr,
   formaterListeNoms,
   libelleMoisDepuisDate,
   montantEnCentimes,
@@ -82,6 +84,17 @@ export class QuittanceDocumentDocxService {
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId && bienRow.organisationId !== organisationId) {
       throw new NotFoundException("Paiement introuvable");
+    }
+
+    // Mois non dû (chantier financier de la résiliation, décision 7 du
+    // 2026-11-14) : une échéance d'un mois après la date de fin d'un bail
+    // résilié n'est pas un loyer dû — même payée, elle n'est qu'un
+    // trop-perçu à rembourser, jamais un loyer à quittancer. Après le
+    // contrôle d'appartenance : rien n'est révélé à une autre organisation.
+    if (estEcheanceMoisNonDu(paiement.dateEcheance, { statut: bail.statut, dateFin: bail.dateFin })) {
+      throw new ConflictException(
+        `Ce loyer porte sur un mois postérieur à la fin du bail (${formaterDateCourteFr(bail.dateFin!)}) : il n'est pas dû, aucune quittance ne peut être établie. Une somme reçue pour ce mois est un trop-perçu à rembourser.`
+      );
     }
 
     // Bailleur : même service partagé que bail-document-docx (corrige le

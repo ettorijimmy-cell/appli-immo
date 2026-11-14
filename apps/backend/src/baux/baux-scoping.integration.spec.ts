@@ -428,7 +428,9 @@ describe("BauxService.activer / resilier / update / archive — contrôle d'appa
   });
 
   it("404 sur un bailId inexistant lors de la résiliation", async () => {
-    await expect(contexteOrgA(() => bauxService.resilier(randomUUID(), {}))).rejects.toThrow(NotFoundException);
+    await expect(contexteOrgA(() => bauxService.resilier(randomUUID(), { dateFin: "2026-10-31" }))).rejects.toThrow(
+      NotFoundException
+    );
   });
 
   it("hors contexte HTTP (organisationId absent), le contrôle est ignoré pour resilier() — comportement préexistant préservé", async () => {

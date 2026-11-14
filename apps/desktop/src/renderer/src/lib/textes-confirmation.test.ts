@@ -14,6 +14,7 @@ import {
   texteArchivageSci,
   texteArchivageSinistre,
   texteResiliationBail,
+  texteResultatResiliation,
   texteRetraitRegle,
   texteRetraitGarant
 } from "./textes-confirmation";
@@ -146,57 +147,63 @@ describe("texteRetraitGarant", () => {
 });
 
 describe("texteResiliationBail", () => {
-  const FIN_COMMUNE =
-    "Plus aucune échéance de loyer ne sera générée ; celles déjà créées restent dues. L'appartement repassera vacant s'il était loué. Cette action est définitive : un bail résilié ne peut pas être réactivé.";
-
-  it("avec une date saisie : date de fin et prorata du mois de fin", () => {
+  it("date de fin, prorata du mois de fin, mois suivants, trop-perçu, définitif", () => {
     const texte = texteResiliationBail({
       numeroAppartement: "T2 - 1",
       dateDebut: "2026-08-01",
-      dateFinEnregistree: null,
-      dateFinSaisie: "2027-01-15"
+      dateFin: "2027-01-15"
     });
     expect(texte.titre).toBe("Résilier le bail ?");
     expect(texte.objet).toBe("Logement n° T2 - 1, bail du 01/08/2026");
     expect(texte.explication).toBe(
-      `Le bail passera en statut résilié, avec une fin d'occupation au 15/01/2027. Le loyer de ce mois sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée. Un trop-perçu éventuel est signalé, jamais remboursé automatiquement. ${FIN_COMMUNE}`
+      "Le bail passera en statut résilié, avec une fin d'occupation au 15/01/2027. " +
+        "Le loyer du mois de fin sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée. " +
+        "Les échéances de loyer des mois suivants seront archivées si elles n'ont reçu aucun versement ; celles qui ont déjà reçu un versement sont gardées et la somme reçue est signalée comme trop-perçu. " +
+        "Un trop-perçu est signalé dans « Remboursements en attente », jamais remboursé automatiquement. " +
+        "Les échéances des mois précédents restent dues et plus aucune échéance de loyer ne sera générée. " +
+        "L'appartement repassera vacant s'il était loué. " +
+        "Cette action est définitive : un bail résilié ne peut pas être réactivé."
     );
     expect(texte.libelleConfirmer).toBe("Résilier le bail");
     expect(texte.messageRepli).toBe("Impossible de résilier le bail.");
   });
 
-  it("la date saisie prime sur la date déjà enregistrée", () => {
-    const texte = texteResiliationBail({
-      numeroAppartement: "3B",
-      dateDebut: "2026-08-01",
-      dateFinEnregistree: "2029-07-31",
-      dateFinSaisie: "2027-01-15"
-    });
-    expect(texte.explication).toContain("fin d'occupation au 15/01/2027.");
-    expect(texte.explication).not.toContain("31/07/2029");
+  it("plus aucune variante « sans date » (la date de fin est obligatoire)", () => {
+    const texte = texteResiliationBail({ numeroAppartement: "3B", dateDebut: "2026-08-01", dateFin: "2026-11-14" });
+    expect(texte.explication).not.toMatch(/Aucune date de fin|sans date de fin|restent dues\b.*celles déjà créées/);
+    expect(texte.explication).toContain("fin d'occupation au 14/11/2026.");
+  });
+});
+
+describe("texteResultatResiliation", () => {
+  it("rien à signaler : null", () => {
+    expect(texteResultatResiliation({ echeancesArchivees: 0, echeancesConservees: 0, resteARembourser: "0.00" })).toBeNull();
   });
 
-  it("sans date saisie, date déjà enregistrée : conservée, aucun prorata", () => {
-    const texte = texteResiliationBail({
-      numeroAppartement: "3B",
-      dateDebut: "2026-08-01",
-      dateFinEnregistree: "2029-07-31",
-      dateFinSaisie: ""
-    });
-    expect(texte.explication).toBe(
-      `Le bail passera en statut résilié. Aucune date de fin n'est saisie : la date déjà enregistrée (31/07/2029) est conservée et aucun loyer n'est proratisé. ${FIN_COMMUNE}`
+  it("une échéance archivée, au singulier", () => {
+    expect(texteResultatResiliation({ echeancesArchivees: 1, echeancesConservees: 0, resteARembourser: "0.00" })).toBe(
+      "1 échéance de loyer d'un mois après la date de fin, sans versement, a été archivée."
     );
   });
 
-  it("sans date saisie ni enregistrée : bail sans date de fin, aucun prorata", () => {
-    const texte = texteResiliationBail({
-      numeroAppartement: "3B",
-      dateDebut: "2026-08-01",
-      dateFinEnregistree: null,
-      dateFinSaisie: ""
-    });
-    expect(texte.explication).toContain("le bail restera sans date de fin et aucun loyer n'est proratisé.");
-    expect(texte.explication).not.toContain("prorata des jours");
+  it("plusieurs archivées et gardées, avec le trop-perçu total en euros", () => {
+    expect(texteResultatResiliation({ echeancesArchivees: 2, echeancesConservees: 1, resteARembourser: "833.88" })).toBe(
+      "2 échéances de loyer de mois après la date de fin, sans versement, ont été archivées. " +
+        "1 échéance d'un mois après la date de fin avait déjà reçu un versement : elle est gardée. " +
+        "Trop-perçu à rembourser au locataire : 833,88 €, visible dans « Remboursements en attente » tant qu'aucun remboursement ne le couvre."
+    );
+  });
+
+  it("trop-perçu du seul mois de fin (aucune échéance après la fin)", () => {
+    expect(texteResultatResiliation({ echeancesArchivees: 0, echeancesConservees: 0, resteARembourser: "283.88" })).toBe(
+      "Trop-perçu à rembourser au locataire : 283,88 €, visible dans « Remboursements en attente » tant qu'aucun remboursement ne le couvre."
+    );
+  });
+
+  it("plusieurs échéances gardées, au pluriel", () => {
+    expect(
+      texteResultatResiliation({ echeancesArchivees: 0, echeancesConservees: 2, resteARembourser: "750.00" })
+    ).toContain("2 échéances de mois après la date de fin avaient déjà reçu un versement : elles sont gardées.");
   });
 });
 

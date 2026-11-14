@@ -303,7 +303,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     // nécessitant des travaux) — voir Module 2, statut modifiable à la main.
     await appartementsService.update(appartementId, { statut: "travaux" });
 
-    await bauxService.resilier(bail.id, {});
+    await bauxService.resilier(bail.id, { dateFin: "2026-10-31" });
 
     const [appartementApresResiliation] = await db
       .select()
@@ -315,7 +315,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
   it("refuse de résilier un bail qui n'est ni actif ni en préavis", async () => {
     const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
 
-    await expect(bauxService.resilier(bail.id, {})).rejects.toThrow(/actif ou en préavis/i);
+    await expect(bauxService.resilier(bail.id, { dateFin: "2026-10-31" })).rejects.toThrow(/actif ou en préavis/i);
   });
 
   it("archive un bail résilié, jamais supprimé, et refuse d'archiver un bail encore actif", async () => {
@@ -323,7 +323,7 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     await bauxService.activer(bailActif.id);
     await expect(bauxService.archive(bailActif.id)).rejects.toThrow(/résilié/i);
 
-    await bauxService.resilier(bailActif.id, {});
+    await bauxService.resilier(bailActif.id, { dateFin: "2026-10-31" });
     const bailArchive = await bauxService.archive(bailActif.id);
     expect(bailArchive.statut).toBe("archive");
     expect(bailArchive.archivedAt).not.toBeNull();

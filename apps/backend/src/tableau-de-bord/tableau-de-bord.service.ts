@@ -1,14 +1,16 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
-  calculerBornesMoisCalendaire,
   calculerJoursOccupes,
   calculerLoyerNetRecuEcheance,
-  calculerMontantEcheanceLoyer,
   calculerMontantRecuTotal,
-  calculerProrataOccupationPartielle,
   calculerProvisionsRecuesEcheance,
+  calculerResteARembourser,
   calculerStatutDocument,
   centimesVersMontant,
+  classerEcheancesParRapportAFin,
+  deciderEcheanceApresFin,
+  estEcheanceMoisNonDu,
+  recalculerEcheanceMoisFin,
   dateVersJourOrdinal,
   evaluerCompletudeCategories,
   montantEnCentimes,
@@ -33,7 +35,7 @@ import {
   versements,
   type Database
 } from "db";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
@@ -399,59 +401,72 @@ export class TableauDeBordService {
     const resultats: Array<{ bailId: string; paiementId: string; montant: string }> = [];
 
     for (const bail of bauxResilies) {
-      if (!bail.loyerMensuel || !bail.dateFin) {
+      const { loyerMensuel, dateFin } = bail;
+      if (!loyerMensuel || !dateFin) {
         continue;
       }
 
-      const { debutMoisInclus, debutMoisSuivantExclusif } = calculerBornesMoisCalendaire(bail.dateFin);
-      const [echeanceDuMois] = await this.db
+      // Échéances de loyer non archivées du bail, classées par rapport au
+      // mois de fin (packages/core). Le mois de fin, comme avant ; et
+      // depuis le chantier financier de la résiliation (décision 8 du
+      // 2026-11-14) les échéances d'un mois après la fin d'un bail résilié
+      // (ou archivé après sa résiliation) : tout leur reçu est un
+      // trop-perçu. Chaque trop-perçu est réduit des remboursements actifs
+      // de SON paiement (calculerResteARembourser) — jamais une déduction
+      // sur un total, donc jamais de double compte.
+      const echeancesLoyer = await this.db
         .select()
         .from(paiements)
-        .where(
-          and(
-            eq(paiements.bailId, bail.id),
-            eq(paiements.type, "loyer"),
-            isNull(paiements.archivedAt),
-            gte(paiements.dateEcheance, debutMoisInclus),
-            lt(paiements.dateEcheance, debutMoisSuivantExclusif)
-          )
-        )
-        .limit(1);
-      if (!echeanceDuMois) {
-        continue;
+        .where(and(eq(paiements.bailId, bail.id), eq(paiements.type, "loyer"), isNull(paiements.archivedAt)));
+      const classees = classerEcheancesParRapportAFin(echeancesLoyer, dateFin);
+      if (classees.moisFin.length > 1) {
+        this.logger.warn(
+          `Bail ${bail.id} : ${classees.moisFin.length} échéances de loyer couvrent le mois de fin, seule la première est prise en compte pour le trop-perçu.`
+        );
       }
-
-      const versementsActifs = await this.db
-        .select()
-        .from(versements)
-        .where(and(eq(versements.paiementId, echeanceDuMois.id), isNull(versements.archivedAt)));
-      const montantRecu = calculerMontantRecuTotal(versementsActifs);
-
-      const montantPlein = calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges);
-      const montantProratise = calculerProrataOccupationPartielle(montantPlein, bail.dateFin, bail.dateDebut);
-
-      const centimesTropPercu = montantEnCentimes(montantRecu) - montantEnCentimes(montantProratise);
-      if (centimesTropPercu <= 0) {
-        continue;
-      }
-
-      const remboursementsExistants = await this.db
-        .select()
-        .from(remboursements)
-        .where(and(eq(remboursements.paiementId, echeanceDuMois.id), isNull(remboursements.archivedAt)));
-      const centimesDejaRembourses = remboursementsExistants.reduce(
-        (total, r) => total + montantEnCentimes(r.montantRembourse),
-        0
+      const [echeanceDuMois] = classees.moisFin;
+      const moisNonDus = classees.apresMoisFin.filter((echeance) =>
+        estEcheanceMoisNonDu(echeance.dateEcheance, { statut: bail.statut, dateFin })
       );
-      if (centimesDejaRembourses >= centimesTropPercu) {
+      const ids = [...(echeanceDuMois ? [echeanceDuMois.id] : []), ...moisNonDus.map((echeance) => echeance.id)];
+      if (ids.length === 0) {
         continue;
       }
 
-      resultats.push({
-        bailId: bail.id,
-        paiementId: echeanceDuMois.id,
-        montant: centimesVersMontant(centimesTropPercu - centimesDejaRembourses)
-      });
+      const versementsLus = await this.db.select().from(versements).where(inArray(versements.paiementId, ids));
+      const remboursementsLus = await this.db.select().from(remboursements).where(inArray(remboursements.paiementId, ids));
+      const bailCloture = { loyerMensuel, provisionsCharges: bail.provisionsCharges, dateDebut: bail.dateDebut };
+
+      for (const paiementId of ids) {
+        const versementsDuPaiement = versementsLus.filter((v) => v.paiementId === paiementId);
+        try {
+          let tropPercu: string;
+          if (echeanceDuMois && paiementId === echeanceDuMois.id) {
+            tropPercu = recalculerEcheanceMoisFin(
+              { statut: echeanceDuMois.statut, versements: versementsDuPaiement },
+              bailCloture,
+              dateFin
+            ).tropPercu;
+          } else {
+            const decision = deciderEcheanceApresFin(versementsDuPaiement);
+            tropPercu = decision.decision === "conserver" ? decision.tropPercu : "0.00";
+          }
+          const reste = calculerResteARembourser(
+            tropPercu,
+            remboursementsLus.filter((r) => r.paiementId === paiementId)
+          );
+          if (montantEnCentimes(reste) > 0) {
+            resultats.push({ bailId: bail.id, paiementId, montant: reste });
+          }
+        } catch (erreur) {
+          // Donnée incohérente (versement négatif, date invalide) : le
+          // tableau de bord ne doit pas tomber pour une ligne, mais
+          // l'exclusion est toujours tracée, jamais silencieuse.
+          this.logger.warn(
+            `Paiement ${paiementId} exclu des remboursements en attente (${erreur instanceof Error ? erreur.message : String(erreur)}) — vérifier l'intégrité des données.`
+          );
+        }
+      }
     }
 
     return resultats;

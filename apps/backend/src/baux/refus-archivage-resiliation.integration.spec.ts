@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import {
@@ -381,11 +381,16 @@ describe("Refus des archivages et résiliations qui cassent des données (intég
       expect(resilie.dateFin).toBe(aujourdHui);
     });
 
-    it("sans date saisie : comportement inchangé (résiliation acceptée)", async () => {
+    // Chantier financier de la résiliation (décision 4 du 2026-11-14) :
+    // la date de fin est désormais obligatoire.
+    it("sans date saisie : refusée (400), le bail reste actif", async () => {
       const { bailId } = await bailActifAvecLocataires(["Dupont"]);
 
-      const resilie = await dansMonOrganisation(() => bauxService.resilier(bailId, {}));
-      expect(resilie.statut).toBe("resilie");
+      await expect(
+        dansMonOrganisation(() => bauxService.resilier(bailId, {} as unknown as { dateFin: string }))
+      ).rejects.toThrow(BadRequestException);
+      const [bail] = await db.select().from(baux).where(eq(baux.id, bailId));
+      expect(bail?.statut).toBe("actif");
     });
 
     it("404 pour une autre organisation avant tout 409 (date future)", async () => {

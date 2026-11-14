@@ -81,35 +81,54 @@ export class AlertesJobService {
         continue;
       }
 
-      const [echeanceExistante] = await this.db
-        .select({ id: paiements.id })
-        .from(paiements)
-        .where(
-          and(
-            eq(paiements.bailId, bail.id),
-            eq(paiements.type, "loyer"),
-            gte(paiements.dateEcheance, debutMoisInclus),
-            lt(paiements.dateEcheance, debutMoisSuivantExclusif)
-          )
-        )
-        .limit(1);
-      if (echeanceExistante) {
-        continue;
-      }
+      // Une transaction par bail, qui commence par verrouiller sa ligne
+      // (FOR UPDATE) en revérifiant son statut : même verrou que
+      // BauxService.resilier() (chantier financier de la résiliation,
+      // 2026-11-14). Une résiliation en cours fait attendre ce passage ;
+      // à la reprise, Postgres relit la ligne, le bail est « resilie » et
+      // rien n'est inséré. Sans ce verrou, une échéance pouvait être
+      // créée juste après que resilier() eut fini de trier les échéances
+      // du bail : un mois après la fin, dû, jamais clôturé.
+      await this.db.transaction(async (tx) => {
+        const [bailVerrouille] = await tx
+          .select()
+          .from(baux)
+          .where(and(eq(baux.id, bail.id), inArray(baux.statut, ["actif", "preavis"])))
+          .for("update");
+        if (!bailVerrouille || !bailVerrouille.jourEcheance || !bailVerrouille.loyerMensuel) {
+          return;
+        }
 
-      await this.db.insert(paiements).values({
-        bailId: bail.id,
-        type: "loyer",
-        montant: calculerMontantEcheanceLoyer(bail.loyerMensuel, bail.provisionsCharges),
-        dateEcheance: calculerDateEcheanceRecurrente(dateReference, bail.jourEcheance),
-        // Décomposition FIGÉE au moment de la génération (Module Tâches,
-        // Étape 4 — quittance mensuelle, 2026-08-31) : jamais recalculée si
-        // le bail est révisé ensuite — voir packages/db/src/schema/
-        // paiements.ts. `provisionsCharges` nul compte pour '0.00', jamais
-        // NULL, pour que la ligne "Montant charges" d'une quittance
-        // affiche explicitement zéro plutôt qu'un champ vide ambigu.
-        loyerHorsCharges: bail.loyerMensuel,
-        charges: bail.provisionsCharges ?? "0.00"
+        const [echeanceExistante] = await tx
+          .select({ id: paiements.id })
+          .from(paiements)
+          .where(
+            and(
+              eq(paiements.bailId, bail.id),
+              eq(paiements.type, "loyer"),
+              gte(paiements.dateEcheance, debutMoisInclus),
+              lt(paiements.dateEcheance, debutMoisSuivantExclusif)
+            )
+          )
+          .limit(1);
+        if (echeanceExistante) {
+          return;
+        }
+
+        await tx.insert(paiements).values({
+          bailId: bail.id,
+          type: "loyer",
+          montant: calculerMontantEcheanceLoyer(bailVerrouille.loyerMensuel, bailVerrouille.provisionsCharges),
+          dateEcheance: calculerDateEcheanceRecurrente(dateReference, bailVerrouille.jourEcheance),
+          // Décomposition FIGÉE au moment de la génération (Module Tâches,
+          // Étape 4 — quittance mensuelle, 2026-08-31) : jamais recalculée si
+          // le bail est révisé ensuite — voir packages/db/src/schema/
+          // paiements.ts. `provisionsCharges` nul compte pour '0.00', jamais
+          // NULL, pour que la ligne "Montant charges" d'une quittance
+          // affiche explicitement zéro plutôt qu'un champ vide ambigu.
+          loyerHorsCharges: bailVerrouille.loyerMensuel,
+          charges: bailVerrouille.provisionsCharges ?? "0.00"
+        });
       });
     }
   }

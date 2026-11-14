@@ -1452,6 +1452,26 @@ describe("Tâches — quittance mensuelle (intégration Postgres réelle)", () =
     );
   });
 
+  it("ne crée rien pour une échéance payée d'un mois après la fin d'un bail résilié (mois non dû)", async () => {
+    // Chantier financier de la résiliation (décision 7 du 2026-11-14).
+    const { bailId } = await creerBailAvecEcheancePayee();
+    // Échéance de février insérée comme le ferait le job (même décomposition).
+    const [fevrier] = await db
+      .insert(paiements)
+      .values({ bailId, type: "loyer", montant: "800.00", dateEcheance: "2026-02-05", loyerHorsCharges: "700.00", charges: "100.00" })
+      .returning();
+    if (!fevrier) throw new Error("Échec de l'insertion de l'échéance de février");
+    await versementsService.ajouter({ paiementId: fevrier.id, montant: "800.00", mode: "virement", dateVersement: "2026-02-05" });
+    await bauxService.resilier(bailId, { dateFin: "2026-01-31" });
+
+    await tachesJobService.genererTachesQuittanceMensuelle();
+
+    const taches = await tachesService.findAll({ type: "quittance_mensuelle", bailId });
+    // Janvier (mois de fin, dû) : une tâche ; février (après la fin) : aucune.
+    expect(taches.map((t) => t.paiementId)).not.toContain(fevrier.id);
+    expect(taches).toHaveLength(1);
+  });
+
   it("ne crée rien pour une échéance encore impayée ou partielle", async () => {
     const bail = await bauxService.create({
       appartementId,

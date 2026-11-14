@@ -1,4 +1,4 @@
-import { formaterDateCourteFr } from "core";
+import { formaterDateCourteFr, montantEnCentimes } from "core";
 import { MESSAGE_CONFIRMATION_ARCHIVAGE_PHOTO, messageRepliArchivage } from "../documents/archivage-document";
 import type { EvenementCalendrier } from "../calendrier/api";
 import type { Candidat } from "../candidats/api";
@@ -143,52 +143,46 @@ export function texteRetraitGarant(
   };
 }
 
-// Résiliation du bail (commit 3 du chantier archivage). Chaque phrase
-// décrit ce que fait réellement BauxService.resilier() (apps/backend/src/
-// baux/baux.service.ts), sans rien promettre de plus :
-// - statut « resilie », définitif (activer() n'accepte qu'un brouillon,
+// Résiliation du bail (commit 3 du chantier archivage, revu au chantier
+// financier de la résiliation, 2026-11-14). Chaque phrase décrit ce que fait
+// réellement BauxService.resilier() (apps/backend/src/baux/baux.service.ts),
+// sans rien promettre de plus :
+// - date de fin obligatoire (ResilierBailDto), jamais future ; statut
+//   « resilie », définitif (activer() n'accepte qu'un brouillon,
 //   UpdateBailDto n'a pas de statut) ;
-// - date de fin : celle saisie ; sans saisie, la date déjà enregistrée sur
-//   le bail est conservée telle quelle, et rien n'est proratisé ;
-// - avec une date : l'échéance de loyer du mois de fin est ajustée au
-//   prorata des jours occupés si elle n'est pas entièrement payée (impayée
-//   ou partielle), créée si elle manque ;
-//   déjà payée, elle n'est pas modifiée et un trop-perçu est seulement
-//   signalé ;
-// - plus aucune échéance générée ensuite (le job mensuel ne traite que
-//   les baux actifs ou en préavis), les échéances existantes restent dues ;
+// - mois de fin : échéance ajustée au prorata (montant et décomposition)
+//   si elle est impayée ou partielle, créée si elle manque, laissée telle
+//   quelle si elle est payée (recalculerEcheanceMoisFin,
+//   calculerEcheanceMoisFinACreer, packages/core) ;
+// - mois suivants : échéance archivée si elle n'a aucun versement actif,
+//   gardée sinon, avec tout le reçu signalé comme trop-perçu
+//   (deciderEcheanceApresFin) ; les mois précédents ne sont pas touchés ;
+// - trop-perçu : renvoyé dans la réponse et affiché dans « Remboursements
+//   en attente » (TableauDeBordService.getRemboursementsEnAttente), jamais
+//   remboursé automatiquement ;
+// - plus aucune échéance générée ensuite (le job ne traite que les baux
+//   actifs ou en préavis) ;
 // - l'appartement repasse vacant seulement s'il était loué.
 export function texteResiliationBail({
   numeroAppartement,
   dateDebut,
-  dateFinEnregistree,
-  dateFinSaisie
+  dateFin
 }: {
   numeroAppartement: string;
   dateDebut: string;
-  // Date de fin déjà enregistrée sur le bail, null si aucune.
-  dateFinEnregistree: string | null;
-  // Date saisie à côté du bouton « Résilier le bail », "" si aucune.
-  dateFinSaisie: string;
+  // Date de fin saisie à côté du bouton « Résilier le bail » (obligatoire :
+  // le bouton reste désactivé tant qu'elle est vide).
+  dateFin: string;
 }): TexteConfirmation {
-  const phrases: string[] = [];
-  if (dateFinSaisie !== "") {
-    phrases.push(
-      `Le bail passera en statut résilié, avec une fin d'occupation au ${formaterDateCourteFr(dateFinSaisie)}.`,
-      "Le loyer de ce mois sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée. Un trop-perçu éventuel est signalé, jamais remboursé automatiquement."
-    );
-  } else {
-    phrases.push(
-      dateFinEnregistree
-        ? `Le bail passera en statut résilié. Aucune date de fin n'est saisie : la date déjà enregistrée (${formaterDateCourteFr(dateFinEnregistree)}) est conservée et aucun loyer n'est proratisé.`
-        : "Le bail passera en statut résilié. Aucune date de fin n'est saisie : le bail restera sans date de fin et aucun loyer n'est proratisé."
-    );
-  }
-  phrases.push(
-    "Plus aucune échéance de loyer ne sera générée ; celles déjà créées restent dues.",
+  const phrases = [
+    `Le bail passera en statut résilié, avec une fin d'occupation au ${formaterDateCourteFr(dateFin)}.`,
+    "Le loyer du mois de fin sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée.",
+    "Les échéances de loyer des mois suivants seront archivées si elles n'ont reçu aucun versement ; celles qui ont déjà reçu un versement sont gardées et la somme reçue est signalée comme trop-perçu.",
+    "Un trop-perçu est signalé dans « Remboursements en attente », jamais remboursé automatiquement.",
+    "Les échéances des mois précédents restent dues et plus aucune échéance de loyer ne sera générée.",
     "L'appartement repassera vacant s'il était loué.",
     "Cette action est définitive : un bail résilié ne peut pas être réactivé."
-  );
+  ];
   return {
     titre: "Résilier le bail ?",
     objet: `Logement n° ${numeroAppartement}, bail du ${formaterDateCourteFr(dateDebut)}`,
@@ -197,6 +191,43 @@ export function texteResiliationBail({
     libelleEnCours: "Résiliation…",
     messageRepli: "Impossible de résilier le bail."
   };
+}
+
+// Résumé affiché après une résiliation réussie, d'après la réponse de
+// BauxService.resilier() (echeancesArchivees, echeancesConservees,
+// resteARembourserTotal : trop-perçu moins les remboursements déjà saisis,
+// comme « Remboursements en attente »). null : rien à signaler au-delà du
+// changement de statut.
+export function texteResultatResiliation({
+  echeancesArchivees,
+  echeancesConservees,
+  resteARembourser
+}: {
+  echeancesArchivees: number;
+  echeancesConservees: number;
+  resteARembourser: string;
+}): string | null {
+  const phrases: string[] = [];
+  if (echeancesArchivees > 0) {
+    phrases.push(
+      echeancesArchivees === 1
+        ? "1 échéance de loyer d'un mois après la date de fin, sans versement, a été archivée."
+        : `${echeancesArchivees} échéances de loyer de mois après la date de fin, sans versement, ont été archivées.`
+    );
+  }
+  if (echeancesConservees > 0) {
+    phrases.push(
+      echeancesConservees === 1
+        ? "1 échéance d'un mois après la date de fin avait déjà reçu un versement : elle est gardée."
+        : `${echeancesConservees} échéances de mois après la date de fin avaient déjà reçu un versement : elles sont gardées.`
+    );
+  }
+  if (montantEnCentimes(resteARembourser) > 0) {
+    phrases.push(
+      `Trop-perçu à rembourser au locataire : ${resteARembourser.replace(".", ",")} €, visible dans « Remboursements en attente » tant qu'aucun remboursement ne le couvre.`
+    );
+  }
+  return phrases.length > 0 ? phrases.join(" ") : null;
 }
 
 // Commit 4+5 du chantier archivage : autres archivages. Chaque phrase

@@ -18,7 +18,7 @@ import {
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import { aujourdHuiParis } from "../lib/date-paris";
-import { texteResiliationBail, texteRetraitGarant } from "../lib/textes-confirmation";
+import { texteResiliationBail, texteResultatResiliation, texteRetraitGarant } from "../lib/textes-confirmation";
 import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
@@ -497,15 +497,19 @@ function BailActuelDetail({
   // succès (voir onTermine, qui appelle onChanged()).
   async function resilier(): Promise<void> {
     setActionError(null);
-    const resultat = await resilierBail(bail.id, dateFinResiliation || undefined);
-    // Signalé seulement, jamais créé automatiquement (décision D3,
-    // docs/data-dictionary.md) — reste visible durablement sur le
-    // Tableau de bord ("Remboursements en attente") au-delà de ce
-    // message ponctuel.
+    const resultat = await resilierBail(bail.id, dateFinResiliation);
+    // Résumé de la clôture : échéances après la fin archivées ou gardées,
+    // reste à rembourser (mois de fin + mois gardés, moins les
+    // remboursements déjà saisis). Signalé seulement,
+    // jamais remboursé automatiquement (décision D3,
+    // docs/data-dictionary.md) — reste visible durablement sur le Tableau
+    // de bord ("Remboursements en attente") au-delà de ce message.
     setTropPercuMessage(
-      resultat.tropPercu
-        ? `Trop-perçu détecté : ${resultat.tropPercu.montant} € — visible sur le Tableau de bord ("Remboursements en attente") tant qu'aucun remboursement n'est créé.`
-        : null
+      texteResultatResiliation({
+        echeancesArchivees: resultat.echeancesArchivees,
+        echeancesConservees: resultat.echeancesConservees.length,
+        resteARembourser: resultat.resteARembourserTotal
+      })
     );
   }
 
@@ -701,13 +705,18 @@ function BailActuelDetail({
               // à aujourd'hui. Une saisie au clavier au-delà reste possible,
               // le refus de l'API s'affiche alors dans la confirmation.
               max={aujourdHuiParis()}
+              required
+              aria-label="Date de fin du bail (obligatoire pour résilier)"
               placeholder="Date de fin"
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
             <button
               type="button"
               onClick={() => setResiliationAConfirmer(true)}
-              disabled={isActionInProgress}
+              // Date de fin obligatoire (chantier financier de la
+              // résiliation) : sans elle, rien ne s'ouvre.
+              disabled={isActionInProgress || dateFinResiliation === ""}
+              title={dateFinResiliation === "" ? "Indiquez d'abord la date de fin (date de départ du locataire)." : undefined}
               className="rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               Résilier le bail
@@ -719,13 +728,12 @@ function BailActuelDetail({
       {/* Résiliation : définitive, jamais d'un seul clic. Le texte décrit ce
           que fait BauxService.resilier() pour la date saisie (ou son
           absence) — voir texteResiliationBail. */}
-      {resiliationAConfirmer && (
+      {resiliationAConfirmer && dateFinResiliation !== "" && (
         <ConfirmationActionModal
           {...texteResiliationBail({
             numeroAppartement: appartement.numero,
             dateDebut: bail.dateDebut,
-            dateFinEnregistree: bail.dateFin,
-            dateFinSaisie: dateFinResiliation
+            dateFin: dateFinResiliation
           })}
           ton="danger"
           action={resilier}
@@ -1174,8 +1182,12 @@ function DepotGarantieSection({
 // encore NON couverts (décision D3), elle ne sert pas d'historique.
 function RemboursementsSection({ bail, version }: { bail: Bail; version: number }): React.JSX.Element | null {
   const [remboursements, setRemboursements] = useState<Remboursement[]>([]);
-  const [enAttente, setEnAttente] = useState<RemboursementEnAttente | null>(null);
-  const [showTropPercuForm, setShowTropPercuForm] = useState(false);
+  // Plusieurs lignes possibles pour un même bail depuis le chantier
+  // financier de la résiliation : mois de fin ET échéances gardées après
+  // la fin, une par paiement.
+  const [enAttente, setEnAttente] = useState<RemboursementEnAttente[]>([]);
+  // Paiement dont le formulaire de remboursement est ouvert.
+  const [formulairePaiementId, setFormulairePaiementId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [tous, tousEnAttente] = await Promise.all([
@@ -1186,7 +1198,7 @@ function RemboursementsSection({ bail, version }: { bail: Bail; version: number 
       getRemboursementsEnAttente()
     ]);
     setRemboursements(tous.filter((r) => r.archivedAt === null));
-    setEnAttente(tousEnAttente.find((r) => r.bailId === bail.id) ?? null);
+    setEnAttente(tousEnAttente.filter((r) => r.bailId === bail.id));
   }, [bail.id]);
 
   useEffect(() => {
@@ -1201,27 +1213,31 @@ function RemboursementsSection({ bail, version }: { bail: Bail; version: number 
     <div className="space-y-2 rounded-lg border border-slate-200 p-4">
       <h3 className="text-sm font-semibold text-slate-700">Remboursements</h3>
 
-      {enAttente &&
-        (showTropPercuForm ? (
+      {enAttente.map((ligne) =>
+        formulairePaiementId === ligne.paiementId ? (
           <NewRemboursementTropPercuForm
-            enAttente={enAttente}
+            key={ligne.paiementId}
+            enAttente={ligne}
             onCreated={() => {
-              setShowTropPercuForm(false);
+              setFormulairePaiementId(null);
               void refresh();
             }}
-            onCancel={() => setShowTropPercuForm(false)}
+            onCancel={() => setFormulairePaiementId(null)}
           />
         ) : (
-          <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+          <div
+            key={ligne.paiementId}
+            className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm"
+          >
             <span className="text-amber-900">
               <span className="mr-2 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">
                 En attente
               </span>
-              Trop-perçu signalé (calculé automatiquement, aucun remboursement créé) : {enAttente.montant} €
+              Trop-perçu signalé (calculé automatiquement, aucun remboursement créé) : {ligne.montant} €
             </span>
             <button
               type="button"
-              onClick={() => setShowTropPercuForm(true)}
+              onClick={() => setFormulairePaiementId(ligne.paiementId)}
               className="shrink-0 rounded-md border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
             >
               Créer le remboursement

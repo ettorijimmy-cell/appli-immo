@@ -1,6 +1,12 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { calculerRevisionLoyer, decomposerDate, libelleMoisDepuisDate, resoudreModeleCourrier } from "core";
+import {
+  calculerRevisionLoyer,
+  decomposerDate,
+  estEcheanceMoisNonDu,
+  libelleMoisDepuisDate,
+  resoudreModeleCourrier
+} from "core";
 import {
   alertes,
   appartements,
@@ -283,6 +289,20 @@ export class TachesJobService {
 
       const cible = await this.resoudreDepuisBail(paiement.bailId);
       if (!cible || !cible.bailId) {
+        continue;
+      }
+
+      // Mois non dû (chantier financier de la résiliation, décision 7 du
+      // 2026-11-14) : une échéance payée d'un mois après la fin d'un bail
+      // résilié est un trop-perçu, jamais un loyer à quittancer — la
+      // génération serait refusée (409, QuittanceDocumentDocxService).
+      // Aucune tâche plutôt qu'une tâche impossible à faire.
+      const [bailDuPaiement] = await this.db
+        .select({ statut: baux.statut, dateFin: baux.dateFin })
+        .from(baux)
+        .where(eq(baux.id, paiement.bailId))
+        .limit(1);
+      if (bailDuPaiement && estEcheanceMoisNonDu(paiement.dateEcheance, bailDuPaiement)) {
         continue;
       }
 
