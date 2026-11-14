@@ -1,4 +1,4 @@
-import { formaterDateIso, joursDansLeMois } from "../dates/calendrier";
+import { estDateIsoValide, formaterDateIso, joursDansLeMois } from "../dates/calendrier";
 import { centimesVersMontant, montantEnCentimes } from "../paiements/montant";
 
 /**
@@ -125,11 +125,73 @@ export function calculerDecompositionEcheanceEntree(
   provisionsCharges: string | null,
   dateDebut: string
 ): DecompositionEcheanceEntree {
-  const montant = calculerMontantEcheanceEntree(loyerMensuel, provisionsCharges, dateDebut);
-  const dernierJourDuMois = calculerDernierJourDuMois(dateDebut);
-  const charges = calculerProrataOccupationPartielle(provisionsCharges ?? "0.00", dernierJourDuMois, dateDebut);
+  return decomposerEcheanceProratisee(loyerMensuel, provisionsCharges, calculerDernierJourDuMois(dateDebut), dateDebut);
+}
+
+/**
+ * Décomposition d'une échéance de loyer proratisée sur un mois
+ * partiellement occupé, jusqu'à `dateFinOccupation` incluse — règle
+ * commune à l'échéance d'entrée (fin = dernier jour du mois de
+ * `dateDebut`) et à celle du mois de fin d'un bail résilié
+ * (`calculerDecompositionEcheanceFin`) : `montant` = prorata de
+ * (loyer + provisions), `charges` = prorata des provisions seules (deux
+ * troncatures au centime, `calculerProrataOccupationPartielle`),
+ * `loyerHorsCharges` = `montant - charges` (voir
+ * calculerDecompositionEcheanceEntree pour le pourquoi de la
+ * soustraction). Le début d'occupation ne compte que s'il tombe le même
+ * mois que `dateFinOccupation` (sinon le mois est occupé depuis le 1er).
+ */
+function decomposerEcheanceProratisee(
+  loyerMensuel: string,
+  provisionsCharges: string | null,
+  dateFinOccupation: string,
+  dateDebut: string
+): DecompositionEcheanceEntree {
+  const montantPlein = calculerMontantEcheanceLoyer(loyerMensuel, provisionsCharges);
+  const montant = calculerProrataOccupationPartielle(montantPlein, dateFinOccupation, dateDebut);
+  const charges = calculerProrataOccupationPartielle(provisionsCharges ?? "0.00", dateFinOccupation, dateDebut);
   const loyerHorsCharges = centimesVersMontant(montantEnCentimes(montant) - montantEnCentimes(charges));
   return { montant, loyerHorsCharges, charges };
+}
+
+/**
+ * Décomposition de l'échéance de loyer du MOIS DE FIN d'un bail résilié
+ * (chantier financier de la résiliation, décisions 3 et 6 du 2026-11-14) :
+ * même règle que l'échéance d'entrée — du 1er du mois (ou de `dateDebut`
+ * si elle tombe le même mois) jusqu'à `dateFin` incluse, sur les jours
+ * réels du mois ; fin le dernier jour du mois = mois plein.
+ *
+ * Entrées vérifiées (erreur sinon) : dates AAAA-MM-JJ réelles, `dateFin`
+ * jamais antérieure à `dateDebut`, montants positifs ou nuls.
+ */
+export function calculerDecompositionEcheanceFin(
+  loyerMensuel: string,
+  provisionsCharges: string | null,
+  dateDebut: string,
+  dateFin: string
+): DecompositionEcheanceEntree {
+  verifierDateIso(dateDebut, "date de début");
+  verifierDateIso(dateFin, "date de fin");
+  if (dateFin < dateDebut) {
+    throw new Error(`La date de fin (${dateFin}) précède la date de début (${dateDebut}).`);
+  }
+  verifierMontantPositifOuNul(loyerMensuel, "loyer mensuel");
+  if (provisionsCharges !== null) {
+    verifierMontantPositifOuNul(provisionsCharges, "provisions pour charges");
+  }
+  return decomposerEcheanceProratisee(loyerMensuel, provisionsCharges, dateFin, dateDebut);
+}
+
+function verifierDateIso(date: string, libelle: string): void {
+  if (!estDateIsoValide(date)) {
+    throw new Error(`${libelle} invalide : "${date}" (attendu AAAA-MM-JJ).`);
+  }
+}
+
+function verifierMontantPositifOuNul(montant: string, libelle: string): void {
+  if (montantEnCentimes(montant) < 0) {
+    throw new Error(`${libelle} négatif : "${montant}".`);
+  }
 }
 
 /**

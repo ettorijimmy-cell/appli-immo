@@ -18,6 +18,25 @@ export function formaterDateIso(annee: number, mois: number, jour: number): stri
   return `${annee.toString().padStart(4, "0")}-${mois.toString().padStart(2, "0")}-${jour.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Vrai si `date` est exactement une date calendaire AAAA-MM-JJ qui existe
+ * (mois 1 à 12, jour dans le mois, 29 février seulement les années
+ * bissextiles). Un horodatage complet ou une date approximative est refusé.
+ */
+export function estDateIsoValide(date: string): boolean {
+  const correspondance = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!correspondance) {
+    return false;
+  }
+  const annee = Number(correspondance[1]);
+  const mois = Number(correspondance[2]);
+  const jour = Number(correspondance[3]);
+  if (annee < 1 || mois < 1 || mois > 12) {
+    return false;
+  }
+  return jour >= 1 && jour <= joursDansLeMois(annee, mois);
+}
+
 export function decomposerDate(date: string): { annee: number; mois: number; jour: number } {
   const [anneeStr, moisStr, jourStr] = date.split("-");
   return { annee: Number(anneeStr), mois: Number(moisStr), jour: Number(jourStr) };

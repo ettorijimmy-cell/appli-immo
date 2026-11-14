@@ -4,6 +4,7 @@ import {
   calculerBornesMoisCalendaire,
   calculerDateEcheanceRecurrente,
   calculerDecompositionEcheanceEntree,
+  calculerDecompositionEcheanceFin,
   calculerDernierJourDuMois,
   calculerMontantEcheanceEntree,
   calculerMontantEcheanceLoyer,
@@ -200,5 +201,65 @@ describe("calculerDateEcheanceRecurrente", () => {
     // regarde que l'année/mois de dateReference, jamais son jour.
     expect(calculerDateEcheanceRecurrente("2026-07-01", 20)).toBe("2026-07-20");
     expect(calculerDateEcheanceRecurrente("2026-07-31", 20)).toBe("2026-07-20");
+  });
+});
+
+describe("calculerDecompositionEcheanceFin", () => {
+  // Bail de l'audit du 2026-11-14 : 550 € = 500 + 50, entré avant le mois de fin.
+  const fin = (dateFin: string, dateDebut = "2026-10-01", provisions: string | null = "50.00") =>
+    calculerDecompositionEcheanceFin("500.00", provisions, dateDebut, dateFin);
+
+  it("fin le 15 d'un mois de 31 jours : 266,12 dont charges 24,19 et loyer 241,93", () => {
+    expect(fin("2027-03-15")).toEqual({ montant: "266.12", loyerHorsCharges: "241.93", charges: "24.19" });
+  });
+
+  it("fin le 15 d'un mois de 30 jours : 275,00 (250 + 25)", () => {
+    expect(fin("2027-04-15")).toEqual({ montant: "275.00", loyerHorsCharges: "250.00", charges: "25.00" });
+  });
+
+  it("fin le 1er : un jour facturé", () => {
+    // 550 × 1/31 = 17,741… → 17,74 ; charges 50 × 1/31 = 1,612… → 1,61.
+    expect(fin("2027-03-01")).toEqual({ montant: "17.74", loyerHorsCharges: "16.13", charges: "1.61" });
+  });
+
+  it("fin le dernier jour (31 ou 30) : mois plein", () => {
+    expect(fin("2027-03-31")).toEqual({ montant: "550.00", loyerHorsCharges: "500.00", charges: "50.00" });
+    expect(fin("2027-04-30")).toEqual({ montant: "550.00", loyerHorsCharges: "500.00", charges: "50.00" });
+  });
+
+  it("février 28 jours et 29 jours", () => {
+    expect(fin("2027-02-14")).toEqual({ montant: "275.00", loyerHorsCharges: "250.00", charges: "25.00" });
+    // 550 × 14/29 = 265,517… → 265,51 ; charges 50 × 14/29 = 24,137… → 24,13.
+    expect(fin("2028-02-14")).toEqual({ montant: "265.51", loyerHorsCharges: "241.38", charges: "24.13" });
+    expect(fin("2027-02-28")).toEqual({ montant: "550.00", loyerHorsCharges: "500.00", charges: "50.00" });
+    expect(fin("2028-02-29")).toEqual({ montant: "550.00", loyerHorsCharges: "500.00", charges: "50.00" });
+  });
+
+  it("même mois que la date de début : de date_debut à date_fin incluses", () => {
+    // 10 → 20 mars : 11 jours sur 31.
+    expect(fin("2027-03-20", "2027-03-10")).toEqual({ montant: "195.16", loyerHorsCharges: "177.42", charges: "17.74" });
+    // Entrée et sortie le même jour : un jour.
+    expect(fin("2027-03-10", "2027-03-10")).toEqual({ montant: "17.74", loyerHorsCharges: "16.13", charges: "1.61" });
+  });
+
+  it("sans provisions : charges à zéro, tout en loyer", () => {
+    expect(fin("2027-03-15", "2026-10-01", null)).toEqual({ montant: "241.93", loyerHorsCharges: "241.93", charges: "0.00" });
+  });
+
+  it("toujours loyerHorsCharges + charges = montant", () => {
+    for (const dateFin of ["2027-01-07", "2027-02-11", "2027-06-19", "2027-07-23", "2028-02-03"]) {
+      const d = fin(dateFin);
+      expect(montantEnCentimes(d.loyerHorsCharges) + montantEnCentimes(d.charges)).toBe(montantEnCentimes(d.montant));
+    }
+  });
+
+  it("refuse les entrées invalides", () => {
+    expect(() => fin("2026-09-30")).toThrow(/précède/);
+    expect(() => fin("2027-02-29")).toThrow(/invalide/);
+    expect(() => fin("2027-03-15T00:00:00Z")).toThrow(/invalide/);
+    expect(() => fin("2027-03-15", "2026-13-01")).toThrow(/invalide/);
+    expect(() => calculerDecompositionEcheanceFin("-500.00", "50.00", "2026-10-01", "2027-03-15")).toThrow(/négatif/);
+    expect(() => calculerDecompositionEcheanceFin("500.00", "-1.00", "2026-10-01", "2027-03-15")).toThrow(/négatif/);
+    expect(() => calculerDecompositionEcheanceFin("abc", "50.00", "2026-10-01", "2027-03-15")).toThrow();
   });
 });

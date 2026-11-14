@@ -4,6 +4,7 @@ import {
   ajouterMois,
   dateVersJourOrdinal,
   estBissextile,
+  estDateIsoValide,
   formaterDateCourteFr,
   jourDeLaSemaine,
   joursDansLeMois,
@@ -138,5 +139,31 @@ describe("formaterDateCourteFr", () => {
 
   it("ne lit que la date d'un horodatage, sans conversion de fuseau", () => {
     expect(formaterDateCourteFr("2026-12-31T23:30:00.000Z")).toBe("31/12/2026");
+  });
+});
+
+describe("estDateIsoValide", () => {
+  it("accepte une date AAAA-MM-JJ qui existe", () => {
+    expect(estDateIsoValide("2027-03-15")).toBe(true);
+    expect(estDateIsoValide("2027-12-31")).toBe(true);
+    expect(estDateIsoValide("2028-02-29")).toBe(true);
+  });
+
+  it("refuse un jour qui n'existe pas dans le mois", () => {
+    expect(estDateIsoValide("2027-02-29")).toBe(false);
+    expect(estDateIsoValide("2027-04-31")).toBe(false);
+    expect(estDateIsoValide("2027-03-00")).toBe(false);
+  });
+
+  it("refuse un mois hors de 1 à 12", () => {
+    expect(estDateIsoValide("2027-00-10")).toBe(false);
+    expect(estDateIsoValide("2027-13-01")).toBe(false);
+  });
+
+  it("refuse tout autre format (horodatage, chiffres manquants, vide)", () => {
+    expect(estDateIsoValide("2027-03-15T00:00:00.000Z")).toBe(false);
+    expect(estDateIsoValide("2027-3-15")).toBe(false);
+    expect(estDateIsoValide("15/03/2027")).toBe(false);
+    expect(estDateIsoValide("")).toBe(false);
   });
 });
