@@ -56,6 +56,15 @@ const CATEGORIES_RESERVEES: readonly DocumentCategorie[] = [
   "etat_des_lieux_entree_papier"
 ];
 
+// Désignation lisible de chaque catégorie réservée, pour les messages
+// affichés à l'utilisateur (refus d'archivage).
+const LIBELLES_CATEGORIES_RESERVEES: Partial<Record<DocumentCategorie, string>> = {
+  signature: "Cette image de signature",
+  etat_des_lieux_docx: "Ce document Word figé",
+  etat_des_lieux_pdf: "Ce PDF figé",
+  etat_des_lieux_entree_papier: "Ce scan de l'entrée papier"
+};
+
 export interface FindAllDocumentsFiltres {
   entiteType?: DocumentEntiteType;
   entiteId?: string;
@@ -389,7 +398,12 @@ export class DocumentsService {
     // réservée (signature, docx figé, PDF) n'est jamais archivable par la
     // route générique, inconditionnellement.
     if (CATEGORIES_RESERVEES.includes(existant.categorie)) {
-      throw new ConflictException(`Un document '${existant.categorie}' ne peut jamais être archivé.`);
+      // Libellé lisible plutôt que le nom technique de la catégorie
+      // (chantier archivage, décision 4 du 2026-11-12) : ce message
+      // s'affiche tel quel dans la confirmation du desktop.
+      throw new ConflictException(
+        `${LIBELLES_CATEGORIES_RESERVEES[existant.categorie] ?? "Ce document"} fait partie de l'état des lieux et ne peut pas être archivé : il est conservé comme preuve.`
+      );
     }
     // Verrou de signature (chantier Signatures, 2026-10-25) : une photo de
     // la phase entrée ne peut plus être archivée une fois l'entrée signée,

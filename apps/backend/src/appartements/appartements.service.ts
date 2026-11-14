@@ -210,6 +210,22 @@ export class AppartementsService {
     // chantier scoping multi-organisation, 2026-09-19).
     await this.resoudreAppartementAvecAppartenance(id);
 
+    // Jamais un appartement occupé (chantier archivage, décision 4 du
+    // 2026-11-12) : archivé avec un bail actif ou en préavis, il sortirait
+    // du tableau de bord, de la fiscalité et de la répartition des
+    // dépenses alors que le logement est loué. Après l'appartenance (404
+    // d'abord), comme partout. Un bail brouillon ou résilié n'empêche rien.
+    const [bailEnCours] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .where(and(eq(baux.appartementId, id), inArray(baux.statut, ["actif", "preavis"])))
+      .limit(1);
+    if (bailEnCours) {
+      throw new ConflictException(
+        "Cet appartement a un bail actif ou en préavis. Résiliez d'abord ce bail, puis archivez l'appartement."
+      );
+    }
+
     const [appartement] = await mettreAJourAvecAudit(
       this.db,
       appartements,

@@ -293,11 +293,19 @@ describe("Documents — upload chiffré, statut calculé, accès journalisé (in
       }
     );
 
-    it.each(["etat_des_lieux_docx", "etat_des_lieux_pdf"] as const)(
-      "archiver() : refuse (409) d'archiver un document existant déjà en catégorie '%s'",
-      async (categorie) => {
+    it.each([
+      ["etat_des_lieux_docx", "Ce document Word figé fait partie de l'état des lieux et ne peut pas être archivé : il est conservé comme preuve."],
+      ["etat_des_lieux_pdf", "Ce PDF figé fait partie de l'état des lieux et ne peut pas être archivé : il est conservé comme preuve."]
+    ] as const)(
+      "archiver() : refuse (409) d'archiver un document existant déjà en catégorie '%s', avec un libellé lisible",
+      async (categorie, message) => {
         const ligne = await creerLigneFigee(categorie, "sortie");
-        await expect(documentsService.archiver(ligne.id)).rejects.toThrow(ConflictException);
+        const refus = documentsService.archiver(ligne.id);
+        await expect(refus).rejects.toThrow(ConflictException);
+        // Message affiché tel quel dans la confirmation du desktop : jamais
+        // le nom technique de la catégorie (chantier archivage, décision 4).
+        await expect(refus).rejects.toThrow(message);
+        await expect(documentsService.archiver(ligne.id)).rejects.not.toThrow(categorie);
       }
     );
 

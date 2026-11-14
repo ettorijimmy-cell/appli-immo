@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { locataires, mettreAJourAvecAudit, type Database } from "db";
-import { eq } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { bailLocataires, baux, locataires, mettreAJourAvecAudit, type Database } from "db";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -100,6 +100,28 @@ export class LocatairesService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     await this.resoudreLocataireAvecAppartenance(id);
+
+    // Jamais un locataire encore en place (chantier archivage, décision 4
+    // du 2026-11-12) : refus s'il reste rattaché (lien bail_locataires non
+    // retiré) à un bail actif ou en préavis. Après l'appartenance (404
+    // d'abord). Un lien retiré, ou un bail brouillon/résilié, n'empêche rien.
+    const [lienEnCours] = await this.db
+      .select({ id: bailLocataires.id })
+      .from(bailLocataires)
+      .innerJoin(baux, eq(baux.id, bailLocataires.bailId))
+      .where(
+        and(
+          eq(bailLocataires.locataireId, id),
+          isNull(bailLocataires.archivedAt),
+          inArray(baux.statut, ["actif", "preavis"])
+        )
+      )
+      .limit(1);
+    if (lienEnCours) {
+      throw new ConflictException(
+        "Ce locataire est encore rattaché à un bail actif ou en préavis. Retirez-le de ce bail, ou résiliez le bail, avant de l'archiver."
+      );
+    }
 
     const [locataire] = await mettreAJourAvecAudit(
       this.db,

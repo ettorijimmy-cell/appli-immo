@@ -398,7 +398,7 @@ describe("BauxService.activer / resilier / update / archive — contrôle d'appa
   });
 
   it("résilie normalement quand le bail appartient à l'organisation appelante", async () => {
-    const resultat = await contexteOrgA(() => bauxService.resilier(orgA.bailActifId, { dateFin: "2026-12-31" }));
+    const resultat = await contexteOrgA(() => bauxService.resilier(orgA.bailActifId, { dateFin: "2026-10-31" }));
     expect(resultat.statut).toBe("resilie");
   });
 
@@ -433,7 +433,7 @@ describe("BauxService.activer / resilier / update / archive — contrôle d'appa
 
   it("hors contexte HTTP (organisationId absent), le contrôle est ignoré pour resilier() — comportement préexistant préservé", async () => {
     const resultat = await requestContextService.executerAvecContexte({ utilisateurId: orgA.userId }, () =>
-      bauxService.resilier(orgA.bailActifId, { dateFin: "2026-12-31" })
+      bauxService.resilier(orgA.bailActifId, { dateFin: "2026-10-31" })
     );
     expect(resultat.statut).toBe("resilie");
   });

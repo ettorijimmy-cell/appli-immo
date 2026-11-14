@@ -9,6 +9,8 @@ import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import type { DocumentMetier } from "../documents/api";
 import { useDocumentApercu } from "../documents/use-document-apercu";
 import { ApiError } from "../lib/authenticated-fetch";
+// Une date papier ne peut pas être dans le futur (même règle que le backend).
+import { aujourdHuiParis } from "../lib/date-paris";
 import type { Bail } from "../locataires/api";
 import type { Appartement } from "../patrimoine/api";
 import {
@@ -26,12 +28,6 @@ import {
   piecesAvecPhotosEntree,
   type SaisieEntreePapier
 } from "./entree-papier-formulaire";
-
-// Date du jour à Paris (AAAA-MM-JJ), comme le backend : une date papier ne
-// peut pas être dans le futur.
-function aujourdHuiParis(): string {
-  return new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(new Date());
-}
 
 const CLASSE_BOUTON_SECONDAIRE =
   "rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50";

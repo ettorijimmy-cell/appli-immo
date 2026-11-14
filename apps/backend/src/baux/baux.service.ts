@@ -10,10 +10,12 @@ import {
   centimesVersMontant,
   montantEnCentimes,
   peutActiverBail,
-  preremplirLoyerBail
+  preremplirLoyerBail,
+  refusDateFinResiliation
 } from "core";
 import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
+import { dateDuJourParis } from "../common/date-paris";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
@@ -386,6 +388,19 @@ export class BauxService {
         throw new ConflictException(
           "La date de fin ne peut pas précéder la date de début du bail."
         );
+      }
+
+      // Date de fin dans le futur refusée (chantier archivage, décision 16
+      // du 2026-11-13 — voir refusDateFinResiliation, packages/core) : le
+      // bail passerait aussitôt en « resilie », le job mensuel cesserait de
+      // générer les échéances et les mois d'occupation restants ne seraient
+      // jamais facturés. « Aujourd'hui » = date du jour à Paris, comme pour
+      // la date d'une entrée papier. Sans date saisie : inchangé.
+      if (dto.dateFin) {
+        const refusDateFuture = refusDateFinResiliation(dto.dateFin, dateDuJourParis());
+        if (refusDateFuture) {
+          throw new ConflictException(refusDateFuture);
+        }
       }
 
       const [appartement] = await tx

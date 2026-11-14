@@ -17,6 +17,7 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { aujourdHuiParis } from "../lib/date-paris";
 import { texteResiliationBail, texteRetraitGarant } from "../lib/textes-confirmation";
 import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
@@ -695,6 +696,11 @@ function BailActuelDetail({
               type="date"
               value={dateFinResiliation}
               onChange={(event) => setDateFinResiliation(event.target.value)}
+              // Une date de fin future est refusée par le backend (on
+              // résilie le jour du départ ou après) : le sélecteur s'arrête
+              // à aujourd'hui. Une saisie au clavier au-delà reste possible,
+              // le refus de l'API s'affiche alors dans la confirmation.
+              max={aujourdHuiParis()}
               placeholder="Date de fin"
               className="rounded-md border border-slate-300 px-3 py-2 text-sm"
             />

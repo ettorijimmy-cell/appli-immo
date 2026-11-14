@@ -284,9 +284,9 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
     await bauxService.activer(bail.id);
 
-    const bailResilie = await bauxService.resilier(bail.id, { dateFin: "2027-01-31" });
+    const bailResilie = await bauxService.resilier(bail.id, { dateFin: "2026-10-31" });
     expect(bailResilie.statut).toBe("resilie");
-    expect(bailResilie.dateFin).toBe("2027-01-31");
+    expect(bailResilie.dateFin).toBe("2026-10-31");
 
     const [appartementApresResiliation] = await db
       .select()
@@ -1291,27 +1291,29 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
       const bail = await bauxService.create({
         appartementId,
         typeBail: "vide",
-        dateDebut: "2026-08-01",
+        dateDebut: "2024-08-01",
         loyerMensuel: "900.00",
         jourEcheance: 1
       });
       await bauxService.activer(bail.id);
 
-      // Résiliation avec date de fin loin dans le futur : aucune échéance
-      // n'a jamais été générée pour ce mois-là (job Module 6 pas
-      // implémenté), mais le mois de dateFin lui-même doit être facturé.
-      await bauxService.resilier(bail.id, { dateFin: "2028-01-15" });
+      // Résiliation longtemps après l'activation, à une date passée (une
+      // date de fin future est refusée depuis le 2026-11-13, voir
+      // refusDateFinResiliation) : aucune échéance n'a été générée pour ce
+      // mois-là (le job mensuel ne tourne pas dans ce test), mais le mois
+      // de dateFin lui-même doit être facturé.
+      await bauxService.resilier(bail.id, { dateFin: "2025-01-15" });
 
       const toutesLesLignes = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
-      const lignesJanvier2028 = toutesLesLignes.filter(
-        (ligne) => ligne.dateEcheance >= "2028-01-01" && ligne.dateEcheance < "2028-02-01"
+      const lignesJanvier2025 = toutesLesLignes.filter(
+        (ligne) => ligne.dateEcheance >= "2025-01-01" && ligne.dateEcheance < "2025-02-01"
       );
-      expect(lignesJanvier2028).toHaveLength(1);
+      expect(lignesJanvier2025).toHaveLength(1);
       // Le Cas B facture toujours depuis le 1er jour du mois de dateFin.
       // Janvier = 31 jours, 15 jours occupés (1er au 15 inclus).
-      expect(lignesJanvier2028[0]?.montant).toBe(calculerProrataOccupationPartielle("900.00", "2028-01-15"));
-      expect(lignesJanvier2028[0]?.montant).toBe("435.48");
-      expect(lignesJanvier2028[0]?.statut).toBe("impaye");
+      expect(lignesJanvier2025[0]?.montant).toBe(calculerProrataOccupationPartielle("900.00", "2025-01-15"));
+      expect(lignesJanvier2025[0]?.montant).toBe("435.48");
+      expect(lignesJanvier2025[0]?.statut).toBe("impaye");
     });
 
     it("rejette explicitement une résiliation dont dateFin précède dateDebut, sans rien modifier", async () => {

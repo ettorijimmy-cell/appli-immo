@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { appartements, bailLocataires, baux, bien, mettreAJourAvecAudit, type Database } from "db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { ArchiverBailLocataireDto } from "./dto/archiver-bail-locataire.dto";
@@ -86,7 +86,38 @@ export class BailLocatairesService {
     // chantier scoping multi-organisation, 2026-09-19) : ce service n'a
     // jamais eu de findById() (aucun endpoint de lecture à l'unité), donc
     // pas de helper préexistant à réutiliser — extrait ici directement.
-    await this.resoudreLienAvecAppartenance(id);
+    const lienARetirer = await this.resoudreLienAvecAppartenance(id);
+
+    // Jamais un bail actif ou en préavis sans locataire (chantier
+    // archivage, décision 4 du 2026-11-12) : refus si c'est le dernier lien
+    // non retiré d'un tel bail. Après l'appartenance (404 d'abord). Un lien
+    // déjà retiré, un colocataire parmi d'autres, ou un bail brouillon ou
+    // résilié : rien n'est refusé.
+    if (lienARetirer.archivedAt === null) {
+      const [bail] = await this.db
+        .select({ statut: baux.statut })
+        .from(baux)
+        .where(eq(baux.id, lienARetirer.bailId))
+        .limit(1);
+      if (bail && (bail.statut === "actif" || bail.statut === "preavis")) {
+        const autresLiens = await this.db
+          .select({ id: bailLocataires.id })
+          .from(bailLocataires)
+          .where(
+            and(
+              eq(bailLocataires.bailId, lienARetirer.bailId),
+              isNull(bailLocataires.archivedAt),
+              ne(bailLocataires.id, id)
+            )
+          )
+          .limit(1);
+        if (autresLiens.length === 0) {
+          throw new ConflictException(
+            "C'est le dernier locataire de ce bail actif ou en préavis. Résiliez le bail plutôt que de le retirer."
+          );
+        }
+      }
+    }
 
     const [lien] = await mettreAJourAvecAudit(
       this.db,
