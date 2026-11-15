@@ -305,8 +305,74 @@ avec l'utilisateur — prérequis posé lors du Module 5)** :
   transaction qui commence par `SELECT … FOR UPDATE` sur sa ligne, statut
   `actif`/`preavis` revérifié. Une résiliation en cours fait attendre le
   job ; à la reprise (READ COMMITTED), le bail est `resilie` et rien n'est
-  inséré. Le job ne regarde toujours **pas** `date_fin` : il génère le mois
-  courant d'un bail actif dont la fin est connue (conception 2, ouverte).
+  inséré. Pour un bail **actif**, le job ne regarde toujours **pas**
+  `date_fin` : il génère le mois courant même si la fin est connue
+  (décision 8 du 2026-11-15). Pour un bail **en préavis**, voir ci-dessous.
+
+**Décision produit (vrai préavis, résiliation conception 2, décisions de
+Jimmy du 2026-11-15 — commits `92e52a3`, `763ad2d`, `02478d0`, `9c6f8ed`,
+`4a6bb29`)** : textes lus par Jimmy, loi n° 89-462 art. 15 (vide) et
+art. 25-8 (meublé). Calculs purs dans packages/core
+(`baux/preavis.ts`), relus par financial-logic-reviewer ; stockage dans
+`bail_preavis` (section suivante).
+- **Déclaration** (`POST /baux/:id/preavis`, bail `actif` seulement) :
+  auteur, date de réception, mode de remise facultatif, durée (1 à 6
+  mois, proposée par `dureePreavisProposee`, modifiable), motif de préavis
+  réduit (congé du locataire sur un bail vide seulement), date de fin
+  **confirmée par l'utilisateur** (la date proposée n'est jamais présentée
+  comme certaine). Contrôles (`validerDeclarationPreavis`, 400) : dates
+  valides, fin ≥ réception, réception ≥ début du bail. Aucun contrôle de
+  validité juridique du congé (décision 5). Le bail passe `preavis`,
+  `date_fin` reçoit la date de fin.
+- **Correction** (`PATCH /baux/:id/preavis`) : à tout moment tant que le
+  bail est en préavis ; **annulation** (`PATCH /baux/:id/preavis/annuler`)
+  jusqu'à la date de fin incluse (heure de Paris), 409 ensuite. Le bail
+  redevient `actif` avec sa `date_fin` d'avant le préavis.
+- **Ordre des contrôles** : 404 d'appartenance, 400 de cohérence, puis dans
+  une transaction qui verrouille le bail (`SELECT … FOR UPDATE`, même
+  verrou que le job, `resilier()` et `update()`) : 409 (statut, préavis
+  déjà en cours ou absent, préavis incohérent — `baux.date_fin` différente
+  de celle du préavis actif —, loyer ou jour d'échéance manquant, mois
+  déjà remboursé).
+- **Job** (`echeanceRecurrenteAGenerer`) : pour un bail `preavis`, mois
+  courant plein avant le mois de fin, **au prorata** le mois de fin
+  (`calculerDecompositionEcheanceFin`, même règle que la résiliation),
+  **rien** après. Même règle pour un congé du bailleur : le dernier mois se
+  ramène au départ réel à la résiliation. Un bail `preavis` sans
+  `date_fin` est une incohérence : erreur journalisée, les autres baux
+  sont traités.
+- **Réalignement** des échéances `type=loyer` non archivées à chaque
+  action (`planRealignementEcheances`), dans la même transaction :
+  - déclaration et date avancée : règles de la clôture financière
+    (conception 1) sur la nouvelle fin — mois de fin au prorata s'il est
+    impayé ou partiel, inchangé s'il est payé (trop-perçu signalé) ; mois
+    suivants archivés sans versement actif, sinon gardés avec tout le reçu
+    en trop-perçu ;
+  - date reculée et annulation : chaque mois redevenu dû est remis plein
+    et le nouveau mois de fin au nouveau prorata, **même payés** (ils
+    repassent partiels, décision 9) ; les mois manquants sont créés
+    jusqu'au mois courant ; une échéance archivée n'est jamais
+    désarchivée (le mois est recréé) ;
+  - **décision 15** : si un mois à remonter a un trop-perçu déjà
+    remboursé (remboursement actif sur son paiement), l'action entière est
+    **refusée (409)** — corriger d'abord le remboursement. Le statut d'une
+    échéance reste calculé sur les versements, jamais sur le reçu net ;
+  - aucune échéance d'un mois antérieur à l'ancien mois de fin n'est
+    touchée ; deux échéances non archivées dans un mois recalculé : 409.
+  - Réponse : `realignement` (échéances recalculées, archivées, gardées,
+    créées, trop-perçu du mois de fin, `tropPercuTotal`,
+    `resteARembourserTotal`), totaux **de cette action seulement** ; le
+    desktop les affiche (« Pour cette action : … ») sans les conserver.
+- **Résiliation d'un bail en préavis** : date de fin **au plus tard à la
+  fin du préavis** (409 au-delà : indemnité d'occupation, à gérer à part,
+  décision 10) ; avant = relocation anticipée. Refusée (409) si le préavis
+  est incohérent. La ligne active de `bail_preavis` est archivée avec
+  `motif_fin = 'resilie'`. Le reste suit la clôture financière ci-dessus.
+- **`PATCH /baux/:id`** : `dateFin` refusée (409) pour un bail en préavis
+  (passer par la correction du préavis, décision 12), toujours modifiable
+  pour un bail actif ; la mise à jour prend le verrou du bail.
+- **Inchangés** : révision IRL et régularisation automatique, baux `actif`
+  seulement (décision 11, en attendant l'ADIL).
 
 **Décision produit (taux d'occupation, Module 7, tranchée avec
 l'utilisateur)** : pour un appartement, sur une période donnée,
@@ -383,8 +449,8 @@ CHECK ne lisant pas une autre table) :
 À chaque déclaration, correction ou annulation, les échéances de loyer sont
 réalignées (`planRealignementEcheances`, packages/core), et le job ne génère
 plus rien après le mois de `date_fin` d'un bail en préavis
-(`echeanceRecurrenteAGenerer`) — règles détaillées dans la section `baux`
-au commit backend.
+(`echeanceRecurrenteAGenerer`) — règles détaillées dans la section `baux`,
+« Décision produit (vrai préavis) ».
 
 Garanties portées par la base (triggers posés à la main dans la migration
 0079) : aucune suppression (`bail_preavis_sans_suppression`) ni vidage

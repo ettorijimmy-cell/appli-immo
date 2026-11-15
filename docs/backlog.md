@@ -337,17 +337,122 @@ les trois parcours ci-dessus).
   (voir « État de la production ») — la résiliation fait alors ce tri
   elle-même.
 
-- **Conception 2 de la résiliation : vrai préavis (ouvert, 2026-11-14,
-  priorité après le déploiement de la conception 1).** Aucun code ne pose
-  le statut `preavis` aujourd'hui, et le job de génération ignore
-  `date_fin` : un bail actif dont la fin est connue reçoit le mois de fin
-  en entier, et le prorata n'arrive qu'à la résiliation. À faire : action
-  « Préavis reçu » (bail en `preavis` avec une `date_fin` future acceptée),
-  job qui ne génère plus aucun mois après le mois de fin et génère le mois
-  de fin directement au prorata, résiliation qui ne fait plus que clore.
-  **Textes à lire avant toute conception** (Jimmy les copie depuis
-  Légifrance) : loi n° 89-462 du 6 juillet 1989, **art. 15** (congé, délai
-  de préavis, loyer dû pendant le préavis, vide) et **art. 25-8** (meublé).
+- **Conception 2 de la résiliation : vrai préavis — résolu (2026-11-15,
+  commits `92e52a3`, `763ad2d`, `02478d0`, `9c6f8ed` et `4a6bb29`).**
+  Ouvert le 2026-11-14 : aucun code ne posait le statut `preavis`, et le
+  job générait le mois de fin en entier (prorata seulement à la
+  résiliation). Textes lus par Jimmy sur Légifrance (loi n° 89-462,
+  **art. 15** et **art. 25-8**, versions en vigueur depuis le 29/07/2023) ;
+  décisions de Jimmy du 2026-11-15 (1 à 15). Règles détaillées dans
+  `docs/data-dictionary.md`, sections `bail_preavis` et `baux`
+  (« Décision produit (vrai préavis) »). Résumé :
+  - `92e52a3` (packages/core, relu par financial-logic-reviewer) : durée
+    proposée (vide : locataire 3 mois, ou 1 avec un motif de l'art. 15 ;
+    bailleur 6 ; meublé : locataire 1, bailleur 3), date de fin proposée,
+    contrôles de cohérence, décision du job (`echeanceRecurrenteAGenerer`),
+    plan de réalignement des échéances (`planRealignementEcheances`) ;
+  - `763ad2d` : table `bail_preavis` (migration `0079`), une ligne active
+    par bail, correction = archivage + nouvelle ligne, triggers
+    anti-suppression et d'immuabilité ; **non synchronisée** (lue par
+    l'API), aucun stream PowerSync modifié ;
+  - `02478d0` (backend) : déclaration, correction et annulation du préavis
+    (`POST`, `PATCH` et `PATCH …/annuler` sur `/baux/:id/preavis`, `GET`
+    pour la carte), sous le verrou du bail, échéances réalignées dans la
+    même transaction, trace dans le journal d'audit ;
+  - `9c6f8ed` (backend) : le job ne génère plus rien après le mois de fin
+    d'un bail en préavis et génère ce mois au prorata ; résiliation
+    refusée (409) après la fin du préavis, ou si le préavis est
+    incohérent, et la ligne active archivée (`resilie`) à la résiliation ;
+    `PATCH /baux/:id` refuse `dateFin` pour un bail en préavis et prend le
+    verrou ;
+  - `4a6bb29` (desktop) : formulaire « Préavis reçu » (date de fin
+    proposée « à confirmer », lecture « la veille », confirmation
+    obligatoire, rappel art. 15 / 25-8), carte « Préavis » avec historique,
+    correction et annulation confirmées, résumé « pour cette action »,
+    avertissement préavis écoulé, date de fin grisée dans « Modifier »,
+    date max de résiliation ; libellé du statut (« En préavis ») sur le
+    desktop et le mobile.
+
+  Test manuel de Jimmy validé le 2026-11-15 sur un bail jetable de
+  l'organisation d'essai (déclaration, « Modifier » grisé, corrections
+  reculée et avancée, préavis écoulé, refus d'annulation après la fin,
+  annulation, refus de résiliation après la fin, résiliation à la fin).
+
+  Comportements voulus, à connaître :
+  - **décision 15 — mois déjà remboursé** : si un recul de la date de fin
+    ou une annulation rendrait de nouveau dû un mois dont un trop-perçu a
+    déjà été remboursé, l'action est **refusée (409)** tant que ce
+    remboursement n'est pas corrigé à la main (option (a) choisie par
+    Jimmy). Pas de statut calculé sur le reçu net : le statut d'une
+    échéance reste calculé sur les versements, partout dans Briky ;
+  - un mois remis plein par un recul ou une annulation l'est **même
+    payé** (il repasse partiel, décision 9) ; un mois archivé n'est jamais
+    désarchivé, il est recréé ;
+  - congé du bailleur : le job génère comme pour un congé du locataire
+    jusqu'au mois de fin ; Jimmy résilie au départ réel, et la résiliation
+    (conception 1) ramène le dernier mois au prorata ;
+  - le résumé « Pour cette action : … » s'efface quand on quitte la fiche
+    du bail puis qu'on y revient : voulu, le résultat reste visible dans
+    Finances (échéances, remboursements en attente) et dans l'historique
+    du préavis (remarque de Jimmy au test manuel) ;
+  - révision IRL et régularisation automatique : inchangées, baux `actif`
+    seulement (décision 11), en attendant l'avis de l'ADIL.
+
+- **Questions ADIL sur le préavis (ouvert, 2026-11-15, décision 14).** À
+  poser avant le premier préavis réel ; aucune n'est tranchée dans le
+  code, qui laisse Jimmy confirmer ou corriger :
+  - **dernier jour du préavis** : 14 ou 15 pour une réception le 15, et
+    réception un 31 (Briky propose réception + durée, présentée « à
+    confirmer » avec la lecture « la veille ») ;
+  - **point de départ pour une LRAR non retirée** (présentation ou
+    jamais) ;
+  - **indemnité d'occupation** après la fin du préavis (montant, quittance
+    ou non) : aujourd'hui la résiliation après la fin est refusée, à gérer
+    à part ;
+  - **relocation anticipée** : date de fin du loyer, preuve de l'accord du
+    bailleur ;
+  - **congé du bailleur, départ avant la fin** : jour retenu (départ,
+    remise des clés, état des lieux) ;
+  - **préavis réduit sans justificatif** joint à la lettre : un mois ou
+    trois ;
+  - **rétractation du congé** par son auteur (avec ou sans accord de
+    l'autre partie) — l'annulation existe dans Briky sans contrôle ;
+  - **révision IRL et régularisation des charges pendant le préavis**
+    (aujourd'hui non générées pour un bail en préavis, décision 11) ;
+  - **quittance d'un dernier mois proratisé** (art. 21) — rejoint
+    l'entrée « Quittance d'un mois de fin payé en entier » ci-dessous.
+
+- **Aucune alerte pour un bail en préavis incohérent (ouvert, 2026-11-15,
+  réserve de financial-logic-reviewer).** Un bail `preavis` sans ligne
+  active dans `bail_preavis`, ou dont `date_fin` diffère de celle du
+  préavis, n'apparaît par aucun chemin normal (les deux s'écrivent
+  ensemble). S'il existe (écriture à la main, retour arrière), la
+  correction, l'annulation et la résiliation sont refusées (409) ; le job
+  génère selon `baux.date_fin`, ou journalise une erreur si elle est vide,
+  mais rien ne le signale dans l'application. À prévoir : une alerte, et une réparation
+  guidée.
+
+- **Aucune alerte « préavis échu, bail non résilié » (ouvert, 2026-11-15,
+  réserve de financial-logic-reviewer).** Seule la fiche du bail affiche un
+  avertissement non bloquant une fois la date de fin passée. Le job ne
+  génère plus rien, mais le bail reste `preavis`, l'appartement loué, et
+  le dépôt de garantie n'est pas traité. À prévoir : une alerte ou une
+  tâche dans le moteur d'alertes.
+
+- **Loyer ou provisions modifiés pendant un préavis (ouvert, 2026-11-15,
+  réserve de financial-logic-reviewer).** `PATCH /baux/:id` accepte encore
+  `loyerMensuel` et `provisionsCharges` pour un bail en préavis : le mois
+  de fin déjà proratisé n'est pas recalculé (seuls les mois générés
+  ensuite, et ceux qu'une correction recalcule, prennent le nouveau
+  montant). À
+  trancher : refuser, ou réaligner le mois de fin.
+
+- **Type de bail modifié pendant un préavis (ouvert, 2026-11-15, réserve de
+  financial-logic-reviewer).** `typeBail` reste modifiable : la durée et un
+  motif de préavis réduit déjà enregistrés peuvent ne plus correspondre
+  (motif d'un bail vide sur un meublé). La correction suivante est
+  revalidée, pas la ligne en place. À trancher : refuser le changement de
+  type pendant un préavis.
 
 - **Quittance : refus « pas un loyer ou pas payé » (400) avant le contrôle
   d'appartenance (ouvert, 2026-11-14, cloisonnement multi-organisation).**
@@ -2248,6 +2353,66 @@ Vérifications après déploiement (sans résilier de bail réel) :
 base. Les données écrites entre-temps restent valides pour l'ancien code :
 échéances archivées (ignorées partout), décomposition renseignée (déjà
 lue par la quittance et la régularisation).
+
+**Chantier « résiliation, conception 2 : vrai préavis » — code terminé le
+2026-11-15 (commits `92e52a3`, `763ad2d`, `02478d0`, `9c6f8ed`,
+`4a6bb29`, sur `main`), non déployé.** La production étant à `94c0e2c`
+(`0078`), un même déploiement couvre aussi les deux chantiers ci-dessus
+(archivage, conception 1) : une image, un installeur.
+
+Ordre :
+1. **Vérification de la production en lecture seule** (script de la
+   conception 1, lancé par Jimmy), dont **0 bail au statut `preavis`**
+   (point (e)) : la `0079` ne crée aucune ligne `bail_preavis` pour un bail
+   déjà en préavis, et le nouveau code refuserait de corriger, d'annuler
+   ou de résilier un tel bail (préavis incohérent).
+2. **Sauvegarde Scaleway** de la base de production.
+3. **Migration `0079_left_raza.sql` AVANT l'image.** Additive : quatre
+   enums, la table `bail_preavis`, ses clés étrangères, deux index, deux
+   fonctions et trois triggers. Aucune colonne modifiée, aucune
+   publication ni GRANT. Le nouveau backend lit `bail_preavis` à la
+   résiliation d'un bail en préavis et à chaque action de préavis :
+   déployé avant, ces appels échoueraient.
+4. **Image backend** (embarque aussi le mobile).
+5. **Pas de PowerSync** : `bail_preavis` n'est pas synchronisée (lue par
+   l'API), aucun stream modifié (`docs/powersync-sync-streams.yaml` n'a
+   changé que dans un commentaire) ; le desktop voit le préavis par
+   `baux.statut` et `baux.date_fin`, déjà dans le stream `baux`.
+6. **Installeur desktop.**
+
+**Aucune nouvelle variable d'environnement**, aucune dépendance ajoutée,
+Dockerfile et `nest-cli.json` inchangés.
+
+Vérifications après déploiement, **sans créer de préavis réel** (aucun
+bail actif en production) : `/health` 200 ; migration `0079` présente
+dans `drizzle.__drizzle_migrations` ; table `bail_preavis` vide, droits
+du rôle de l'application dessus ; fiche d'un bail résilié : statut en
+clair (« Résilié »), aucun bouton « Préavis reçu » ; logs du conteneur
+sans ERROR, job de 1 h passé normalement la nuit suivante. Le premier
+préavis réel sera le vrai test (après les questions ADIL ci-dessus).
+
+**Retour arrière : image `bd01a37` et installeur `bd01a37`**, sans toucher
+à la base (la `0079` reste : l'ancien backend ignore `bail_preavis`). Ces
+deux versions n'ont jamais été déployées : l'image est à construire et à
+pousser avant le déploiement pour que le retour arrière soit immédiat.
+**Aucun bail en préavis ne doit exister au moment d'un retour arrière.**
+Sinon, avec l'ancien code :
+- **le job** ignore `date_fin` : il génère chaque mois en entier tant que
+  le bail reste `preavis`, y compris le mois de fin s'il n'existe pas
+  encore et les mois **après** la fin (fausses échéances impayées,
+  alertes, tâches « Quittance mensuelle ») ;
+- **plus d'action de préavis** : ni correction ni annulation (routes
+  absentes) ; l'ancien desktop n'a ni la carte ni le libellé (« preavis »
+  brut) ;
+- **la résiliation** accepte une date après la fin du préavis et n'archive
+  pas la ligne active de `bail_preavis` (de retour sur le nouveau code, un
+  bail résilié garde une ligne active, sans effet sur l'affichage mais
+  fausse dans l'historique). Résilié à la fin du préavis ou avant, la
+  conception 1 archive bien les mois générés en trop sans versement ;
+- **« Modifier »** envoie de nouveau `dateFin` : une date changée
+  désaligne `baux.date_fin` de `bail_preavis`, et le nouveau code refuse
+  ensuite correction, annulation et résiliation (409) jusqu'à une
+  réparation à la main.
 
 ---
 
