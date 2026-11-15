@@ -331,11 +331,10 @@ les trois parcours ci-dessus).
     résiliation n'est pas protégée par le verrou (seul le job le prend) :
     risque accepté, action humaine.
 
-  **Consigne provisoire** (résilier le jour du départ ; une échéance après
-  la fin ne s'archive à la main que si elle n'a aucun versement ; payée,
-  la garder et rembourser) : **à retirer une fois ce chantier déployé**
-  (voir « État de la production ») — la résiliation fait alors ce tri
-  elle-même.
+  **Consigne provisoire retirée (2026-11-15)** : chantier déployé le
+  2026-11-15 (voir « État de la production ») ; la résiliation trie
+  elle-même les échéances après la date de fin, plus aucun archivage à la
+  main.
 
 - **Conception 2 de la résiliation : vrai préavis — résolu (2026-11-15,
   commits `92e52a3`, `763ad2d`, `02478d0`, `9c6f8ed` et `4a6bb29`).**
@@ -2029,9 +2028,9 @@ production" ci-dessous pour le détail confirmé de chaque point.
 
 ## État de la production
 
-**Dernière mise à jour confirmée : 2026-11-11 (chantier garants complet
-déployé, voir plus bas). Dernière migration en production :
-`0078_lively_eddie_brock.sql`.** Source : runbook de déploiement
+**Dernière mise à jour confirmée : 2026-11-15 (vrai préavis déployé,
+voir plus bas). Dernière migration en production :
+`0079_left_raza.sql`.** Source : runbook de déploiement
 (hors dépôt), qui fait foi.
 
 - Migrations Drizzle `0058` à `0065` appliquées en base de production
@@ -2304,8 +2303,9 @@ retour arrière :
   (`docs/questions-adil-acte-cautionnement.md`).
 
 **Chantier « archivage sans confirmation ni message d'erreur » — code
-terminé le 2026-11-14 (commits `927013a` à `9ac1234`, sur `main`), non
-déployé.** À déployer : image backend + installeur desktop. Le chantier
+terminé le 2026-11-14 (commits `927013a` à `9ac1234`, sur `main`),
+déployé le 2026-11-14 :** image backend et installeur desktop
+`1d66f93897bc84567fddad50111cc3e8e417e40a`, sans migration. Le chantier
 n'ajoute ni migration ni changement de `docs/powersync-sync-streams.yaml` :
 aucune migration ni redéploiement PowerSync à faire (production à `0078`).
 
@@ -2321,11 +2321,15 @@ Vérifications après déploiement :
 la base (aucune migration dans ce chantier).
 
 **Chantier financier de la résiliation, conception 1 — code terminé le
-2026-11-14 (commits `8b6fb9f` et `55708ef`, sur `main`), non déployé.**
-À déployer : image backend + installeur desktop, **sans migration ni
+2026-11-14 (commits `8b6fb9f` et `55708ef`, sur `main`), déployé le
+2026-11-15 (après-midi) :** image backend et installeur desktop
+`bd01a3755b62cbea01fa8c72d538ccc1aa1e8fe8`, **sans migration ni
 redéploiement PowerSync** (aucune colonne, aucune table, aucun stream
-modifié). Si le chantier archivage ci-dessus n'est pas encore déployé, une
-seule image et un seul installeur couvrent les deux.
+modifié). Vérification préalable de la production en lecture seule
+(`tmp/verifier-production-resiliation.sh`, lancé par Jimmy) : 0 échéance
+après une date de fin, 0 bail résilié sans date, 0 décomposition fausse,
+0 mois manquant, aucune reprise ; aucun bail actif en production.
+Consigne provisoire retirée.
 
 Ordre :
 1. **Vérification de la production en lecture seule, AVANT le
@@ -2356,9 +2360,16 @@ lue par la quittance et la régularisation).
 
 **Chantier « résiliation, conception 2 : vrai préavis » — code terminé le
 2026-11-15 (commits `92e52a3`, `763ad2d`, `02478d0`, `9c6f8ed`,
-`4a6bb29`, sur `main`), non déployé.** La production étant à `94c0e2c`
-(`0078`), un même déploiement couvre aussi les deux chantiers ci-dessus
-(archivage, conception 1) : une image, un installeur.
+`4a6bb29`, sur `main`), déployé le 2026-11-15 (soir) :**
+- Sauvegarde Scaleway « avant-deploiement-preavis » (Ready).
+- Migration `0079_left_raza.sql` appliquée en base de production, avant
+  l'image.
+- Image backend déployée : `ea4a6a8cd5d3aba97c716017003bed287349f38b`,
+  conteneur Ready, `/health` 200, aucun ERROR dans les logs.
+- Pas de redéploiement PowerSync.
+- Installeur desktop reconstruit sur `ea4a6a8` et installé.
+- Vérifié : bail résilié affiché « Résilié », sans bouton « Préavis
+  reçu ».
 
 Ordre :
 1. **Vérification de la production en lecture seule** (script de la
@@ -2391,10 +2402,9 @@ clair (« Résilié »), aucun bouton « Préavis reçu » ; logs du conteneur
 sans ERROR, job de 1 h passé normalement la nuit suivante. Le premier
 préavis réel sera le vrai test (après les questions ADIL ci-dessus).
 
-**Retour arrière : image `bd01a37` et installeur `bd01a37`**, sans toucher
-à la base (la `0079` reste : l'ancien backend ignore `bail_preavis`). Ces
-deux versions n'ont jamais été déployées : l'image est à construire et à
-pousser avant le déploiement pour que le retour arrière soit immédiat.
+**Retour arrière actuel : image `bd01a37` et installeur `bd01a37`**
+(déployés le 2026-11-15 après-midi, conception 1), sans toucher à la base
+(la `0079` reste : l'ancien backend ignore `bail_preavis`).
 **Aucun bail en préavis ne doit exister au moment d'un retour arrière.**
 Sinon, avec l'ancien code :
 - **le job** ignore `date_fin` : il génère chaque mois en entier tant que
