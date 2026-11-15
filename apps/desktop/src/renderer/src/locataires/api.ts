@@ -297,6 +297,96 @@ export function resilierBail(id: string, dateFin: string): Promise<ResultatResil
   });
 }
 
+// Préavis d'un bail (résiliation, conception 2 « vrai préavis », API du
+// commit 3a : apps/backend/src/baux/preavis.service.ts). Lu par l'API
+// seulement (table bail_preavis non synchronisée) ; le statut « preavis »
+// et la date de fin du bail arrivent, eux, par le bail synchronisé.
+export type AuteurPreavis = "locataire" | "bailleur";
+export type ModeRemisePreavis = "lrar" | "commissaire_justice" | "main_propre";
+export type MotifPreavisReduit =
+  | "zone_tendue"
+  | "premier_emploi"
+  | "mutation"
+  | "perte_emploi"
+  | "nouvel_emploi_apres_perte"
+  | "sante"
+  | "violences"
+  | "rsa_aah"
+  | "logement_social";
+
+export interface Preavis {
+  id: string;
+  bailId: string;
+  auteur: AuteurPreavis;
+  dateReception: string;
+  modeRemise: ModeRemisePreavis | null;
+  dureeMois: number;
+  motifReduit: MotifPreavisReduit | null;
+  dateFinProposee: string;
+  dateFin: string;
+  dateFinBailAvant: string | null;
+  motifFin: "corrige" | "annule" | "resilie" | null;
+  declareeLe: string;
+  declareePar: string;
+  archivedAt: string | null;
+}
+
+export interface PreavisDuBail {
+  actif: Preavis | null;
+  historique: Preavis[];
+}
+
+export interface DeclarationPreavisInput {
+  auteur: AuteurPreavis;
+  dateReception: string;
+  modeRemise: ModeRemisePreavis | null;
+  dureeMois: number;
+  motifReduit: MotifPreavisReduit | null;
+  dateFin: string;
+}
+
+// Ce que l'action a fait sur les échéances de loyer — totaux de CETTE
+// action, pas du bail.
+export interface RealignementPreavis {
+  echeancesRecalculees: Array<{ paiementId: string; montant: string; statut: string }>;
+  echeancesArchivees: string[];
+  echeancesConservees: Array<{ paiementId: string; dateEcheance: string; tropPercu: string; resteARembourser: string }>;
+  echeancesCreees: Array<{ paiementId: string; dateEcheance: string; montant: string }>;
+  tropPercuMoisFin: { paiementId: string; tropPercu: string; resteARembourser: string } | null;
+  tropPercuTotal: string;
+  resteARembourserTotal: string;
+}
+
+export interface ResultatActionPreavis {
+  bailId: string;
+  statut: BailStatut;
+  dateFin: string | null;
+  preavis: Preavis | null;
+  realignement: RealignementPreavis;
+}
+
+export function consulterPreavis(bailId: string): Promise<PreavisDuBail> {
+  return authenticatedFetch<PreavisDuBail>(`/baux/${bailId}/preavis`);
+}
+
+export function declarerPreavis(bailId: string, input: DeclarationPreavisInput): Promise<ResultatActionPreavis> {
+  return authenticatedFetch<ResultatActionPreavis>(`/baux/${bailId}/preavis`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function corrigerPreavis(bailId: string, input: DeclarationPreavisInput): Promise<ResultatActionPreavis> {
+  return authenticatedFetch<ResultatActionPreavis>(`/baux/${bailId}/preavis`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function annulerPreavis(bailId: string): Promise<ResultatActionPreavis> {
+  return authenticatedFetch<ResultatActionPreavis>(`/baux/${bailId}/preavis/annuler`, { method: "PATCH" });
+}
+
 export function archiveBail(id: string): Promise<Bail> {
   return authenticatedFetch<Bail>(`/baux/${id}/archiver`, { method: "PATCH" });
 }

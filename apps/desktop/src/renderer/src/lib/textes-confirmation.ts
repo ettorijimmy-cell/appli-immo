@@ -166,15 +166,20 @@ export function texteRetraitGarant(
 export function texteResiliationBail({
   numeroAppartement,
   dateDebut,
-  dateFin
+  dateFin,
+  preavis = null
 }: {
   numeroAppartement: string;
   dateDebut: string;
   // Date de fin saisie à côté du bouton « Résilier le bail » (obligatoire :
   // le bouton reste désactivé tant qu'elle est vide).
   dateFin: string;
+  // Préavis en cours (vrai préavis, décision 10) : la résiliation est
+  // refusée après sa date de fin (BauxService.resilier()).
+  preavis?: { auteur: "locataire" | "bailleur"; dateFin: string } | null;
 }): TexteConfirmation {
   const phrases = [
+    ...(preavis ? [phrasePreavisResiliation(preavis)] : []),
     `Le bail passera en statut résilié, avec une fin d'occupation au ${formaterDateCourteFr(dateFin)}.`,
     "Le loyer du mois de fin sera ramené au prorata des jours occupés : l'échéance est ajustée si elle n'est pas entièrement payée, ou créée si elle n'existe pas ; une échéance déjà payée n'est pas modifiée.",
     "Les échéances de loyer des mois suivants seront archivées si elles n'ont reçu aucun versement ; celles qui ont déjà reçu un versement sont gardées et la somme reçue est signalée comme trop-perçu.",
@@ -191,6 +196,17 @@ export function texteResiliationBail({
     libelleEnCours: "Résiliation…",
     messageRepli: "Impossible de résilier le bail."
   };
+}
+
+// Bail en préavis : congé du locataire → résilier à la fin du préavis, une
+// date antérieure ne se justifiant que par une relocation (le loyer reste
+// dû jusqu'à la fin du préavis, art. 15 / 25-8) ; congé du bailleur →
+// résilier au départ réel, au plus tard à la fin du préavis.
+function phrasePreavisResiliation(preavis: { auteur: "locataire" | "bailleur"; dateFin: string }): string {
+  const fin = formaterDateCourteFr(preavis.dateFin);
+  return preavis.auteur === "locataire"
+    ? `Bail en préavis (congé du locataire) : résiliez à la date de fin du préavis, le ${fin} ; une date antérieure ne se justifie que par une relocation du logement, le loyer restant dû jusqu'à la fin du préavis.`
+    : `Bail en préavis (congé du bailleur) : résiliez à la date de départ réel du locataire, au plus tard le ${fin}.`;
 }
 
 // Résumé affiché après une résiliation réussie, d'après la réponse de

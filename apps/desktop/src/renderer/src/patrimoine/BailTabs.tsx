@@ -1,4 +1,4 @@
-import { calculerMontantRecuTotal, centimesVersMontant, montantEnCentimes } from "core";
+import { calculerMontantRecuTotal, centimesVersMontant, libelleStatutBail, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
@@ -19,6 +19,8 @@ import {
 import { ApiError } from "../lib/authenticated-fetch";
 import { aujourdHuiParis } from "../lib/date-paris";
 import { texteResiliationBail, texteResultatResiliation, texteRetraitGarant } from "../lib/textes-confirmation";
+import { dateMaxResiliation } from "../lib/textes-preavis";
+import { PreavisSection } from "./PreavisSection";
 import { lignesAvertissementsGaranties } from "./avertissements-garanties";
 import { resoudreAffichageChampManquant } from "./libelles-champs-manquants";
 import { telechargerNoticeInformation } from "../references/api";
@@ -28,6 +30,7 @@ import {
   archiveBailLocataire,
   archiveGarant,
   chargerSuivisCautions,
+  consulterPreavis,
   createBail,
   createBailLocataire,
   genererDocumentBail,
@@ -46,6 +49,7 @@ import {
   type BailTypeBail,
   type Garant,
   type Locataire,
+  type PreavisDuBail,
   type SuiviCaution,
   type VerificationGarantiesBail
 } from "../locataires/api";
@@ -404,6 +408,9 @@ function BailActuelDetail({
   // Règles d'acceptation et pièces manquantes (GET
   // /baux/:id/verification-garanties) ; null si non chargées.
   const [verificationGaranties, setVerificationGaranties] = useState<VerificationGarantiesBail | null>(null);
+  // Préavis du bail (vrai préavis) : actif et historique, lus par l'API ;
+  // null si non chargé ou bail ni actif ni en préavis.
+  const [preavisDuBail, setPreavisDuBail] = useState<PreavisDuBail | null>(null);
   // Remise du bail et fin d'engagement de chaque caution personne physique
   // (chantier garants, commit 6).
   const [suivisCautions, setSuivisCautions] = useState<Map<string, SuiviCaution>>(new Map());
@@ -470,10 +477,14 @@ function BailActuelDetail({
     // À part : un échec de la vérification masque seulement l'encadré,
     // jamais le détail du bail (la génération bloque de toute façon).
     setVerificationGaranties(await getVerificationGaranties(bail.id).catch(() => null));
+    // À part aussi : un échec masque seulement la carte « Préavis ».
+    setPreavisDuBail(
+      bail.statut === "actif" || bail.statut === "preavis" ? await consulterPreavis(bail.id).catch(() => null) : null
+    );
     // bail.updatedAt : recharge aussi après une modification du bail
     // (assurance loyers impayés), qui remplace l'objet bail sans changer
     // son id.
-  }, [bail.id, bail.updatedAt]);
+  }, [bail.id, bail.updatedAt, bail.statut]);
 
   useEffect(() => {
     void refresh();
@@ -599,7 +610,7 @@ function BailActuelDetail({
         <dl className="grid grid-cols-2 gap-x-8 text-sm">
           <div className="flex justify-between border-b border-slate-100 py-1">
             <dt className="text-slate-500">Statut</dt>
-            <dd>{bail.statut}</dd>
+            <dd>{libelleStatutBail(bail.statut)}</dd>
           </div>
           <div className="flex justify-between border-b border-slate-100 py-1">
             <dt className="text-slate-500">Type</dt>
@@ -643,6 +654,13 @@ function BailActuelDetail({
           </div>
         </dl>
       )}
+
+      <PreavisSection
+        bail={bail}
+        numeroAppartement={appartement.numero}
+        preavis={preavisDuBail}
+        onChanged={onChanged}
+      />
 
       {actionError && (
         <p role="alert" className="text-sm text-red-600">
@@ -702,9 +720,11 @@ function BailActuelDetail({
               onChange={(event) => setDateFinResiliation(event.target.value)}
               // Une date de fin future est refusée par le backend (on
               // résilie le jour du départ ou après) : le sélecteur s'arrête
-              // à aujourd'hui. Une saisie au clavier au-delà reste possible,
-              // le refus de l'API s'affiche alors dans la confirmation.
-              max={aujourdHuiParis()}
+              // à aujourd'hui — et, pour un bail en préavis, à la fin du
+              // préavis si elle est plus tôt (décision 10). Une saisie au
+              // clavier au-delà reste possible, le refus de l'API s'affiche
+              // alors dans la confirmation.
+              max={dateMaxResiliation(aujourdHuiParis(), bail.statut === "preavis" ? bail.dateFin : null)}
               required
               aria-label="Date de fin du bail (obligatoire pour résilier)"
               placeholder="Date de fin"
@@ -733,7 +753,11 @@ function BailActuelDetail({
           {...texteResiliationBail({
             numeroAppartement: appartement.numero,
             dateDebut: bail.dateDebut,
-            dateFin: dateFinResiliation
+            dateFin: dateFinResiliation,
+            preavis:
+              bail.statut === "preavis" && preavisDuBail?.actif
+                ? { auteur: preavisDuBail.actif.auteur, dateFin: preavisDuBail.actif.dateFin }
+                : null
           })}
           ton="danger"
           action={resilier}
@@ -1603,7 +1627,9 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
       await updateBail(bail.id, {
         typeBail,
         dateDebut,
-        ...(dateFin && { dateFin }),
+        // Bail en préavis : la date de fin se modifie depuis la carte
+        // « Préavis » (le backend la refuse ici, décision 12).
+        ...(dateFin && bail.statut !== "preavis" && { dateFin }),
         ...(dateSignature && { dateSignature }),
         ...(loyerMensuel && { loyerMensuel }),
         ...(depotGarantie && { depotGarantie }),
@@ -1669,8 +1695,12 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
             type="date"
             value={dateFin}
             onChange={(event) => setDateFin(event.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            disabled={bail.statut === "preavis"}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
           />
+          {bail.statut === "preavis" && (
+            <p className="text-xs text-slate-500">Bail en préavis : la date de fin se modifie depuis la carte « Préavis ».</p>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -1914,7 +1944,7 @@ export function HistoriqueBauxTab({ appartement }: { appartement: Appartement })
                 <td className="py-2">{bail.dateFin ?? "—"}</td>
                 <td className="py-2">{bail.loyerMensuel ? `${bail.loyerMensuel} €` : "—"}</td>
                 <td className="py-2">
-                  {bail.statut}
+                  {libelleStatutBail(bail.statut)}
                   {bail.statut === "archive" && <ArchiveBadge />}
                 </td>
               </tr>

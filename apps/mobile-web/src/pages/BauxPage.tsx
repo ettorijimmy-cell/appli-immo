@@ -1,3 +1,4 @@
+import { libelleStatutBail } from "core";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { chargerContexteBail, listBaux, type Bail, type ContexteBail } from "../api/patrimoine";
@@ -72,7 +73,7 @@ export function BauxPage(): React.JSX.Element {
                 {contexte.bienNom} / n°{contexte.appartementNumero}
               </p>
               <p className="text-sm text-slate-500">
-                {contexte.locatairesNoms || "—"} · {bail.statut}
+                {contexte.locatairesNoms || "—"} · {libelleStatutBail(bail.statut)}
               </p>
             </button>
           </li>

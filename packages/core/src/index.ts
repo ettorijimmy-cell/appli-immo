@@ -7,6 +7,7 @@ export * from "./baux/refus-date-fin-resiliation";
 export * from "./baux/echeances";
 export * from "./baux/cloture-financiere-resiliation";
 export * from "./baux/preavis";
+export * from "./baux/libelle-statut-bail";
 export * from "./paiements/montant";
 export * from "./paiements/calculer-statut-paiement";
 export * from "./paiements/parser-releve-csv";

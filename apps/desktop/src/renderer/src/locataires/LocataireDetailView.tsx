@@ -1,3 +1,4 @@
+import { libelleStatutBail } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { ArchiveBadge } from "../components/ArchiveFilter";
@@ -289,7 +290,7 @@ function BailDetail({
         </div>
         <div className="flex justify-between border-b border-slate-100 py-1">
           <dt className="text-slate-500">Statut</dt>
-          <dd>{bail.statut}</dd>
+          <dd>{libelleStatutBail(bail.statut)}</dd>
         </div>
         <div className="flex justify-between border-b border-slate-100 py-1">
           <dt className="text-slate-500">Type</dt>

@@ -1,3 +1,4 @@
+import { libelleStatutBail } from "core";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { chargerContexteBail, creerCachesContexteBail } from "../finances/contexte-bail";
@@ -158,7 +159,7 @@ export function ChargesView(): React.JSX.Element {
           <option value="">{isLoadingBaux ? "Chargement…" : "Sélectionner un bail…"}</option>
           {options.map(({ bail, libelle }) => (
             <option key={bail.id} value={bail.id}>
-              {libelle} {bail.statut !== "actif" ? `(${bail.statut})` : ""}
+              {libelle} {bail.statut !== "actif" ? `(${libelleStatutBail(bail.statut).toLowerCase()})` : ""}
             </option>
           ))}
         </select>
