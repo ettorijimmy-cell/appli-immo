@@ -24,6 +24,7 @@ import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { BauxModule } from "../baux/baux.module";
 import { BauxService } from "../baux/baux.service";
+import { PreavisService } from "../baux/preavis.service";
 import { BienModule } from "../bien/bien.module";
 import { BienService } from "../bien/bien.service";
 import { CommonModule } from "../common/common.module";
@@ -67,6 +68,7 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
   let bienService: BienService;
   let appartementsService: AppartementsService;
   let bauxService: BauxService;
+  let preavisService: PreavisService;
   let versementsService: VersementsService;
   let alertesJobService: AlertesJobService;
   let quittanceDocumentDocxService: QuittanceDocumentDocxService;
@@ -105,6 +107,7 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
     bienService = moduleRef.get(BienService);
     appartementsService = moduleRef.get(AppartementsService);
     bauxService = moduleRef.get(BauxService);
+    preavisService = moduleRef.get(PreavisService);
     versementsService = moduleRef.get(VersementsService);
     alertesJobService = moduleRef.get(AlertesJobService);
     quittanceDocumentDocxService = moduleRef.get(QuittanceDocumentDocxService);
@@ -250,6 +253,47 @@ describe("Génération docx de la quittance (intégration Postgres réelle)", ()
     expect(texte).toContain("100.00");
     expect(texte).toContain("800.00");
     expect(texte).toContain("janvier 2026");
+  });
+
+  // Vrai préavis (commit 3b) : le mois de fin d'un bail en préavis est
+  // généré au prorata par le job, décomposition comprise — sa quittance
+  // porte le loyer et les charges du prorata, jamais le mois plein.
+  it("bail en préavis : quittance du mois de fin générée au prorata par le job (338,71 + 48,38 = 387,09)", async () => {
+    const { bailId } = await creerBailAvecTitulaire();
+    await alertesJobService.genererEcheancesRecurrentes("2026-02-10");
+    await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      preavisService.declarer(bailId, {
+        auteur: "locataire",
+        dateReception: "2026-01-15",
+        modeRemise: "lrar",
+        dureeMois: 2,
+        motifReduit: null,
+        dateFin: "2026-03-15"
+      })
+    );
+    await alertesJobService.genererEcheancesRecurrentes("2026-03-10");
+    const [echeanceMars] = await db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.bailId, bailId), eq(paiements.dateEcheance, "2026-03-05")));
+    if (!echeanceMars) throw new Error("Échéance de mars attendue introuvable");
+    // 800 × 15/31 = 387,09 ; charges 100 × 15/31 = 48,38 ; loyer 338,71.
+    expect(echeanceMars).toMatchObject({ montant: "387.09", loyerHorsCharges: "338.71", charges: "48.38" });
+    await versementsService.ajouter({
+      paiementId: echeanceMars.id,
+      montant: "387.09",
+      mode: "virement",
+      dateVersement: "2026-03-05"
+    });
+
+    const buffer = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      quittanceDocumentDocxService.genererDocumentQuittanceDocx(echeanceMars.id)
+    );
+    const texte = texteDuDocx(buffer);
+    expect(texte).toContain("338.71");
+    expect(texte).toContain("48.38");
+    expect(texte).toContain("387.09");
+    expect(texte).not.toContain("800.00");
   });
 
   // Chantier financier de la résiliation (décision 7 du 2026-11-14).

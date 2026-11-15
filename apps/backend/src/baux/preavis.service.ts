@@ -142,6 +142,9 @@ export class PreavisService {
 
     return this.dansTransaction(async (tx) => {
       const bailVerrouille = await this.verrouillerBail(tx, bailId);
+      // Revalidée sous verrou (revue du commit 3a) : le type de bail lu
+      // avant la transaction a pu changer entre-temps.
+      this.verifierDeclaration(bailVerrouille, dto);
       if (bailVerrouille.statut === "preavis") {
         throw new ConflictException("Ce bail est déjà en préavis : corrigez le préavis existant ou annulez-le.");
       }
@@ -175,6 +178,7 @@ export class PreavisService {
 
     return this.dansTransaction(async (tx) => {
       const bailVerrouille = await this.verrouillerBail(tx, bailId);
+      this.verifierDeclaration(bailVerrouille, dto);
       const active = await this.preavisActifObligatoire(tx, bailVerrouille);
 
       const realignement = await this.realigner(tx, bailVerrouille, active.dateFin, dto.dateFin, utilisateurId);

@@ -9,10 +9,9 @@ import {
   calculerAlerteImpaye,
   calculerAlerteSinistreStagnation,
   calculerBornesMoisCalendaire,
-  calculerDateEcheanceRecurrente,
-  calculerMontantEcheanceLoyer,
   calculerProchaineDateEntretien,
-  calculerStatutDocument
+  calculerStatutDocument,
+  echeanceRecurrenteAGenerer
 } from "core";
 import { alertes, baux, documents, equipements, mettreAJourAvecAudit, paiements, sinistre, type Database } from "db";
 import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
@@ -84,52 +83,74 @@ export class AlertesJobService {
       // Une transaction par bail, qui commence par verrouiller sa ligne
       // (FOR UPDATE) en revérifiant son statut : même verrou que
       // BauxService.resilier() (chantier financier de la résiliation,
-      // 2026-11-14). Une résiliation en cours fait attendre ce passage ;
-      // à la reprise, Postgres relit la ligne, le bail est « resilie » et
-      // rien n'est inséré. Sans ce verrou, une échéance pouvait être
-      // créée juste après que resilier() eut fini de trier les échéances
-      // du bail : un mois après la fin, dû, jamais clôturé.
-      await this.db.transaction(async (tx) => {
-        const [bailVerrouille] = await tx
-          .select()
-          .from(baux)
-          .where(and(eq(baux.id, bail.id), inArray(baux.statut, ["actif", "preavis"])))
-          .for("update");
-        if (!bailVerrouille || !bailVerrouille.jourEcheance || !bailVerrouille.loyerMensuel) {
-          return;
-        }
+      // 2026-11-14) et PreavisService. Une résiliation ou une action de
+      // préavis en cours fait attendre ce passage ; à la reprise, Postgres
+      // relit la ligne (statut, date de fin) avant toute décision. Sans ce
+      // verrou, une échéance pouvait être créée juste après que resilier()
+      // eut fini de trier les échéances du bail : un mois après la fin, dû,
+      // jamais clôturé.
+      //
+      // Un bail en erreur (donnée incohérente, ex. préavis sans date de fin)
+      // est journalisé et sauté : il ne bloque jamais la génération des
+      // autres baux.
+      try {
+        await this.db.transaction(async (tx) => {
+          const [bailVerrouille] = await tx
+            .select()
+            .from(baux)
+            .where(and(eq(baux.id, bail.id), inArray(baux.statut, ["actif", "preavis"])))
+            .for("update");
+          if (!bailVerrouille) {
+            return;
+          }
 
-        const [echeanceExistante] = await tx
-          .select({ id: paiements.id })
-          .from(paiements)
-          .where(
-            and(
-              eq(paiements.bailId, bail.id),
-              eq(paiements.type, "loyer"),
-              gte(paiements.dateEcheance, debutMoisInclus),
-              lt(paiements.dateEcheance, debutMoisSuivantExclusif)
+          // Décision pure (packages/core, echeanceRecurrenteAGenerer,
+          // vrai préavis décisions 2, 3 et 8) : pleine ; au prorata le mois
+          // de la date de fin d'un bail EN PRÉAVIS ; aucune après ce mois.
+          // Un bail actif garde le comportement d'origine (pleine, même
+          // avec une date de fin).
+          const aGenerer = echeanceRecurrenteAGenerer(bailVerrouille, dateReference);
+          if (aGenerer.type === "aucune") {
+            return;
+          }
+
+          const [echeanceExistante] = await tx
+            .select({ id: paiements.id })
+            .from(paiements)
+            .where(
+              and(
+                eq(paiements.bailId, bail.id),
+                eq(paiements.type, "loyer"),
+                gte(paiements.dateEcheance, debutMoisInclus),
+                lt(paiements.dateEcheance, debutMoisSuivantExclusif)
+              )
             )
-          )
-          .limit(1);
-        if (echeanceExistante) {
-          return;
-        }
+            .limit(1);
+          if (echeanceExistante) {
+            return;
+          }
 
-        await tx.insert(paiements).values({
-          bailId: bail.id,
-          type: "loyer",
-          montant: calculerMontantEcheanceLoyer(bailVerrouille.loyerMensuel, bailVerrouille.provisionsCharges),
-          dateEcheance: calculerDateEcheanceRecurrente(dateReference, bailVerrouille.jourEcheance),
-          // Décomposition FIGÉE au moment de la génération (Module Tâches,
-          // Étape 4 — quittance mensuelle, 2026-08-31) : jamais recalculée si
-          // le bail est révisé ensuite — voir packages/db/src/schema/
-          // paiements.ts. `provisionsCharges` nul compte pour '0.00', jamais
-          // NULL, pour que la ligne "Montant charges" d'une quittance
-          // affiche explicitement zéro plutôt qu'un champ vide ambigu.
-          loyerHorsCharges: bailVerrouille.loyerMensuel,
-          charges: bailVerrouille.provisionsCharges ?? "0.00"
+          await tx.insert(paiements).values({
+            bailId: bail.id,
+            type: "loyer",
+            montant: aGenerer.montant,
+            dateEcheance: aGenerer.dateEcheance,
+            // Décomposition FIGÉE au moment de la génération (Module Tâches,
+            // Étape 4 — quittance mensuelle, 2026-08-31) : jamais recalculée
+            // si le bail est révisé ensuite — voir packages/db/src/schema/
+            // paiements.ts. Provisions nulles : charges « 0.00 », jamais
+            // NULL, pour que la quittance affiche explicitement zéro. Au
+            // prorata, charges tronquées et loyer = montant − charges (même
+            // règle que l'entrée et la résiliation).
+            loyerHorsCharges: aGenerer.loyerHorsCharges,
+            charges: aGenerer.charges
+          });
         });
-      });
+      } catch (erreur) {
+        this.logger.error(
+          `Échéance du ${dateReference} non générée pour le bail ${bail.id} : ${erreur instanceof Error ? erreur.message : String(erreur)}`
+        );
+      }
     }
   }
 

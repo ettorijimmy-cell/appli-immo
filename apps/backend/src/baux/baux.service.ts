@@ -14,9 +14,20 @@ import {
   preremplirLoyerBail,
   recalculerEcheanceMoisFin,
   refusDateFinResiliation,
+  refusDateFinResiliationApresPreavis,
   type DecisionEcheanceApresFin
 } from "core";
-import { appartements, baux, bien, mettreAJourAvecAudit, paiements, remboursements, versements, type Database } from "db";
+import {
+  appartements,
+  bailPreavis,
+  baux,
+  bien,
+  mettreAJourAvecAudit,
+  paiements,
+  remboursements,
+  versements,
+  type Database
+} from "db";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { dateDuJourParis } from "../common/date-paris";
 import { RequestContextService } from "../common/request-context";
@@ -169,52 +180,70 @@ export class BauxService {
     // activer()/resilier().
     await this.verifierAppartenanceBail(id);
 
-    // date_debut devient figée dès qu'un bail sort de `brouillon` — même
-    // principe que date_activation, jamais modifiable après coup
-    // (docs/data-dictionary.md, section baux). Sans cette règle, le job
-    // récurrent (Module 6) pourrait sauter silencieusement l'échéance du
-    // mois courant si date_debut est repoussée après activation.
-    if (dto.dateDebut !== undefined) {
-      const [bailExistant] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
+    // Contrôles et écriture dans UNE transaction qui verrouille d'abord la
+    // ligne du bail (SELECT … FOR UPDATE) — même verrou que le job,
+    // resilier() et PreavisService (revue du commit 3b) : sans lui, une
+    // déclaration de préavis pouvait s'intercaler entre la lecture du
+    // statut et l'écriture de date_fin, laissant baux.date_fin et le
+    // préavis actif en désaccord.
+    return this.db.transaction(async (tx) => {
+      const [bailExistant] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1).for("update");
       if (!bailExistant) {
         throw new NotFoundException("Bail introuvable");
       }
-      if (bailExistant.statut !== "brouillon") {
+
+      // Vrai préavis (décision 12 du 2026-11-15) : la date de fin d'un bail
+      // en préavis est celle du préavis ; elle ne se modifie que par
+      // l'action de préavis (corriger ou annuler), qui réaligne les
+      // échéances. Les autres champs restent modifiables.
+      if (dto.dateFin !== undefined && bailExistant.statut === "preavis") {
+        throw new ConflictException(
+          "Ce bail est en préavis : sa date de fin se modifie depuis le préavis (corriger ou annuler le préavis)."
+        );
+      }
+
+      // date_debut devient figée dès qu'un bail sort de `brouillon` — même
+      // principe que date_activation, jamais modifiable après coup
+      // (docs/data-dictionary.md, section baux). Sans cette règle, le job
+      // récurrent (Module 6) pourrait sauter silencieusement l'échéance du
+      // mois courant si date_debut est repoussée après activation.
+      if (dto.dateDebut !== undefined && bailExistant.statut !== "brouillon") {
         throw new ConflictException(
           "Impossible de modifier la date de début d'un bail qui n'est plus en brouillon."
         );
       }
-    }
 
-    // Champs listés explicitement plutôt qu'un `...dto` : même si un champ
-    // `statut` parvenait un jour jusqu'ici (bug ailleurs, contournement du
-    // typage), il ne serait jamais écrit — la seule voie pour changer le
-    // statut d'un bail reste activer() / resilier() / archive() ci-dessous.
-    const [bail] = await mettreAJourAvecAudit(
-      this.db,
-      baux,
-      id,
-      {
-        typeBail: dto.typeBail,
-        dateDebut: dto.dateDebut,
-        dateFin: dto.dateFin,
-        dateSignature: dto.dateSignature,
-        loyerMensuel: dto.loyerMensuel,
-        depotGarantie: dto.depotGarantie,
-        provisionsCharges: dto.provisionsCharges,
-        jourEcheance: dto.jourEcheance,
-        travauxRealises: dto.travauxRealises,
-        honorairesBailleur: dto.honorairesBailleur,
-        honorairesLocataire: dto.honorairesLocataire,
-        trimestreReferenceRevision: dto.trimestreReferenceRevision,
-        assuranceLoyersImpayes: dto.assuranceLoyersImpayes
-      },
-      this.requestContext.getUtilisateurId()
-    );
-    if (!bail) {
-      throw new NotFoundException("Bail introuvable");
-    }
-    return this.versDto(bail as BailRow);
+      // Champs listés explicitement plutôt qu'un `...dto` : même si un champ
+      // `statut` parvenait un jour jusqu'ici (bug ailleurs, contournement du
+      // typage), il ne serait jamais écrit — la seule voie pour changer le
+      // statut d'un bail reste activer() / resilier() / archive() et le
+      // préavis.
+      const [bail] = await mettreAJourAvecAudit(
+        tx,
+        baux,
+        id,
+        {
+          typeBail: dto.typeBail,
+          dateDebut: dto.dateDebut,
+          dateFin: dto.dateFin,
+          dateSignature: dto.dateSignature,
+          loyerMensuel: dto.loyerMensuel,
+          depotGarantie: dto.depotGarantie,
+          provisionsCharges: dto.provisionsCharges,
+          jourEcheance: dto.jourEcheance,
+          travauxRealises: dto.travauxRealises,
+          honorairesBailleur: dto.honorairesBailleur,
+          honorairesLocataire: dto.honorairesLocataire,
+          trimestreReferenceRevision: dto.trimestreReferenceRevision,
+          assuranceLoyersImpayes: dto.assuranceLoyersImpayes
+        },
+        this.requestContext.getUtilisateurId()
+      );
+      if (!bail) {
+        throw new NotFoundException("Bail introuvable");
+      }
+      return this.versDto(bail as BailRow);
+    });
   }
 
   // Transactionnel : l'activation du bail et le passage de l'appartement à
@@ -439,6 +468,33 @@ export class BauxService {
         throw new ConflictException(refusDateFuture);
       }
 
+      // Vrai préavis (décision 10 du 2026-11-15) : un bail en préavis se
+      // résilie au plus tard à la date de fin du préavis — au-delà,
+      // l'occupation relève d'une indemnité d'occupation, gérée à part. Le
+      // préavis actif est lu sous le même verrou ; il sera archivé avec le
+      // motif « resilie » plus bas, dans cette transaction.
+      const [preavisActif] =
+        bail.statut === "preavis"
+          ? await tx
+              .select()
+              .from(bailPreavis)
+              .where(and(eq(bailPreavis.bailId, id), isNull(bailPreavis.archivedAt)))
+          : [];
+      // Préavis incohérent (aucune ligne active, ou date de fin du bail
+      // différente de celle du préavis) : refus plutôt qu'une résiliation
+      // sans limite (revue du commit 3b). Cet état n'apparaît par aucun
+      // chemin normal (la déclaration écrit les deux ensemble) ; il se
+      // répare à la main.
+      if (bail.statut === "preavis" && (!preavisActif || preavisActif.dateFin !== bail.dateFin)) {
+        throw new ConflictException(
+          "Le préavis de ce bail est incohérent (date de fin du bail différente de celle du préavis, ou préavis introuvable) : il doit être corrigé avant de résilier."
+        );
+      }
+      const refusApresPreavis = refusDateFinResiliationApresPreavis(dateFin, preavisActif?.dateFin ?? null);
+      if (refusApresPreavis) {
+        throw new ConflictException(refusApresPreavis);
+      }
+
       const [appartement] = await tx
         .select()
         .from(appartements)
@@ -501,6 +557,16 @@ export class BauxService {
       );
       if (!bailResilie) {
         throw new Error("Échec de la résiliation du bail");
+      }
+
+      if (preavisActif) {
+        await mettreAJourAvecAudit(
+          tx,
+          bailPreavis,
+          preavisActif.id,
+          { archivedAt: new Date(), motifFin: "resilie" },
+          utilisateurId
+        );
       }
 
       const nouveauStatutAppartement = calculerStatutAppartementApresResiliation(appartement.statut);
