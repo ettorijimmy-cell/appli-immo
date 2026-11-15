@@ -289,28 +289,121 @@ les trois parcours ci-dessus).
 
 ## Dette technique
 
-- **PRIORITÉ — chantier financier de la résiliation (ouvert, 2026-11-14,
-  à faire juste après le chantier archivage, avec
-  financial-logic-reviewer).** Deux trous de `BauxService.resilier()`
-  (`apps/backend/src/baux/baux.service.ts`) et du job mensuel
-  (`alertes-job.service.ts`), constatés le 2026-11-13 :
-  - **Échéances générées après une date de fin passée : restent dues.**
-    Résilier avec une date de fin passée n'annule ni n'archive les
-    échéances déjà générées pour les mois suivants : elles restent dues en
-    entier et l'alerte d'impayé les signale. **Aggravé par le refus des
-    dates futures** (commit `9ac1234`) : il faut maintenant résilier le
-    jour du départ ou après, alors que le job de 1 h du matin crée
-    l'échéance du mois le 1er. Une sortie au 31 résiliée le 1er laisse donc
-    le mois suivant dû en entier.
-  - **Résiliation sans date : aucun prorata.** L'échéance du mois reste au
-    montant plein et le bail peut rester sans date de fin.
+- **Chantier financier de la résiliation, conception 1 « clore
+  proprement » — résolu (2026-11-14, commits `8b6fb9f` et `55708ef`).**
+  Ouvert le même jour en PRIORITÉ après l'audit (trous constatés le
+  2026-11-13 dans `BauxService.resilier()` et le job mensuel) :
+  échéances générées après une date de fin passée qui restaient dues
+  (aggravé par le refus des dates futures, commit `9ac1234`), résiliation
+  sans date sans prorata. Décisions de Jimmy du 2026-11-14 ; règles
+  détaillées dans `docs/data-dictionary.md`, section baux, « Décision
+  produit (clôture financière à la résiliation) ». Résumé :
+  - `8b6fb9f` (packages/core, relu par financial-logic-reviewer) : calculs
+    purs — décomposition du mois de fin (même règle que l'entrée),
+    classement des échéances par rapport au mois de fin, sort d'une
+    échéance après la fin, Cas A/B, trop-perçu total, reste à rembourser
+    par paiement, mois non dû pour la quittance ;
+  - `55708ef` (backend + desktop, relu par financial-logic-reviewer, test
+    manuel de Jimmy sur le jeu « Jetable » de l'organisation d'essai) :
+    - **date de fin obligatoire** (400), toujours jamais future ;
+    - **mois de fin** : Cas A impayé/partiel → montant, décomposition et
+      statut au prorata ; payé → inchangé, trop-perçu signalé ; Cas B →
+      échéance créée avec sa décomposition ; plusieurs échéances non
+      archivées le mois de fin → 409 explicite ;
+    - **mois après la fin** : archivés s'ils n'ont aucun versement actif,
+      sinon gardés, montant inchangé, tout le reçu en trop-perçu ;
+    - **verrou partagé** (`SELECT … FOR UPDATE` sur le bail) entre
+      `resilier()` et le job de génération des échéances ;
+    - **remboursements en attente** étendus aux mois après la fin, réduits
+      paiement par paiement des remboursements déjà saisis ;
+    - **quittance refusée** (409) pour un mois non dû, et plus de tâche
+      « Quittance mensuelle » pour un tel mois ;
+    - desktop : bouton de résiliation désactivé sans date, texte de
+      confirmation réécrit, message de résultat (échéances archivées ou
+      gardées, reste à rembourser), tous les trop-perçus en attente du
+      bail affichés.
 
-  Le refus d'une date de fin future (trou 1) est corrigé (commit
-  `9ac1234`) : réserve du financial-logic-reviewer notée par Jimmy, garde-fou
-  gardé, une échéance de trop, visible et annulable, valant mieux que des
-  mois jamais facturés. **Consigne en attendant** : résilier le jour du
-  départ, avec la date de fin réelle, ou annuler à la main l'échéance créée
-  après la date de fin.
+  Comportements voulus, à connaître :
+  - une échéance du mois de fin **archivée volontairement** (ex. un mois
+    offert) est ignorée : le mois est dû, la résiliation en recrée une au
+    prorata (décision de Jimmy) ;
+  - une échéance de loyer **saisie à la main** au même instant qu'une
+    résiliation n'est pas protégée par le verrou (seul le job le prend) :
+    risque accepté, action humaine.
+
+  **Consigne provisoire** (résilier le jour du départ ; une échéance après
+  la fin ne s'archive à la main que si elle n'a aucun versement ; payée,
+  la garder et rembourser) : **à retirer une fois ce chantier déployé**
+  (voir « État de la production ») — la résiliation fait alors ce tri
+  elle-même.
+
+- **Conception 2 de la résiliation : vrai préavis (ouvert, 2026-11-14,
+  priorité après le déploiement de la conception 1).** Aucun code ne pose
+  le statut `preavis` aujourd'hui, et le job de génération ignore
+  `date_fin` : un bail actif dont la fin est connue reçoit le mois de fin
+  en entier, et le prorata n'arrive qu'à la résiliation. À faire : action
+  « Préavis reçu » (bail en `preavis` avec une `date_fin` future acceptée),
+  job qui ne génère plus aucun mois après le mois de fin et génère le mois
+  de fin directement au prorata, résiliation qui ne fait plus que clore.
+  **Textes à lire avant toute conception** (Jimmy les copie depuis
+  Légifrance) : loi n° 89-462 du 6 juillet 1989, **art. 15** (congé, délai
+  de préavis, loyer dû pendant le préavis, vide) et **art. 25-8** (meublé).
+
+- **Quittance : refus « pas un loyer ou pas payé » (400) avant le contrôle
+  d'appartenance (ouvert, 2026-11-14, cloisonnement multi-organisation).**
+  `QuittanceDocumentDocxService.genererDocumentQuittanceDocx()` lève le
+  400 avant de vérifier l'organisation : pour un paiement d'une autre
+  organisation, la réponse est 400 au lieu de 404 (on apprend que le
+  paiement existe, voire son type ou son statut). Préexistant, signalé par
+  financial-logic-reviewer ; risque faible (UUID v7). Déplacer le contrôle
+  d'appartenance en premier, comme le nouveau 409 du mois non dû.
+
+- **Quittance d'un mois de fin payé en entier (ouvert, 2026-11-14,
+  question juridique).** Payée avant la résiliation, l'échéance du mois de
+  fin n'est pas modifiée : sa quittance atteste le montant plein, alors que
+  le surplus est un trop-perçu, pas du loyer. Question pour l'ADIL (avec
+  l'art. 21 de la loi n° 89-462 sur le contenu de la quittance) : la
+  quittance doit-elle ne porter que le loyer dû au prorata ? À ajouter à la
+  liste des questions ADIL avant tout changement.
+
+- **`CreateVersementDto` accepte 0 et les montants négatifs (ouvert,
+  2026-11-14).** Seul `@IsNumberString()` (`apps/backend/src/versements/
+  dto/create-versement.dto.ts`), et aucune CHECK sur `versements.montant`.
+  Les calculs de clôture refusent déjà un versement actif négatif (erreur
+  explicite ; la ligne est exclue des remboursements en attente avec un
+  avertissement dans les logs). À refuser à la saisie (montant > 0,
+  deux décimales au plus), signalé par financial-logic-reviewer.
+
+- **Dépôt de garantie : aucun rappel du délai de restitution (ouvert,
+  2026-11-14).** Rien ne se passe à la résiliation, aucune alerte ni tâche
+  sur le délai ; la restitution passe par un remboursement manuel.
+  Texte à lire : loi n° 89-462, **art. 22** (délai d'un ou deux mois selon
+  l'état des lieux, majoration en cas de retard, retenue pour la
+  régularisation des charges).
+
+- **Régularisation des charges : rien d'automatique pour un bail résilié
+  (ouvert, 2026-11-14).** La tâche automatique ne vise que les baux
+  `actif` (`TachesJobService.genererTachesRegularisationCharges`) ; pour un
+  locataire sorti, seul le calcul manuel existe (écran Charges). Texte à
+  lire : loi n° 89-462, **art. 23** ; décret n° 87-713 (charges
+  récupérables).
+
+- **Déduction fiscale des remboursements de trop-perçu (ouvert,
+  2026-11-14, question fiscale).** Les revenus locatifs (2072 / 2044) sont
+  comptés en caisse sur les versements ; un trop-perçu remboursé reste
+  compté en recette (les remboursements ne sont pas déduits). À trancher
+  après lecture : CGI **art. 29** et **art. 31**, BOFiP
+  **BOI-RFPI-BASE-10** (recettes brutes), notices 2044 et 2072 de l'année
+  — et l'année de rattachement si le remboursement a lieu l'année
+  suivante.
+
+- **Quittances déjà remises pour un mois devenu non dû (ouvert,
+  2026-11-14).** Une quittance générée avant la résiliation pour un mois
+  ensuite déclaré non dû n'est pas stockée (seule trace :
+  `journal_audit`, `quittance_document_genere`) ; rien ne la signale ni ne
+  l'annule. Les tâches « Quittance mensuelle » déjà ouvertes pour un tel
+  mois restent ouvertes (leur génération est refusée). À traiter avec la
+  question ADIL ci-dessus.
 
 - **Archivage sans confirmation ni message d'erreur — résolu (2026-11-14,
   commits `927013a` à `9ac1234`).** Constaté le 2026-11-07 sur les fiches
@@ -2121,6 +2214,40 @@ Vérifications après déploiement :
 
 **Retour arrière** : image `94c0e2c` et installeur `94c0e2c`, sans toucher à
 la base (aucune migration dans ce chantier).
+
+**Chantier financier de la résiliation, conception 1 — code terminé le
+2026-11-14 (commits `8b6fb9f` et `55708ef`, sur `main`), non déployé.**
+À déployer : image backend + installeur desktop, **sans migration ni
+redéploiement PowerSync** (aucune colonne, aucune table, aucun stream
+modifié). Si le chantier archivage ci-dessus n'est pas encore déployé, une
+seule image et un seul installeur couvrent les deux.
+
+Ordre :
+1. **Vérification de la production en lecture seule, AVANT le
+   déploiement** (script préparé dans `tmp/`, non versionné, lancé par
+   Jimmy) : échéances de loyer d'un mois après la date de fin des baux
+   résiliés ou archivés, baux résiliés sans date de fin, échéances du mois
+   de fin dont la décomposition ne correspond pas au montant, mois
+   manquants des baux actifs (contrôle du job). La nouvelle résiliation ne
+   traite que les baux résiliés ensuite : une éventuelle reprise des baux
+   déjà résiliés se décide sur ce résultat, par ids exacts et avec l'accord
+   de Jimmy (règle CLAUDE.md sur les écritures ciblées).
+2. Image backend, puis installeur.
+3. Retirer la consigne provisoire (voir l'entrée « Chantier financier de
+   la résiliation, conception 1 » dans la dette technique).
+
+Vérifications après déploiement (sans résilier de bail réel) :
+- fiche d'un bail actif : bouton « Résilier le bail » grisé sans date,
+  texte de confirmation à jour, Annuler sans effet ;
+- carte « Remboursements en attente » du tableau de bord : inchangée pour
+  les trop-perçus existants ;
+- logs du conteneur : aucun ERROR, job de 1 h passé normalement la nuit
+  suivante.
+
+**Retour arrière** : image et installeur précédents, sans toucher à la
+base. Les données écrites entre-temps restent valides pour l'ancien code :
+échéances archivées (ignorées partout), décomposition renseignée (déjà
+lue par la quittance et la régularisation).
 
 ---
 

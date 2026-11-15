@@ -202,8 +202,10 @@ Depuis le 2026-11-14 (commit `9ac1234`), `resilier()` refuse (409, « Résiliez
 le bail à la date de départ ou après. ») une `date_fin` postérieure à la date
 du jour à Paris (`refusDateFinResiliation`, packages/core ;
 `dateDuJourParis`), avant toute écriture : le bail passerait sinon aussitôt
-en `resilie` et les mois restants ne seraient jamais facturés. Sans
-`date_fin`, comportement inchangé. Les archivages qui casseraient un bail en
+en `resilie` et les mois restants ne seraient jamais facturés. Depuis le
+commit `55708ef` (même jour), `date_fin` est en outre **obligatoire** (400,
+`ResilierBailDto` et revérifié par le service) : voir « Décision produit
+(clôture financière à la résiliation) » ci-dessous. Les archivages qui casseraient un bail en
 cours sont refusés de la même façon (409) : appartement au bail `actif` ou
 `preavis`, locataire encore rattaché (lien `bail_locataires` non archivé) à
 un tel bail, retrait du dernier locataire non retiré d'un tel bail.
@@ -254,6 +256,16 @@ l'existence du bail compte, jamais le chemin par lequel il y est arrivé.
   - **Cas B — aucune échéance ne couvre ce mois** : `resilier()` **génère la ligne manquante**, toujours proratisée **depuis le 1er jour** du mois de `date_fin` (jamais depuis `date_activation` ni `date_debut`) — règle sans ambiguïté : le mois de `date_debut` est **exclusivement** traité par le Cas A (l'échéance d'entrée, toujours générée pour ce mois précis dès l'activation, voir décision ci-dessus), donc tout mois que le Cas B doit encore combler est nécessairement postérieur, occupé en continu depuis son 1er jour. `date_echeance=date_fin`, statut `impaye` par défaut. Aucune ligne n'est créée si le montant proratisé est nul.
     **Portée volontairement limitée** : seul le mois de `date_fin` est comblé. Si plusieurs mois consécutifs n'ont jamais eu d'échéance générée (écart de plusieurs mois entre l'activation et la résiliation, en l'absence du job du Module 6), les mois intermédiaires restent non facturés — un rattrapage multi-mois n'est pas traité ici, c'est le rôle du Module 6 une fois construit (voir `docs/backlog.md`, prérequis de conception posé sur ce module).
 
+**Décision produit (clôture financière à la résiliation, chantier financier de la résiliation, conception 1, décisions de Jimmy du 2026-11-14 — commits `8b6fb9f` et `55708ef`)** : complète les deux cas ci-dessus. Calculs purs dans packages/core (`baux/cloture-financiere-resiliation.ts`, `calculerDecompositionEcheanceFin` dans `baux/echeances.ts`), relus par financial-logic-reviewer.
+- **Date de fin obligatoire**, jamais future (409). Ordre des contrôles : 404 d'appartenance, 400 sans date, puis dans la transaction 409 (statut, fin avant le début, date future, plusieurs échéances le mois de fin) — tout est lu avant la première écriture.
+- **Classement** des échéances `type=loyer` non archivées selon le **mois** de `date_echeance` (le jour n'intervient pas) : avant le mois de fin, mois de fin, mois strictement après.
+- **Mois de fin** : au plus **une** échéance non archivée, sinon 409 explicite (plus de choix silencieux). Cas A impayé/partiel : `montant`, `loyer_hors_charges`, `charges` ET `statut` recalculés (charges proratisées par troncature, loyer hors charges = montant − charges, même règle que l'échéance d'entrée) ; payé : inchangé, trop-perçu = reçu − prorata signalé. Cas B : échéance créée **avec** sa décomposition, datée de `date_fin`. Une échéance du mois de fin **archivée auparavant** (même volontairement, ex. un mois offert) ne compte pas : le mois est dû, le Cas B en recrée une au prorata — comportement voulu (décision de Jimmy), à connaître avant de résilier.
+- **Mois après la fin** : échéance **archivée** (`archived_at`, `updated_by`, `version`, comme `PaiementsService.archive()`) si elle n'a **aucun versement actif** (versements tous annulés compris) ; sinon **conservée**, montant inchangé, et tout le reçu est un trop-perçu signalé. Jamais de suppression, jamais de remboursement automatique.
+- **Réponse** de `PATCH /baux/:id/resilier` : `tropPercu` (mois de fin, forme d'origine), `echeancesArchivees`, `echeancesConservees` (`paiementId`, `dateEcheance`, `montant`, `tropPercu`, `resteARembourser`), `tropPercuTotal` (brut) et `resteARembourserTotal` (net des remboursements actifs déjà saisis, paiement par paiement).
+- **Remboursements en attente** (`GET /tableau-de-bord/remboursements-en-attente`) : mois de fin comme avant, plus les échéances d'un mois après la fin d'un bail résilié ou archivé ; chaque ligne est réduite des remboursements actifs **de son paiement** (`calculerResteARembourser`), jamais d'un total — pas de double compte. Plusieurs lignes possibles par bail.
+- **Quittance** refusée (409) pour une échéance d'un mois après la `date_fin` d'un bail résilié ou archivé (`estEcheanceMoisNonDu`), après le contrôle d'appartenance ; le job des tâches ne crée plus de tâche « Quittance mensuelle » pour un tel mois. Les tâches déjà ouvertes avant le déploiement restent (génération refusée).
+- **Concurrence** : `resilier()` et le job de génération verrouillent tous deux la ligne du bail (`SELECT … FOR UPDATE`) ; le job revérifie le statut sous verrou (voir « génération récurrente » ci-dessous). **Non protégé** : une échéance saisie à la main (`POST /paiements`) au même instant qu'une résiliation — action humaine, risque accepté.
+
 **Décision produit (génération récurrente des échéances, Module 6, tranchée
 avec l'utilisateur — prérequis posé lors du Module 5)** :
 - Le job planifié quotidien (`docs/backlog.md`, Module 6) génère, pour tout
@@ -289,6 +301,12 @@ avec l'utilisateur — prérequis posé lors du Module 5)** :
   au mois de `date_debut` du bail (n'a de sens que si un bail est passé
   `actif` avec une `date_debut` future — cas normalement inexistant en
   usage correct, mais évite une échéance absurde le cas échéant).
+- Verrou (2026-11-14, commit `55708ef`) : chaque bail est traité dans une
+  transaction qui commence par `SELECT … FOR UPDATE` sur sa ligne, statut
+  `actif`/`preavis` revérifié. Une résiliation en cours fait attendre le
+  job ; à la reprise (READ COMMITTED), le bail est `resilie` et rien n'est
+  inséré. Le job ne regarde toujours **pas** `date_fin` : il génère le mois
+  courant d'un bail actif dont la fin est connue (conception 2, ouverte).
 
 **Décision produit (taux d'occupation, Module 7, tranchée avec
 l'utilisateur)** : pour un appartement, sur une période donnée,
@@ -305,7 +323,8 @@ reconstituent l'occupation réelle depuis l'historique complet des baux
   (aucun traitement spécial par statut n'est nécessaire, ni souhaitable).
   Si `date_fin` est absente (bail encore `actif`/`preavis` en cours, ou
   cas rare d'un bail déjà `resilie`/`archive` sans `date_fin` renseignée —
-  `ResilierBailDto.dateFin` est optionnel), l'occupation est considérée se
+  `ResilierBailDto.dateFin` était optionnel jusqu'au commit `55708ef` du
+  2026-11-14 — des baux résiliés avant peuvent encore n'en avoir aucune), l'occupation est considérée se
   prolonger au moins jusqu'à la fin de la période demandée : exact pour un
   bail réellement en cours, **approximation optimiste assumée** pour le
   cas rare d'une résiliation sans date renseignée (voir `docs/backlog.md`,
