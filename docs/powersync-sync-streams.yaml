@@ -80,6 +80,11 @@
 #     La nouvelle table garant_remise_bail n'est PAS synchronisée (lue par
 #     l'API). À redéployer après la migration 0078 et le backend : ce
 #     fichier COMPLET, jamais ces seuls streams.
+#   - Aucun stream modifié le 2026-11-15 (migration 0079, vrai préavis) :
+#     la nouvelle table bail_preavis n'est PAS synchronisée (lue par
+#     l'API), comme garant_remise_bail ; le desktop voit le préavis par
+#     baux.statut et baux.date_fin, déjà dans le stream baux. Aucun
+#     redéploiement PowerSync pour ce chantier.
 #
 # indices_irl a longtemps été considérée comme jamais confirmée
 # fonctionnelle (voir son historique de bug de backfill plus bas dans ce

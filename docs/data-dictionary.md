@@ -339,6 +339,61 @@ reconstituent l'occupation réelle depuis l'historique complet des baux
   appartements dans la pratique, puisque tous calculés sur la même
   période demandée).
 
+## bail_preavis
+Préavis d'un bail (2026-11-15, migration 0079, résiliation conception 2
+« vrai préavis », décisions de Jimmy du même jour) : congé du locataire ou
+du bailleur, daté, gardé comme trace — c'est un acte juridique (loi
+n° 89-462, art. 15 pour le vide, art. 25-8 pour le meublé). Même modèle
+que `garant_remise_bail` : une ligne active par bail, une correction
+archive la ligne active et en insère une nouvelle. **Hors publication et
+hors PowerSync**, lue par l'API uniquement : le desktop voit le préavis par
+`baux.statut` et `baux.date_fin`, déjà synchronisés (stream `baux`) — aucun
+redéploiement PowerSync.
+| Champ | Type | Description |
+|---|---|---|
+| bail_id | uuid, FK `baux` | |
+| organisation_id | uuid, FK `organisations` | Dénormalisé (scoping sans jointure), comme `garant_remise_bail` |
+| auteur | enum `preavis_auteur` | `locataire` \| `bailleur` |
+| date_reception | date | Point de départ du préavis : réception de la LRAR, signification par commissaire de justice ou remise en main propre |
+| mode_remise | enum `preavis_mode_remise`, nullable | `lrar` \| `commissaire_justice` \| `main_propre` — facultatif, trace seulement |
+| duree_mois | integer, CHECK 1 à 6 | Durée **proposée** par Briky (`dureePreavisProposee`, packages/core : vide — locataire 3, ou 1 avec un motif ; bailleur 6 ; meublé — locataire 1, bailleur 3), modifiable |
+| motif_reduit | enum `preavis_motif_reduit`, nullable | Motif de préavis réduit (art. 15 I, 1° à 5°) : `zone_tendue` \| `premier_emploi` \| `mutation` \| `perte_emploi` \| `nouvel_emploi_apres_perte` \| `sante` \| `violences` \| `rsa_aah` \| `logement_social`. CHECK `bail_preavis_motif_reduit_locataire` : toujours NULL pour un congé du bailleur ; « congé du locataire sur un bail vide seulement » est vérifié par le service (le type de bail est dans `baux`) |
+| date_fin_proposee | date | Calculée par Briky (`dateFinPreavisProposee` : réception + durée, ramenée au dernier jour du mois si besoin), gardée pour trace — **jamais présentée comme certaine** (dernier jour exact du préavis : question ADIL) |
+| date_fin | date, CHECK ≥ `date_reception` | Date de fin **confirmée ou corrigée par Jimmy** ; recopiée dans `baux.date_fin` |
+| date_fin_bail_avant | date, nullable | Valeur de `baux.date_fin` avant la déclaration, rétablie à l'annulation |
+| motif_fin | enum `preavis_motif_fin`, nullable | `corrige` \| `annule` \| `resilie` — pourquoi la ligne n'est plus active. CHECK `bail_preavis_archivage_coherent` : posé si et seulement si `archived_at` l'est |
+| declaree_le | timestamptz | Posé par le serveur |
+| declaree_par | uuid, FK `utilisateurs` | Auteur de la déclaration |
+| archived_at | timestamptz, nullable | Posé à la correction, à l'annulation ou à la résiliation (avec `motif_fin`) |
+
+**Cycle de vie et lien avec `baux`** (cohérence tenue par le service, une
+CHECK ne lisant pas une autre table) :
+- **déclaration** (« Préavis reçu », bail `actif`) : insertion d'une ligne
+  active ; `baux.statut` passe à `preavis`, `baux.date_fin` reçoit
+  `date_fin` (l'ancienne valeur va dans `date_fin_bail_avant`) ;
+- **correction** (date de fin avancée ou reculée, autre durée…) : la ligne
+  active est archivée avec `motif_fin = 'corrige'`, une nouvelle ligne est
+  insérée (même `date_fin_bail_avant`) ; `baux.date_fin` suit ;
+- **annulation** (jusqu'à la date de fin incluse) : la ligne active est
+  archivée avec `motif_fin = 'annule'` ; `baux.statut` revient à `actif`,
+  `baux.date_fin` reprend `date_fin_bail_avant` ;
+- **résiliation** du bail : la ligne active est archivée avec
+  `motif_fin = 'resilie'`.
+
+À chaque déclaration, correction ou annulation, les échéances de loyer sont
+réalignées (`planRealignementEcheances`, packages/core), et le job ne génère
+plus rien après le mois de `date_fin` d'un bail en préavis
+(`echeanceRecurrenteAGenerer`) — règles détaillées dans la section `baux`
+au commit backend.
+
+Garanties portées par la base (triggers posés à la main dans la migration
+0079) : aucune suppression (`bail_preavis_sans_suppression`) ni vidage
+(`bail_preavis_sans_vidage`) ; une ligne n'est jamais modifiée, sauf pour
+être archivée une seule fois avec son `motif_fin`
+(`bail_preavis_sans_modification`), erreur `restrict_violation` sinon. Index
+unique partiel `bail_preavis_actif_unique` : un seul préavis actif par bail ;
+index `bail_preavis_historique_idx` sur `bail_id`.
+
 ## bail_locataires
 Table de liaison pour gérer la colocation.
 | Champ | Type | Description |

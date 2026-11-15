@@ -32,6 +32,7 @@ export * from "./etat-des-lieux-signature";
 export * from "./etat-des-lieux-envoi";
 export * from "./etat-des-lieux-entree-papier";
 export * from "./garant-remise-bail";
+export * from "./bail-preavis";
 export * from "./tache";
 export * from "./modele-courrier";
 export * from "./revision-loyer";
