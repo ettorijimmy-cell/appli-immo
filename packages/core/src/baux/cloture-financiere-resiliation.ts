@@ -87,7 +87,12 @@ export function deciderEcheanceApresFin(versements: readonly VersementActif[]): 
   return { decision: "conserver", tropPercu: calculerMontantRecuTotal(versementsActifs) };
 }
 
-function versementsActifsVerifies(versements: readonly VersementActif[]): VersementActif[] {
+/**
+ * Versements ACTIFS d'une échéance, avec refus explicite d'un versement
+ * actif négatif (donnée incohérente : le DTO de versement ne le refuse pas
+ * encore). Partagé avec preavis.ts.
+ */
+export function versementsActifsVerifies(versements: readonly VersementActif[]): VersementActif[] {
   const versementsActifs = versements.filter((versement) => versement.archivedAt === null);
   for (const versement of versementsActifs) {
     if (montantEnCentimes(versement.montant) < 0) {
