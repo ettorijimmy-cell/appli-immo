@@ -262,6 +262,18 @@ export interface EcheanceACreer extends DecompositionEcheanceEntree {
   dateEcheance: string;
 }
 
+/**
+ * Refus métier du réalignement (le backend le traduit en 409, sans rien
+ * écrire) — distinct d'une erreur de programmation ou d'une donnée invalide
+ * (date mal formée, versement négatif), qui reste une erreur ordinaire.
+ */
+export class RefusRealignement extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RefusRealignement";
+  }
+}
+
 export interface PlanRealignement {
   miseAJour: MiseAJourEcheance[];
   /** Ids des échéances à archiver (aucun versement actif). */
@@ -331,7 +343,9 @@ export function planRealignementEcheances(parametres: ParametresRealignement): P
   const uniqueDuMois = (mois: string): EcheanceARealigner | undefined => {
     const liste = parMois.get(mois) ?? [];
     if (liste.length > 1) {
-      throw new Error(`Plusieurs échéances de loyer (${liste.length}) couvrent le mois ${mois}.`);
+      throw new RefusRealignement(
+        `Plusieurs échéances de loyer (${liste.length}) couvrent le mois ${mois} : gardez-en une seule (archivez les autres depuis Finances), puis recommencez.`
+      );
     }
     return liste[0];
   };
@@ -361,6 +375,9 @@ export function planRealignementEcheances(parametres: ParametresRealignement): P
       const hausseParRecul = recul && centimesCible > montantEnCentimes(echeanceFin.montant);
       const laisserTelleQuelle = echeanceFin.statut === "paye" && !hausseParRecul;
       if (!laisserTelleQuelle && !memeDecomposition(echeanceFin, cible)) {
+        if (hausseParRecul) {
+          refuserSiDejaRemboursee(echeanceFin);
+        }
         plan.miseAJour.push({ paiementId: echeanceFin.id, ...cible, statut: calculerStatutPaiement(cible.montant, recu) });
       }
       const tropPercu = centimesVersMontant(Math.max(0, montantEnCentimes(recu) - centimesCible));
@@ -416,6 +433,7 @@ export function planRealignementEcheances(parametres: ParametresRealignement): P
       }
       const cible = decompositionAttendueMoisPlein(bail, mois);
       if (!memeDecomposition(echeance, cible)) {
+        refuserSiDejaRemboursee(echeance);
         const recu = calculerMontantRecuTotal(versementsActifsVerifies(echeance.versements));
         plan.miseAJour.push({ paiementId: echeance.id, ...cible, statut: calculerStatutPaiement(cible.montant, recu) });
       }
@@ -439,6 +457,19 @@ export function planRealignementEcheances(parametres: ParametresRealignement): P
   }
 
   return plan;
+}
+
+// Remonter le montant d'une échéance dont un trop-perçu a déjà été
+// remboursé fausserait son statut et le reste dû (le reçu ne compte que les
+// versements, pas les remboursements). La règle (reçu net ou non) n'est pas
+// tranchée : refus en attendant la décision de Jimmy (revue
+// financial-logic-reviewer du commit 3a).
+function refuserSiDejaRemboursee(echeance: EcheanceARealigner): void {
+  if (echeance.remboursements.some((remboursement) => remboursement.archivedAt === null)) {
+    throw new RefusRealignement(
+      `Un trop-perçu de l'échéance du ${formaterDateCourteFr(echeance.dateEcheance)} a déjà été remboursé : corrigez d'abord ce remboursement, puis recommencez.`
+    );
+  }
 }
 
 function decompositionPleine(loyerMensuel: string, provisionsCharges: string | null): DecompositionEcheanceEntree {

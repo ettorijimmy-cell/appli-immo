@@ -6,6 +6,7 @@ import {
   echeanceRecurrenteAGenerer,
   planRealignementEcheances,
   refusDateFinResiliationApresPreavis,
+  RefusRealignement,
   validerDeclarationPreavis,
   type BailGenerationEcheance,
   type BailRealignement,
@@ -680,5 +681,75 @@ describe("corrections de la revue financial-logic-reviewer", () => {
     expect(
       echeanceRecurrenteAGenerer({ ...BAIL_JOB, dateDebut: "2027-03-10", dateFin: "2027-03-20" }, "2027-03-01")
     ).toMatchObject({ type: "prorata", montant: "195.16", loyerHorsCharges: "177.42", charges: "17.74" });
+  });
+});
+
+describe("revue du commit 3a : mois déjà remboursé remonté par un recul ou une annulation", () => {
+  const avrilRembourse = (archive: boolean) =>
+    echeance("avr", "2027-04-05", "275.00", "250.00", "25.00", {
+      statut: "paye",
+      versements: [versement("275.00")],
+      remboursements: [{ montantRembourse: "275.00", archivedAt: archive ? "2027-04-21T09:00:00.000Z" : null }]
+    });
+
+  it("recul : avril gardé puis remboursé ne peut pas être remis plein — refus explicite (RefusRealignement)", () => {
+    expect(() =>
+      planRealignementEcheances({
+        bail: BAIL,
+        ancienneFin: "2027-03-31",
+        nouvelleFin: "2027-05-15",
+        echeances: [MARS, avrilRembourse(false)],
+        dateReference: "2027-05-10"
+      })
+    ).toThrow(RefusRealignement);
+  });
+
+  it("annulation : même refus, avec la date de l'échéance dans le message", () => {
+    expect(() =>
+      planRealignementEcheances({
+        bail: BAIL,
+        ancienneFin: "2027-04-15",
+        nouvelleFin: null,
+        echeances: [MARS, avrilRembourse(false)],
+        dateReference: "2027-04-20"
+      })
+    ).toThrow("Un trop-perçu de l'échéance du 05/04/2027 a déjà été remboursé : corrigez d'abord ce remboursement, puis recommencez.");
+  });
+
+  it("recul dans le même mois (hausse du mois de fin) : même refus", () => {
+    expect(() =>
+      planRealignementEcheances({
+        bail: BAIL,
+        ancienneFin: "2027-04-15",
+        nouvelleFin: "2027-04-30",
+        echeances: [avrilRembourse(false)],
+        dateReference: "2027-04-20"
+      })
+    ).toThrow(RefusRealignement);
+  });
+
+  it("remboursement archivé (annulé) : pas de refus, avril remis plein", () => {
+    const plan = planRealignementEcheances({
+      bail: BAIL,
+      ancienneFin: "2027-04-15",
+      nouvelleFin: null,
+      echeances: [avrilRembourse(true)],
+      dateReference: "2027-04-20"
+    });
+    expect(plan.miseAJour).toEqual([
+      { paiementId: "avr", montant: "550.00", loyerHorsCharges: "500.00", charges: "50.00", statut: "partiel" }
+    ]);
+  });
+
+  it("deux échéances le même mois : RefusRealignement (refus métier), pas une erreur ordinaire", () => {
+    expect(() =>
+      planRealignementEcheances({
+        bail: BAIL,
+        ancienneFin: null,
+        nouvelleFin: "2027-04-15",
+        echeances: [AVRIL_PRORATA, echeance("avr2", "2027-04-20", "550.00", "500.00", "50.00")],
+        dateReference: "2027-04-21"
+      })
+    ).toThrow(RefusRealignement);
   });
 });
