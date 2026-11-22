@@ -586,8 +586,11 @@ describe("Fiches archivées : archiver deux fois, modifier une fiche archivée (
   // paiements/echeances-verrou-bail-concurrence.integration.spec.ts. Même
   // raison pour le versement depuis le commit 3b (annuler() ouvre une
   // transaction sous le verrou du bail) : ses deux annulations simultanées
-  // sont vérifiées dans ce même fichier de vraie concurrence.
-  it.each(casEach.filter(([, c]) => c.table !== paiements && c.table !== versements))("%s : deux archivages simultanés → un seul réussit, l'autre reçoit 409", async (_nom, c) => {
+  // sont vérifiées dans ce même fichier de vraie concurrence. Et pour le
+  // bien et la SCI depuis le commit 4 (archive() ouvre une transaction,
+  // ligne verrouillée), puis pour l'appartement (compléments du commit 4) :
+  // bien/bien-sci-archivage-concurrence.integration.spec.ts.
+  it.each(casEach.filter(([, c]) => ![paiements, versements, bien, scis, appartements].includes(c.table as never)))("%s : deux archivages simultanés → un seul réussit, l'autre reçoit 409", async (_nom, c) => {
     const id = await enA(() => c.creer());
     const avant = await instantane(c.table, id);
     const parent = c.parentDe ? await c.parentDe(id) : null;

@@ -37,6 +37,11 @@ const CHAMPS_HABITATION_REQUIS_A_LA_CREATION = [
   "modeEauChaude"
 ] as const;
 
+// Compléments du 2026-11-22 (commit 4). Le désarchivage d'un bien
+// viendra au commit 10 : le message ne promet aucun bouton.
+const MESSAGE_BIEN_ARCHIVE =
+  "Ce bien est archivé : aucun appartement ne peut y être ajouté tant qu'il n'est pas désarchivé.";
+
 @Injectable()
 export class AppartementsService {
   constructor(
@@ -45,6 +50,8 @@ export class AppartementsService {
   ) {}
 
   async create(dto: CreateAppartementDto) {
+    // Bien parent lu une première fois hors transaction (404 d'appartenance,
+    // type pour les validations), puis relu sous verrou au moment d'insérer.
     const bienType = await this.recupererTypeBien(dto.bienId);
 
     const champsHabitation: Record<(typeof CHAMPS_HABITATION)[number], unknown> = {
@@ -57,36 +64,59 @@ export class AppartementsService {
     this.validerChampsHabitation(bienType, champsHabitation);
     this.validerDepensesEnergie(dto.depensesEnergieMin, dto.depensesEnergieMax);
 
-    const [appartement] = await this.db
-      .insert(appartements)
-      .values({
-        bienId: dto.bienId,
-        numero: dto.numero,
-        type: dto.type,
-        surface: dto.surface,
-        tantieme: dto.tantieme,
-        loyerReference: dto.loyerReference,
-        nombrePiecesPrincipales: dto.nombrePiecesPrincipales,
-        modeChauffage: dto.modeChauffage,
-        modeEauChaude: dto.modeEauChaude,
-        typeEnergie: dto.typeEnergie,
-        classeDpe: dto.classeDpe,
-        depensesEnergieMin: dto.depensesEnergieMin,
-        depensesEnergieMax: dto.depensesEnergieMax,
-        anneeReferencePrixEnergie: dto.anneeReferencePrixEnergie,
-        equipementCuisine: dto.equipementCuisine,
-        dependancesAnnexes: dto.dependancesAnnexes,
-        nombreChambres: dto.nombreChambres,
-        nombreSallesDeBain: dto.nombreSallesDeBain,
-        nombreWc: dto.nombreWc,
-        autrePiece1: dto.autrePiece1,
-        autrePiece2: dto.autrePiece2
-      })
-      .returning();
-    if (!appartement) {
-      throw new Error("Échec de la création de l'appartement");
-    }
-    return this.versDto(appartement);
+    return this.db.transaction(async (tx) => {
+      // Bien archivé : aucune création (compléments du 2026-11-22, commit 4),
+      // après le 404 ci-dessus. Ligne du bien lue en FOR KEY SHARE jusqu'à la
+      // fin de l'insertion : c'est le verrou que pose de toute façon la clé
+      // étrangère de l'INSERT, et il est incompatible avec le FOR UPDATE de
+      // BienService.archive. Un archivage en cours est donc attendu, puis vu ;
+      // un archivage lancé après attend cette création (et compte
+      // l'appartement). Le plus léger possible : il ne bloque pas une simple
+      // modification du bien (FOR NO KEY UPDATE).
+      const [bienParent] = await tx
+        .select({ archivedAt: bien.archivedAt })
+        .from(bien)
+        .where(eq(bien.id, dto.bienId))
+        .limit(1)
+        .for("key share");
+      if (!bienParent) {
+        throw new NotFoundException("Bien introuvable");
+      }
+      if (bienParent.archivedAt) {
+        throw new ConflictException(MESSAGE_BIEN_ARCHIVE);
+      }
+
+      const [appartement] = await tx
+        .insert(appartements)
+        .values({
+          bienId: dto.bienId,
+          numero: dto.numero,
+          type: dto.type,
+          surface: dto.surface,
+          tantieme: dto.tantieme,
+          loyerReference: dto.loyerReference,
+          nombrePiecesPrincipales: dto.nombrePiecesPrincipales,
+          modeChauffage: dto.modeChauffage,
+          modeEauChaude: dto.modeEauChaude,
+          typeEnergie: dto.typeEnergie,
+          classeDpe: dto.classeDpe,
+          depensesEnergieMin: dto.depensesEnergieMin,
+          depensesEnergieMax: dto.depensesEnergieMax,
+          anneeReferencePrixEnergie: dto.anneeReferencePrixEnergie,
+          equipementCuisine: dto.equipementCuisine,
+          dependancesAnnexes: dto.dependancesAnnexes,
+          nombreChambres: dto.nombreChambres,
+          nombreSallesDeBain: dto.nombreSallesDeBain,
+          nombreWc: dto.nombreWc,
+          autrePiece1: dto.autrePiece1,
+          autrePiece2: dto.autrePiece2
+        })
+        .returning();
+      if (!appartement) {
+        throw new Error("Échec de la création de l'appartement");
+      }
+      return this.versDto(appartement);
+    });
   }
 
   // appartements n'a pas de colonne organisationId directe : le scoping
@@ -209,31 +239,48 @@ export class AppartementsService {
     // chantier scoping multi-organisation, 2026-09-19).
     exigerNonArchiveePourArchiver(await this.resoudreAppartementAvecAppartenance(id));
 
-    // Jamais un appartement occupé (chantier archivage, décision 4 du
-    // 2026-11-12) : archivé avec un bail actif ou en préavis, il sortirait
-    // du tableau de bord, de la fiscalité et de la répartition des
-    // dépenses alors que le logement est loué. Après l'appartenance (404
-    // d'abord), comme partout. Un bail brouillon ou résilié n'empêche rien.
-    const [bailEnCours] = await this.db
-      .select({ id: baux.id })
-      .from(baux)
-      .where(and(eq(baux.appartementId, id), inArray(baux.statut, ["actif", "preavis"])))
-      .limit(1);
-    if (bailEnCours) {
-      throw new ConflictException(
-        "Cet appartement a un bail actif ou en préavis. Résiliez d'abord ce bail, puis archivez l'appartement."
-      );
-    }
+    return this.db.transaction(async (tx) => {
+      // Ligne de l'appartement verrouillée (FOR UPDATE) le temps du contrôle
+      // des baux et de l'écriture (compléments du 2026-11-22, commit 4) :
+      // BauxService.activer lit l'appartement en FOR NO KEY UPDATE après avoir
+      // verrouillé le bail, et la création d'un bail le lit en FOR KEY SHARE —
+      // deux verrous incompatibles avec celui-ci. Une activation en cours est
+      // donc attendue, puis son bail actif est vu (409) ; une activation lancée
+      // après attend cet archivage, puis voit l'appartement archivé. Cet
+      // archivage ne verrouille que l'appartement : aucun cycle avec l'ordre
+      // « bail d'abord » de l'activation.
+      const [actuel] = await tx.select().from(appartements).where(eq(appartements.id, id)).limit(1).for("update");
+      if (!actuel) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+      exigerNonArchiveePourArchiver(actuel);
 
-    const appartement = await archiverFiche(
-      this.db,
-      appartements,
-      id,
-      { statut: "archive" },
-      this.requestContext.getUtilisateurId(),
-      "Appartement introuvable"
-    );
-    return this.versDto(appartement as AppartementRow);
+      // Jamais un appartement occupé (chantier archivage, décision 4 du
+      // 2026-11-12) : archivé avec un bail actif ou en préavis, il sortirait
+      // du tableau de bord, de la fiscalité et de la répartition des
+      // dépenses alors que le logement est loué. Après l'appartenance (404
+      // d'abord), comme partout. Un bail brouillon ou résilié n'empêche rien.
+      const [bailEnCours] = await tx
+        .select({ id: baux.id })
+        .from(baux)
+        .where(and(eq(baux.appartementId, id), inArray(baux.statut, ["actif", "preavis"])))
+        .limit(1);
+      if (bailEnCours) {
+        throw new ConflictException(
+          "Cet appartement a un bail actif ou en préavis. Résiliez d'abord ce bail, puis archivez l'appartement."
+        );
+      }
+
+      const appartement = await archiverFiche(
+        tx,
+        appartements,
+        id,
+        { statut: "archive" },
+        this.requestContext.getUtilisateurId(),
+        "Appartement introuvable"
+      );
+      return this.versDto(appartement as AppartementRow);
+    });
   }
 
   // Contrôle d'appartenance partagé (Sous-commit 5c pour findById(), étendu

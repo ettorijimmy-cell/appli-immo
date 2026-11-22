@@ -1,7 +1,8 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { creerRattachementProprietaire } from "core";
-import { organisationSci, scis, type Database } from "db";
-import { and, eq, inArray } from "drizzle-orm";
+import { appartements, baux, bien, organisationSci, scis, type Database } from "db";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { messageBauxActifsSci, messageBiensNonArchives } from "../common/refus-archivage-parent";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -115,14 +116,39 @@ export class ScisService {
     // chantier scoping multi-organisation, 2026-09-19).
     exigerNonArchiveePourArchiver(await this.resoudreSciAvecAppartenance(id));
 
-    const sci = await archiverFiche(
-      this.db,
-      scis,
-      id,
-      { statut: "archive" },
-      this.requestContext.getUtilisateurId(),
-      "SCI introuvable"
-    );
+    // Jamais une SCI qui a encore un bail actif ou en préavis (par ses
+    // biens) ou des biens non archivés (petites suites, décision 5 du
+    // 2026-11-22). Même verrou que BienService.archive : la ligne de la SCI
+    // en FOR UPDATE attend le verrou de clé posé par la création d'un bien
+    // rattaché (clé étrangère bien.sci_id) jusqu'à sa validation. Aucun
+    // autre verrou pris : pas d'interblocage.
+    const utilisateurId = this.requestContext.getUtilisateurId();
+    const sci = await this.db.transaction(async (tx) => {
+      const [actuelle] = await tx.select().from(scis).where(eq(scis.id, id)).limit(1).for("update");
+      if (!actuelle) {
+        throw new NotFoundException("SCI introuvable");
+      }
+      exigerNonArchiveePourArchiver(actuelle);
+
+      const [bauxEnCours] = await tx
+        .select({ n: count() })
+        .from(baux)
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .innerJoin(bien, eq(bien.id, appartements.bienId))
+        .where(and(eq(bien.sciId, id), inArray(baux.statut, ["actif", "preavis"])));
+      if (bauxEnCours && bauxEnCours.n > 0) {
+        throw new ConflictException(messageBauxActifsSci(bauxEnCours.n));
+      }
+      const [biensActifs] = await tx
+        .select({ n: count() })
+        .from(bien)
+        .where(and(eq(bien.sciId, id), isNull(bien.archivedAt)));
+      if (biensActifs && biensActifs.n > 0) {
+        throw new ConflictException(messageBiensNonArchives(biensActifs.n));
+      }
+
+      return archiverFiche(tx, scis, id, { statut: "archive" }, utilisateurId, "SCI introuvable");
+    });
     return this.versDto(sci as SciRow);
   }
 

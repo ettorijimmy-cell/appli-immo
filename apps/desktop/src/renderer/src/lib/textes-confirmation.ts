@@ -257,14 +257,16 @@ export function texteResultatResiliation({
 export function texteArchivageSci(sci: Pick<Sci, "nom">): TexteConfirmation {
   return {
     titre: "Archiver la SCI ?",
-    explication: `${sci.nom} sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Ses biens, appartements et baux ne sont pas archivés. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    explication: `${sci.nom} sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Elle ne peut être archivée qu'une fois tous ses biens archivés, sans bail actif ou en préavis. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
     libelleConfirmer: "Archiver la SCI",
     libelleEnCours: "Archivage…",
     messageRepli: "Impossible d'archiver cette SCI."
   };
 }
 
-// Bien : masqué des listes. Aucune cascade (BienService.archive() n'écrit
+// Bien : masqué des listes, seulement sans appartement non archivé ni bail
+// actif ou en préavis (décision 5, sinon 409 affiché dans la modale).
+// Aucune cascade (BienService.archive() n'écrit
 // que le bien).
 // - Bien d'une SCI : dans l'annexe 1, ses propres loyers et dépenses
 //   restent comptés ; il ne reçoit plus de part des dépenses communes de
@@ -278,7 +280,7 @@ export function texteArchivageBien(bien: Pick<Bien, "nom" | "adresse" | "proprie
       : "Dans la déclaration fiscale de la SCI, ses propres loyers et dépenses restent comptés, mais il ne reçoit plus de part des dépenses communes de la SCI.";
   return {
     titre: "Archiver le bien ?",
-    explication: `${libelleBien(bien)} sera masqué de la liste (visible avec « Afficher les archivés »). ${fiscalite} Ses appartements et leurs baux ne sont pas archivés. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    explication: `${libelleBien(bien)} sera masqué de la liste (visible avec « Afficher les archivés »). ${fiscalite} Il ne peut être archivé qu'une fois tous ses appartements archivés, sans bail actif ou en préavis. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
     libelleConfirmer: "Archiver le bien",
     libelleEnCours: "Archivage…",
     messageRepli: "Impossible d'archiver ce bien."

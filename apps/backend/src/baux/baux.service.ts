@@ -110,25 +110,47 @@ export class BauxService {
 
     const loyerMensuel = preremplirLoyerBail(dto.loyerMensuel, appartement.loyerReference);
 
-    const [bail] = await this.db
-      .insert(baux)
-      .values({
-        appartementId: dto.appartementId,
-        typeBail: dto.typeBail,
-        dateDebut: dto.dateDebut,
-        dateFin: dto.dateFin,
-        dateSignature: dto.dateSignature,
-        loyerMensuel,
-        depotGarantie: dto.depotGarantie,
-        provisionsCharges: dto.provisionsCharges,
-        jourEcheance: dto.jourEcheance,
-        assuranceLoyersImpayes: dto.assuranceLoyersImpayes
-      })
-      .returning();
-    if (!bail) {
-      throw new Error("Échec de la création du bail");
-    }
-    return this.versDto(bail);
+    return this.db.transaction(async (tx) => {
+      // Appartement archivé : aucun bail, même brouillon (compléments du
+      // 2026-11-22, commit 4), après le 404 ci-dessus. Ligne relue en FOR KEY
+      // SHARE jusqu'à l'insertion — même verrou que la clé étrangère
+      // baux.appartement_id, incompatible avec le FOR UPDATE de
+      // AppartementsService.archive.
+      const [appartementActuel] = await tx
+        .select({ archivedAt: appartements.archivedAt })
+        .from(appartements)
+        .where(eq(appartements.id, dto.appartementId))
+        .limit(1)
+        .for("key share");
+      if (!appartementActuel) {
+        throw new NotFoundException("Appartement introuvable");
+      }
+      if (appartementActuel.archivedAt) {
+        throw new ConflictException(
+          "Cet appartement est archivé : aucun bail ne peut y être créé tant qu'il n'est pas désarchivé."
+        );
+      }
+
+      const [bail] = await tx
+        .insert(baux)
+        .values({
+          appartementId: dto.appartementId,
+          typeBail: dto.typeBail,
+          dateDebut: dto.dateDebut,
+          dateFin: dto.dateFin,
+          dateSignature: dto.dateSignature,
+          loyerMensuel,
+          depotGarantie: dto.depotGarantie,
+          provisionsCharges: dto.provisionsCharges,
+          jourEcheance: dto.jourEcheance,
+          assuranceLoyersImpayes: dto.assuranceLoyersImpayes
+        })
+        .returning();
+      if (!bail) {
+        throw new Error("Échec de la création du bail");
+      }
+      return this.versDto(bail);
+    });
   }
 
   // baux n'a pas de colonne organisationId directe : le scoping passe par
@@ -287,11 +309,20 @@ export class BauxService {
         );
       }
 
+      // Appartement verrouillé APRÈS le bail (ordre « bail d'abord »), en
+      // FOR NO KEY UPDATE : l'activation le réécrit plus bas (statut
+      // « loue »). Incompatible avec le FOR UPDATE de
+      // AppartementsService.archive (compléments du 2026-11-22, commit 4) :
+      // un archivage en cours est attendu, puis l'appartement est relu
+      // archivé et peutActiverBail refuse ; un archivage lancé après attend
+      // cette activation, puis voit le bail actif. L'archivage ne verrouille
+      // jamais de bail : pas de cycle.
       const [appartement] = await tx
         .select()
         .from(appartements)
         .where(eq(appartements.id, bail.appartementId))
-        .limit(1);
+        .limit(1)
+        .for("no key update");
       if (!appartement) {
         throw new NotFoundException("Appartement introuvable");
       }

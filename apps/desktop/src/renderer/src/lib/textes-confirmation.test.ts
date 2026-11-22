@@ -220,7 +220,7 @@ describe("photo : formulation commune une seule fois (décision 13)", () => {
 describe("texteArchivageSci", () => {
   it("nomme la SCI, dit ce qui sort et l'absence de cascade", () => {
     expect(texteArchivageSci({ nom: "SCI Turgot" }).explication).toBe(
-      "SCI Turgot sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Ses biens, appartements et baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+      "SCI Turgot sera masquée du patrimoine (visible avec « Afficher les archivés ») et n'apparaîtra plus dans l'écran Fiscalité. Elle ne peut être archivée qu'une fois tous ses biens archivés, sans bail actif ou en préavis. L'archivage ne peut pas être annulé depuis l'application."
     );
   });
 });
@@ -230,14 +230,14 @@ describe("texteArchivageBien", () => {
     expect(
       texteArchivageBien({ nom: "Immeuble turgot", adresse: "12 rue Turgot", proprietaireType: "sci" }).explication
     ).toBe(
-      "Immeuble turgot sera masqué de la liste (visible avec « Afficher les archivés »). Dans la déclaration fiscale de la SCI, ses propres loyers et dépenses restent comptés, mais il ne reçoit plus de part des dépenses communes de la SCI. Ses appartements et leurs baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+      "Immeuble turgot sera masqué de la liste (visible avec « Afficher les archivés »). Dans la déclaration fiscale de la SCI, ses propres loyers et dépenses restent comptés, mais il ne reçoit plus de part des dépenses communes de la SCI. Il ne peut être archivé qu'une fois tous ses appartements archivés, sans bail actif ou en préavis. L'archivage ne peut pas être annulé depuis l'application."
     );
   });
 
   it("bien en nom propre : sort de l'écran Fiscalité, jamais de mention de SCI", () => {
     const texte = texteArchivageBien({ nom: null, adresse: "12 rue Turgot", proprietaireType: "personne_physique" });
     expect(texte.explication).toBe(
-      "12 rue Turgot sera masqué de la liste (visible avec « Afficher les archivés »). Il ne sera plus proposé dans l'écran Fiscalité (déclaration 2044). Ses appartements et leurs baux ne sont pas archivés. L'archivage ne peut pas être annulé depuis l'application."
+      "12 rue Turgot sera masqué de la liste (visible avec « Afficher les archivés »). Il ne sera plus proposé dans l'écran Fiscalité (déclaration 2044). Il ne peut être archivé qu'une fois tous ses appartements archivés, sans bail actif ou en préavis. L'archivage ne peut pas être annulé depuis l'application."
     );
     expect(texte.explication).not.toContain("SCI");
   });

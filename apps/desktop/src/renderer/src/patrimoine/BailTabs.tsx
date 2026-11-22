@@ -2,6 +2,7 @@ import { calculerMontantRecuTotal, centimesVersMontant, libelleStatutBail, monta
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { estArchive } from "../lib/archives";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
 import {
@@ -89,6 +90,10 @@ export function BailActuelTab({
   const [baux, setBaux] = useState<Bail[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(ouvrirFormulaireInitial);
+  // Appartement archivé : aucun bail ne peut y être créé, même brouillon
+  // (409 côté serveur, compléments du 2026-11-22, commit 4) : ni bouton
+  // « Nouveau bail » ni formulaire, même pré-ouvert par la palette.
+  const peutCreerBail = !estArchive(appartement);
 
   const refresh = useCallback(async () => {
     try {
@@ -139,16 +144,18 @@ export function BailActuelTab({
       <div>
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">Aucun bail en cours.</p>
-          <button
-            type="button"
-            onClick={() => setShowForm((value) => !value)}
-            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-          >
-            {showForm ? "Annuler" : "Nouveau bail"}
-          </button>
+          {peutCreerBail && (
+            <button
+              type="button"
+              onClick={() => setShowForm((value) => !value)}
+              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+            >
+              {showForm ? "Annuler" : "Nouveau bail"}
+            </button>
+          )}
         </div>
 
-        {showForm && (
+        {showForm && peutCreerBail && (
           <NewBailForm
             appartement={appartement}
             onCreated={() => {
@@ -176,16 +183,18 @@ export function BailActuelTab({
 
       <div className="flex items-center justify-between border-t border-slate-200 pt-4">
         <p className="text-sm text-slate-500">Ce bail est résilié.</p>
-        <button
-          type="button"
-          onClick={() => setShowForm((value) => !value)}
-          className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-        >
-          {showForm ? "Annuler" : "Nouveau bail"}
-        </button>
+        {peutCreerBail && (
+          <button
+            type="button"
+            onClick={() => setShowForm((value) => !value)}
+            className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+          >
+            {showForm ? "Annuler" : "Nouveau bail"}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && peutCreerBail && (
         <NewBailForm
           appartement={appartement}
           onCreated={() => {

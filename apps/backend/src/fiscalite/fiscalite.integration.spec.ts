@@ -383,6 +383,11 @@ describe("FiscaliteService (intégration Postgres réelle)", () => {
       sciId: sci.id
     });
 
+    // Un bien ne s'archive qu'une fois ses appartements archivés (petites
+    // suites, décision 5, commit 4) : son lot (sans bail) d'abord.
+    for (const lot of await appartementsService.findAll(bienVendu.id)) {
+      await appartementsService.archive(lot.id);
+    }
     await bienService.archive(bienVendu.id);
 
     const resultat = await fiscaliteService.calculerAnnexe1PourSci(userId, sci.id, 2026);

@@ -1,6 +1,7 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bien, bienImmeubleDetail, mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
-import { and, eq } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { appartements, baux, bien, bienImmeubleDetail, mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { messageAppartementsNonArchives, messageBauxActifsBien } from "../common/refus-archivage-parent";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
@@ -77,6 +78,28 @@ export class BienService {
     }
 
     return this.db.transaction(async (tx) => {
+      // SCI archivée : aucun bien rattaché (compléments du 2026-11-22,
+      // commit 4), après le 404 d'appartenance (verifierAppartenanceSci).
+      // Ligne de la SCI en FOR KEY SHARE jusqu'à l'insertion — même verrou
+      // que la clé étrangère bien.sci_id, incompatible avec le FOR UPDATE de
+      // ScisService.archive (voir AppartementsService.create, même principe).
+      if (dto.sciId) {
+        const [sciParente] = await tx
+          .select({ archivedAt: scis.archivedAt })
+          .from(scis)
+          .where(eq(scis.id, dto.sciId))
+          .limit(1)
+          .for("key share");
+        if (!sciParente) {
+          throw new NotFoundException("SCI introuvable");
+        }
+        if (sciParente.archivedAt) {
+          throw new ConflictException(
+            "Cette SCI est archivée : aucun bien ne peut y être rattaché tant qu'elle n'est pas désarchivée."
+          );
+        }
+      }
+
       const [nouveauBien] = await tx
         .insert(bien)
         .values({
@@ -297,14 +320,41 @@ export class BienService {
     // chantier scoping multi-organisation, 2026-09-19).
     exigerNonArchiveePourArchiver((await this.resoudreBienAvecAppartenance(id)).bienRow);
 
-    const bienArchive = await archiverFiche(
-      this.db,
-      bien,
-      id,
-      { statut: "archive" },
-      this.requestContext.getUtilisateurId(),
-      "Bien introuvable"
-    );
+    // Jamais un bien qui a encore un bail actif ou en préavis, ou des
+    // appartements non archivés (petites suites, décision 5 du 2026-11-22).
+    // Ligne du bien verrouillée (FOR UPDATE) le temps du contrôle et de
+    // l'écriture : la création d'un appartement pose, par sa clé étrangère,
+    // un verrou de clé (FOR KEY SHARE) sur le bien jusqu'à sa validation —
+    // incompatible avec FOR UPDATE. Un appartement en cours de création est
+    // donc soit validé avant le contrôle (et compté), soit créé après
+    // l'archivage. Aucun autre verrou n'est pris ici : pas d'interblocage
+    // possible avec les verrous de bail (activation, résiliation…).
+    const utilisateurId = this.requestContext.getUtilisateurId();
+    const bienArchive = await this.db.transaction(async (tx) => {
+      const [actuel] = await tx.select().from(bien).where(eq(bien.id, id)).limit(1).for("update");
+      if (!actuel) {
+        throw new NotFoundException("Bien introuvable");
+      }
+      exigerNonArchiveePourArchiver(actuel);
+
+      const [bauxEnCours] = await tx
+        .select({ n: count() })
+        .from(baux)
+        .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+        .where(and(eq(appartements.bienId, id), inArray(baux.statut, ["actif", "preavis"])));
+      if (bauxEnCours && bauxEnCours.n > 0) {
+        throw new ConflictException(messageBauxActifsBien(bauxEnCours.n));
+      }
+      const [appartementsActifs] = await tx
+        .select({ n: count() })
+        .from(appartements)
+        .where(and(eq(appartements.bienId, id), isNull(appartements.archivedAt)));
+      if (appartementsActifs && appartementsActifs.n > 0) {
+        throw new ConflictException(messageAppartementsNonArchives(appartementsActifs.n));
+      }
+
+      return archiverFiche(tx, bien, id, { statut: "archive" }, utilisateurId, "Bien introuvable");
+    });
     const [detail] = await this.db
       .select()
       .from(bienImmeubleDetail)

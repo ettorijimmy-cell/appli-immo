@@ -81,7 +81,10 @@ export function BienDetailView({
 
   const estImmeuble = bien.type === "immeuble";
   const appartementsActifs = appartements.filter((a) => a.statut !== "archive");
-  const peutAjouterAppartement = estImmeuble || appartementsActifs.length === 0;
+  // Bien archivé : aucun appartement ne peut y être ajouté (le serveur
+  // refuse, 409 — compléments du 2026-11-22, commit 4) : bouton masqué.
+  const peutAjouterAppartement =
+    bien.statut !== "archive" && (estImmeuble || appartementsActifs.length === 0);
 
   return (
     <div className="space-y-8">

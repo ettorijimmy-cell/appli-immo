@@ -153,17 +153,21 @@ export function SciDetailView({
           <h2 className="text-sm font-semibold text-slate-700">Biens</h2>
           <div className="flex items-center gap-4">
             <ArchiveToggle show={showArchivedBiens} onToggle={() => setShowArchivedBiens((value) => !value)} />
-            <button
-              type="button"
-              onClick={() => setShowBienWizard((value) => !value)}
-              className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-            >
-              {showBienWizard ? "Annuler" : "Nouveau bien"}
-            </button>
+            {/* SCI archivée : aucun bien ne peut y être rattaché (409 côté
+                serveur, compléments du 2026-11-22, commit 4). */}
+            {sci.statut !== "archive" && (
+              <button
+                type="button"
+                onClick={() => setShowBienWizard((value) => !value)}
+                className="rounded-md bg-indigo-700 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-800"
+              >
+                {showBienWizard ? "Annuler" : "Nouveau bien"}
+              </button>
+            )}
           </div>
         </div>
 
-        {showBienWizard && (
+        {showBienWizard && sci.statut !== "archive" && (
           // sciId présélectionné à l'étape 1 (Propriétaire) puisqu'on est
           // déjà dans le contexte de cette SCI — reste modifiable, même
           // flux qu'à partir de ScisListView (docs/backlog.md, migration
