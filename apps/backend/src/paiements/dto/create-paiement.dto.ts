@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsUUID } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsDateString, IsIn, IsUUID } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const PAIEMENT_TYPES = ["loyer", "charges", "depot_garantie"] as const;
 
@@ -11,12 +10,12 @@ export class CreatePaiementDto {
   @IsIn(PAIEMENT_TYPES)
   type!: (typeof PAIEMENT_TYPES)[number];
 
-  // Normalise virgule/point/espaces AVANT la validation (voir
-  // normaliserMontant, packages/core) — seule définition de "comment
-  // interpréter un montant en euros", partagée avec le rapprochement CSV
+  // Strictement positif (petites suites, décision 3). Normalisé
+  // virgule/point/espaces avant la validation par normaliserMontant
+  // (packages/core) — seule définition de "comment interpréter un montant
+  // en euros", partagée avec le rapprochement CSV
   // (apps/desktop/src/renderer/src/finances/RapprochementCsvView.tsx).
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("montant de l'échéance", "strictement_positif")
   montant!: string;
 
   @IsDateString()

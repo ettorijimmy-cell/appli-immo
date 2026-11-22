@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsOptional, IsString, IsUUID } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const PAIEMENT_MODES = ["virement", "cheque", "especes", "caf"] as const;
 
@@ -8,11 +7,9 @@ export class CreateVersementDto {
   @IsUUID()
   paiementId!: string;
 
-  // Normalise virgule/point/espaces AVANT la validation (voir
-  // normaliserMontant, packages/core) — même principe que
-  // CreatePaiementDto.
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  // Strictement positif (petites suites, décision 3) ; normalise
+  // virgule/point/espaces avant la validation (MontantSaisi).
+  @MontantSaisi("montant du versement", "strictement_positif")
   montant!: string;
 
   @IsIn(PAIEMENT_MODES)

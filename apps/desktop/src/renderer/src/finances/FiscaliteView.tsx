@@ -9,6 +9,7 @@ import {
   type Formulaire2044Calcule,
   type Formulaire2044Resultat
 } from "../fiscalite/api";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { libelleBien, listBiens, type Bien } from "../patrimoine/api";
 import { listScis, type Sci } from "../scis/api";
 
@@ -206,8 +207,8 @@ export function FiscaliteView(): React.JSX.Element {
     try {
       await sauvegarderSaisieManuelleAnnexe1(bienId, annee, { [cle]: valeur });
       rafraichir();
-    } catch {
-      setError("Impossible d'enregistrer cette ligne");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer cette ligne"));
     } finally {
       setChampEnCours(null);
     }

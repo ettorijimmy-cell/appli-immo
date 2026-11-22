@@ -1,4 +1,5 @@
 import { IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Matches, Max, Min, MinLength } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const APPARTEMENT_TYPES = ["T1", "T2", "T3", "T4", "T5", "T6"] as const;
 const MODES_PRODUCTION = ["individuel", "collectif"] as const;
@@ -43,8 +44,9 @@ export class CreateAppartementDto {
   @Matches(/^\d+(\.\d+)?$/, { message: "tantieme doit être un nombre positif" })
   tantieme?: string;
 
+  // Bornes des montants (petites suites, décision 3) : >= 0.
   @IsOptional()
-  @IsNumberString()
+  @MontantSaisi("loyer de référence", "positif_ou_nul")
   loyerReference?: string;
 
   @IsOptional()
@@ -74,13 +76,11 @@ export class CreateAppartementDto {
   classeDpe?: (typeof CLASSES_DPE)[number];
 
   @IsOptional()
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMin doit être un nombre positif" })
+  @MontantSaisi("dépenses d'énergie (minimum)", "positif_ou_nul")
   depensesEnergieMin?: string;
 
   @IsOptional()
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "depensesEnergieMax doit être un nombre positif" })
+  @MontantSaisi("dépenses d'énergie (maximum)", "positif_ou_nul")
   depensesEnergieMax?: string;
 
   @IsOptional()

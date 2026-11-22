@@ -81,6 +81,19 @@ export class RemboursementsService {
       throw new NotFoundException("Bail introuvable");
     }
 
+    // Trop-perçu à 0 € (petites suites, compléments de la décision 3,
+    // 2026-11-22) : le DTO accepte 0 pour montantRembourse parce qu'une
+    // retenue totale sur le dépôt de garantie est légitime (motif et
+    // justificatif exigés plus bas) ; un remboursement de trop-perçu, lui,
+    // est strictement positif. Refus après le contrôle d'appartenance
+    // (même 404 qu'avant pour un bail étranger) et avant toute lecture du
+    // paiement ou écriture de pièce jointe.
+    if (dto.type === "trop_percu" && montantEnCentimes(dto.montantRembourse) === 0) {
+      throw new BadRequestException(
+        "Montant invalide pour « montant remboursé » : un remboursement de trop-perçu doit être supérieur à 0 €. Un montant remboursé de 0 € n'est possible que pour une retenue totale sur le dépôt de garantie."
+      );
+    }
+
     if (dto.paiementId) {
       // Même contrôle d'appartenance que pour dto.bailId ci-dessus, même
       // raison (Priorité E3).

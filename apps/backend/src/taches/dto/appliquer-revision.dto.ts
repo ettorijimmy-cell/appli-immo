@@ -1,9 +1,8 @@
-import { Transform } from "class-transformer";
-import { IsNumberString } from "class-validator";
-import { normaliserMontant } from "core";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 export class AppliquerRevisionDto {
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  // Strictement positif (petites suites, décision 3) : ce montant devient
+  // le loyer du bail.
+  @MontantSaisi("nouveau loyer", "strictement_positif")
   nouveauLoyerValide!: string;
 }

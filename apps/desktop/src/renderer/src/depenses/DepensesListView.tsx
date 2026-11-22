@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import { listScis, type Sci } from "../scis/api";
 import {
@@ -365,8 +366,8 @@ function NewDepenseForm({
       setRattachement("");
       setRecuperable(false);
       onCreated();
-    } catch {
-      setError("Impossible de créer la dépense");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer la dépense"));
     } finally {
       setIsSubmitting(false);
     }

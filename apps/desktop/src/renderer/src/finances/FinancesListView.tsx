@@ -2,6 +2,7 @@ import { calculerMontantRecuTotal } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArchiveToggle } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteAnnulationVersement, texteArchivagePaiement } from "../lib/textes-confirmation";
 import { listBaux, type Bail } from "../locataires/api";
 import {
@@ -328,8 +329,8 @@ function NewPaiementForm({ onCreated }: { onCreated: () => void }): React.JSX.El
       setMontant("");
       setDateEcheance("");
       onCreated();
-    } catch {
-      setError("Impossible de créer le paiement");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le paiement"));
     } finally {
       setIsSubmitting(false);
     }
@@ -553,8 +554,8 @@ function NewVersementForm({
     try {
       await ajouterVersement({ paiementId: paiement.id, montant, mode, dateVersement });
       onCreated();
-    } catch {
-      setError("Impossible d'ajouter le versement");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'ajouter le versement"));
     } finally {
       setIsSubmitting(false);
     }

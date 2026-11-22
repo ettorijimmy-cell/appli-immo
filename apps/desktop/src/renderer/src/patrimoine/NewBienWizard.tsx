@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { deduireNombrePiecesDepuisType, estTypeResidentiel } from "core";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { listScis, type Sci } from "../scis/api";
 import {
   createAppartement,
@@ -311,8 +312,8 @@ function DetailsStep({
       }
 
       onCreated(bien);
-    } catch {
-      setError("Impossible de créer le bien");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le bien"));
     } finally {
       setIsSubmitting(false);
     }

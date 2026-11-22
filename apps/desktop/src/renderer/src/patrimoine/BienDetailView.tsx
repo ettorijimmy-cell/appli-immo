@@ -21,6 +21,7 @@ import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../componen
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteArchivageAppartement } from "../lib/textes-confirmation";
 
 const APPARTEMENT_TYPES: AppartementType[] = ["T1", "T2", "T3", "T4", "T5", "T6"];
@@ -697,8 +698,8 @@ function EditBienForm({ bien, onSaved }: { bien: Bien; onSaved: () => void }): R
         ...(estImmeuble && chargesCoproAnnuelles && { chargesCoproAnnuelles })
       });
       onSaved();
-    } catch {
-      setError("Impossible d'enregistrer les modifications");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer les modifications"));
     } finally {
       setIsSubmitting(false);
     }

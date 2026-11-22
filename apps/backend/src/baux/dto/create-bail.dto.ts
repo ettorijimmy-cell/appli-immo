@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsBoolean, IsDateString, IsIn, IsInt, IsNumberString, IsOptional, IsUUID, Max, Min } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsUUID, Max, Min } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const BAIL_TYPES = ["vide", "meuble"] as const;
 
@@ -27,19 +26,18 @@ export class CreateBailDto {
 
   // Si absent, pré-rempli depuis appartements.loyer_reference
   // (packages/core, preremplirLoyerBail) — voir BauxService.create.
+  // Bornes (petites suites, décision 3) : loyer > 0 ; dépôt et provisions
+  // >= 0 (un bail sans dépôt ou sans provisions est valable).
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("loyer mensuel", "strictement_positif")
   loyerMensuel?: string;
 
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("dépôt de garantie", "positif_ou_nul")
   depotGarantie?: string;
 
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("provisions pour charges", "positif_ou_nul")
   provisionsCharges?: string;
 
   // Requis pour activer() (voir docs/data-dictionary.md), mais pas à la

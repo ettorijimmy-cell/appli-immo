@@ -221,6 +221,28 @@ describe("Locataires & Baux — cycle de vie complet (intégration Postgres rée
     await expect(bauxService.activer(bail.id)).rejects.toThrow(/brouillon/i);
   });
 
+  // Bornes des montants (petites suites, décision 3 : loyer > 0). Le DTO
+  // refuse un loyer à 0, mais BauxService.create pré-remplit le loyer
+  // depuis appartements.loyer_reference, qui peut valoir 0 : seule
+  // l'activation peut fermer ce chemin (relecture financial-logic-reviewer,
+  // 2026-11-22). Aucune échéance, appartement toujours vacant.
+  it("refuse d'activer un bail dont le loyer pré-rempli vaut 0 €, sans rien écrire", async () => {
+    await appartementsService.update(appartementId, { loyerReference: "0" });
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut: "2026-08-01", jourEcheance: 5 });
+    expect(bail.loyerMensuel).toBe("0.00");
+
+    await expect(bauxService.activer(bail.id)).rejects.toThrow(
+      "Impossible d'activer ce bail : le loyer mensuel doit être supérieur à 0 €."
+    );
+
+    const bailApresEchec = await bauxService.findById(bail.id);
+    expect(bailApresEchec?.statut).toBe("brouillon");
+    const echeances = await db.select().from(paiements).where(eq(paiements.bailId, bail.id));
+    expect(echeances).toHaveLength(0);
+    const [appartementApresEchec] = await db.select().from(appartements).where(eq(appartements.id, appartementId));
+    expect(appartementApresEchec?.statut).toBe("vacant");
+  });
+
   // Gap 1 — concurrence Module 3 (docs/backlog.md, dette technique) :
   // preuve directe que l'index unique partiel garantit la cohérence au
   // niveau base, indépendamment de la pré-vérification applicative de

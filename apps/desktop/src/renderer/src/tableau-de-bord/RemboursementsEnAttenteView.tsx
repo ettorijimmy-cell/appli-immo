@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { chargerContexteBail, creerCachesContexteBail } from "../finances/contexte-bail";
 import { createRemboursement, type PaiementMode } from "../finances/api";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { getRemboursementsEnAttente, type RemboursementEnAttente } from "./api";
 
 const PAIEMENT_MODES: PaiementMode[] = ["virement", "cheque", "especes", "caf"];
@@ -106,8 +107,8 @@ function RemboursementForm({
         mode
       });
       onCreated();
-    } catch {
-      setError("Impossible de créer le remboursement");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le remboursement"));
     } finally {
       setIsSubmitting(false);
     }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../lib/authenticated-fetch";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { obtenirStatutBoiteMailDediee } from "../messagerie/api";
 import {
   appliquerRevisionTache,
@@ -206,8 +207,8 @@ function TacheItem({
     try {
       await appliquerRevisionTache(tache.id, loyerAjuste);
       await onChanged();
-    } catch {
-      setError("Impossible d'appliquer la révision");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'appliquer la révision"));
       setIsSubmitting(false);
     }
   }

@@ -18,6 +18,7 @@ import {
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
 import { aujourdHuiParis } from "../lib/date-paris";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteResiliationBail, texteResultatResiliation, texteRetraitGarant } from "../lib/textes-confirmation";
 import { dateMaxResiliation } from "../lib/textes-preavis";
 import { PreavisSection } from "./PreavisSection";
@@ -257,8 +258,8 @@ function NewBailForm({
         ...(jourEcheance && { jourEcheance: Number(jourEcheance) })
       });
       onCreated();
-    } catch {
-      setError("Impossible de créer le bail");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le bail"));
     } finally {
       setIsSubmitting(false);
     }
@@ -1339,8 +1340,8 @@ function NewRemboursementTropPercuForm({
         mode
       });
       onCreated();
-    } catch {
-      setError("Impossible de créer le remboursement");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le remboursement"));
     } finally {
       setIsSubmitting(false);
     }
@@ -1476,8 +1477,8 @@ function NewRemboursementDepotForm({
         retenueDetectee && pieceJustificative ? pieceJustificative : undefined
       );
       onCreated();
-    } catch {
-      setError("Impossible de créer le remboursement (dépasse-t-il le montant reçu ?)");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de créer le remboursement (dépasse-t-il le montant reçu ?)"));
     } finally {
       setIsSubmitting(false);
     }
@@ -1639,8 +1640,8 @@ function EditBailForm({ bail, onSaved }: { bail: Bail; onSaved: () => void }): R
         assuranceLoyersImpayes
       });
       onSaved();
-    } catch {
-      setError("Impossible de modifier le bail");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible de modifier le bail"));
     } finally {
       setIsSubmitting(false);
     }

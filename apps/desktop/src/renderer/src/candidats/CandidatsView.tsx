@@ -6,6 +6,7 @@ import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { ChecklistCategoriesEntite } from "../documents/ChecklistCategoriesEntite";
 import { estArchive, lignesVisibles } from "../lib/archives";
 import { ApiError } from "../lib/authenticated-fetch";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteArchivageCandidat } from "../lib/textes-confirmation";
 import { getBien, libelleBien, listAppartements, type Appartement, type Bien } from "../patrimoine/api";
 import {
@@ -168,8 +169,8 @@ export function CandidatsView(): React.JSX.Element {
       setVue({ niveau: "liste" });
       setFormulaire(FORMULAIRE_VIDE);
       await refresh();
-    } catch {
-      setError("Impossible d'enregistrer ce candidat");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer ce candidat"));
     }
   }
 

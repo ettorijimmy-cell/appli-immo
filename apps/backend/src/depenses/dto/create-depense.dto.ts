@@ -1,16 +1,13 @@
-import { Transform } from "class-transformer";
 import {
   IsBoolean,
   IsDateString,
   IsIn,
-  IsNumberString,
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   MinLength
 } from "class-validator";
-import { normaliserMontant } from "core";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 import { DEPENSE_CATEGORIES, type DepenseCategorie } from "../depense-categories";
 
 export class CreateDepenseDto {
@@ -19,17 +16,16 @@ export class CreateDepenseDto {
 
   // Normalise virgule/point/espaces avant validation — même définition que
   // CreatePaiementDto.montant, partagée avec le rapprochement CSV
-  // (packages/core, normaliserMontant). @Matches rejette explicitement un
-  // signe négatif : une dépense est toujours un montant positif, contrairement
+  // (packages/core, normaliserMontant). Strictement positif (petites
+  // suites, décision 3 : une dépense à 0 € est refusée) ; un signe négatif
+  // est refusé explicitement : une dépense est toujours un montant positif, contrairement
   // aux lignes de relevé CSV signées (parserReleveCsv, débit négatif —
   // convention du domaine paiements/rapprochement, jamais celle de depense.
   // montant). Défense en profondeur : le frontend applique déjà
   // valeurAbsolueMontant avant l'appel pour une ligne de débit importée,
   // ce garde-fou couvre tout autre appelant (revue financial-logic-reviewer,
   // 2026-09-07).
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "montant doit être un nombre positif" })
+  @MontantSaisi("montant de la dépense", "strictement_positif")
   montant!: string;
 
   @IsDateString()

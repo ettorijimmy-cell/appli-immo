@@ -315,6 +315,13 @@ export class BauxService {
           "Impossible d'activer ce bail : le loyer mensuel doit être renseigné au préalable."
         );
       }
+      // Loyer strictement positif (petites suites, décision 3). Le DTO le
+      // refuse déjà à la saisie, mais create() pré-remplit le loyer depuis
+      // appartements.loyer_reference (>= 0) : seule l'activation, avant
+      // toute échéance, ferme ce chemin — et couvre une ancienne donnée.
+      if (montantEnCentimes(bail.loyerMensuel) <= 0) {
+        throw new ConflictException("Impossible d'activer ce bail : le loyer mensuel doit être supérieur à 0 €.");
+      }
 
       const utilisateurId = this.requestContext.getUtilisateurId();
       // Posée ici, jamais modifiée ensuite (pas dans UpdateBailDto) — trace

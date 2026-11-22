@@ -8,6 +8,7 @@ import {
   type DepenseCategorie,
   type LigneReleveCsvDepense
 } from "../depenses/api";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { libelleBien, listBiens, type Bien } from "../patrimoine/api";
 import { listScis, type Sci } from "../scis/api";
 import { chargerContexteBail, creerCachesContexteBail } from "./contexte-bail";
@@ -111,13 +112,21 @@ export function ImportCsvFusionneView(): React.JSX.Element {
     if (!ligne) {
       return;
     }
-    await ajouterVersement({
-      paiementId,
-      montant: normaliserMontant(ligne.montant),
-      mode: "virement",
-      dateVersement: ligne.date,
-      referenceRapprochement: ligne.libelle
-    });
+    // Le refus du serveur (ex. montant à 0 €, petites suites, décision 3)
+    // s'affiche au lieu d'une erreur silencieuse.
+    setError(null);
+    try {
+      await ajouterVersement({
+        paiementId,
+        montant: normaliserMontant(ligne.montant),
+        mode: "virement",
+        dateVersement: ligne.date,
+        referenceRapprochement: ligne.libelle
+      });
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer ce versement"));
+      return;
+    }
     setConfirmesParLigne((precedent) => new Set(precedent).add(ligneId));
   }
 

@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsOptional, IsString, IsUUID } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const REMBOURSEMENT_TYPES = ["trop_percu", "depot_garantie"] as const;
 const PAIEMENT_MODES = ["virement", "cheque", "especes", "caf"] as const;
@@ -28,12 +27,15 @@ export class CreateRemboursementDto {
   @IsIn(REMBOURSEMENT_TYPES)
   type!: (typeof REMBOURSEMENT_TYPES)[number];
 
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  // Bornes (petites suites, décision 3) : ce qui a été perçu est
+  // strictement positif ; ce qui est rendu peut valoir 0 (retenue totale
+  // sur le dépôt de garantie, avec motif et justificatif). Le 0 € d'un
+  // trop-perçu dépend du champ `type` : refusé dans
+  // RemboursementsService.create(), après le contrôle d'appartenance.
+  @MontantSaisi("montant reçu à l'origine", "strictement_positif")
   montantOrigine!: string;
 
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("montant remboursé", "positif_ou_nul")
   montantRembourse!: string;
 
   @IsOptional()

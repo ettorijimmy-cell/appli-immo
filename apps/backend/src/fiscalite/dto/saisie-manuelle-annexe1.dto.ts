@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsNumberString, IsOptional, Matches, ValidateIf } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsOptional, ValidateIf } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 // Une chaîne vide ou null vaut "effacer la valeur saisie" (colonne remise à
 // NULL, traitée comme 0 dans calculerAnnexe1) — undefined (champ absent du
@@ -13,82 +12,60 @@ const champAbsent = (value: unknown): boolean => value === null || value === und
 // calculer-annexe1.ts, Annexe1SaisieManuelle. Toutes optionnelles et
 // indépendantes (répétition volontaire plutôt qu'une abstraction générique
 // sur 11 champs quasi identiques, cohérent avec le style du reste des DTOs
-// du projet).
+// du projet). Bornes des montants (petites suites, décision 3) : >= 0.
 export class SaisieManuelleAnnexe1Dto {
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne2 doit être un nombre positif" })
+  @MontantSaisi("ligne 2 de l'annexe 1", "positif_ou_nul")
   ligne2?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne3 doit être un nombre positif" })
+  @MontantSaisi("ligne 3 de l'annexe 1", "positif_ou_nul")
   ligne3?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne4 doit être un nombre positif" })
+  @MontantSaisi("ligne 4 de l'annexe 1", "positif_ou_nul")
   ligne4?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne9Bis doit être un nombre positif" })
+  @MontantSaisi("ligne 9 bis de l'annexe 1", "positif_ou_nul")
   ligne9Bis?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne10 doit être un nombre positif" })
+  @MontantSaisi("ligne 10 de l'annexe 1", "positif_ou_nul")
   ligne10?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne11 doit être un nombre positif" })
+  @MontantSaisi("ligne 11 de l'annexe 1", "positif_ou_nul")
   ligne11?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne14 doit être un nombre positif" })
+  @MontantSaisi("ligne 14 de l'annexe 1", "positif_ou_nul")
   ligne14?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne15 doit être un nombre positif" })
+  @MontantSaisi("ligne 15 de l'annexe 1", "positif_ou_nul")
   ligne15?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne19 doit être un nombre positif" })
+  @MontantSaisi("ligne 19 de l'annexe 1", "positif_ou_nul")
   ligne19?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne20 doit être un nombre positif" })
+  @MontantSaisi("ligne 20 de l'annexe 1", "positif_ou_nul")
   ligne20?: string | null;
 
   @IsOptional()
   @ValidateIf((_, value) => !champAbsent(value))
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "ligne22 doit être un nombre positif" })
+  @MontantSaisi("ligne 22 de l'annexe 1", "positif_ou_nul")
   ligne22?: string | null;
 }

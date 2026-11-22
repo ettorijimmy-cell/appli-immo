@@ -9,6 +9,7 @@ export * from "./baux/cloture-financiere-resiliation";
 export * from "./baux/preavis";
 export * from "./baux/libelle-statut-bail";
 export * from "./paiements/montant";
+export * from "./paiements/verifier-montant-saisi";
 export * from "./paiements/calculer-statut-paiement";
 export * from "./paiements/parser-releve-csv";
 export * from "./paiements/proposer-rapprochements";

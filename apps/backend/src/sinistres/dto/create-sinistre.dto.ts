@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsOptional, IsString, IsUUID, Matches } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 export const SINISTRE_TYPES = [
   "degat_eaux",
@@ -52,23 +51,17 @@ export class CreateSinistreDto {
   description?: string;
 
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "montantReclame doit être un nombre positif" })
+  @MontantSaisi("montant réclamé", "positif_ou_nul")
   montantReclame?: string;
 
   // Purement informatif — jamais de lien automatique vers Charges et
   // fiscalité (décision explicite, 2026-09-16).
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "montantIndemnise doit être un nombre positif" })
+  @MontantSaisi("montant indemnisé", "positif_ou_nul")
   montantIndemnise?: string;
 
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
-  @Matches(/^\d+(\.\d+)?$/, { message: "franchise doit être un nombre positif" })
+  @MontantSaisi("franchise", "positif_ou_nul")
   franchise?: string;
 
   @IsOptional()

@@ -2,13 +2,13 @@ import {
   IsDateString,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Max,
   Min,
   MinLength
 } from "class-validator";
+import { MontantSaisi, PLAFOND_VALEUR_ACQUISITION_CENTIMES } from "../../common/montant-saisi.decorator";
 
 const TYPES_HABITAT = ["collectif", "individuel"] as const;
 const REGIMES_JURIDIQUES = ["mono_propriete", "copropriete"] as const;
@@ -48,8 +48,9 @@ export class UpdateBienDto {
   @IsDateString()
   dateAcquisition?: string;
 
+  // Mêmes bornes qu'à la création (petites suites, décision 3).
   @IsOptional()
-  @IsNumberString()
+  @MontantSaisi("valeur d'acquisition", "positif_ou_nul", { plafondCentimes: PLAFOND_VALEUR_ACQUISITION_CENTIMES })
   valeurAcquisition?: string;
 
   @IsOptional()
@@ -70,6 +71,6 @@ export class UpdateBienDto {
   nbLots?: number;
 
   @IsOptional()
-  @IsNumberString()
+  @MontantSaisi("charges de copropriété annuelles", "positif_ou_nul")
   chargesCoproAnnuelles?: string;
 }

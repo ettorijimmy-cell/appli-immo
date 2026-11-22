@@ -2,7 +2,6 @@ import {
   IsDateString,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   IsUUID,
@@ -10,6 +9,7 @@ import {
   Min,
   MinLength
 } from "class-validator";
+import { MontantSaisi, PLAFOND_VALEUR_ACQUISITION_CENTIMES } from "../../common/montant-saisi.decorator";
 
 const BIEN_TYPES = [
   "immeuble",
@@ -76,8 +76,10 @@ export class CreateBienDto {
   @IsDateString()
   dateAcquisition?: string;
 
+  // Bornes des montants (petites suites, décision 3) : >= 0. Plafond de
+  // la colonne decimal(12,2), plus large que les autres montants.
   @IsOptional()
-  @IsNumberString()
+  @MontantSaisi("valeur d'acquisition", "positif_ou_nul", { plafondCentimes: PLAFOND_VALEUR_ACQUISITION_CENTIMES })
   valeurAcquisition?: string;
 
   // bien_immeuble_detail — typeHabitat/regimeJuridique requis uniquement si
@@ -103,6 +105,6 @@ export class CreateBienDto {
   nbLots?: number;
 
   @IsOptional()
-  @IsNumberString()
+  @MontantSaisi("charges de copropriété annuelles", "positif_ou_nul")
   chargesCoproAnnuelles?: string;
 }

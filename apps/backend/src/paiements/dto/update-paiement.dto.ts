@@ -1,6 +1,5 @@
-import { Transform } from "class-transformer";
-import { IsDateString, IsIn, IsNumberString, IsOptional } from "class-validator";
-import { normaliserMontant } from "core";
+import { IsDateString, IsIn, IsOptional } from "class-validator";
+import { MontantSaisi } from "../../common/montant-saisi.decorator";
 
 const PAIEMENT_TYPES = ["loyer", "charges", "depot_garantie"] as const;
 
@@ -16,9 +15,9 @@ export class UpdatePaiementDto {
   @IsIn(PAIEMENT_TYPES)
   type?: (typeof PAIEMENT_TYPES)[number];
 
+  // Strictement positif, comme à la création (petites suites, décision 3).
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? normaliserMontant(value) : value))
-  @IsNumberString()
+  @MontantSaisi("montant de l'échéance", "strictement_positif")
   montant?: string;
 
   @IsOptional()

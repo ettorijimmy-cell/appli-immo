@@ -5,7 +5,8 @@ import path from "path";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, remboursements, utilisateurs, type Database } from "db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -658,6 +659,170 @@ describe("Remboursements — validations D3/D4 (intégration Postgres réelle)",
         mode: "virement"
       });
       expect(remboursement.paiementId).toBe(depotGarantiePaiementId);
+    });
+  });
+
+  // Petites suites, compléments de la décision 3 (2026-11-22) : un
+  // remboursement de trop-perçu est strictement positif ; 0 € n'est permis
+  // que pour une retenue totale sur le dépôt de garantie (motif et
+  // justificatif exigés).
+  describe("montant remboursé à 0 €", () => {
+    const MESSAGE_TROP_PERCU_NUL =
+      "Montant invalide pour « montant remboursé » : un remboursement de trop-perçu doit être supérieur à 0 €. Un montant remboursé de 0 € n'est possible que pour une retenue totale sur le dépôt de garantie.";
+
+    async function trancheTropPercu() {
+      const paiementLoyer = await paiementsService.create({
+        bailId,
+        type: "loyer",
+        montant: "500.00",
+        dateEcheance: "2026-06-05"
+      });
+      await versementsService.ajouter({
+        paiementId: paiementLoyer.id,
+        montant: "800.00",
+        mode: "virement",
+        dateVersement: "2026-06-05"
+      });
+      return paiementLoyer.id;
+    }
+
+    async function remboursementsDuBail() {
+      return db.select({ id: remboursements.id }).from(remboursements).where(eq(remboursements.bailId, bailId));
+    }
+
+    it.each(["0", "0.00"])(
+      "refuse un trop-perçu à %s € (400, message qui nomme le champ), sans rien écrire",
+      async (montantRembourse) => {
+        const paiementId = await trancheTropPercu();
+        const appel = remboursementsService.create({
+          bailId,
+          paiementId,
+          type: "trop_percu",
+          montantOrigine: "300.00",
+          montantRembourse,
+          dateRemboursement: "2026-07-01",
+          mode: "virement"
+        });
+        await expect(appel).rejects.toThrow(BadRequestException);
+        await expect(appel).rejects.toThrow(MESSAGE_TROP_PERCU_NUL);
+        expect(await remboursementsDuBail()).toEqual([]);
+      }
+    );
+
+    it("refuse aussi un trop-perçu à 0 € sans paiement d'origine, sans rien écrire", async () => {
+      const appel = remboursementsService.create({
+        bailId,
+        type: "trop_percu",
+        montantOrigine: "300.00",
+        montantRembourse: "0.00",
+        dateRemboursement: "2026-07-01",
+        mode: "virement"
+      });
+      await expect(appel).rejects.toThrow(BadRequestException);
+      await expect(appel).rejects.toThrow(MESSAGE_TROP_PERCU_NUL);
+      expect(await remboursementsDuBail()).toEqual([]);
+    });
+
+    it("le refus du trop-perçu à 0 € passe avant les contrôles du paiement (paiement d'un autre bail)", async () => {
+      const bien2 = await bienService.create(userId, {
+        type: "immeuble",
+        proprietaireType: "personne_physique",
+        nomProprietaire: "Propriétaire Test",
+        nom: "Second Immeuble Trop-perçu",
+        adresse: "4 rue des Remboursements",
+        codePostal: "75001",
+        ville: "Paris",
+        typeHabitat: "collectif",
+        regimeJuridique: "copropriete"
+      });
+      const appartement2 = await appartementsService.create({
+        bienId: bien2.id,
+        numero: "3",
+        type: "T2",
+        nombrePiecesPrincipales: 3,
+        modeChauffage: "individuel",
+        modeEauChaude: "individuel",
+        loyerReference: "800.00"
+      });
+      const bail2 = await bauxService.create({
+        appartementId: appartement2.id,
+        typeBail: "vide",
+        dateDebut: "2026-02-01",
+        loyerMensuel: "800.00",
+        depotGarantie: "1000.00",
+        jourEcheance: 5
+      });
+      await bauxService.activer(bail2.id);
+      const paiementAutreBail = (await paiementsService.findAll(bail2.id))[0];
+      if (!paiementAutreBail) {
+        throw new Error("Aucun paiement sur le second bail après activation");
+      }
+
+      const appel = remboursementsService.create({
+        bailId,
+        paiementId: paiementAutreBail.id,
+        type: "trop_percu",
+        montantOrigine: "300.00",
+        montantRembourse: "0.00",
+        dateRemboursement: "2026-07-01",
+        mode: "virement"
+      });
+      await expect(appel).rejects.toThrow(MESSAGE_TROP_PERCU_NUL);
+      expect(await remboursementsDuBail()).toEqual([]);
+    });
+
+    it("un bail d'une autre organisation reste un 404 avant le refus du montant", async () => {
+      const [autreOrganisation] = await db
+        .insert(organisations)
+        .values({ type: "particulier", nom: "Autre organisation trop-perçu" })
+        .returning();
+      if (!autreOrganisation) {
+        throw new Error("Échec de l'insertion de l'autre organisation");
+      }
+      await expect(
+        requestContextService.executerAvecContexte({ utilisateurId: userId, organisationId: autreOrganisation.id }, () =>
+          remboursementsService.create({
+            bailId,
+            type: "trop_percu",
+            montantOrigine: "300.00",
+            montantRembourse: "0.00",
+            dateRemboursement: "2026-07-01",
+            mode: "virement"
+          })
+        )
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("accepte toujours un trop-perçu strictement positif", async () => {
+      const paiementId = await trancheTropPercu();
+      const remboursement = await remboursementsService.create({
+        bailId,
+        paiementId,
+        type: "trop_percu",
+        montantOrigine: "300.00",
+        montantRembourse: "0.01",
+        dateRemboursement: "2026-07-01",
+        mode: "virement"
+      });
+      expect(remboursement.montantRembourse).toBe("0.01");
+    });
+
+    it("accepte toujours 0 € pour une retenue totale sur le dépôt de garantie (motif et justificatif)", async () => {
+      const remboursement = await remboursementsService.create(
+        {
+          bailId,
+          paiementId: depotGarantiePaiementId,
+          type: "depot_garantie",
+          montantOrigine: "1000.00",
+          montantRembourse: "0.00",
+          dateRemboursement: "2026-07-15",
+          mode: "virement",
+          motifRetenue: "loyers_impayes"
+        },
+        fichierTest("décompte des loyers impayés")
+      );
+      expect(remboursement.montantRembourse).toBe("0.00");
+      expect(remboursement.motifRetenue).toBe("loyers_impayes");
     });
   });
 });

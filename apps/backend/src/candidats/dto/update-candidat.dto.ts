@@ -1,6 +1,6 @@
 import { IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 import { CANDIDAT_STATUTS, type CandidatStatut } from "./create-candidat.dto";
-import { MontantPositifOptionnel } from "./montant-positif-optionnel.decorator";
+import { MontantPositifOuNulOptionnel } from "./montant-positif-ou-nul-optionnel.decorator";
 
 export class UpdateCandidatDto {
   @IsOptional()
@@ -33,10 +33,10 @@ export class UpdateCandidatDto {
   @IsIn(CANDIDAT_STATUTS)
   statut?: CandidatStatut;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("revenu mensuel net")
   revenuMensuelNet?: string;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("loyer visé")
   loyerVise?: string;
 
   @IsOptional()
@@ -47,6 +47,6 @@ export class UpdateCandidatDto {
   @IsString()
   garantNom?: string;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("revenu mensuel net du garant")
   garantRevenuMensuelNet?: string;
 }

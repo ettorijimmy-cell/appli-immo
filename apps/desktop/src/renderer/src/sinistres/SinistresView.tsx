@@ -4,6 +4,7 @@ import { listEvenements, type EvenementCalendrier } from "../calendrier/api";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { estArchive, lignesVisibles } from "../lib/archives";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { listContacts, type Contact } from "../contacts/api";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { texteArchivageSinistre } from "../lib/textes-confirmation";
@@ -157,8 +158,8 @@ export function SinistresView(): React.JSX.Element {
       setVue({ niveau: "liste" });
       setFormulaire(FORMULAIRE_VIDE);
       await refresh();
-    } catch {
-      setError("Impossible d'enregistrer ce sinistre");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer ce sinistre"));
     }
   }
 

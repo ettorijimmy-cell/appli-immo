@@ -1,5 +1,5 @@
 import { IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
-import { MontantPositifOptionnel } from "./montant-positif-optionnel.decorator";
+import { MontantPositifOuNulOptionnel } from "./montant-positif-ou-nul-optionnel.decorator";
 
 export const CANDIDAT_STATUTS = ["en_attente", "valide", "refuse", "converti"] as const;
 export type CandidatStatut = (typeof CANDIDAT_STATUTS)[number];
@@ -33,10 +33,10 @@ export class CreateCandidatDto {
   @IsIn(CANDIDAT_STATUTS)
   statut?: CandidatStatut;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("revenu mensuel net")
   revenuMensuelNet?: string;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("loyer visé")
   loyerVise?: string;
 
   @IsOptional()
@@ -47,6 +47,6 @@ export class CreateCandidatDto {
   @IsString()
   garantNom?: string;
 
-  @MontantPositifOptionnel()
+  @MontantPositifOuNulOptionnel("revenu mensuel net du garant")
   garantRevenuMensuelNet?: string;
 }
