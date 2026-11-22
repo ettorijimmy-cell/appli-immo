@@ -582,8 +582,12 @@ describe("Fiches archivées : archiver deux fois, modifier une fiche archivée (
   // sauvegarde entrelacés sur la même connexion s'annulent l'un l'autre,
   // ce qui n'arrive jamais en production (une connexion par requête). Sa
   // protection contre la course est vérifiée plus bas par une lecture
-  // périmée simulée.
-  it.each(casEach.filter(([, c]) => c.table !== paiements))("%s : deux archivages simultanés → un seul réussit, l'autre reçoit 409", async (_nom, c) => {
+  // périmée simulée, et en vrai parallèle dans
+  // paiements/echeances-verrou-bail-concurrence.integration.spec.ts. Même
+  // raison pour le versement depuis le commit 3b (annuler() ouvre une
+  // transaction sous le verrou du bail) : ses deux annulations simultanées
+  // sont vérifiées dans ce même fichier de vraie concurrence.
+  it.each(casEach.filter(([, c]) => c.table !== paiements && c.table !== versements))("%s : deux archivages simultanés → un seul réussit, l'autre reçoit 409", async (_nom, c) => {
     const id = await enA(() => c.creer());
     const avant = await instantane(c.table, id);
     const parent = c.parentDe ? await c.parentDe(id) : null;
@@ -620,12 +624,17 @@ describe("Fiches archivées : archiver deux fois, modifier une fiche archivée (
       // premier.
       const [lecturePerimee] = await db.select().from(paiements).where(eq(paiements.id, paiement.id));
       await enA(() => paiementsService.archive(paiement.id));
-      // Versement encore ACTIF sur l'échéance archivée (VersementsService
-      // .ajouter l'accepte aujourd'hui, trou signalé hors périmètre) : si
-      // le refus n'annulait pas la cascade, celui-ci serait archivé.
-      const versementActif = await enA(() =>
-        versementsService.ajouter({ paiementId: paiement.id, montant: "50.00", mode: "virement", dateVersement: "2026-02-06" })
-      );
+      // Versement encore ACTIF sur l'échéance archivée (inséré directement :
+      // VersementsService.ajouter le refuse depuis le commit 3b, mais il
+      // l'acceptait avant) : si le refus n'annulait pas la cascade, celui-ci
+      // serait archivé.
+      const [versementActif] = await db
+        .insert(versements)
+        .values({ paiementId: paiement.id, montant: "50.00", mode: "virement", dateVersement: "2026-02-06" })
+        .returning();
+      if (!versementActif) {
+        throw new Error("Échec de l'insertion du versement actif");
+      }
       const espion = vi
         .spyOn(
           paiementsService as unknown as { resoudrePaiementAvecAppartenance: (id: string) => Promise<unknown> },

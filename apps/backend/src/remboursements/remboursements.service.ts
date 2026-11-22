@@ -13,6 +13,12 @@ import { construireCheminPieceJustificative } from "./storage/construire-chemin-
 
 type RemboursementRow = typeof remboursements.$inferSelect;
 
+// Commit 3b des petites suites (compléments du 2026-11-22 soir) : aucun
+// remboursement rattaché à une échéance archivée. Un bail archivé, lui,
+// reste accepté (un bail ne se désarchive jamais : son dépôt de garantie
+// doit pouvoir être restitué).
+const MESSAGE_ECHEANCE_ARCHIVEE = "Cette échéance est archivée : aucun remboursement ne peut y être rattaché.";
+
 @Injectable()
 export class RemboursementsService {
   constructor(
@@ -99,7 +105,7 @@ export class RemboursementsService {
       // Même contrôle d'appartenance que pour dto.bailId ci-dessus, même
       // raison (Priorité E3).
       const [paiement] = await this.db
-        .select({ id: paiements.id, bailId: paiements.bailId })
+        .select({ id: paiements.id, bailId: paiements.bailId, archivedAt: paiements.archivedAt })
         .from(paiements)
         .innerJoin(baux, eq(baux.id, paiements.bailId))
         .innerJoin(appartements, eq(appartements.id, baux.appartementId))
@@ -127,26 +133,16 @@ export class RemboursementsService {
         );
       }
 
-      const versementsActifs = await this.db
-        .select()
-        .from(versements)
-        .where(and(eq(versements.paiementId, dto.paiementId), isNull(versements.archivedAt)));
-      const montantRecu = calculerMontantRecuTotal(versementsActifs);
-
-      const remboursementsExistants = await this.db
-        .select()
-        .from(remboursements)
-        .where(and(eq(remboursements.paiementId, dto.paiementId), isNull(remboursements.archivedAt)));
-      const centimesDejaRembourses = remboursementsExistants.reduce(
-        (total, r) => total + montantEnCentimes(r.montantRembourse),
-        0
-      );
-
-      if (centimesDejaRembourses + montantEnCentimes(dto.montantRembourse) > montantEnCentimes(montantRecu)) {
-        throw new ConflictException(
-          "Le total des remboursements ne peut pas dépasser le montant réellement reçu sur ce paiement."
-        );
+      // Échéance archivée : refus (409) après les 404/400 ci-dessus, avant
+      // le calcul du plafond et toute écriture de pièce jointe. Revérifié
+      // sous le verrou du bail au moment de l'insertion (plus bas).
+      if (paiement.archivedAt) {
+        throw new ConflictException(MESSAGE_ECHEANCE_ARCHIVEE);
       }
+
+      // Contrôle anticipé (avant l'écriture de la pièce jointe), refait sous
+      // le verrou du bail au moment de l'insertion (plus bas).
+      await this.verifierPlafondRemboursement(this.db, dto.paiementId, dto.montantRembourse);
     }
 
     // Motif de retenue + pièce jointe (docs/backlog.md, motif de retenue
@@ -184,29 +180,87 @@ export class RemboursementsService {
       };
     }
 
-    const [remboursement] = await this.db
-      .insert(remboursements)
-      .values({
-        id: remboursementId,
-        bailId: dto.bailId,
-        paiementId: dto.paiementId ?? null,
-        type: dto.type,
-        montantOrigine: dto.montantOrigine,
-        montantRembourse: dto.montantRembourse,
-        commentaire: dto.commentaire ?? null,
-        dateRemboursement: dto.dateRemboursement,
-        mode: dto.mode,
-        motifRetenue: dto.motifRetenue ?? null,
-        pieceJustificativeChemin: pieceJustificative?.chemin ?? null,
-        pieceJustificativeNomFichier: pieceJustificative?.nomFichier ?? null,
-        pieceJustificativeMimeType: pieceJustificative?.mimeType ?? null,
-        pieceJustificativeTailleOctets: pieceJustificative?.tailleOctets ?? null
-      })
-      .returning();
-    if (!remboursement) {
-      throw new Error("Échec de la création du remboursement");
+    // Insertion sous le verrou du bail, comme la résiliation, le préavis et
+    // l'archivage manuel d'une échéance (PaiementsService) : l'échéance liée
+    // est relue après eux ; archivée entre-temps → même 409, rien n'est
+    // inséré (la pièce jointe déjà écrite reste orpheline, comme pour tout
+    // échec après son écriture).
+    return this.db.transaction(async (tx) => {
+      await tx.select({ id: baux.id }).from(baux).where(eq(baux.id, dto.bailId)).for("update");
+      if (dto.paiementId) {
+        const [echeance] = await tx
+          .select({ archivedAt: paiements.archivedAt })
+          .from(paiements)
+          .where(eq(paiements.id, dto.paiementId))
+          .limit(1);
+        if (!echeance) {
+          throw new NotFoundException("Paiement introuvable");
+        }
+        if (echeance.archivedAt) {
+          throw new ConflictException(MESSAGE_ECHEANCE_ARCHIVEE);
+        }
+        // Plafond recalculé sous le verrou (commit 3b, revue
+        // financial-logic-reviewer) : deux créations simultanées sur la même
+        // échéance passaient sinon toutes les deux le contrôle anticipé et
+        // dépassaient ensemble le montant reçu. Sérialisées par le verrou,
+        // la seconde voit le remboursement de la première.
+        await this.verifierPlafondRemboursement(tx, dto.paiementId, dto.montantRembourse);
+      }
+
+      const [remboursement] = await tx
+        .insert(remboursements)
+        .values({
+          id: remboursementId,
+          bailId: dto.bailId,
+          paiementId: dto.paiementId ?? null,
+          type: dto.type,
+          montantOrigine: dto.montantOrigine,
+          montantRembourse: dto.montantRembourse,
+          commentaire: dto.commentaire ?? null,
+          dateRemboursement: dto.dateRemboursement,
+          mode: dto.mode,
+          motifRetenue: dto.motifRetenue ?? null,
+          pieceJustificativeChemin: pieceJustificative?.chemin ?? null,
+          pieceJustificativeNomFichier: pieceJustificative?.nomFichier ?? null,
+          pieceJustificativeMimeType: pieceJustificative?.mimeType ?? null,
+          pieceJustificativeTailleOctets: pieceJustificative?.tailleOctets ?? null
+        })
+        .returning();
+      if (!remboursement) {
+        throw new Error("Échec de la création du remboursement");
+      }
+      return this.versDto(remboursement);
+    });
+  }
+
+  // Plafond « total remboursé ≤ reçu » sur une échéance (versements et
+  // remboursements actifs), rejet strict (ConflictException) — décision
+  // tranchée avec l'utilisateur, voir create().
+  private async verifierPlafondRemboursement(
+    executeur: Pick<Database, "select">,
+    paiementId: string,
+    montantRembourse: string
+  ): Promise<void> {
+    const versementsActifs = await executeur
+      .select()
+      .from(versements)
+      .where(and(eq(versements.paiementId, paiementId), isNull(versements.archivedAt)));
+    const montantRecu = calculerMontantRecuTotal(versementsActifs);
+
+    const remboursementsExistants = await executeur
+      .select()
+      .from(remboursements)
+      .where(and(eq(remboursements.paiementId, paiementId), isNull(remboursements.archivedAt)));
+    const centimesDejaRembourses = remboursementsExistants.reduce(
+      (total, r) => total + montantEnCentimes(r.montantRembourse),
+      0
+    );
+
+    if (centimesDejaRembourses + montantEnCentimes(montantRembourse) > montantEnCentimes(montantRecu)) {
+      throw new ConflictException(
+        "Le total des remboursements ne peut pas dépasser le montant réellement reçu sur ce paiement."
+      );
     }
-    return this.versDto(remboursement);
   }
 
   async archive(id: string) {

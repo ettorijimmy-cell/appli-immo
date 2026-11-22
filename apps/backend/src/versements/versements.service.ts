@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerMontantRecuTotal, calculerStatutPaiement } from "core";
-import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { appartements, baux, bien, mettreAJourFicheNonArchiveeAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
@@ -8,6 +8,10 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateVersementDto } from "./dto/create-versement.dto";
 
 type VersementRow = typeof versements.$inferSelect;
+
+// Commit 3b des petites suites (compléments du 2026-11-22 soir) : aucune
+// écriture financière sur une échéance archivée.
+const MESSAGE_ECHEANCE_ARCHIVEE = "Cette échéance est archivée : aucun versement ne peut y être ajouté.";
 
 @Injectable()
 export class VersementsService {
@@ -73,25 +77,43 @@ export class VersementsService {
     if (!ligne) {
       throw new NotFoundException("Paiement introuvable");
     }
-    const paiement = ligne.paiement;
-
-    const [versement] = await this.db
-      .insert(versements)
-      .values({
-        paiementId: dto.paiementId,
-        montant: dto.montant,
-        dateVersement: dto.dateVersement,
-        mode: dto.mode,
-        referenceRapprochement: dto.referenceRapprochement ?? null
-      })
-      .returning();
-    if (!versement) {
-      throw new Error("Échec de l'ajout du versement");
+    // Échéance archivée : refus (409) après le 404 ci-dessus, avant toute
+    // écriture — confirmation d'un rapprochement CSV comprise (même route).
+    if (ligne.paiement.archivedAt) {
+      throw new ConflictException(MESSAGE_ECHEANCE_ARCHIVEE);
     }
 
-    await this.recalculerStatutPaiement(dto.paiementId, paiement.montant);
+    return this.db.transaction(async (tx) => {
+      // Sous le verrou du bail, comme la résiliation, le préavis et
+      // l'archivage manuel d'une échéance (PaiementsService) : l'échéance est
+      // relue après eux. Archivée entre-temps → même 409, rien n'est écrit.
+      await tx.select({ id: baux.id }).from(baux).where(eq(baux.id, ligne.paiement.bailId)).for("update");
+      const [paiement] = await tx.select().from(paiements).where(eq(paiements.id, dto.paiementId)).limit(1);
+      if (!paiement) {
+        throw new NotFoundException("Paiement introuvable");
+      }
+      if (paiement.archivedAt) {
+        throw new ConflictException(MESSAGE_ECHEANCE_ARCHIVEE);
+      }
 
-    return this.versDto(versement);
+      const [versement] = await tx
+        .insert(versements)
+        .values({
+          paiementId: dto.paiementId,
+          montant: dto.montant,
+          dateVersement: dto.dateVersement,
+          mode: dto.mode,
+          referenceRapprochement: dto.referenceRapprochement ?? null
+        })
+        .returning();
+      if (!versement) {
+        throw new Error("Échec de l'ajout du versement");
+      }
+
+      await this.recalculerStatutPaiement(tx, dto.paiementId, paiement.montant);
+
+      return this.versDto(versement);
+    });
   }
 
   // Annule UN versement précis (docs/data-dictionary.md — jamais une
@@ -116,22 +138,42 @@ export class VersementsService {
     // deux annulations simultanées ne réussissent pas toutes les deux.
     exigerNonArchiveePourArchiver(versement, "annulé");
 
-    const versementAnnule = await archiverFiche(
-      this.db,
-      versements,
-      id,
-      {},
-      this.requestContext.getUtilisateurId(),
-      "Versement introuvable",
-      "annulé"
-    );
+    // Sous le verrou du bail, comme l'ajout d'un versement, la modification
+    // et l'archivage d'une échéance, la résiliation et le préavis (commit 3b
+    // des petites suites, revue financial-logic-reviewer) : sans lui, le
+    // statut était recalculé sur des données lues hors verrou (un versement
+    // ajouté ou un montant changé en même temps n'était pas pris en compte)
+    // puis écrit après coup. Ordre : bail, puis versement, puis échéance —
+    // le verrou du bail sérialise tout, pas d'interblocage avec archive().
+    const [echeanceLue] = await this.db
+      .select({ bailId: paiements.bailId })
+      .from(paiements)
+      .where(eq(paiements.id, versement.paiementId))
+      .limit(1);
+    return this.db.transaction(async (tx) => {
+      if (echeanceLue) {
+        await tx.select({ id: baux.id }).from(baux).where(eq(baux.id, echeanceLue.bailId)).for("update");
+      }
 
-    const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, versement.paiementId)).limit(1);
-    if (paiement) {
-      await this.recalculerStatutPaiement(versement.paiementId, paiement.montant);
-    }
+      const versementAnnule = await archiverFiche(
+        tx,
+        versements,
+        id,
+        {},
+        this.requestContext.getUtilisateurId(),
+        "Versement introuvable",
+        "annulé"
+      );
 
-    return this.versDto(versementAnnule as VersementRow);
+      // Montant de l'échéance relu sous le verrou. Échéance archivée : le
+      // recalcul n'écrit rien (voir recalculerStatutPaiement).
+      const [paiement] = await tx.select().from(paiements).where(eq(paiements.id, versement.paiementId)).limit(1);
+      if (paiement) {
+        await this.recalculerStatutPaiement(tx, versement.paiementId, paiement.montant);
+      }
+
+      return this.versDto(versementAnnule as VersementRow);
+    });
   }
 
   // Contrôle d'appartenance (Priorité 3b, Catégorie C, chantier scoping
@@ -167,14 +209,24 @@ export class VersementsService {
     return versement;
   }
 
-  private async recalculerStatutPaiement(paiementId: string, montantDu: string): Promise<void> {
-    const versementsActifs = await this.db
+  // N'écrit JAMAIS sur une échéance archivée (commit 3b des petites suites) :
+  // condition `archived_at IS NULL` dans l'UPDATE, aucune ligne touchée
+  // sinon — le statut d'une échéance archivée reste celui qu'elle avait à
+  // son archivage. Seul cas encore possible : l'annulation d'un versement
+  // resté actif sur une échéance archivée (ajouter() l'acceptait avant ce
+  // commit) ; le versement est annulé, l'échéance n'est pas touchée.
+  private async recalculerStatutPaiement(
+    executeur: Pick<Database, "select" | "update">,
+    paiementId: string,
+    montantDu: string
+  ): Promise<void> {
+    const versementsActifs = await executeur
       .select()
       .from(versements)
       .where(and(eq(versements.paiementId, paiementId), isNull(versements.archivedAt)));
     const montantRecu = calculerMontantRecuTotal(versementsActifs);
     const statut = calculerStatutPaiement(montantDu, montantRecu);
-    await mettreAJourAvecAudit(this.db, paiements, paiementId, { statut }, this.requestContext.getUtilisateurId());
+    await mettreAJourFicheNonArchiveeAvecAudit(executeur, paiements, paiementId, { statut }, this.requestContext.getUtilisateurId());
   }
 
   // reference_rapprochement (libellé brut d'une ligne de relevé bancaire,

@@ -113,49 +113,59 @@ export class PaiementsService {
   async update(id: string, dto: UpdatePaiementDto) {
     // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
-    const existant = await this.resoudrePaiementAvecAppartenance(id);
+    const lu = await this.resoudrePaiementAvecAppartenance(id);
     // Échéance archivée : plus aucune modification (petites suites,
     // décision 4 du 2026-11-22) ; condition répétée dans l'UPDATE
     // (modifierFiche) contre un archivage concurrent.
-    exigerNonArchiveePourModifier(existant);
+    exigerNonArchiveePourModifier(lu);
 
-    const nouveauMontant = dto.montant ?? existant.montant;
-    const versementsActifs = await this.db
-      .select()
-      .from(versements)
-      .where(and(eq(versements.paiementId, id), isNull(versements.archivedAt)));
-    const montantRecu = calculerMontantRecuTotal(versementsActifs);
-    const statutRecalcule = calculerStatutPaiement(nouveauMontant, montantRecu);
+    return this.db.transaction(async (tx) => {
+      // Sous le verrou du bail (commit 3b des petites suites), que prennent
+      // aussi la résiliation, le préavis, le job des échéances, l'ajout et
+      // l'annulation d'un versement et la création d'un remboursement :
+      // l'échéance et ses versements sont relus APRÈS que ces écritures ont
+      // fini, jamais au milieu.
+      const existant = await this.verrouillerBailEtRelireEcheance(tx, lu);
+      exigerNonArchiveePourModifier(existant);
 
-    // loyerHorsCharges/charges (Module Tâches, Étape 4 — quittance
-    // mensuelle) sont FIGÉS à la génération de l'échéance et garantis égaux
-    // à montant à ce moment-là (loyerHorsCharges + charges = montant, voir
-    // AlertesJobService.genererEcheancesRecurrentes). Si montant change
-    // ensuite, cet invariant casserait silencieusement — une quittance
-    // générée après coup afficherait le montant figé PÉRIMÉ, pas le
-    // montant corrigé (revue financial-logic-reviewer, 2026-08-31).
-    // Invalidés explicitement plutôt que laissés périmés :
-    // validerCompletudeGenerationQuittance (packages/core) bloque alors la
-    // génération jusqu'à ce que l'échéance soit reconciliée, plutôt que de
-    // deviner ou d'imprimer une valeur fausse.
-    const montantModifie = dto.montant !== undefined && dto.montant !== existant.montant;
-    const echeanceEtaitFigee = existant.loyerHorsCharges !== null || existant.charges !== null;
+      const nouveauMontant = dto.montant ?? existant.montant;
+      const versementsActifs = await tx
+        .select()
+        .from(versements)
+        .where(and(eq(versements.paiementId, id), isNull(versements.archivedAt)));
+      const montantRecu = calculerMontantRecuTotal(versementsActifs);
+      const statutRecalcule = calculerStatutPaiement(nouveauMontant, montantRecu);
 
-    const paiement = await modifierFiche(
-      this.db,
-      paiements,
-      id,
-      {
-        type: dto.type,
-        montant: dto.montant,
-        dateEcheance: dto.dateEcheance,
-        statut: statutRecalcule,
-        ...(montantModifie && echeanceEtaitFigee ? { loyerHorsCharges: null, charges: null } : {})
-      },
-      this.requestContext.getUtilisateurId(),
-      "Paiement introuvable"
-    );
-    return this.versDto(paiement as PaiementRow);
+      // loyerHorsCharges/charges (Module Tâches, Étape 4 — quittance
+      // mensuelle) sont FIGÉS à la génération de l'échéance et garantis égaux
+      // à montant à ce moment-là (loyerHorsCharges + charges = montant, voir
+      // AlertesJobService.genererEcheancesRecurrentes). Si montant change
+      // ensuite, cet invariant casserait silencieusement — une quittance
+      // générée après coup afficherait le montant figé PÉRIMÉ, pas le
+      // montant corrigé (revue financial-logic-reviewer, 2026-08-31).
+      // Invalidés explicitement plutôt que laissés périmés :
+      // validerCompletudeGenerationQuittance (packages/core) bloque alors la
+      // génération jusqu'à ce que l'échéance soit reconciliée, plutôt que de
+      // deviner ou d'imprimer une valeur fausse.
+      const montantModifie = dto.montant !== undefined && dto.montant !== existant.montant;
+      const echeanceEtaitFigee = existant.loyerHorsCharges !== null || existant.charges !== null;
+
+      const paiement = await modifierFiche(
+        tx,
+        paiements,
+        id,
+        {
+          type: dto.type,
+          montant: dto.montant,
+          dateEcheance: dto.dateEcheance,
+          statut: statutRecalcule,
+          ...(montantModifie && echeanceEtaitFigee ? { loyerHorsCharges: null, charges: null } : {})
+        },
+        this.requestContext.getUtilisateurId(),
+        "Paiement introuvable"
+      );
+      return this.versDto(paiement as PaiementRow);
+    });
   }
 
   // Cascade vers les versements actifs (docs/data-dictionary.md) : un
@@ -166,10 +176,16 @@ export class PaiementsService {
     // 3b, Catégorie C, chantier scoping multi-organisation, 2026-09-19) :
     // avant toute lecture, avant la cascade d'archivage des versements
     // actifs, avant l'archivage du paiement lui-même.
-    exigerNonArchiveePourArchiver(await this.resoudrePaiementAvecAppartenance(id));
+    const lu = await this.resoudrePaiementAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(lu);
 
     return this.db.transaction(async (tx) => {
       const utilisateurId = this.requestContext.getUtilisateurId();
+
+      // Sous le verrou du bail, comme la résiliation et le préavis (commit
+      // 3b des petites suites) : si une résiliation vient d'archiver cette
+      // échéance, elle est relue archivée ici → 409 « Déjà archivé le … ».
+      exigerNonArchiveePourArchiver(await this.verrouillerBailEtRelireEcheance(tx, lu));
 
       // Paiement d'abord, avec la condition `archived_at IS NULL` dans
       // l'UPDATE (petites suites, décision 4 du 2026-11-22) : si un autre
@@ -286,6 +302,23 @@ export class PaiementsService {
       resultat.set(ligne.bailId, noms);
     }
     return resultat;
+  }
+
+  // Verrou de la ligne du bail (SELECT … FOR UPDATE), le même que prennent
+  // la résiliation (BauxService.resilier), le préavis (PreavisService) et
+  // le job des échéances, puis relecture de l'échéance sous ce verrou
+  // (commit 3b des petites suites, compléments du 2026-11-22 soir). Ordre
+  // des verrous identique partout (bail puis échéance) : pas d'interblocage.
+  private async verrouillerBailEtRelireEcheance(
+    tx: Pick<Database, "select">,
+    paiement: Pick<PaiementRow, "id" | "bailId">
+  ): Promise<PaiementRow> {
+    await tx.select({ id: baux.id }).from(baux).where(eq(baux.id, paiement.bailId)).for("update");
+    const [actuel] = await tx.select().from(paiements).where(eq(paiements.id, paiement.id)).limit(1);
+    if (!actuel) {
+      throw new NotFoundException("Paiement introuvable");
+    }
+    return actuel;
   }
 
   // Contrôle d'appartenance partagé (Sous-commit 5c pour findById(), étendu

@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql, type AnyColumn } from "drizzle-orm";
+import { and, eq, isNull, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { Database } from "./client";
 
@@ -59,13 +59,20 @@ interface TableArchivableAvecAudit extends TableAvecAudit {
  * c'est à l'appelant de distinguer les deux (voir
  * apps/backend/src/common/fiche-archivee.ts). Aucune ligne touchée =
  * updated_at, updated_by et version inchangés.
+ *
+ * `conditionSupplementaire` (commit 3b des petites suites) : condition
+ * ajoutée à la même clause WHERE, réévaluée par Postgres sur la version
+ * courante de la ligne si une autre transaction l'a modifiée entre-temps
+ * (ex. statut du bail encore « brouillon » ou « résilié » au moment de
+ * l'archivage, BauxService.archive).
  */
 export async function mettreAJourFicheNonArchiveeAvecAudit<T extends TableArchivableAvecAudit>(
   db: Pick<Database, "update">,
   table: T,
   id: string,
   valeurs: Record<string, unknown>,
-  utilisateurId: string | null
+  utilisateurId: string | null,
+  conditionSupplementaire?: SQL
 ) {
   return db
     .update(table)
@@ -75,6 +82,6 @@ export async function mettreAJourFicheNonArchiveeAvecAudit<T extends TableArchiv
       updatedBy: utilisateurId,
       version: sql`${table.version} + 1`
     } as T["$inferInsert"])
-    .where(and(eq(table.id, id), isNull(table.archivedAt)))
+    .where(and(eq(table.id, id), isNull(table.archivedAt), conditionSupplementaire))
     .returning();
 }

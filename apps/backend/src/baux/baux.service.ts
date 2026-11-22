@@ -23,6 +23,7 @@ import {
   baux,
   bien,
   mettreAJourAvecAudit,
+  mettreAJourFicheNonArchiveeAvecAudit,
   paiements,
   remboursements,
   versements,
@@ -30,7 +31,7 @@ import {
 } from "db";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { dateDuJourParis } from "../common/date-paris";
-import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier } from "../common/fiche-archivee";
+import { exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
@@ -69,6 +70,14 @@ export function estViolationIndexBauxActifUnique(erreur: unknown): boolean {
     "constraint_name" in erreur &&
     (erreur as { constraint_name?: unknown }).constraint_name === "baux_appartement_id_actif_unique"
   );
+}
+
+// Seuls statuts depuis lesquels un bail s'archive (un bail actif ou en
+// préavis doit d'abord être résilié).
+const STATUTS_BAIL_ARCHIVABLES: BailRow["statut"][] = ["brouillon", "resilie"];
+
+function messageBailNonArchivable(statut: string): string {
+  return `Un bail actif ou en préavis doit d'abord être résilié avant d'être archivé (statut actuel : ${statut}).`;
 }
 
 @Injectable()
@@ -262,7 +271,13 @@ export class BauxService {
     // échéance d'entrée), toute modification du statut de l'appartement.
     await this.verifierAppartenanceBail(id);
     return this.db.transaction(async (tx) => {
-      const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1);
+      // Ligne du bail verrouillée (FOR UPDATE) jusqu'à la fin de
+      // l'activation (commit 3b des petites suites, revue
+      // financial-logic-reviewer) : un archivage simultané passé entre cette
+      // lecture et l'UPDATE ci-dessous laissait sinon réécrire statut =
+      // actif sur un bail archivé, puis créer caution et échéance d'entrée.
+      // Avec le verrou, l'activation relit le bail archivé et refuse.
+      const [bail] = await tx.select().from(baux).where(eq(baux.id, id)).limit(1).for("update");
       if (!bail) {
         throw new NotFoundException("Bail introuvable");
       }
@@ -726,22 +741,34 @@ export class BauxService {
     // Déjà archivé : 409 « Déjà archivé le … » avant le refus de statut
     // (petites suites, décision 4 du 2026-11-22).
     exigerNonArchiveePourArchiver(bail);
-    if (bail.statut !== "brouillon" && bail.statut !== "resilie") {
-      throw new ConflictException(
-        `Un bail actif ou en préavis doit d'abord être résilié avant d'être archivé (statut actuel : ${bail.statut}).`
-      );
+    if (!STATUTS_BAIL_ARCHIVABLES.includes(bail.statut)) {
+      throw new ConflictException(messageBailNonArchivable(bail.statut));
     }
 
-    // Condition `archived_at IS NULL` dans l'UPDATE : deux archivages
-    // simultanés ne réussissent pas tous les deux.
-    const bailArchive = await archiverFiche(
+    // Conditions `archived_at IS NULL` ET statut brouillon/résilié dans
+    // l'UPDATE lui-même (commit 3b des petites suites, compléments du
+    // 2026-11-22 soir) : le statut lu ci-dessus peut avoir changé avant
+    // l'écriture (activation simultanée : elle verrouille la ligne du bail
+    // par FOR UPDATE dès sa lecture) ; Postgres réévalue alors la condition
+    // sur la ligne à jour. Sans elle, un bail devenu actif était archivé. Deux archivages
+    // simultanés ne réussissent pas non plus tous les deux.
+    const [bailArchive] = await mettreAJourFicheNonArchiveeAvecAudit(
       this.db,
       baux,
       id,
-      { statut: "archive" },
+      { statut: "archive", archivedAt: new Date() },
       this.requestContext.getUtilisateurId(),
-      "Bail introuvable"
+      inArray(baux.statut, STATUTS_BAIL_ARCHIVABLES)
     );
+    if (!bailArchive) {
+      // Aucune ligne touchée : relue pour dire pourquoi.
+      const [actuel] = await this.db.select().from(baux).where(eq(baux.id, id)).limit(1);
+      if (!actuel) {
+        throw new NotFoundException("Bail introuvable");
+      }
+      exigerNonArchiveePourArchiver(actuel);
+      throw new ConflictException(messageBailNonArchivable(actuel.statut));
+    }
     return this.versDto(bailArchive as BailRow);
   }
 
