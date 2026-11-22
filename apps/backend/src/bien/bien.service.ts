@@ -6,6 +6,7 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateBienDto } from "./dto/create-bien.dto";
 import type { UpdateBienDto } from "./dto/update-bien.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type BienRow = typeof bien.$inferSelect;
 type BienImmeubleDetailRow = typeof bienImmeubleDetail.$inferSelect;
@@ -233,7 +234,7 @@ export class BienService {
   async update(id: string, dto: UpdateBienDto) {
     // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3a,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreBienAvecAppartenance(id);
+    exigerNonArchiveePourModifier((await this.resoudreBienAvecAppartenance(id)).bienRow);
 
     const { typeHabitat, regimeJuridique, syndic, nbLots, chargesCoproAnnuelles, ...bienChamps } = dto;
 
@@ -253,16 +254,14 @@ export class BienService {
       }
     }
 
-    const [bienMisAJour] = await mettreAJourAvecAudit(
+    const bienMisAJour = await modifierFiche(
       this.db,
       bien,
       id,
       { ...bienChamps, typeHabitat, regimeJuridique },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Bien introuvable"
     );
-    if (!bienMisAJour) {
-      throw new NotFoundException("Bien introuvable");
-    }
 
     const [detailExistant] = await this.db
       .select()
@@ -296,18 +295,16 @@ export class BienService {
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreBienAvecAppartenance(id);
+    exigerNonArchiveePourArchiver((await this.resoudreBienAvecAppartenance(id)).bienRow);
 
-    const [bienArchive] = await mettreAJourAvecAudit(
+    const bienArchive = await archiverFiche(
       this.db,
       bien,
       id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "Bien introuvable"
     );
-    if (!bienArchive) {
-      throw new NotFoundException("Bien introuvable");
-    }
     const [detail] = await this.db
       .select()
       .from(bienImmeubleDetail)

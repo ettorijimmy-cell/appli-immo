@@ -1,7 +1,7 @@
 import { libelleStatutBail } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CollapsibleSection } from "../components/CollapsibleSection";
-import { ArchiveBadge } from "../components/ArchiveFilter";
+import { ArchiveBadge, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
@@ -213,13 +213,17 @@ export function LocataireDetailView({
                   <dd>{LIBELLES_STATUT_ETUDES[locataire.statutEtudes]}</dd>
                 </div>
               </dl>
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="text-sm text-slate-500 hover:text-slate-700"
-              >
-                Modifier
-              </button>
+              {locataire.statut === "archive" ? (
+                <MentionFicheArchivee />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="text-sm text-slate-500 hover:text-slate-700"
+                >
+                  Modifier
+                </button>
+              )}
             </div>
           )}
         </CollapsibleSection>

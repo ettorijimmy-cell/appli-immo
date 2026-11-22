@@ -6,6 +6,7 @@ import { DATABASE_CONNECTION } from "../database/database.module";
 import type { ArchiverBailLocataireDto } from "./dto/archiver-bail-locataire.dto";
 import type { CreateBailLocataireDto } from "./dto/create-bail-locataire.dto";
 import type { UpdateBailLocataireDto } from "./dto/update-bail-locataire.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 
 type BailLocataireRow = typeof bailLocataires.$inferSelect;
 
@@ -97,6 +98,9 @@ export class BailLocatairesService {
   // Modifiable aussi sur un lien déjà retiré : le congé précède souvent le
   // retrait du locataire dans l'appli.
   async update(id: string, dto: UpdateBailLocataireDto) {
+    // Pas de refus « fiche archivée » ici (petites suites, décision 4) :
+    // exception signalée à Jimmy, non tranchée — voir le commentaire
+    // ci-dessus.
     await this.resoudreLienAvecAppartenance(id);
     const [lien] = await mettreAJourAvecAudit(
       this.db,
@@ -119,12 +123,15 @@ export class BailLocatairesService {
     // jamais eu de findById() (aucun endpoint de lecture à l'unité), donc
     // pas de helper préexistant à réutiliser — extrait ici directement.
     const lienARetirer = await this.resoudreLienAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(lienARetirer);
 
     // Jamais un bail actif ou en préavis sans locataire (chantier
     // archivage, décision 4 du 2026-11-12) : refus si c'est le dernier lien
-    // non retiré d'un tel bail. Après l'appartenance (404 d'abord). Un lien
-    // déjà retiré, un colocataire parmi d'autres, ou un bail brouillon ou
-    // résilié : rien n'est refusé.
+    // non retiré d'un tel bail. Après l'appartenance (404 d'abord). Un
+    // colocataire parmi d'autres, ou un bail brouillon ou résilié : rien
+    // n'est refusé. Un lien déjà retiré est refusé juste au-dessus (409
+    // « Déjà archivé le … », petites suites, décision 4 du 2026-11-22) ;
+    // le test `archivedAt === null` ci-dessous reste comme garde-fou.
     if (lienARetirer.archivedAt === null) {
       const [bail] = await this.db
         .select({ statut: baux.statut })
@@ -151,17 +158,15 @@ export class BailLocatairesService {
       }
     }
 
-    const [lien] = await mettreAJourAvecAudit(
+    const lien = await archiverFiche(
       this.db,
       bailLocataires,
       id,
       // Date d'effet du congé écrite avec le retrait, dans la même requête.
-      { archivedAt: new Date(), ...(dto.dateEffetConge !== undefined ? { dateEffetConge: dto.dateEffetConge } : {}) },
-      this.requestContext.getUtilisateurId()
+      { ...(dto.dateEffetConge !== undefined ? { dateEffetConge: dto.dateEffetConge } : {}) },
+      this.requestContext.getUtilisateurId(),
+      "Rattachement introuvable"
     );
-    if (!lien) {
-      throw new NotFoundException("Rattachement introuvable");
-    }
     return this.versDto(lien as BailLocataireRow);
   }
 

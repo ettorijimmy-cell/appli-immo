@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerMontantRecuTotal, calculerStatutPaiement } from "core";
 import { appartements, baux, bien, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
+import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateVersementDto } from "./dto/create-versement.dto";
@@ -109,17 +110,21 @@ export class VersementsService {
     // le statut du paiement étranger auquel il est rattaché — deux tables
     // touchées.
     const versement = await this.resoudreVersementAvecAppartenance(id);
+    // Versement déjà annulé (archivé) : 409 « Déjà annulé le … », sans
+    // écriture ni recalcul du statut du paiement (petites suites, décision 4
+    // du 2026-11-22). Condition répétée dans l'UPDATE (archiverFiche) :
+    // deux annulations simultanées ne réussissent pas toutes les deux.
+    exigerNonArchiveePourArchiver(versement, "annulé");
 
-    const [versementAnnule] = await mettreAJourAvecAudit(
+    const versementAnnule = await archiverFiche(
       this.db,
       versements,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Versement introuvable",
+      "annulé"
     );
-    if (!versementAnnule) {
-      throw new NotFoundException("Versement introuvable");
-    }
 
     const [paiement] = await this.db.select().from(paiements).where(eq(paiements.id, versement.paiementId)).limit(1);
     if (paiement) {

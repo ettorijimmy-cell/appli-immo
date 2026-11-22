@@ -1,4 +1,4 @@
-import { eq, sql, type AnyColumn } from "drizzle-orm";
+import { and, eq, isNull, sql, type AnyColumn } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { Database } from "./client";
 
@@ -42,5 +42,39 @@ export async function mettreAJourAvecAudit<T extends TableAvecAudit>(
       version: sql`${table.version} + 1`
     } as T["$inferInsert"])
     .where(eq(table.id, id))
+    .returning();
+}
+
+interface TableArchivableAvecAudit extends TableAvecAudit {
+  archivedAt: AnyColumn;
+}
+
+/**
+ * Même écriture que mettreAJourAvecAudit, mais seulement si la ligne n'est
+ * pas archivée : la condition `archived_at IS NULL` est dans l'UPDATE
+ * lui-même (petites suites, décision 4 du 2026-11-22). Deux archivages
+ * simultanés de la même fiche ne peuvent donc pas réussir tous les deux,
+ * et une modification ne peut pas passer entre la lecture et l'écriture
+ * d'un archivage. Renvoie [] si la ligne est inexistante OU déjà archivée :
+ * c'est à l'appelant de distinguer les deux (voir
+ * apps/backend/src/common/fiche-archivee.ts). Aucune ligne touchée =
+ * updated_at, updated_by et version inchangés.
+ */
+export async function mettreAJourFicheNonArchiveeAvecAudit<T extends TableArchivableAvecAudit>(
+  db: Pick<Database, "update">,
+  table: T,
+  id: string,
+  valeurs: Record<string, unknown>,
+  utilisateurId: string | null
+) {
+  return db
+    .update(table)
+    .set({
+      ...valeurs,
+      updatedAt: new Date(),
+      updatedBy: utilisateurId,
+      version: sql`${table.version} + 1`
+    } as T["$inferInsert"])
+    .where(and(eq(table.id, id), isNull(table.archivedAt)))
     .returning();
 }

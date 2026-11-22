@@ -1,11 +1,12 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { bailLocataires, baux, locataires, mettreAJourAvecAudit, type Database } from "db";
+import { bailLocataires, baux, locataires, type Database } from "db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateLocataireDto } from "./dto/create-locataire.dto";
 import type { UpdateLocataireDto } from "./dto/update-locataire.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type LocataireRow = typeof locataires.$inferSelect;
 
@@ -81,25 +82,23 @@ export class LocatairesService {
   async update(id: string, dto: UpdateLocataireDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreLocataireAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreLocataireAvecAppartenance(id));
 
-    const [locataire] = await mettreAJourAvecAudit(
+    const locataire = await modifierFiche(
       this.db,
       locataires,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Locataire introuvable"
     );
-    if (!locataire) {
-      throw new NotFoundException("Locataire introuvable");
-    }
     return this.versDto(locataire as LocataireRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreLocataireAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreLocataireAvecAppartenance(id));
 
     // Jamais un locataire encore en place (chantier archivage, décision 4
     // du 2026-11-12) : refus s'il reste rattaché (lien bail_locataires non
@@ -123,16 +122,14 @@ export class LocatairesService {
       );
     }
 
-    const [locataire] = await mettreAJourAvecAudit(
+    const locataire = await archiverFiche(
       this.db,
       locataires,
       id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "Locataire introuvable"
     );
-    if (!locataire) {
-      throw new NotFoundException("Locataire introuvable");
-    }
     return this.versDto(locataire as LocataireRow);
   }
 

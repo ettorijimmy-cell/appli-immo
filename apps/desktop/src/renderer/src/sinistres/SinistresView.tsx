@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { listEvenements, type EvenementCalendrier } from "../calendrier/api";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { estArchive, lignesVisibles } from "../lib/archives";
 import { messageErreurApi } from "../lib/message-erreur-api";
@@ -360,9 +360,13 @@ export function SinistresView(): React.JSX.Element {
             />
           </label>
           <div className="flex items-center gap-2">
-            <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
-              Enregistrer
-            </button>
+            {sinistreOuvertArchive ? (
+              <MentionFicheArchivee />
+            ) : (
+              <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
+                Enregistrer
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

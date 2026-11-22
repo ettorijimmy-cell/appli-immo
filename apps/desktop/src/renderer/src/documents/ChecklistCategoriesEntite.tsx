@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "../lib/authenticated-fetch";
 import { getCompletudeDocumentaire, type CompletudeCategorie } from "../tableau-de-bord/api";
 import {
   remplacerDocument,
@@ -137,8 +138,10 @@ function CategorieRow({
         await uploadDocument(fichier, { entiteType, entiteId, categorie, ...(candidatRole && { candidatRole }) });
       }
       await onChanged();
-    } catch {
-      setError("Échec de l'envoi (20 Mo max)");
+    } catch (err) {
+      // 409 (version déjà archivée entre-temps, catégorie réservée) : message
+      // du serveur ; sinon message générique (taille du fichier).
+      setError(err instanceof ApiError && err.status === 409 ? err.message : "Échec de l'envoi (20 Mo max)");
     } finally {
       setIsSubmitting(false);
     }

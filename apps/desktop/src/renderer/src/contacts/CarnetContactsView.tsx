@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteArchivageContact } from "../lib/textes-confirmation";
 import { getBail } from "../locataires/api";
 import {
@@ -137,8 +138,8 @@ export function CarnetContactsView(): React.JSX.Element {
       setVue({ niveau: "liste" });
       setFormulaire(FORMULAIRE_VIDE);
       await refresh();
-    } catch {
-      setError("Impossible d'enregistrer ce contact");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer ce contact"));
     }
   }
 
@@ -223,9 +224,13 @@ export function CarnetContactsView(): React.JSX.Element {
             />
           </label>
           <div className="flex items-center gap-2">
-            <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
-              Enregistrer
-            </button>
+            {vue.niveau === "edition" && vue.archive ? (
+              <MentionFicheArchivee />
+            ) : (
+              <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
+                Enregistrer
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

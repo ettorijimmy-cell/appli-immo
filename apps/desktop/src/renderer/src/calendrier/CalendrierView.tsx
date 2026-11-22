@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { listCandidats, type Candidat } from "../candidats/api";
 import { libelleCandidat } from "../candidats/CandidatsView";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { listContacts, type Contact } from "../contacts/api";
 import { estArchive, lignesVisibles } from "../lib/archives";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteArchivageEvenement } from "../lib/textes-confirmation";
 import { getBien, libelleBien, listAppartements, listBiens, type Appartement, type Bien } from "../patrimoine/api";
 import { listSinistres, SINISTRE_TYPE_LABELS, type Sinistre } from "../sinistres/api";
@@ -225,8 +226,8 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
       setVue({ niveau: "liste" });
       setFormulaire(FORMULAIRE_VIDE);
       await refresh();
-    } catch {
-      setError("Impossible d'enregistrer cet événement");
+    } catch (erreur) {
+      setError(messageErreurApi(erreur, "Impossible d'enregistrer cet événement"));
     }
   }
 
@@ -386,9 +387,13 @@ export function CalendrierView({ prefiltrageInitial }: CalendrierViewProps = {})
             />
           </label>
           <div className="flex items-center gap-2">
-            <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
-              Enregistrer
-            </button>
+            {evenementOuvert && estArchive(evenementOuvert) ? (
+              <MentionFicheArchivee />
+            ) : (
+              <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
+                Enregistrer
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

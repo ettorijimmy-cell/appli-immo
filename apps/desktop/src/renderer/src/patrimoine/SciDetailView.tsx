@@ -10,7 +10,7 @@ import {
 } from "../scis/api";
 import { archiveBien, libelleBien, listBiens, BIEN_TYPE_LABELS, type Bien } from "./api";
 import { NewBienWizard } from "./NewBienWizard";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
@@ -81,13 +81,17 @@ export function SciDetailView({
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">{sci.nom}</h1>
-          <button
-            type="button"
-            onClick={() => setIsEditing((value) => !value)}
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
-            {isEditing ? "Annuler" : "Modifier"}
-          </button>
+          {sci.statut === "archive" ? (
+            <MentionFicheArchivee />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditing((value) => !value)}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              {isEditing ? "Annuler" : "Modifier"}
+            </button>
+          )}
         </div>
 
         {isEditing ? (

@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, bien, equipements, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bien, equipements, type Database } from "db";
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateEquipementDto } from "./dto/create-equipement.dto";
 import type { UpdateEquipementDto } from "./dto/update-equipement.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type EquipementRow = typeof equipements.$inferSelect;
 
@@ -96,18 +97,16 @@ export class EquipementsService {
   async update(id: string, dto: UpdateEquipementDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreEquipementAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreEquipementAvecAppartenance(id));
 
-    const [equipement] = await mettreAJourAvecAudit(
+    const equipement = await modifierFiche(
       this.db,
       equipements,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Équipement introuvable"
     );
-    if (!equipement) {
-      throw new NotFoundException("Équipement introuvable");
-    }
     return this.versDto(equipement as EquipementRow);
   }
 
@@ -116,18 +115,16 @@ export class EquipementsService {
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreEquipementAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreEquipementAvecAppartenance(id));
 
-    const [equipement] = await mettreAJourAvecAudit(
+    const equipement = await archiverFiche(
       this.db,
       equipements,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Équipement introuvable"
     );
-    if (!equipement) {
-      throw new NotFoundException("Équipement introuvable");
-    }
     return this.versDto(equipement as EquipementRow);
   }
 

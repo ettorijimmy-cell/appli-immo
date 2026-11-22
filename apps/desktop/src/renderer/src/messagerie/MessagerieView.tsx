@@ -6,6 +6,7 @@ import { DocumentApercuModal } from "../documents/DocumentApercuModal";
 import { CATEGORIE_LABELS } from "../documents/labels";
 import type { DocumentCategorie, DocumentEntiteType } from "../documents/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import { messageErreurApi } from "../lib/message-erreur-api";
 import {
   archiverMessage,
   classerPieceJointeDansDocuments,
@@ -516,8 +517,10 @@ function MessageItem({
         await archiverMessage(message.id);
       }
       await onRefresh();
-    } catch {
-      setError(estArchive ? "Impossible de désarchiver ce message" : "Impossible d'archiver ce message");
+    } catch (erreur) {
+      setError(
+        messageErreurApi(erreur, estArchive ? "Impossible de désarchiver ce message" : "Impossible d'archiver ce message")
+      );
       setIsArchiving(false);
     }
   }

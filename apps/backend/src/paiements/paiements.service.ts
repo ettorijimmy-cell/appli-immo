@@ -9,8 +9,9 @@ import {
   type LigneReleveCsvAvecId,
   type PaiementARapprocher
 } from "core";
-import { appartements, bailLocataires, baux, bien, locataires, mettreAJourAvecAudit, paiements, versements, type Database } from "db";
+import { appartements, bailLocataires, baux, bien, locataires, paiements, versements, type Database } from "db";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreatePaiementDto } from "./dto/create-paiement.dto";
@@ -113,6 +114,10 @@ export class PaiementsService {
     // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudrePaiementAvecAppartenance(id);
+    // Échéance archivée : plus aucune modification (petites suites,
+    // décision 4 du 2026-11-22) ; condition répétée dans l'UPDATE
+    // (modifierFiche) contre un archivage concurrent.
+    exigerNonArchiveePourModifier(existant);
 
     const nouveauMontant = dto.montant ?? existant.montant;
     const versementsActifs = await this.db
@@ -136,7 +141,7 @@ export class PaiementsService {
     const montantModifie = dto.montant !== undefined && dto.montant !== existant.montant;
     const echeanceEtaitFigee = existant.loyerHorsCharges !== null || existant.charges !== null;
 
-    const [paiement] = await mettreAJourAvecAudit(
+    const paiement = await modifierFiche(
       this.db,
       paiements,
       id,
@@ -147,11 +152,9 @@ export class PaiementsService {
         statut: statutRecalcule,
         ...(montantModifie && echeanceEtaitFigee ? { loyerHorsCharges: null, charges: null } : {})
       },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Paiement introuvable"
     );
-    if (!paiement) {
-      throw new NotFoundException("Paiement introuvable");
-    }
     return this.versDto(paiement as PaiementRow);
   }
 
@@ -163,10 +166,16 @@ export class PaiementsService {
     // 3b, Catégorie C, chantier scoping multi-organisation, 2026-09-19) :
     // avant toute lecture, avant la cascade d'archivage des versements
     // actifs, avant l'archivage du paiement lui-même.
-    await this.resoudrePaiementAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudrePaiementAvecAppartenance(id));
 
     return this.db.transaction(async (tx) => {
       const utilisateurId = this.requestContext.getUtilisateurId();
+
+      // Paiement d'abord, avec la condition `archived_at IS NULL` dans
+      // l'UPDATE (petites suites, décision 4 du 2026-11-22) : si un autre
+      // appel l'a archivé entre-temps, 409 « Déjà archivé le … » et la
+      // transaction est annulée avant la cascade sur les versements.
+      const paiement = await archiverFiche(tx, paiements, id, {}, utilisateurId, "Paiement introuvable");
 
       await tx
         .update(versements)
@@ -178,16 +187,6 @@ export class PaiementsService {
         })
         .where(and(eq(versements.paiementId, id), isNull(versements.archivedAt)));
 
-      const [paiement] = await mettreAJourAvecAudit(
-        tx,
-        paiements,
-        id,
-        { archivedAt: new Date() },
-        utilisateurId
-      );
-      if (!paiement) {
-        throw new NotFoundException("Paiement introuvable");
-      }
       return this.versDto(paiement as PaiementRow);
     });
   }

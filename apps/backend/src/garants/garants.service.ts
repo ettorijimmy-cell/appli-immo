@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, bailLocataires, baux, bien, garants, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bailLocataires, baux, bien, garants, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateGarantDto } from "./dto/create-garant.dto";
 import type { UpdateGarantDto } from "./dto/update-garant.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type GarantRow = typeof garants.$inferSelect;
 
@@ -130,37 +131,34 @@ export class GarantsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudreGarantAvecAppartenance(id);
+    exigerNonArchiveePourModifier(existant);
     const typeFinal = dto.typeGarantie ?? existant.typeGarantie;
     const modifications = await this.modificationsSelonType(existant, typeFinal, dto);
 
-    const [garant] = await mettreAJourAvecAudit(
+    const garant = await modifierFiche(
       this.db,
       garants,
       id,
       modifications,
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Garant introuvable"
     );
-    if (!garant) {
-      throw new NotFoundException("Garant introuvable");
-    }
     return this.versDto(garant as GarantRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreGarantAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreGarantAvecAppartenance(id));
 
-    const [garant] = await mettreAJourAvecAudit(
+    const garant = await archiverFiche(
       this.db,
       garants,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Garant introuvable"
     );
-    if (!garant) {
-      throw new NotFoundException("Garant introuvable");
-    }
     return this.versDto(garant as GarantRow);
   }
 

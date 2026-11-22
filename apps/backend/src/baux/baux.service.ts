@@ -30,6 +30,7 @@ import {
 } from "db";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { dateDuJourParis } from "../common/date-paris";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateBailDto } from "./dto/create-bail.dto";
@@ -191,6 +192,12 @@ export class BauxService {
       if (!bailExistant) {
         throw new NotFoundException("Bail introuvable");
       }
+
+      // Bail archivé : plus aucune modification (petites suites, décision 4
+      // du 2026-11-22). Lu sous le verrou FOR UPDATE ci-dessus : un
+      // archivage concurrent attend la fin de cette transaction, ou
+      // l'inverse.
+      exigerNonArchiveePourModifier(bailExistant);
 
       // Vrai préavis (décision 12 du 2026-11-15) : la date de fin d'un bail
       // en préavis est celle du préavis ; elle ne se modifie que par
@@ -716,22 +723,25 @@ export class BauxService {
     if (!bail) {
       throw new NotFoundException("Bail introuvable");
     }
+    // Déjà archivé : 409 « Déjà archivé le … » avant le refus de statut
+    // (petites suites, décision 4 du 2026-11-22).
+    exigerNonArchiveePourArchiver(bail);
     if (bail.statut !== "brouillon" && bail.statut !== "resilie") {
       throw new ConflictException(
         `Un bail actif ou en préavis doit d'abord être résilié avant d'être archivé (statut actuel : ${bail.statut}).`
       );
     }
 
-    const [bailArchive] = await mettreAJourAvecAudit(
+    // Condition `archived_at IS NULL` dans l'UPDATE : deux archivages
+    // simultanés ne réussissent pas tous les deux.
+    const bailArchive = await archiverFiche(
       this.db,
       baux,
       id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "Bail introuvable"
     );
-    if (!bailArchive) {
-      throw new NotFoundException("Bail introuvable");
-    }
     return this.versDto(bailArchive as BailRow);
   }
 

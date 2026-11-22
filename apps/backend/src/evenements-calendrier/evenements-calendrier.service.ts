@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, bien, candidat, contact, evenementCalendrier, mettreAJourAvecAudit, sinistre, type Database } from "db";
+import { appartements, bien, candidat, contact, evenementCalendrier, sinistre, type Database } from "db";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateEvenementCalendrierDto, EvenementType } from "./dto/create-evenement-calendrier.dto";
 import type { UpdateEvenementCalendrierDto } from "./dto/update-evenement-calendrier.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 export interface FindAllEvenementsFiltres {
   periodeDebut?: string;
@@ -104,14 +105,14 @@ export class EvenementsCalendrierService {
   async update(id: string, dto: UpdateEvenementCalendrierDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreEvenementAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreEvenementAvecAppartenance(id));
     // Contrôle d'appartenance sur les 5 rattachements optionnels, quand
     // fournis (Priorité E6c, Catégorie E, 2026-09-19) — même raison que
     // create() ci-dessus.
     await this.verifierAppartenancesEvenement(dto);
 
     const { dateDebut, dateFin, ...reste } = dto;
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await modifierFiche(
       this.db,
       evenementCalendrier,
       id,
@@ -120,29 +121,25 @@ export class EvenementsCalendrierService {
         ...(dateDebut !== undefined && { dateDebut: new Date(dateDebut) }),
         ...(dateFin !== undefined && { dateFin: new Date(dateFin) })
       },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Événement introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Événement introuvable");
-    }
     return this.versDto(ligne as EvenementRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreEvenementAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreEvenementAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await archiverFiche(
       this.db,
       evenementCalendrier,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Événement introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Événement introuvable");
-    }
     return this.versDto(ligne as EvenementRow);
   }
 

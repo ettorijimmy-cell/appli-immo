@@ -1,6 +1,6 @@
 import { calculerMontantRecuTotal, centimesVersMontant, libelleStatutBail, montantEnCentimes } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
@@ -590,13 +590,17 @@ function BailActuelDetail({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Détail du bail</h3>
-        <button
-          type="button"
-          onClick={() => setShowEditForm((value) => !value)}
-          className="text-sm text-slate-500 hover:text-slate-700"
-        >
-          {showEditForm ? "Annuler" : "Modifier"}
-        </button>
+        {bail.statut === "archive" ? (
+          <MentionFicheArchivee />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowEditForm((value) => !value)}
+            className="text-sm text-slate-500 hover:text-slate-700"
+          >
+            {showEditForm ? "Annuler" : "Modifier"}
+          </button>
+        )}
       </div>
 
       {showEditForm ? (

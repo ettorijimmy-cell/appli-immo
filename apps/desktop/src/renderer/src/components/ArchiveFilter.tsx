@@ -26,3 +26,13 @@ export function ArchiveBadge(): React.JSX.Element {
 }
 
 export const ARCHIVED_ROW_CLASSNAME = "opacity-60";
+
+// Fiche archivée ouverte (petites suites, décision 4 du 2026-11-22) : plus
+// de bouton « Modifier » ni « Archiver » ; cette mention les remplace. Le
+// backend refuse de toute façon (409), et son message s'affiche si une
+// action passe quand même (messageErreurApi).
+export const TEXTE_FICHE_ARCHIVEE = "Fiche archivée : elle ne peut plus être modifiée.";
+
+export function MentionFicheArchivee(): React.JSX.Element {
+  return <span className="text-sm text-slate-500">{TEXTE_FICHE_ARCHIVEE}</span>;
+}

@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { calculerMontantRecuTotal, montantEnCentimes } from "core";
-import { appartements, baux, bien, mettreAJourAvecAudit, paiements, remboursements, versements, type Database } from "db";
+import { appartements, baux, bien, paiements, remboursements, versements, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { AuditService } from "../audit/audit.service";
+import { archiverFiche } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentStorageService } from "../storage/document-storage.service";
@@ -215,16 +216,19 @@ export class RemboursementsService {
     // telechargerPieceJustificative().
     await this.verifierAppartenanceRemboursement(id, "Remboursement introuvable");
 
-    const [remboursement] = await mettreAJourAvecAudit(
+    // Déjà archivé : 409 « Déjà archivé le … », sans écriture (petites
+    // suites, décision 4 du 2026-11-22). verifierAppartenanceRemboursement
+    // ne renvoie pas la ligne : le refus vient de la condition
+    // `archived_at IS NULL` de l'UPDATE (archiverFiche), qui couvre aussi
+    // deux archivages simultanés.
+    const remboursement = await archiverFiche(
       this.db,
       remboursements,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Remboursement introuvable"
     );
-    if (!remboursement) {
-      throw new NotFoundException("Remboursement introuvable");
-    }
     return this.versDto(remboursement as RemboursementRow);
   }
 

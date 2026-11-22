@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { mettreAJourAvecAudit, regleCategorisation, type Database } from "db";
+import { regleCategorisation, type Database } from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateRegleCategorisationDto } from "./dto/create-regle-categorisation.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 
 type RegleCategorisationRow = typeof regleCategorisation.$inferSelect;
 
@@ -75,18 +76,16 @@ export class ReglesCategorisationService {
     // pas de helper préexistant à réutiliser contrairement aux autres
     // services de cette priorité — extrait ici directement, même principe
     // que Catégorie A (colonne organisationId directe).
-    await this.resoudreRegleAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreRegleAvecAppartenance(id));
 
-    const [regle] = await mettreAJourAvecAudit(
+    const regle = await archiverFiche(
       this.db,
       regleCategorisation,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Règle de catégorisation introuvable"
     );
-    if (!regle) {
-      throw new NotFoundException("Règle de catégorisation introuvable");
-    }
     return this.versDto(regle as RegleCategorisationRow);
   }
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { contact, mettreAJourAvecAudit, type Database } from "db";
+import { contact, type Database } from "db";
 import { eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { CandidatsService } from "../candidats/candidats.service";
@@ -9,6 +9,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { UsersService } from "../users/users.service";
 import type { CreateContactDto } from "./dto/create-contact.dto";
 import type { UpdateContactDto } from "./dto/update-contact.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type ContactRow = typeof contact.$inferSelect;
 
@@ -90,36 +91,32 @@ export class ContactsService {
   async update(id: string, dto: UpdateContactDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreContactAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreContactAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await modifierFiche(
       this.db,
       contact,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Contact introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Contact introuvable");
-    }
     return this.versDto(ligne as ContactRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreContactAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreContactAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await archiverFiche(
       this.db,
       contact,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Contact introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Contact introuvable");
-    }
     return this.versDto(ligne as ContactRow);
   }
 

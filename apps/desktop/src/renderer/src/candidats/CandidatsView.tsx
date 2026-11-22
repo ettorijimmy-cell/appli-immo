@@ -1,7 +1,7 @@
 import { calculerTauxEffort, centimesVersMontant } from "core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { ChecklistCategoriesEntite } from "../documents/ChecklistCategoriesEntite";
 import { estArchive, lignesVisibles } from "../lib/archives";
@@ -357,9 +357,13 @@ export function CandidatsView(): React.JSX.Element {
             />
           </label>
           <div className="flex items-center gap-2">
-            <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
-              Enregistrer
-            </button>
+            {candidatOuvert && estArchive(candidatOuvert) ? (
+              <MentionFicheArchivee />
+            ) : (
+              <button type="submit" className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white">
+                Enregistrer
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -391,7 +395,8 @@ export function CandidatsView(): React.JSX.Element {
           />
         )}
 
-        {vue.niveau === "edition" && formulaire.statut !== "converti" && (
+        {/* Candidat archivé : pas de conversion proposée (le serveur la refuse, 409). */}
+        {vue.niveau === "edition" && formulaire.statut !== "converti" && !(candidatOuvert && estArchive(candidatOuvert)) && (
           <div className="max-w-md space-y-2 rounded-md border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700">Convertir en locataire</h2>
             <p className="text-xs text-slate-500">

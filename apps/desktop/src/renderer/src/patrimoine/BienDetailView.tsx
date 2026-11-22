@@ -17,7 +17,7 @@ import {
   type BienType,
   type BienTypeHabitat
 } from "./api";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
 import { ApiError } from "../lib/authenticated-fetch";
@@ -92,13 +92,17 @@ export function BienDetailView({
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">{libelleBien(bien)}</h1>
-          <button
-            type="button"
-            onClick={() => setIsEditing((value) => !value)}
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
-            {isEditing ? "Annuler" : "Modifier"}
-          </button>
+          {bien.statut === "archive" ? (
+            <MentionFicheArchivee />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditing((value) => !value)}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              {isEditing ? "Annuler" : "Modifier"}
+            </button>
+          )}
         </div>
 
         {isEditing ? (

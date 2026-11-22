@@ -1,12 +1,13 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { creerRattachementProprietaire } from "core";
-import { mettreAJourAvecAudit, organisationSci, scis, type Database } from "db";
+import { organisationSci, scis, type Database } from "db";
 import { and, eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateSciDto } from "./dto/create-sci.dto";
 import type { UpdateSciDto } from "./dto/update-sci.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type SciRow = typeof scis.$inferSelect;
 
@@ -96,36 +97,32 @@ export class ScisService {
   async update(id: string, dto: UpdateSciDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreSciAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreSciAvecAppartenance(id));
 
-    const [sci] = await mettreAJourAvecAudit(
+    const sci = await modifierFiche(
       this.db,
       scis,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "SCI introuvable"
     );
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
-    }
     return this.versDto(sci as SciRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreSciAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreSciAvecAppartenance(id));
 
-    const [sci] = await mettreAJourAvecAudit(
+    const sci = await archiverFiche(
       this.db,
       scis,
       id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "SCI introuvable"
     );
-    if (!sci) {
-      throw new NotFoundException("SCI introuvable");
-    }
     return this.versDto(sci as SciRow);
   }
 

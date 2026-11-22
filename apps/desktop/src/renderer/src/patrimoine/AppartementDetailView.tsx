@@ -18,10 +18,11 @@ import {
   type Equipement,
   type EquipementType
 } from "./api";
-import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle } from "../components/ArchiveFilter";
+import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { useBreadcrumbSegments } from "../layout/breadcrumb-context";
+import { estArchive } from "../lib/archives";
 import { ApiError } from "../lib/authenticated-fetch";
 import { texteArchivageEquipement } from "../lib/textes-confirmation";
 import { valeurNumeriqueOuNull, valeurOuNull } from "../lib/valeur-ou-null";
@@ -103,15 +104,18 @@ export function AppartementDetailView({
 
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Appartement {appartement.numero}</h1>
-        {tab === "infos" && (
-          <button
-            type="button"
-            onClick={() => setIsEditing((value) => !value)}
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
-            {isEditing ? "Annuler" : "Modifier"}
-          </button>
-        )}
+        {tab === "infos" &&
+          (estArchive(appartement) ? (
+            <MentionFicheArchivee />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditing((value) => !value)}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              {isEditing ? "Annuler" : "Modifier"}
+            </button>
+          ))}
       </div>
 
       <div className="flex gap-4 border-b border-slate-200">
@@ -351,13 +355,17 @@ export function AppartementDetailView({
                         <td className="py-2">{equipement.dateDernierEntretien ?? "—"}</td>
                         <td className="py-2">{equipement.intervalleEntretienMois ?? "—"}</td>
                         <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setEditingEquipementId(equipement.id)}
-                            className="mr-4 text-sm text-slate-500 hover:text-slate-700"
-                          >
-                            Modifier
-                          </button>
+                          {equipement.archivedAt === null ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditingEquipementId(equipement.id)}
+                              className="mr-4 text-sm text-slate-500 hover:text-slate-700"
+                            >
+                              Modifier
+                            </button>
+                          ) : (
+                            <MentionFicheArchivee />
+                          )}
                           {equipement.archivedAt === null && (
                             <button
                               type="button"
@@ -932,8 +940,8 @@ function EditEquipementRow({
         ...(intervalleEntretienMois && { intervalleEntretienMois: Number(intervalleEntretienMois) })
       });
       onSaved();
-    } catch {
-      setError("Impossible d'enregistrer les modifications");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Impossible d'enregistrer les modifications");
     } finally {
       setIsSubmitting(false);
     }

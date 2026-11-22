@@ -11,7 +11,7 @@ import {
   garants,
   immeublesLegacy,
   locataires,
-  mettreAJourAvecAudit,
+  mettreAJourFicheNonArchiveeAvecAudit,
   scis,
   sinistre,
   type Database
@@ -38,6 +38,9 @@ import type { RemplacerDocumentDto } from "./dto/remplacer-document.dto";
 import type { UpdateDocumentDto } from "./dto/update-document.dto";
 import { construireCheminStockage } from "./storage/construire-chemin-stockage";
 import { DocumentStorageService } from "../storage/document-storage.service";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
+
+const MESSAGE_VERSION_NON_COURANTE = "Seule la version courante (non archivée) d'un document peut être remplacée.";
 
 // Catégories jamais créées/modifiées/remplacées/archivées par les routes
 // génériques de ce service (chantier Signatures puis chantier PDF étape 4,
@@ -213,7 +216,7 @@ export class DocumentsService {
     // upload sans lien de version reste possible via upload(), jamais
     // bloqué par cette garde.
     if (ancien.archivedAt !== null) {
-      throw new ConflictException("Seule la version courante (non archivée) d'un document peut être remplacée.");
+      throw new ConflictException(MESSAGE_VERSION_NON_COURANTE);
     }
     this.verifierPieceValideSelonEntiteType(ancien.entiteType, dto.etatDesLieuxPieceType, dto.etatDesLieuxPieceNumero);
 
@@ -223,6 +226,28 @@ export class DocumentsService {
 
     const utilisateurId = this.requestContext.getUtilisateurId();
     return this.db.transaction(async (tx) => {
+      // Ancienne version archivée EN PREMIER, avec la condition
+      // `archived_at IS NULL` dans l'UPDATE lui-même (compléments du
+      // 2026-11-22 soir) : le contrôle `archivedAt !== null` ci-dessus lit
+      // la ligne avant l'écriture du fichier sur le stockage ; un archivage
+      // manuel ou un second remplacement de la même version passé entre les
+      // deux aboutissait sinon à deux versions courantes chaînées à la même
+      // ancienne (ou à une version courante chaînée à une version archivée à
+      // la main), et réécrivait l'archived_at de l'ancienne. Aucune ligne
+      // touchée → même 409, la transaction est annulée (aucune nouvelle
+      // version) ; le fichier déjà écrit sur le stockage reste orphelin,
+      // comme pour tout échec après cette écriture.
+      const [archive] = await mettreAJourFicheNonArchiveeAvecAudit(
+        tx,
+        documents,
+        documentPrecedentId,
+        { archivedAt: new Date(), statut: "archive" },
+        utilisateurId
+      );
+      if (!archive) {
+        throw new ConflictException(MESSAGE_VERSION_NON_COURANTE);
+      }
+
       const [nouveau] = await tx
         .insert(documents)
         .values({
@@ -243,17 +268,6 @@ export class DocumentsService {
         .returning();
       if (!nouveau) {
         throw new Error("Échec de l'enregistrement du nouveau document");
-      }
-
-      const [archive] = await mettreAJourAvecAudit(
-        tx,
-        documents,
-        documentPrecedentId,
-        { archivedAt: new Date(), statut: "archive" },
-        utilisateurId
-      );
-      if (!archive) {
-        throw new Error("Échec de l'archivage de l'ancienne version");
       }
 
       return this.versDto(nouveau);
@@ -354,6 +368,7 @@ export class DocumentsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudreDocumentAvecAppartenance(id);
+    exigerNonArchiveePourModifier(existant);
     // Chantier Signatures (2026-10-25) puis chantier PDF étape 4
     // (2026-10-27) : un document de catégorie réservée (signature, docx
     // figé, PDF) est écrit par son propre service métier dans sa propre
@@ -375,16 +390,14 @@ export class DocumentsService {
       );
     }
 
-    const [document] = await mettreAJourAvecAudit(
+    const document = await modifierFiche(
       this.db,
       documents,
       id,
       { categorie: dto.categorie, dateExpiration: dto.dateExpiration },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Document introuvable"
     );
-    if (!document) {
-      throw new NotFoundException("Document introuvable");
-    }
     // mettreAJourAvecAudit est générique sur T extends TableAvecAudit : son
     // type de retour inféré élargit les colonnes propres à `documents`
     // (au-delà d'id/version/updatedAt/updatedBy) — la ligne existe bel et
@@ -397,6 +410,7 @@ export class DocumentsService {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
     const existant = await this.resoudreDocumentAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(existant);
     // Même règle que update() ci-dessus : un document de catégorie
     // réservée (signature, docx figé, PDF) n'est jamais archivable par la
     // route générique, inconditionnellement.
@@ -415,16 +429,14 @@ export class DocumentsService {
       await verifierArchivagePhotoAutorise(this.db, existant.entiteId, existant.etatDesLieuxPhase);
     }
 
-    const [document] = await mettreAJourAvecAudit(
+    const document = await archiverFiche(
       this.db,
       documents,
       id,
-      { archivedAt: new Date(), statut: "archive" },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "Document introuvable"
     );
-    if (!document) {
-      throw new NotFoundException("Document introuvable");
-    }
     return this.versDto(document as DocumentRow);
   }
 

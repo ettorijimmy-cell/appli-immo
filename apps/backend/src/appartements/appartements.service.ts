@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { estTypeResidentiel, type TypeBien } from "core";
-import { appartements, baux, bien, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, baux, bien, type Database } from "db";
 import { and, eq, inArray } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import type { CreateAppartementDto } from "./dto/create-appartement.dto";
 import type { UpdateAppartementDto } from "./dto/update-appartement.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type AppartementRow = typeof appartements.$inferSelect;
 
@@ -125,7 +126,7 @@ export class AppartementsService {
   async update(id: string, dto: UpdateAppartementDto) {
     // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3b,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreAppartementAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreAppartementAvecAppartenance(id));
 
     if (dto.statut === "loue") {
       await this.verifierBailActifOuPreavisExiste(id);
@@ -192,23 +193,21 @@ export class AppartementsService {
       );
     }
 
-    const [appartement] = await mettreAJourAvecAudit(
+    const appartement = await modifierFiche(
       this.db,
       appartements,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Appartement introuvable"
     );
-    if (!appartement) {
-      throw new NotFoundException("Appartement introuvable");
-    }
     return this.versDto(appartement as AppartementRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3b, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreAppartementAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreAppartementAvecAppartenance(id));
 
     // Jamais un appartement occupé (chantier archivage, décision 4 du
     // 2026-11-12) : archivé avec un bail actif ou en préavis, il sortirait
@@ -226,16 +225,14 @@ export class AppartementsService {
       );
     }
 
-    const [appartement] = await mettreAJourAvecAudit(
+    const appartement = await archiverFiche(
       this.db,
       appartements,
       id,
-      { statut: "archive", archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      { statut: "archive" },
+      this.requestContext.getUtilisateurId(),
+      "Appartement introuvable"
     );
-    if (!appartement) {
-      throw new NotFoundException("Appartement introuvable");
-    }
     return this.versDto(appartement as AppartementRow);
   }
 

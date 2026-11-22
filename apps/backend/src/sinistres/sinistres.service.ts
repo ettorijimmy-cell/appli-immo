@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, bien, contact, mettreAJourAvecAudit, sinistre, type Database } from "db";
+import { appartements, bien, contact, sinistre, type Database } from "db";
 import { and, eq } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { UsersService } from "../users/users.service";
 import type { CreateSinistreDto } from "./dto/create-sinistre.dto";
 import type { UpdateSinistreDto } from "./dto/update-sinistre.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type SinistreRow = typeof sinistre.$inferSelect;
 
@@ -92,6 +93,7 @@ export class SinistresService {
     // Contrôle d'appartenance AVANT toute lecture/écriture (Priorité 3a,
     // Catégorie C, chantier scoping multi-organisation, 2026-09-19).
     const actuel = await this.resoudreSinistreAvecAppartenance(id);
+    exigerNonArchiveePourModifier(actuel);
     // Contrôle d'appartenance sur les 3 rattachements optionnels, quand
     // fournis (Priorité E6d, Catégorie E, 2026-09-19) — même raison que
     // create() ci-dessus.
@@ -99,34 +101,30 @@ export class SinistresService {
 
     const statutChange = dto.statut !== undefined && dto.statut !== actuel.statut;
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await modifierFiche(
       this.db,
       sinistre,
       id,
       { ...dto, ...(statutChange && { dateChangementStatut: new Date() }) },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Sinistre introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Sinistre introuvable");
-    }
     return this.versDto(ligne as SinistreRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreSinistreAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreSinistreAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await archiverFiche(
       this.db,
       sinistre,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Sinistre introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Sinistre introuvable");
-    }
     return this.versDto(ligne as SinistreRow);
   }
 

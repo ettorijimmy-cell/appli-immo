@@ -9,6 +9,7 @@ import { DocumentStorageService } from "../storage/document-storage.service";
 import { UsersService } from "../users/users.service";
 import type { ClassificationTypeChoisie, ComposerMessageDto } from "./dto/composer-message.dto";
 import { SmtpEnvoiService } from "./smtp-envoi.service";
+import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 
 export interface FindAllMessagesFiltres {
   classificationType?: "contact" | "locataire" | "candidat" | "garant" | "non_classe";
@@ -144,18 +145,16 @@ export class MessagesCommunicationService {
   async archiver(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreMessageAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreMessageAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await archiverFiche(
       this.db,
       messageCommunication,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Message introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Message introuvable");
-    }
     return this.versDto(ligne as MessageCommunicationRow);
   }
 

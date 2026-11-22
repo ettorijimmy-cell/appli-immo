@@ -7,6 +7,7 @@ import { LocatairesService } from "../locataires/locataires.service";
 import { UsersService } from "../users/users.service";
 import type { CreateCandidatDto } from "./dto/create-candidat.dto";
 import type { UpdateCandidatDto } from "./dto/update-candidat.dto";
+import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 
 type CandidatRow = typeof candidat.$inferSelect;
 
@@ -88,41 +89,37 @@ export class CandidatsService {
   async update(id: string, dto: UpdateCandidatDto) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreCandidatAvecAppartenance(id);
+    exigerNonArchiveePourModifier(await this.resoudreCandidatAvecAppartenance(id));
     // Contrôle d'appartenance sur dto.appartementId, quand fourni (Priorité
     // E6a, Catégorie E, 2026-09-19) — même raison que create() ci-dessus.
     if (dto.appartementId !== undefined) {
       await this.verifierAppartenanceAppartement(dto.appartementId);
     }
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await modifierFiche(
       this.db,
       candidat,
       id,
       { ...dto },
-      this.requestContext.getUtilisateurId()
+      this.requestContext.getUtilisateurId(),
+      "Candidat introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Candidat introuvable");
-    }
     return this.versDto(ligne as CandidatRow);
   }
 
   async archive(id: string) {
     // Contrôle d'appartenance AVANT toute écriture (Priorité 3a, Catégorie C,
     // chantier scoping multi-organisation, 2026-09-19).
-    await this.resoudreCandidatAvecAppartenance(id);
+    exigerNonArchiveePourArchiver(await this.resoudreCandidatAvecAppartenance(id));
 
-    const [ligne] = await mettreAJourAvecAudit(
+    const ligne = await archiverFiche(
       this.db,
       candidat,
       id,
-      { archivedAt: new Date() },
-      this.requestContext.getUtilisateurId()
+      {},
+      this.requestContext.getUtilisateurId(),
+      "Candidat introuvable"
     );
-    if (!ligne) {
-      throw new NotFoundException("Candidat introuvable");
-    }
     return this.versDto(ligne as CandidatRow);
   }
 
@@ -158,6 +155,14 @@ export class CandidatsService {
     const candidatActuel = await this.resoudreCandidatAvecAppartenance(candidatId);
     if (candidatActuel.statut === "converti") {
       throw new ConflictException("Ce candidat a déjà été converti en locataire.");
+    }
+    // Candidat archivé : conversion refusée, sans aucune écriture (ni
+    // locataire créé, ni documents réattribués), après le 404 ci-dessus
+    // (compléments du 2026-11-22 soir, fiches archivées). Pas de condition
+    // dans l'UPDATE final : le locataire est déjà créé à ce stade, hors
+    // transaction (voir plus haut) — course préexistante, signalée.
+    if (candidatActuel.archivedAt) {
+      throw new ConflictException("Ce candidat est archivé : il ne peut plus être converti en locataire.");
     }
     if (!candidatActuel.prenom) {
       throw new BadRequestException(
