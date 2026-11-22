@@ -44,6 +44,7 @@ interface FixtureOrganisation {
   userId: string;
   etatDesLieuxId: string;
   bailId: string;
+  appartementId: string;
 }
 
 // Sous-commit 5c (chantier scoping multi-organisation, 2026-09-18) :
@@ -143,7 +144,7 @@ describe("EtatsDesLieuxService — contrôle d'appartenance à l'organisation (i
     const bail = await bauxService.create({ appartementId: appartement.id, typeBail: "vide", dateDebut: "2026-01-01" });
     const etatDesLieux = await etatsDesLieuxService.create({ bailId: bail.id });
 
-    return { organisationId: organisation.id, userId: user.id, etatDesLieuxId: etatDesLieux.id, bailId: bail.id };
+    return { organisationId: organisation.id, userId: user.id, etatDesLieuxId: etatDesLieux.id, bailId: bail.id, appartementId: appartement.id };
   }
 
   beforeEach(async () => {
@@ -410,5 +411,51 @@ describe("EtatsDesLieuxService — contrôle d'appartenance à l'organisation (i
         });
       });
     }
+  });
+
+  // Cloisonnement des créations (audit des petites suites, 2026-11-22) :
+  // create() ne vérifiait jamais l'appartenance du bail. Une autre
+  // organisation pouvait créer l'en-tête d'état des lieux d'un bail
+  // étranger (et bloquer ensuite son propriétaire), ou apprendre par le 409
+  // « existe déjà » qu'un bail et son état des lieux existent.
+  describe("create — appartenance du bail avant tout autre contrôle", () => {
+    async function nombreEtatsDesLieuxDuBail(bailId: string): Promise<number> {
+      const lignes = await db.select({ id: etatsDesLieux.id }).from(etatsDesLieux).where(eq(etatsDesLieux.bailId, bailId));
+      return lignes.length;
+    }
+
+    async function nouveauBailOrgA(): Promise<string> {
+      const bail = await contexteOrgA(() =>
+        bauxService.create({ appartementId: orgA.appartementId, typeBail: "vide", dateDebut: "2026-06-01" })
+      );
+      return bail.id;
+    }
+
+    it("réussit sur un bail de l'organisation appelante", async () => {
+      const bailId = await nouveauBailOrgA();
+      const etatDesLieux = await contexteOrgA(() => etatsDesLieuxService.create({ bailId }));
+      expect(etatDesLieux.bailId).toBe(bailId);
+    });
+
+    it("404 « Bail introuvable » sur le bail d'une autre organisation, aucun état des lieux écrit", async () => {
+      const bailId = await nouveauBailOrgA();
+      await expect(contexteOrgB(() => etatsDesLieuxService.create({ bailId }))).rejects.toThrow(
+        new NotFoundException("Bail introuvable")
+      );
+      expect(await nombreEtatsDesLieuxDuBail(bailId)).toBe(0);
+    });
+
+    it("404 « Bail introuvable » (jamais 409 « existe déjà ») sur un bail étranger qui a déjà un état des lieux", async () => {
+      await expect(contexteOrgB(() => etatsDesLieuxService.create({ bailId: orgA.bailId }))).rejects.toThrow(
+        new NotFoundException("Bail introuvable")
+      );
+      expect(await nombreEtatsDesLieuxDuBail(orgA.bailId)).toBe(1);
+    });
+
+    it("404 « Bail introuvable » identique sur un bail inexistant", async () => {
+      await expect(contexteOrgA(() => etatsDesLieuxService.create({ bailId: randomUUID() }))).rejects.toThrow(
+        new NotFoundException("Bail introuvable")
+      );
+    });
   });
 });

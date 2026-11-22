@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import path from "path";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { bailLocataires, createDbClient, DEFAULT_DEV_DATABASE_URL, locataires, organisations, paiements, utilisateurs, type Database } from "db";
@@ -249,5 +249,61 @@ describe("QuittanceDocumentDocxService — contrôle d'appartenance à l'organis
       quittanceDocumentDocxService.genererDocumentQuittanceDocx(orgA.paiementId)
     );
     expect(buffer.subarray(0, 2).toString("ascii")).toBe("PK");
+  });
+
+  // Contrôle d'appartenance AVANT le refus « pas un loyer réglé » (audit
+  // des petites suites, 2026-11-22) : le 400 sortait avant le 404, une
+  // autre organisation apprenait que le paiement existait, et son type ou
+  // son statut.
+  describe("paiement qui n'est pas un loyer réglé", () => {
+    // Loyer : l'échéance de janvier créée à l'activation, jamais payée.
+    // Charges : une échéance insérée ici (la fixture n'en a pas, et son
+    // bail n'a pas de dépôt de garantie).
+    async function paiementDeOrgA(type: "loyer" | "charges"): Promise<string> {
+      const [paiementCible] = await db
+        .select({ id: paiements.id, bailId: paiements.bailId })
+        .from(paiements)
+        .where(eq(paiements.id, orgA.paiementId));
+      if (!paiementCible) {
+        throw new Error("Paiement de la fixture introuvable");
+      }
+      if (type === "charges") {
+        const [charges] = await db
+          .insert(paiements)
+          .values({ bailId: paiementCible.bailId, type: "charges", montant: "50.00", dateEcheance: "2026-02-15" })
+          .returning({ id: paiements.id });
+        return charges!.id;
+      }
+      const [ligne] = await db
+        .select({ id: paiements.id })
+        .from(paiements)
+        .where(and(eq(paiements.bailId, paiementCible.bailId), eq(paiements.type, "loyer"), eq(paiements.statut, "impaye")))
+        .limit(1);
+      if (!ligne) {
+        throw new Error("Loyer impayé attendu introuvable dans la fixture");
+      }
+      return ligne.id;
+    }
+
+    it("404 « Paiement introuvable » (jamais 400) sur un loyer NON payé d'une autre organisation", async () => {
+      const paiementId = await paiementDeOrgA("loyer");
+      await expect(
+        contexteOrgB(() => quittanceDocumentDocxService.genererDocumentQuittanceDocx(paiementId))
+      ).rejects.toThrow(new NotFoundException("Paiement introuvable"));
+    });
+
+    it("404 « Paiement introuvable » (jamais 400) sur un paiement qui n'est pas un loyer, d'une autre organisation", async () => {
+      const paiementId = await paiementDeOrgA("charges");
+      await expect(
+        contexteOrgB(() => quittanceDocumentDocxService.genererDocumentQuittanceDocx(paiementId))
+      ).rejects.toThrow(new NotFoundException("Paiement introuvable"));
+    });
+
+    it("le refus métier (400) reste inchangé pour l'organisation propriétaire", async () => {
+      const paiementId = await paiementDeOrgA("loyer");
+      await expect(
+        contexteOrgA(() => quittanceDocumentDocxService.genererDocumentQuittanceDocx(paiementId))
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

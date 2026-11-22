@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { appartements, bailLocataires, baux, bien, mettreAJourAvecAudit, type Database } from "db";
+import { appartements, bailLocataires, baux, bien, locataires, mettreAJourAvecAudit, type Database } from "db";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
@@ -16,7 +16,39 @@ export class BailLocatairesService {
     private readonly requestContext: RequestContextService
   ) {}
 
+  // Contrôle d'appartenance du bail ET du locataire AVANT l'insertion
+  // (audit des petites suites, 2026-11-22) : create() insérait le
+  // rattachement sans rien vérifier. Un locataire d'une autre organisation
+  // rattaché à son propre bail remontait ensuite par PowerSync (le stream
+  // locataires passe par bail_locataires) ; un bail étranger recevait un
+  // locataire. Même jointure que GarantsService.create (baux ->
+  // appartements -> bien) ; colonne directe pour le locataire, comme
+  // LocatairesService. Même 404 pour « inexistant » et « autre
+  // organisation ». Hors contexte HTTP (organisationId absent), seule
+  // l'existence est vérifiée, comme ailleurs.
   async create(dto: CreateBailLocataireDto) {
+    const organisationId = this.requestContext.getOrganisationId();
+    const [bailDeLOrganisation] = await this.db
+      .select({ id: baux.id })
+      .from(baux)
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(baux.id, dto.bailId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+      .limit(1);
+    if (!bailDeLOrganisation) {
+      throw new NotFoundException("Bail introuvable");
+    }
+    const [locataireDeLOrganisation] = await this.db
+      .select({ id: locataires.id })
+      .from(locataires)
+      .where(
+        and(eq(locataires.id, dto.locataireId), ...(organisationId ? [eq(locataires.organisationId, organisationId)] : []))
+      )
+      .limit(1);
+    if (!locataireDeLOrganisation) {
+      throw new NotFoundException("Locataire introuvable");
+    }
+
     const [lien] = await this.db
       .insert(bailLocataires)
       .values({

@@ -5,7 +5,7 @@ import path from "path";
 import { NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
+import { alertes, createDbClient, DEFAULT_DEV_DATABASE_URL, organisations, utilisateurs, type Database } from "db";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppartementsModule } from "../appartements/appartements.module";
 import { AppartementsService } from "../appartements/appartements.service";
@@ -389,6 +389,27 @@ describe("TableauDeBordService — scoping par organisation, 7 méthodes (intég
     // organisation observées ci-dessus.
     expect(cartesA.impayes.montantRestant).not.toBe(cartesB.impayes.montantRestant);
     expect(cartesA.documentsExpires).not.toBe(cartesB.documentsExpires);
+  });
+
+  // Audit des petites suites (2026-11-22) : alertesActives comptait les
+  // alertes actives de TOUTES les organisations (commentaire antérieur au
+  // cloisonnement des alertes du 2026-10-03). Alertes insérées
+  // directement (le job ne crée rien pour ces fixtures) : une active pour
+  // A, deux actives pour B, plus une alerte traitée pour A qui ne doit
+  // jamais être comptée.
+  it("getCartes scope alertesActives par organisation — 1 pour A, 2 pour B, jamais le total de la base", async () => {
+    await db.insert(alertes).values([
+      { type: "bail_fin_proche", entiteId: orgA.bail1Id, message: "A actif", dateReference: "2026-12-31" },
+      { type: "bail_fin_proche", entiteId: orgA.bail3Id, message: "A traitée", dateReference: "2026-12-31", statut: "traitee" },
+      { type: "bail_fin_proche", entiteId: orgB.bail1Id, message: "B actif 1", dateReference: "2026-12-31" },
+      { type: "bail_fin_proche", entiteId: orgB.bail3Id, message: "B actif 2", dateReference: "2026-12-31" }
+    ]);
+
+    const cartesA = await contexteOrgA(() => tableauDeBordService.getCartes());
+    const cartesB = await contexteOrgB(() => tableauDeBordService.getCartes());
+
+    expect(cartesA.alertesActives).toBe(1);
+    expect(cartesB.alertesActives).toBe(2);
   });
 
   it("getRevenusLocatifs scope par organisation — totalLoyerNet et totalProvisions diffèrent réellement entre A et B", async () => {

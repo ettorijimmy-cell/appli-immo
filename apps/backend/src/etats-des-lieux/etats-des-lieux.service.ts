@@ -231,6 +231,27 @@ export class EtatsDesLieuxService {
   }
 
   async create(dto: CreateEtatDesLieuxDto) {
+    // Contrôle d'appartenance du bail AVANT tout autre contrôle (audit des
+    // petites suites, 2026-11-22) : create() ne le vérifiait jamais. Une
+    // autre organisation pouvait créer l'en-tête d'état des lieux d'un bail
+    // étranger (bloquant ensuite son propriétaire, index unique), ou
+    // apprendre par le 409 « existe déjà » ci-dessous que le bail et son
+    // état des lieux existent. Même jointure que GarantsService.create
+    // (baux -> appartements -> bien), même 404 pour « inexistant » et
+    // « autre organisation » ; hors contexte HTTP, seule l'existence est
+    // vérifiée, comme ailleurs.
+    const organisationId = this.requestContext.getOrganisationId();
+    const [bail] = await this.db
+      .select({ appartementId: baux.appartementId })
+      .from(baux)
+      .innerJoin(appartements, eq(appartements.id, baux.appartementId))
+      .innerJoin(bien, eq(bien.id, appartements.bienId))
+      .where(and(eq(baux.id, dto.bailId), ...(organisationId ? [eq(bien.organisationId, organisationId)] : [])))
+      .limit(1);
+    if (!bail) {
+      throw new NotFoundException("Bail introuvable");
+    }
+
     // Un brouillon abandonné (archivé) ne bloque pas la création : seul un
     // état des lieux actif compte (index unique partiel
     // etats_des_lieux_bail_id_actif_unique, qui tranche aussi une course).
@@ -241,15 +262,6 @@ export class EtatsDesLieuxService {
       .limit(1);
     if (existant) {
       throw new ConflictException("Un état des lieux existe déjà pour ce bail");
-    }
-
-    const [bail] = await this.db
-      .select({ appartementId: baux.appartementId })
-      .from(baux)
-      .where(eq(baux.id, dto.bailId))
-      .limit(1);
-    if (!bail) {
-      throw new NotFoundException("Bail introuvable");
     }
     const [appartement] = await this.db
       .select({

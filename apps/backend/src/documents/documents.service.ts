@@ -176,6 +176,23 @@ export class DocumentsService {
     if (!ancien) {
       throw new NotFoundException("Document à remplacer introuvable");
     }
+    // Contrôle d'appartenance AVANT toute écriture (Priorité 2, Catégorie C,
+    // chantier scoping multi-organisation, 2026-09-19) : réutilise
+    // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
+    // findById()/telecharger() — sans lui, un documentPrecedentId d'une
+    // autre organisation menait à créer une nouvelle version chaînée à un
+    // document étranger et à archiver ce dernier. Même message que
+    // "n'existe pas". Skip si organisationId absent (hors contexte HTTP).
+    // Placé AVANT les refus de catégorie réservée (audit des petites
+    // suites, 2026-11-22) : le 409 ci-dessous révélait sinon l'existence et
+    // la catégorie d'un document d'une autre organisation.
+    const organisationId = this.requestContext.getOrganisationId();
+    if (organisationId) {
+      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(ancien.entiteType, organisationId);
+      if (!idsValides.includes(ancien.entiteId)) {
+        throw new NotFoundException("Document à remplacer introuvable");
+      }
+    }
     // Même raisonnement que creerDepuisBuffer()/update() : ni remplacer un
     // document réservé existant (signature, docx figé, PDF), ni en créer un
     // nouveau par cette voie (categorie demandée) — ce chemin créerait aussi
@@ -188,20 +205,6 @@ export class DocumentsService {
       throw new BadRequestException(
         `La catégorie '${dto.categorie}' ne peut pas être affectée par cette route : elle est réservée à son service de génération.`
       );
-    }
-    // Contrôle d'appartenance AVANT toute écriture (Priorité 2, Catégorie C,
-    // chantier scoping multi-organisation, 2026-09-19) : réutilise
-    // resoudreEntiteIdsOrganisation (Sous-commit 4c), même principe que
-    // findById()/telecharger() — sans lui, un documentPrecedentId d'une
-    // autre organisation menait à créer une nouvelle version chaînée à un
-    // document étranger et à archiver ce dernier. Même message que
-    // "n'existe pas". Skip si organisationId absent (hors contexte HTTP).
-    const organisationId = this.requestContext.getOrganisationId();
-    if (organisationId) {
-      const idsValides = await this.organisationResolution.resoudreEntiteIdsOrganisation(ancien.entiteType, organisationId);
-      if (!idsValides.includes(ancien.entiteId)) {
-        throw new NotFoundException("Document à remplacer introuvable");
-      }
     }
     // Garde l'invariant "une seule version courante non chaînée par chaîne"
     // (docs/data-dictionary.md, section documents) : on ne remplace jamais

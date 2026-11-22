@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { createDbClient, DEFAULT_DEV_DATABASE_URL, documents, immeublesLegacy, organisations, utilisateurs, type Database } from "db";
@@ -749,6 +749,48 @@ describe("DocumentsService.findAll — scoping par organisation, 11 entiteType (
         )
       );
       expect(nouveau.documentPrecedentId).toBe(documentOrgA.id);
+    });
+
+    // Contrôle d'appartenance AVANT le refus de catégorie réservée (audit
+    // des petites suites, 2026-11-22) : le 409 « un document '<catégorie>'
+    // ne peut jamais être remplacé » sortait avant le 404, et révélait
+    // l'existence et la catégorie d'un document d'une autre organisation.
+    // Le document réservé est préparé en base directement (upload() refuse
+    // ces catégories, réservées à leur service de génération).
+    describe("document réservé", () => {
+      async function documentReserveOrgA(): Promise<string> {
+        const { documentOrgA } = await uploaderPourLesDeuxOrganisations("bien", orgA.bienId, orgB.bienId);
+        await db.update(documents).set({ categorie: "signature" }).where(eq(documents.id, documentOrgA.id));
+        return documentOrgA.id;
+      }
+
+      it("404 « Document à remplacer introuvable » (jamais 409) sur le document réservé d'une autre organisation, aucune écriture", async () => {
+        const documentId = await documentReserveOrgA();
+        const enregistrerSpy = vi.spyOn(documentStorageService, "enregistrer");
+
+        await expect(
+          requestContextService.executerAvecContexte(
+            { utilisateurId: orgB.userId, organisationId: orgB.organisationId },
+            () => documentsService.remplacerDocument(documentId, { categorie: "photo" }, fichierTest("x", "x.pdf"))
+          )
+        ).rejects.toThrow(new NotFoundException("Document à remplacer introuvable"));
+
+        expect(enregistrerSpy).not.toHaveBeenCalled();
+        const nouvellesVersions = await db.select().from(documents).where(eq(documents.documentPrecedentId, documentId));
+        expect(nouvellesVersions).toHaveLength(0);
+        const [inchange] = await db.select().from(documents).where(eq(documents.id, documentId));
+        expect(inchange?.archivedAt).toBeNull();
+      });
+
+      it("le refus de catégorie réservée (409) reste inchangé pour l'organisation propriétaire", async () => {
+        const documentId = await documentReserveOrgA();
+        await expect(
+          requestContextService.executerAvecContexte(
+            { utilisateurId: orgA.userId, organisationId: orgA.organisationId },
+            () => documentsService.remplacerDocument(documentId, { categorie: "photo" }, fichierTest("x", "x.pdf"))
+          )
+        ).rejects.toThrow(ConflictException);
+      });
     });
   });
 

@@ -26,6 +26,8 @@ interface FixtureOrganisation {
   organisationId: string;
   userId: string;
   lienId: string;
+  bailId: string;
+  locataireId: string;
 }
 
 // Priorité 3b (chantier scoping multi-organisation, Catégorie C, 2026-09-19) :
@@ -94,7 +96,7 @@ describe("BailLocatairesService.archive — contrôle d'appartenance à l'organi
     const locataire = await locatairesService.create(user.id, { nom: "Dupont", prenom: `Alice${suffixe}` });
     const lien = await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
 
-    return { organisationId: organisation.id, userId: user.id, lienId: lien.id };
+    return { organisationId: organisation.id, userId: user.id, lienId: lien.id, bailId: bail.id, locataireId: locataire.id };
   }
 
   beforeEach(async () => {
@@ -212,6 +214,55 @@ describe("BailLocatairesService.archive — contrôle d'appartenance à l'organi
       await expect(
         contexteOrgA(() => bailLocatairesService.update(randomUUID(), { dateEffetConge: "2027-03-15" }))
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // Cloisonnement des créations (audit des petites suites, 2026-11-22) :
+  // create() insérait le rattachement sans vérifier ni le bail ni le
+  // locataire. Un locataire étranger rattaché à son propre bail remontait
+  // ensuite par PowerSync (le stream locataires passe par bail_locataires).
+  describe("create — appartenance du bail et du locataire", () => {
+    async function nombreDeLiens(bailId: string): Promise<number> {
+      const lignes = await db.select({ id: bailLocataires.id }).from(bailLocataires).where(eq(bailLocataires.bailId, bailId));
+      return lignes.length;
+    }
+
+    it("réussit quand le bail et le locataire appartiennent à l'organisation appelante", async () => {
+      const locataire = await contexteOrgA(() => locatairesService.create(orgA.userId, { nom: "Martin", prenom: "Paul" }));
+      const lien = await contexteOrgA(() =>
+        bailLocatairesService.create({ bailId: orgA.bailId, locataireId: locataire.id, role: "colocataire" })
+      );
+      expect(lien.bailId).toBe(orgA.bailId);
+      expect(lien.locataireId).toBe(locataire.id);
+    });
+
+    it("404 « Bail introuvable » sur le bail d'une autre organisation, aucun rattachement écrit", async () => {
+      const avant = await nombreDeLiens(orgA.bailId);
+      const locataireB = await contexteOrgB(() => locatairesService.create(orgB.userId, { nom: "Martin", prenom: "Paul" }));
+      await expect(
+        contexteOrgB(() => bailLocatairesService.create({ bailId: orgA.bailId, locataireId: locataireB.id, role: "colocataire" }))
+      ).rejects.toThrow(new NotFoundException("Bail introuvable"));
+      expect(await nombreDeLiens(orgA.bailId)).toBe(avant);
+    });
+
+    it("404 « Bail introuvable » identique sur un bail inexistant", async () => {
+      await expect(
+        contexteOrgA(() => bailLocatairesService.create({ bailId: randomUUID(), locataireId: orgA.locataireId, role: "colocataire" }))
+      ).rejects.toThrow(new NotFoundException("Bail introuvable"));
+    });
+
+    it("404 « Locataire introuvable » sur le locataire d'une autre organisation, aucun rattachement écrit", async () => {
+      const avant = await nombreDeLiens(orgA.bailId);
+      await expect(
+        contexteOrgA(() => bailLocatairesService.create({ bailId: orgA.bailId, locataireId: orgB.locataireId, role: "colocataire" }))
+      ).rejects.toThrow(new NotFoundException("Locataire introuvable"));
+      expect(await nombreDeLiens(orgA.bailId)).toBe(avant);
+    });
+
+    it("404 « Locataire introuvable » identique sur un locataire inexistant", async () => {
+      await expect(
+        contexteOrgA(() => bailLocatairesService.create({ bailId: orgA.bailId, locataireId: randomUUID(), role: "colocataire" }))
+      ).rejects.toThrow(new NotFoundException("Locataire introuvable"));
     });
   });
 });

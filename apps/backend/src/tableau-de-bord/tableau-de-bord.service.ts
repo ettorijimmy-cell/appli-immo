@@ -19,7 +19,6 @@ import {
   type IntervalleOccupationBail
 } from "core";
 import {
-  alertes,
   appartements,
   bailLocataires,
   baux,
@@ -36,6 +35,7 @@ import {
   type Database
 } from "db";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { AlertesService } from "../alertes/alertes.service";
 import { RequestContextService } from "../common/request-context";
 import { DATABASE_CONNECTION } from "../database/database.module";
 import { DocumentsService } from "../documents/documents.service";
@@ -138,7 +138,8 @@ export class TableauDeBordService {
   constructor(
     @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly requestContext: RequestContextService,
-    private readonly documentsService: DocumentsService
+    private readonly documentsService: DocumentsService,
+    private readonly alertesService: AlertesService
   ) {}
 
   // appartements n'a pas de colonne organisationId directe : le scoping
@@ -179,9 +180,11 @@ export class TableauDeBordService {
   // polymorphe (11 entiteType, Commit 4c) : plutôt que dupliquer les 11
   // branches de résolution ici, on réutilise directement
   // DocumentsService.findAll({}) — déjà scopée par organisation, aucun
-  // filtre entiteType nécessaire pour un simple comptage. alertes reste
-  // volontairement non scopée : table explicitement hors périmètre de ce
-  // chantier (Étape 0, docs/backlog.md).
+  // filtre entiteType nécessaire pour un simple comptage. alertes (sans
+  // colonne organisationId, entiteId polymorphe) : même principe, via
+  // AlertesService.findAll({ statut: "active" }), déjà scopée par
+  // organisation depuis le 2026-10-03 — le compteur restait jusque-là non
+  // scopé (audit des petites suites, 2026-11-22).
   async getCartes() {
     const dateReference = dateDuJour();
     const organisationId = this.requestContext.getOrganisationId();
@@ -229,7 +232,7 @@ export class TableauDeBordService {
       (d) => calculerStatutDocument(d.dateExpiration, d.archivedAt !== null, dateReference) === "expire"
     ).length;
 
-    const alertesActives = await this.db.select().from(alertes).where(eq(alertes.statut, "active"));
+    const alertesActives = await this.alertesService.findAll({ statut: "active" });
 
     return {
       impayes: { nombre: impayes.length, montantRestant: centimesVersMontant(montantRestantImpayesCentimes) },

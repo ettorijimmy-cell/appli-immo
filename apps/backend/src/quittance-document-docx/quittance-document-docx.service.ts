@@ -48,16 +48,6 @@ export class QuittanceDocumentDocxService {
     if (!paiement) {
       throw new NotFoundException("Paiement introuvable");
     }
-    // Une quittance atteste un paiement REÇU, jamais une échéance à venir
-    // (docs/backlog.md, Module Tâches, Étape 4) — même garde que
-    // TachesJobService.genererTachesQuittanceMensuelle, revérifiée ici
-    // (l'appelant pourrait être direct, pas nécessairement passé par la
-    // tâche).
-    if (paiement.type !== "loyer" || paiement.statut !== "paye") {
-      throw new BadRequestException(
-        "La génération de quittance n'est disponible que pour un paiement de loyer réglé (statut 'paye')."
-      );
-    }
 
     const [bail] = await this.db.select().from(baux).where(eq(baux.id, paiement.bailId)).limit(1);
     if (!bail) {
@@ -84,6 +74,19 @@ export class QuittanceDocumentDocxService {
     const organisationId = this.requestContext.getOrganisationId();
     if (organisationId && bienRow.organisationId !== organisationId) {
       throw new NotFoundException("Paiement introuvable");
+    }
+
+    // Une quittance atteste un paiement REÇU, jamais une échéance à venir
+    // (docs/backlog.md, Module Tâches, Étape 4) — même garde que
+    // TachesJobService.genererTachesQuittanceMensuelle, revérifiée ici
+    // (l'appelant pourrait être direct, pas nécessairement passé par la
+    // tâche). Après le contrôle d'appartenance (audit des petites suites,
+    // 2026-11-22) : placé avant, ce 400 révélait à une autre organisation
+    // que le paiement existait, et son type ou son statut.
+    if (paiement.type !== "loyer" || paiement.statut !== "paye") {
+      throw new BadRequestException(
+        "La génération de quittance n'est disponible que pour un paiement de loyer réglé (statut 'paye')."
+      );
     }
 
     // Mois non dû (chantier financier de la résiliation, décision 7 du
