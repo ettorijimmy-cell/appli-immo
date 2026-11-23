@@ -713,7 +713,7 @@ describe("revue du commit 3a : mois déjà remboursé remonté par un recul ou u
         echeances: [MARS, avrilRembourse(false)],
         dateReference: "2027-04-20"
       })
-    ).toThrow("Un trop-perçu de l'échéance du 05/04/2027 a déjà été remboursé : corrigez d'abord ce remboursement, puis recommencez.");
+    ).toThrow("Un trop-perçu de l'échéance du 05/04/2027 a déjà été remboursé. Si ce remboursement a été saisi par erreur, archivez-le (fiche du bail, section Remboursements). S'il a réellement été versé au locataire, la date de fin ne peut pas être reculée.");
   });
 
   it("recul dans le même mois (hausse du mois de fin) : même refus", () => {

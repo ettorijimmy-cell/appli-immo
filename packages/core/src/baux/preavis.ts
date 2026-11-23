@@ -463,11 +463,17 @@ export function planRealignementEcheances(parametres: ParametresRealignement): P
 // remboursé fausserait son statut et le reste dû (le reçu ne compte que les
 // versements, pas les remboursements). La règle (reçu net ou non) n'est pas
 // tranchée : refus en attendant la décision de Jimmy (revue
-// financial-logic-reviewer du commit 3a).
+// financial-logic-reviewer du commit 3a). Message en deux branches (commit
+// 5b des petites suites, décision de Jimmy du 2026-11-23) : archiver n'est
+// le remède que d'un remboursement saisi par erreur — archiver un
+// remboursement réellement versé ferait réapparaître l'échéance comme payée
+// alors que le locataire doit la différence. La section Remboursements de
+// la fiche du bail liste ses remboursements actifs, avec « Archiver », quel
+// que soit le statut du bail (préavis compris).
 function refuserSiDejaRemboursee(echeance: EcheanceARealigner): void {
   if (echeance.remboursements.some((remboursement) => remboursement.archivedAt === null)) {
     throw new RefusRealignement(
-      `Un trop-perçu de l'échéance du ${formaterDateCourteFr(echeance.dateEcheance)} a déjà été remboursé : corrigez d'abord ce remboursement, puis recommencez.`
+      `Un trop-perçu de l'échéance du ${formaterDateCourteFr(echeance.dateEcheance)} a déjà été remboursé. Si ce remboursement a été saisi par erreur, archivez-le (fiche du bail, section Remboursements). S'il a réellement été versé au locataire, la date de fin ne peut pas être reculée.`
     );
   }
 }

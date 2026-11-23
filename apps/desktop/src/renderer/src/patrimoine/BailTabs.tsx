@@ -1,5 +1,5 @@
 import { calculerMontantRecuTotal, centimesVersMontant, libelleStatutBail, montantEnCentimes } from "core";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { estArchive } from "../lib/archives";
@@ -20,6 +20,12 @@ import {
   type RemboursementMotifRetenue
 } from "../finances/api";
 import { ApiError } from "../lib/authenticated-fetch";
+import {
+  bauxHistoriqueVisibles,
+  libelleBoutonRemboursements,
+  remboursementsParBail,
+  sectionRemboursementsVisible
+} from "../lib/remboursements-visibles";
 import { aujourdHuiParis } from "../lib/date-paris";
 import { messageErreurApi } from "../lib/message-erreur-api";
 import { texteResiliationBail, texteResultatResiliation, texteRetraitGarant } from "../lib/textes-confirmation";
@@ -1268,9 +1274,6 @@ function RemboursementsSection({
   onRemboursementArchive: () => void;
 }): React.JSX.Element | null {
   const [remboursements, setRemboursements] = useState<Remboursement[]>([]);
-  // Remboursement saisi par erreur à archiver (commit 5 des petites suites,
-  // décision 6) : confirmation qui dit l'effet sur le reste à rembourser.
-  const [remboursementAArchiver, setRemboursementAArchiver] = useState<Remboursement | null>(null);
   // Plusieurs lignes possibles pour un même bail depuis le chantier
   // financier de la résiliation : mois de fin ET échéances gardées après
   // la fin, une par paiement.
@@ -1294,15 +1297,20 @@ function RemboursementsSection({
     void refresh();
   }, [refresh, version]);
 
-  if (bail.statut !== "resilie") {
+  // Toujours sur un bail résilié ; sur un autre statut (préavis surtout)
+  // dès qu'un remboursement actif existe, pour que le remède des refus
+  // (« archivez d'abord ce remboursement ») soit accessible (commit 5b des
+  // petites suites). Création et « en attente » : bail résilié seulement.
+  if (!sectionRemboursementsVisible(bail.statut, remboursements)) {
     return null;
   }
+  const bailResilie = bail.statut === "resilie";
 
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 p-4">
       <h3 className="text-sm font-semibold text-slate-700">Remboursements</h3>
 
-      {enAttente.map((ligne) =>
+      {(bailResilie ? enAttente : []).map((ligne) =>
         formulairePaiementId === ligne.paiementId ? (
           <NewRemboursementTropPercuForm
             key={ligne.paiementId}
@@ -1334,14 +1342,46 @@ function RemboursementsSection({
           </div>
         ))}
 
+      <ListeRemboursements
+        remboursements={remboursements}
+        onArchive={() => {
+          void refresh();
+          onRemboursementArchive();
+        }}
+      />
+    </div>
+  );
+}
+
+// Liste des remboursements d'un bail avec « Archiver » sur chaque ligne
+// active (commit 5 des petites suites, décision 6), partagée par la fiche du
+// bail (section Remboursements) et « Historique des baux » (commit 5b). Une
+// ligne archivée (affichée seulement avec « Afficher les archivés ») est
+// grisée, sans bouton. Confirmation qui dit l'effet sur le reste à
+// rembourser (texteArchivageRemboursement).
+function ListeRemboursements({
+  remboursements,
+  onArchive
+}: {
+  remboursements: Remboursement[];
+  onArchive: () => void;
+}): React.JSX.Element {
+  const [remboursementAArchiver, setRemboursementAArchiver] = useState<Remboursement | null>(null);
+
+  return (
+    <>
       {remboursements.length === 0 ? (
         <p className="text-sm text-slate-500">Aucun remboursement enregistré.</p>
       ) : (
         <ul className="text-sm text-slate-600">
           {remboursements.map((r) => {
             const motif = libelleMotifRetenue(r.motifRetenue);
+            const archive = r.archivedAt !== null;
             return (
-              <li key={r.id} className="flex items-center justify-between border-b border-slate-100 py-1">
+              <li
+                key={r.id}
+                className={`flex items-center justify-between border-b border-slate-100 py-1 ${archive ? ARCHIVED_ROW_CLASSNAME : ""}`}
+              >
                 <span>
                   {r.dateRemboursement} — {r.type === "trop_percu" ? "Trop-perçu" : "Dépôt de garantie"}
                   {r.commentaire ? ` (${r.commentaire})` : ""}
@@ -1360,16 +1400,19 @@ function RemboursementsSection({
                       </button>
                     </>
                   )}
+                  {archive && <ArchiveBadge />}
                 </span>
                 <span className="flex items-center gap-3">
                   <span className="font-medium">{r.montantRembourse} €</span>
-                  <button
-                    type="button"
-                    onClick={() => setRemboursementAArchiver(r)}
-                    className="text-xs text-slate-500 hover:text-red-600"
-                  >
-                    Archiver
-                  </button>
+                  {!archive && (
+                    <button
+                      type="button"
+                      onClick={() => setRemboursementAArchiver(r)}
+                      className="text-xs text-slate-500 hover:text-red-600"
+                    >
+                      Archiver
+                    </button>
+                  )}
                 </span>
               </li>
             );
@@ -1383,13 +1426,12 @@ function RemboursementsSection({
           action={() => archiveRemboursement(remboursementAArchiver.id)}
           onTermine={() => {
             setRemboursementAArchiver(null);
-            void refresh();
-            onRemboursementArchive();
+            onArchive();
           }}
           onAnnuler={() => setRemboursementAArchiver(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -1974,17 +2016,31 @@ function AttachLocataireForm({
 
 export function HistoriqueBauxTab({ appartement }: { appartement: Appartement }): React.JSX.Element {
   const [baux, setBaux] = useState<Bail[]>([]);
+  // Remboursements des baux de l'historique (commit 5b des petites suites) :
+  // le remède « archivez d'abord le remboursement » reste accessible quand
+  // le bail n'est plus le bail en cours (nouveau bail, bail archivé).
+  const [remboursements, setRemboursements] = useState<Remboursement[]>([]);
+  const [bauxDeplies, setBauxDeplies] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  // Échec de chargement des remboursements d'un bail : signalé à part, la
+  // liste des baux reste affichée (relecture du commit 5b).
+  const [erreurRemboursements, setErreurRemboursements] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
+    let historique: Bail[];
     try {
       const tous = await listBaux({ appartementId: appartement.id });
-      setBaux(tous.filter((bail) => !STATUTS_BAIL_EN_COURS.has(bail.statut)));
+      historique = tous.filter((bail) => !STATUTS_BAIL_EN_COURS.has(bail.statut));
+      setBaux(historique);
       setError(null);
     } catch {
       setError("Impossible de charger l'historique des baux");
+      return;
     }
+    const parBail = await Promise.allSettled(historique.map((bail) => listRemboursements({ bailId: bail.id })));
+    setRemboursements(parBail.flatMap((resultat) => (resultat.status === "fulfilled" ? resultat.value : [])));
+    setErreurRemboursements(parBail.some((resultat) => resultat.status === "rejected"));
   }, [appartement.id]);
 
   useEffect(() => {
@@ -1999,13 +2055,30 @@ export function HistoriqueBauxTab({ appartement }: { appartement: Appartement })
     );
   }
 
-  const visibles = showArchived ? baux : baux.filter((bail) => bail.statut !== "archive");
+  const visibles = bauxHistoriqueVisibles(baux, remboursements, showArchived);
+  const remboursementsVisibles = remboursementsParBail(remboursements, showArchived);
+  const basculer = (bailId: string): void =>
+    setBauxDeplies((actuels) => {
+      const suivants = new Set(actuels);
+      if (suivants.has(bailId)) {
+        suivants.delete(bailId);
+      } else {
+        suivants.add(bailId);
+      }
+      return suivants;
+    });
 
   return (
     <div>
       <div className="flex items-center justify-end">
         <ArchiveToggle show={showArchived} onToggle={() => setShowArchived((value) => !value)} />
       </div>
+
+      {erreurRemboursements && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          Impossible de charger les remboursements de certains baux.
+        </p>
+      )}
 
       {visibles.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">Aucun bail antérieur.</p>
@@ -2018,24 +2091,49 @@ export function HistoriqueBauxTab({ appartement }: { appartement: Appartement })
               <th className="py-2 font-medium">Fin</th>
               <th className="py-2 font-medium">Loyer</th>
               <th className="py-2 font-medium">Statut</th>
+              <th className="py-2 font-medium" />
             </tr>
           </thead>
           <tbody>
-            {visibles.map((bail) => (
-              <tr
-                key={bail.id}
-                className={`border-b border-slate-100 ${bail.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
-              >
-                <td className="py-2">{bail.typeBail}</td>
-                <td className="py-2">{bail.dateDebut}</td>
-                <td className="py-2">{bail.dateFin ?? "—"}</td>
-                <td className="py-2">{bail.loyerMensuel ? `${bail.loyerMensuel} €` : "—"}</td>
-                <td className="py-2">
-                  {libelleStatutBail(bail.statut)}
-                  {bail.statut === "archive" && <ArchiveBadge />}
-                </td>
-              </tr>
-            ))}
+            {visibles.map((bail) => {
+              const duBail = remboursementsVisibles.get(bail.id);
+              const deplie = duBail !== undefined && bauxDeplies.has(bail.id);
+              return (
+                <Fragment key={bail.id}>
+                  <tr
+                    className={`border-b border-slate-100 ${bail.statut === "archive" ? ARCHIVED_ROW_CLASSNAME : ""}`}
+                  >
+                    <td className="py-2">{bail.typeBail}</td>
+                    <td className="py-2">{bail.dateDebut}</td>
+                    <td className="py-2">{bail.dateFin ?? "—"}</td>
+                    <td className="py-2">{bail.loyerMensuel ? `${bail.loyerMensuel} €` : "—"}</td>
+                    <td className="py-2">
+                      {libelleStatutBail(bail.statut)}
+                      {bail.statut === "archive" && <ArchiveBadge />}
+                    </td>
+                    <td className="py-2 text-right">
+                      {duBail && (
+                        <button
+                          type="button"
+                          onClick={() => basculer(bail.id)}
+                          aria-expanded={deplie}
+                          className="text-xs text-indigo-700 underline hover:text-indigo-900"
+                        >
+                          {libelleBoutonRemboursements(duBail.nbActifs)}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {deplie && (
+                    <tr className="border-b border-slate-100">
+                      <td colSpan={6} className="py-2 pl-4">
+                        <ListeRemboursements remboursements={duBail.lignes} onArchive={() => void refresh()} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}
