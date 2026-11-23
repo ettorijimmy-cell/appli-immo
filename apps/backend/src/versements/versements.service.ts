@@ -1,6 +1,15 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { calculerMontantRecuTotal, calculerStatutPaiement } from "core";
-import { appartements, baux, bien, mettreAJourFicheNonArchiveeAvecAudit, paiements, versements, type Database } from "db";
+import { calculerMontantRecuTotal, calculerStatutPaiement, centimesVersMontant, montantEnCentimes } from "core";
+import {
+  appartements,
+  baux,
+  bien,
+  mettreAJourFicheNonArchiveeAvecAudit,
+  paiements,
+  remboursements,
+  versements,
+  type Database
+} from "db";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiverFiche, exigerNonArchiveePourArchiver } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
@@ -164,6 +173,33 @@ export class VersementsService {
         "Versement introuvable",
         "annulé"
       );
+
+      // Versement déjà remboursé (commit 5 des petites suites, remarque 7,
+      // décision du 2026-11-22) : refus SEULEMENT si, une fois ce versement
+      // annulé, le total remboursé lié à l'échéance dépasserait le total
+      // reçu. Calculé sous le verrou du bail, que prend aussi la création
+      // d'un remboursement (qui relit son plafond sous ce verrou) : les deux
+      // se sérialisent. Le refus annule la transaction, donc l'annulation
+      // ci-dessus. Les remboursements sans échéance (saisis au niveau du
+      // bail) ne sont pas concernés : ils n'ont pas de plafond (backlog).
+      const versementsRestants = await tx
+        .select()
+        .from(versements)
+        .where(and(eq(versements.paiementId, versement.paiementId), isNull(versements.archivedAt)));
+      const centimesRecus = montantEnCentimes(calculerMontantRecuTotal(versementsRestants));
+      const remboursementsActifs = await tx
+        .select({ montantRembourse: remboursements.montantRembourse })
+        .from(remboursements)
+        .where(and(eq(remboursements.paiementId, versement.paiementId), isNull(remboursements.archivedAt)));
+      const centimesRembourses = remboursementsActifs.reduce(
+        (total, r) => total + montantEnCentimes(r.montantRembourse),
+        0
+      );
+      if (centimesRembourses > centimesRecus) {
+        throw new ConflictException(
+          `Impossible d'annuler ce versement : ${centimesVersMontant(centimesRembourses)} € ont déjà été remboursés sur cette échéance, il n'en resterait que ${centimesVersMontant(centimesRecus)} € reçus. Archivez d'abord le remboursement.`
+        );
+      }
 
       // Montant de l'échéance relu sous le verrou. Échéance archivée : le
       // recalcul n'écrit rien (voir recalculerStatutPaiement).

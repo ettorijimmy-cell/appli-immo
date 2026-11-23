@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   calculerMontantRecuTotal,
   calculerStatutPaiement,
@@ -9,7 +9,17 @@ import {
   type LigneReleveCsvAvecId,
   type PaiementARapprocher
 } from "core";
-import { appartements, bailLocataires, baux, bien, locataires, paiements, versements, type Database } from "db";
+import {
+  appartements,
+  bailLocataires,
+  baux,
+  bien,
+  locataires,
+  paiements,
+  remboursements,
+  versements,
+  type Database
+} from "db";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { archiverFiche, exigerNonArchiveePourArchiver, exigerNonArchiveePourModifier, modifierFiche } from "../common/fiche-archivee";
 import { RequestContextService } from "../common/request-context";
@@ -186,6 +196,21 @@ export class PaiementsService {
       // 3b des petites suites) : si une résiliation vient d'archiver cette
       // échéance, elle est relue archivée ici → 409 « Déjà archivé le … ».
       exigerNonArchiveePourArchiver(await this.verrouillerBailEtRelireEcheance(tx, lu));
+
+      // Remboursements actifs liés à l'échéance (commit 5 des petites
+      // suites, compléments du 2026-11-23) : la cascade ci-dessous archive
+      // ses versements, ce qui laisserait « remboursé > reçu » — même règle
+      // que VersementsService.annuler. Lus sous le verrou du bail, que
+      // RemboursementsService.create prend aussi : un remboursement en
+      // cours de création est vu. Une retenue totale (0 € remboursé) compte
+      // aussi : elle disparaîtrait avec l'échéance.
+      const remboursementsActifs = await tx
+        .select({ montantRembourse: remboursements.montantRembourse })
+        .from(remboursements)
+        .where(and(eq(remboursements.paiementId, id), isNull(remboursements.archivedAt)));
+      if (remboursementsActifs.length > 0) {
+        throw new ConflictException(messageEcheanceRemboursee(remboursementsActifs.map((r) => r.montantRembourse)));
+      }
 
       // Paiement d'abord, avec la condition `archived_at IS NULL` dans
       // l'UPDATE (petites suites, décision 4 du 2026-11-22) : si un autre
@@ -364,4 +389,16 @@ export class PaiementsService {
       charges: paiement.charges
     };
   }
+}
+
+// Refus d'archiver une échéance qui porte des remboursements actifs (commit
+// 5 des petites suites, compléments du 2026-11-23).
+function messageEcheanceRemboursee(montantsRembourses: readonly string[]): string {
+  const total = centimesVersMontant(
+    montantsRembourses.reduce((somme, montant) => somme + montantEnCentimes(montant), 0)
+  );
+  if (montantsRembourses.length === 1) {
+    return `Impossible d'archiver cette échéance : elle porte 1 remboursement (${total} €). Archivez d'abord le remboursement.`;
+  }
+  return `Impossible d'archiver cette échéance : elle porte ${montantsRembourses.length} remboursements (${total} € au total). Archivez d'abord les remboursements.`;
 }

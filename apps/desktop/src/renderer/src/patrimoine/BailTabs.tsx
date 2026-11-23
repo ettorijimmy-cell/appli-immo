@@ -3,9 +3,11 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ARCHIVED_ROW_CLASSNAME, ArchiveBadge, ArchiveToggle, MentionFicheArchivee } from "../components/ArchiveFilter";
 import { ConfirmationActionModal } from "../components/ConfirmationActionModal";
 import { estArchive } from "../lib/archives";
+import { texteArchivageBailBrouillon, texteArchivageRemboursement } from "../lib/textes-confirmation";
 import { DocumentsForEntite } from "../documents/DocumentsForEntite";
 import { EtatDesLieuxSection } from "../etats-des-lieux/EtatDesLieuxSection";
 import {
+  archiveRemboursement,
   createRemboursement,
   listPaiements,
   listRemboursements,
@@ -29,6 +31,7 @@ import { telechargerNoticeInformation } from "../references/api";
 import { getRemboursementsEnAttente, type RemboursementEnAttente } from "../tableau-de-bord/api";
 import {
   activerBail,
+  archiveBail,
   archiveBailLocataire,
   archiveGarant,
   chargerSuivisCautions,
@@ -458,6 +461,9 @@ function BailActuelDetail({
   // rafraîchir immédiatement après une création locale via
   // DepotGarantieSection.
   const [remboursementsVersion, setRemboursementsVersion] = useState(0);
+  // Archivage d'un bail en brouillon abandonné (commit 5 des petites
+  // suites, décision 6) : jamais d'un seul clic.
+  const [brouillonAArchiver, setBrouillonAArchiver] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -725,6 +731,17 @@ function BailActuelDetail({
           </button>
         )}
 
+        {bail.statut === "brouillon" && (
+          <button
+            type="button"
+            onClick={() => setBrouillonAArchiver(true)}
+            disabled={isActionInProgress}
+            className="text-sm text-slate-500 hover:text-red-600 disabled:opacity-50"
+          >
+            Archiver le brouillon
+          </button>
+        )}
+
         {(bail.statut === "actif" || bail.statut === "preavis") && (
           <>
             <input
@@ -758,6 +775,20 @@ function BailActuelDetail({
           </>
         )}
       </div>
+
+      {/* Bail en brouillon seulement : un bail résilié, que le backend
+          accepterait aussi, porte l'historique financier et reste affiché. */}
+      {brouillonAArchiver && bail.statut === "brouillon" && (
+        <ConfirmationActionModal
+          {...texteArchivageBailBrouillon(bail, appartement.numero)}
+          action={() => archiveBail(bail.id)}
+          onTermine={() => {
+            setBrouillonAArchiver(false);
+            onChanged();
+          }}
+          onAnnuler={() => setBrouillonAArchiver(false)}
+        />
+      )}
 
       {/* Résiliation : définitive, jamais d'un seul clic. Le texte décrit ce
           que fait BauxService.resilier() pour la date saisie (ou son
@@ -1020,9 +1051,14 @@ function BailActuelDetail({
 
       <DepotGarantieSection
         bail={bail}
+        version={remboursementsVersion}
         onRemboursementCreated={() => setRemboursementsVersion((v) => v + 1)}
       />
-      <RemboursementsSection bail={bail} version={remboursementsVersion} />
+      <RemboursementsSection
+        bail={bail}
+        version={remboursementsVersion}
+        onRemboursementArchive={() => setRemboursementsVersion((v) => v + 1)}
+      />
     </div>
   );
 }
@@ -1119,9 +1155,13 @@ function LigneRemboursement({ remboursement }: { remboursement: Remboursement })
 // été réellement reçu (rejet strict côté backend).
 function DepotGarantieSection({
   bail,
+  version,
   onRemboursementCreated
 }: {
   bail: Bail;
+  // Incrémenté à chaque création ou archivage de remboursement sur cette
+  // fiche : le reste à rembourser du dépôt est relu.
+  version: number;
   onRemboursementCreated: () => void;
 }): React.JSX.Element | null {
   const [paiementDepot, setPaiementDepot] = useState<Paiement | null>(null);
@@ -1148,7 +1188,7 @@ function DepotGarantieSection({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, version]);
 
   if (bail.statut !== "resilie" || !paiementDepot) {
     return null;
@@ -1218,8 +1258,19 @@ function DepotGarantieSection({
 // remboursement (trop-perçu ou dépôt de garantie) a bien été créé — la
 // carte "Remboursements en attente" du Tableau de bord ne montre que ceux
 // encore NON couverts (décision D3), elle ne sert pas d'historique.
-function RemboursementsSection({ bail, version }: { bail: Bail; version: number }): React.JSX.Element | null {
+function RemboursementsSection({
+  bail,
+  version,
+  onRemboursementArchive
+}: {
+  bail: Bail;
+  version: number;
+  onRemboursementArchive: () => void;
+}): React.JSX.Element | null {
   const [remboursements, setRemboursements] = useState<Remboursement[]>([]);
+  // Remboursement saisi par erreur à archiver (commit 5 des petites suites,
+  // décision 6) : confirmation qui dit l'effet sur le reste à rembourser.
+  const [remboursementAArchiver, setRemboursementAArchiver] = useState<Remboursement | null>(null);
   // Plusieurs lignes possibles pour un même bail depuis le chantier
   // financier de la résiliation : mois de fin ET échéances gardées après
   // la fin, une par paiement.
@@ -1310,11 +1361,33 @@ function RemboursementsSection({ bail, version }: { bail: Bail; version: number 
                     </>
                   )}
                 </span>
-                <span className="font-medium">{r.montantRembourse} €</span>
+                <span className="flex items-center gap-3">
+                  <span className="font-medium">{r.montantRembourse} €</span>
+                  <button
+                    type="button"
+                    onClick={() => setRemboursementAArchiver(r)}
+                    className="text-xs text-slate-500 hover:text-red-600"
+                  >
+                    Archiver
+                  </button>
+                </span>
               </li>
             );
           })}
         </ul>
+      )}
+
+      {remboursementAArchiver && (
+        <ConfirmationActionModal
+          {...texteArchivageRemboursement(remboursementAArchiver)}
+          action={() => archiveRemboursement(remboursementAArchiver.id)}
+          onTermine={() => {
+            setRemboursementAArchiver(null);
+            void refresh();
+            onRemboursementArchive();
+          }}
+          onAnnuler={() => setRemboursementAArchiver(null)}
+        />
       )}
     </div>
   );

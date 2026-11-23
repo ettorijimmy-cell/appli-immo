@@ -410,6 +410,99 @@ describe.skipIf(!SERVEUR_JETABLE)(
       expect(echeance?.version).toBe(avant!.version + 1);
     });
 
+    // Commit 5, remarque 7 : l'annulation contrôle « remboursé ≤ reçu
+    // restant » sous le verrou du bail. Un remboursement en cours de
+    // création (sous ce même verrou) est donc vu.
+    it("annulation d'un versement pendant la création d'un remboursement : attend le verrou, puis 409, versement actif", async () => {
+      const { bailId, paiementId } = await creerEcheance();
+      const [versement] = await db.select().from(versements).where(eq(versements.paiementId, paiementId));
+      const { aAttendu, issue } = await sousLeVerrouDuBail(
+        bailId,
+        () => avecContexte(() => moduleRef.get(VersementsService).annuler(versement!.id)),
+        async (tx) => {
+          await tx.insert(remboursements).values({
+            bailId,
+            paiementId,
+            type: "trop_percu",
+            montantOrigine: "60.00",
+            montantRembourse: "60.00",
+            dateRemboursement: "2026-03-01",
+            mode: "virement"
+          });
+        }
+      );
+      expect(aAttendu).toBe(true);
+      expect(messageDe(issue)).toBe(
+        "Impossible d'annuler ce versement : 60.00 € ont déjà été remboursés sur cette échéance, il n'en resterait que 0.00 € reçus. Archivez d'abord le remboursement."
+      );
+      const [apres] = await db.select().from(versements).where(eq(versements.id, versement!.id));
+      expect(apres?.archivedAt).toBeNull();
+    });
+
+    // Sens inverse (déjà fermé au commit 3b : plafond relu sous verrou) :
+    // non-régression. La seconde connexion archive le versement par un
+    // UPDATE brut sous le verrou du bail (elle ne passe pas par annuler()) :
+    // ce test ne vérifie que la relecture du plafond à la création.
+    it("création d'un remboursement pendant que le versement est archivé sous le verrou : attend, puis 409 plafond", async () => {
+      const { bailId, paiementId } = await creerEcheance();
+      const [versement] = await db.select().from(versements).where(eq(versements.paiementId, paiementId));
+      const { aAttendu, issue } = await sousLeVerrouDuBail(
+        bailId,
+        () =>
+          avecContexte(() =>
+            moduleRef.get(RemboursementsService).create({
+              bailId,
+              paiementId,
+              type: "trop_percu",
+              montantOrigine: "60.00",
+              montantRembourse: "60.00",
+              dateRemboursement: "2026-03-01",
+              mode: "virement"
+            })
+          ),
+        async (tx) => {
+          await tx.update(versements).set({ archivedAt: new Date() }).where(eq(versements.id, versement!.id));
+        }
+      );
+      expect(aAttendu).toBe(true);
+      expect(messageDe(issue)).toBe(
+        "Le total des remboursements ne peut pas dépasser le montant réellement reçu sur ce paiement."
+      );
+    });
+
+    // Compléments du 2026-11-23 : l'archivage d'une échéance relit ses
+    // remboursements actifs sous le verrou du bail. Un remboursement en
+    // cours de création (sous ce même verrou) est donc vu : 409, rien
+    // d'archivé. Le sens inverse (création pendant l'archivage) est déjà
+    // couvert plus haut : « remboursement lié à l'échéance : attend le
+    // verrou du bail, puis 409 si l'échéance a été archivée ».
+    it("archivage d'une échéance pendant la création d'un remboursement : attend le verrou, puis 409, échéance et versement actifs", async () => {
+      const { bailId, paiementId } = await creerEcheance();
+      const { aAttendu, issue } = await sousLeVerrouDuBail(
+        bailId,
+        () => avecContexte(() => moduleRef.get(PaiementsService).archive(paiementId)),
+        async (tx) => {
+          await tx.insert(remboursements).values({
+            bailId,
+            paiementId,
+            type: "trop_percu",
+            montantOrigine: "60.00",
+            montantRembourse: "60.00",
+            dateRemboursement: "2026-03-01",
+            mode: "virement"
+          });
+        }
+      );
+      expect(aAttendu).toBe(true);
+      expect(messageDe(issue)).toBe(
+        "Impossible d'archiver cette échéance : elle porte 1 remboursement (60.00 €). Archivez d'abord le remboursement."
+      );
+      const [echeance] = await db.select().from(paiements).where(eq(paiements.id, paiementId));
+      expect(echeance?.archivedAt).toBeNull();
+      const lesVersements = await db.select().from(versements).where(eq(versements.paiementId, paiementId));
+      expect(lesVersements.filter((v) => v.archivedAt === null)).toHaveLength(1);
+    });
+
     it("deux archivages simultanés de la même échéance : un seul réussit, l'autre reçoit 409", async () => {
       const { paiementId } = await creerEcheance();
       const service = moduleRef.get(PaiementsService);

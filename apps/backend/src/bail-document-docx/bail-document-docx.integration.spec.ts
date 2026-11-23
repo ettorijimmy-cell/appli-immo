@@ -6,6 +6,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import {
   appartements,
   bailLocataires,
+  baux,
   bien as bienTable,
   createDbClient,
   DEFAULT_DEV_DATABASE_URL,
@@ -1052,6 +1053,193 @@ describe("Génération docx du bail (intégration Postgres réelle)", () => {
 
     const texte = texteDuDocx(buffer);
     expect(texte).not.toContain("le précédent locataire ayant quitté");
+  });
+
+  // Commit 5 des petites suites (compléments du 2026-11-23) : un bail
+  // brouillon archivé passe au statut « archive », comme un bail résilié
+  // puis archivé. Il n'a jamais été activé (date_activation nulle) : il ne
+  // doit jamais être pris pour le bail du précédent locataire, même s'il
+  // porte une date de fin plus récente que celle du vrai bail précédent.
+  async function genererNouveauBailSur(appartementId: string) {
+    const locataire = await locatairesService.create(userId, { nom: "Devos", prenom: "Ilan" });
+    await locatairesService.update(locataire.id, {
+      adresse: "1 rue du Locataire",
+      codePostal: "19100",
+      ville: "Brive",
+      dateNaissance: "1990-05-12",
+      telephone: "0611111111",
+      email: "ilan.devos@example.com"
+    });
+    const bail = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-06-01",
+      loyerMensuel: "650.00",
+      depotGarantie: "650.00",
+      provisionsCharges: "30.00",
+      jourEcheance: 5
+    });
+    await bailLocatairesService.create({ bailId: bail.id, locataireId: locataire.id, role: "titulaire" });
+    await garantsService.create({
+      bailId: bail.id,
+      nom: "Durand",
+      prenom: "Claire",
+      typeGarantie: "personne_physique",
+      dateNaissance: "1965-03-20",
+      lieuNaissance: "Lyon",
+      nationalite: "Française"
+    });
+    const { buffer } = await requestContextService.executerAvecContexte({ utilisateurId: userId }, () =>
+      bailDocumentDocxService.genererDocumentBailDocx(bail.id, {})
+    );
+    return texteDuDocx(buffer);
+  }
+
+  async function archiverBrouillonAvecDateFin(appartementId: string) {
+    const brouillon = await bauxService.create({
+      appartementId,
+      typeBail: "vide",
+      dateDebut: "2026-02-01",
+      dateFin: "2026-04-30",
+      loyerMensuel: "999.00",
+      jourEcheance: 5
+    });
+    const archive = await bauxService.archive(brouillon.id);
+    expect(archive.statut).toBe("archive");
+    expect(archive.dateActivation).toBeNull();
+    return archive;
+  }
+
+  it("bail brouillon archivé avec une date de fin plus récente : jamais pris pour le bail du précédent locataire", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    // Vrai bail précédent : activé, un loyer versé, résilié le 2026-01-15.
+    const bailPrecedent = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2024-01-01",
+      loyerMensuel: "600.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bailPrecedent.id);
+    const [paiementLoyerPrecedent] = await db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.bailId, bailPrecedent.id), eq(paiements.type, "loyer")));
+    if (!paiementLoyerPrecedent) {
+      throw new Error("Échéance de loyer introuvable pour le bail précédent");
+    }
+    await versementsService.ajouter({
+      paiementId: paiementLoyerPrecedent.id,
+      montant: "600.00",
+      mode: "virement",
+      dateVersement: "2024-01-05"
+    });
+    await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
+
+    // Brouillon jamais activé, date de fin 2026-04-30 (plus récente), archivé.
+    await archiverBrouillonAvecDateFin(appartement.id);
+
+    const texte = await genererNouveauBailSur(appartement.id);
+    expect(texte).toContain(
+      "Conformément à l'article 3 de la loi n° 89-462 du 6 juillet 1989, le précédent locataire ayant quitté le logement moins de dix-huit mois avant la signature du présent bail, il est précisé que le montant du dernier loyer qui lui a été appliqué s'élevait à 600.00 € et que ce loyer a été versé le 2024-01-05."
+    );
+    expect(texte).not.toContain("999.00");
+  });
+
+  it("seul un bail brouillon archivé avec une date de fin sur l'appartement : aucune mention du précédent locataire", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    await archiverBrouillonAvecDateFin(appartement.id);
+
+    const texte = await genererNouveauBailSur(appartement.id);
+    expect(texte).not.toContain("le précédent locataire ayant quitté");
+    expect(texte).not.toContain("999.00");
+  });
+
+  // Compléments du 2026-11-23 soir, option (a) de la relecture : un bail
+  // activé avant la migration 0007 n'a pas de date_activation (colonne
+  // ajoutée sans rétro-remplissage) ; sa résiliation, elle, a posé
+  // date_resiliation (que seul resilier() écrit, sur un bail actif ou en
+  // préavis). Il reste le bail du précédent locataire.
+  async function bailResilie(appartementId: string, loyerMensuel: string, dateDebut: string, dateFin: string) {
+    const bail = await bauxService.create({ appartementId, typeBail: "vide", dateDebut, loyerMensuel, jourEcheance: 5 });
+    await bauxService.activer(bail.id);
+    await bauxService.resilier(bail.id, { dateFin });
+    return bail.id;
+  }
+
+  // Cas le plus courant d'un statut « archive » légitime (relecture du
+  // 2026-11-23 soir) : archive() ne touche ni date_activation ni
+  // date_resiliation, le bail reste celui du précédent locataire.
+  it("bail résilié puis archivé : mention présente (montant et date de versement)", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    const bailPrecedent = await bauxService.create({
+      appartementId: appartement.id,
+      typeBail: "vide",
+      dateDebut: "2024-01-01",
+      loyerMensuel: "600.00",
+      jourEcheance: 5
+    });
+    await bauxService.activer(bailPrecedent.id);
+    const [paiementLoyerPrecedent] = await db
+      .select()
+      .from(paiements)
+      .where(and(eq(paiements.bailId, bailPrecedent.id), eq(paiements.type, "loyer")));
+    if (!paiementLoyerPrecedent) {
+      throw new Error("Échéance de loyer introuvable pour le bail précédent");
+    }
+    await versementsService.ajouter({
+      paiementId: paiementLoyerPrecedent.id,
+      montant: "600.00",
+      mode: "virement",
+      dateVersement: "2024-01-05"
+    });
+    await bauxService.resilier(bailPrecedent.id, { dateFin: "2026-01-15" });
+    const archive = await bauxService.archive(bailPrecedent.id);
+    expect(archive.statut).toBe("archive");
+
+    const texte = await genererNouveauBailSur(appartement.id);
+    expect(texte).toContain(
+      "Conformément à l'article 3 de la loi n° 89-462 du 6 juillet 1989, le précédent locataire ayant quitté le logement moins de dix-huit mois avant la signature du présent bail, il est précisé que le montant du dernier loyer qui lui a été appliqué s'élevait à 600.00 € et que ce loyer a été versé le 2024-01-05."
+    );
+  });
+
+  it("bail résilié ancien sans date d'activation (avant la migration 0007) : mention présente", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    const ancienId = await bailResilie(appartement.id, "600.00", "2024-01-01", "2026-01-15");
+    // Donnée héritée : date_activation jamais remplie.
+    await db.update(baux).set({ dateActivation: null }).where(eq(baux.id, ancienId));
+    const [ancien] = await db.select().from(baux).where(eq(baux.id, ancienId));
+    expect(ancien?.dateActivation).toBeNull();
+    expect(ancien?.dateResiliation).not.toBeNull();
+
+    const texte = await genererNouveauBailSur(appartement.id);
+    expect(texte).toContain(
+      "Conformément à l'article 3 de la loi n° 89-462 du 6 juillet 1989, le précédent locataire ayant quitté le logement moins de dix-huit mois avant la signature du présent bail, il est précisé que le montant du dernier loyer qui lui a été appliqué s'élevait à 600.00 €."
+    );
+  });
+
+  it("égalité de date de fin : un bail avec date de résiliation passe devant un bail sans (NULLS LAST)", async () => {
+    const { appartement } = await creerAppartementDeBase();
+    await db.insert(indicesIrl).values({ annee: 9999, trimestre: 2, valeur: "148.37" });
+
+    // Bail A, hérité d'avant la migration 0013 : activé, sans
+    // date_resiliation, même date de fin que le bail B.
+    const ancienId = await bailResilie(appartement.id, "600.00", "2024-01-01", "2025-01-15");
+    // Bail B, résilié par resilier() : date_resiliation renseignée.
+    await bailResilie(appartement.id, "620.00", "2025-02-01", "2026-01-15");
+    await db.update(baux).set({ dateFin: "2026-01-15", dateResiliation: null }).where(eq(baux.id, ancienId));
+
+    const texte = await genererNouveauBailSur(appartement.id);
+    expect(texte).toContain("s'élevait à 620.00 €");
+    expect(texte).not.toContain("s'élevait à 600.00 €");
   });
 
   // Écriture directe en base : seule la présence d'un document catégorisé

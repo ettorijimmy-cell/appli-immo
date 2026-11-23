@@ -1,12 +1,12 @@
-import { formaterDateCourteFr, montantEnCentimes } from "core";
+import { centimesVersMontant, formaterDateCourteFr, montantEnCentimes } from "core";
 import { MESSAGE_CONFIRMATION_ARCHIVAGE_PHOTO, messageRepliArchivage } from "../documents/archivage-document";
 import type { EvenementCalendrier } from "../calendrier/api";
 import type { Candidat } from "../candidats/api";
 import type { Contact } from "../contacts/api";
 import type { RegleCategorisation } from "../depenses/api";
 import type { DocumentMetier } from "../documents/api";
-import type { Paiement, PaiementType, Versement } from "../finances/api";
-import type { Garant, Locataire } from "../locataires/api";
+import type { Paiement, PaiementType, Remboursement, Versement } from "../finances/api";
+import type { Bail, Garant, Locataire } from "../locataires/api";
 import { libelleBien, type Appartement, type Bien, type Equipement, type EquipementType } from "../patrimoine/api";
 import type { Sci } from "../scis/api";
 import { SINISTRE_STATUT_LABELS, SINISTRE_TYPE_LABELS, type Sinistre } from "../sinistres/api";
@@ -347,6 +347,82 @@ export function texteAnnulationVersement(
     libelleConfirmer: "Annuler le versement",
     libelleEnCours: "Annulation…",
     messageRepli: "Impossible d'annuler ce versement."
+  };
+}
+
+// Bail en brouillon (commit 5 des petites suites, décision 6) :
+// BauxService.archive() n'écrit que le bail (statut « archive ») — aucune
+// cascade sur ses rattachements locataires, garants, documents ni son état
+// des lieux. Il reste listé dans l'historique des baux (HistoriqueBauxTab,
+// avec les archivés). Un bail ne se désarchive jamais (décision 7).
+export function texteArchivageBailBrouillon(bail: Pick<Bail, "dateDebut">, numeroAppartement: string): TexteConfirmation {
+  return {
+    titre: "Archiver ce bail en brouillon ?",
+    explication: `Le bail en brouillon de l'appartement ${numeroAppartement} (début prévu le ${formaterDateCourteFr(bail.dateDebut)}) ne sera plus le bail en cours de l'appartement, qui pourra recevoir un nouveau bail ; il reste visible dans « Historique des baux » avec « Afficher les archivés ». Les locataires et garants rattachés, ses documents et son état des lieux ne sont pas archivés. ${PHRASE_ARCHIVAGE_IRREVERSIBLE}`,
+    libelleConfirmer: "Archiver le brouillon",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce bail."
+  };
+}
+
+// Remboursement (commit 5 des petites suites, décision 6). Archivé, il ne
+// compte plus nulle part ; l'effet visible dépend du cas (revue
+// financial-logic-reviewer du commit 5) :
+// - sans échéance liée (paiementId nul) : aucun calcul de reste n'en
+//   dépend ;
+// - trop-perçu : calculerResteARembourser a un plancher à 0, et le plafond
+//   de création porte sur le reçu de l'échéance, pas sur le trop-perçu —
+//   le reste remonte donc AU PLUS du montant ; la ligne peut revenir dans
+//   « Remboursements en attente » ;
+// - dépôt de garantie : la section du bail calcule reçu − remboursés, le
+//   reste remonte exactement du montant ; une retenue (montant remboursé
+//   inférieur au montant d'origine) et son motif disparaissent de
+//   l'affichage, y compris une retenue totale à 0 €.
+// La pièce justificative reste en stockage, plus listée. Un remboursement
+// ne se désarchive jamais (décision 7).
+export function texteArchivageRemboursement(
+  remboursement: Pick<
+    Remboursement,
+    "type" | "montantOrigine" | "montantRembourse" | "dateRemboursement" | "paiementId" | "pieceJustificativeNomFichier"
+  >
+): TexteConfirmation {
+  const date = formaterDateCourteFr(remboursement.dateRemboursement);
+  const centimesRembourses = montantEnCentimes(remboursement.montantRembourse);
+  const centimesRetenue = montantEnCentimes(remboursement.montantOrigine) - centimesRembourses;
+  const phrases: string[] = [];
+
+  if (remboursement.type === "depot_garantie" && centimesRembourses === 0) {
+    phrases.push(
+      `La retenue totale de ${remboursement.montantOrigine} € sur le dépôt de garantie, saisie le ${date}, et son motif n'apparaîtront plus.`
+    );
+  } else {
+    const nature = remboursement.type === "trop_percu" ? "trop-perçu" : "dépôt de garantie";
+    phrases.push(
+      `Le remboursement de ${nature} de ${remboursement.montantRembourse} € du ${date} ne comptera plus comme remboursé.`
+    );
+    if (remboursement.paiementId === null) {
+      phrases.push("Il n'est rattaché à aucune échéance : aucun reste à rembourser n'en dépend.");
+    } else if (remboursement.type === "trop_percu") {
+      phrases.push(
+        `Le reste à rembourser au locataire remonte au plus de ${remboursement.montantRembourse} €, et le trop-perçu peut réapparaître dans « Remboursements en attente » du tableau de bord.`
+      );
+    } else {
+      phrases.push(`Le reste à rembourser du dépôt de garantie remonte de ${remboursement.montantRembourse} €.`);
+      if (centimesRetenue > 0) {
+        phrases.push(`La retenue de ${centimesVersMontant(centimesRetenue)} € et son motif n'apparaîtront plus.`);
+      }
+    }
+  }
+  if (remboursement.pieceJustificativeNomFichier) {
+    phrases.push("Le justificatif est conservé mais n'est plus affiché.");
+  }
+  phrases.push(PHRASE_ARCHIVAGE_IRREVERSIBLE);
+  return {
+    titre: "Archiver ce remboursement ?",
+    explication: phrases.join(" "),
+    libelleConfirmer: "Archiver le remboursement",
+    libelleEnCours: "Archivage…",
+    messageRepli: "Impossible d'archiver ce remboursement."
   };
 }
 

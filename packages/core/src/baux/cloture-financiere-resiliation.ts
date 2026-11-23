@@ -224,8 +224,12 @@ export interface BailPourQuittance {
  * Mois non dû (décision 7) : l'échéance tombe dans un mois strictement
  * après le mois de `date_fin` d'un bail résilié — y compris archivé après
  * sa résiliation (BauxService.archive() n'archive qu'un bail brouillon ou
- * résilié, et un brouillon n'a jamais d'échéance). La quittance d'un tel
- * mois est refusée.
+ * résilié). Un brouillon archivé avec une date_fin est traité de même :
+ * activer() ne lui a généré aucune échéance, mais PaiementsService.create
+ * ne vérifie pas le statut du bail, donc une échéance créée par l'API est
+ * possible ; le refus de quittance est alors le sens prudent (commit 5 des
+ * petites suites, compléments du 2026-11-23 : critère « déjà activé » non
+ * appliqué ici). La quittance d'un tel mois est refusée.
  */
 export function estEcheanceMoisNonDu(dateEcheance: string, bail: BailPourQuittance): boolean {
   if ((bail.statut !== "resilie" && bail.statut !== "archive") || bail.dateFin === null) {

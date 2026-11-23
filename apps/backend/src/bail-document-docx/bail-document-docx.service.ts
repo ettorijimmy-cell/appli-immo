@@ -47,7 +47,7 @@ import {
   type Database
 } from "db";
 import Docxtemplater from "docxtemplater";
-import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import PizZip from "pizzip";
 import { AuditService } from "../audit/audit.service";
 import { BienService } from "../bien/bien.service";
@@ -422,9 +422,16 @@ export class BailDocumentDocxService {
     // quitté le logement moins de 18 mois avant la signature du bail
     // (dateReference, pas dateDebut — le texte parle de la signature).
     // "Précédent locataire" = le bail le plus récemment terminé (résilié ou
-    // archivé — jamais un brouillon, qui n'a jamais représenté une
-    // occupation réelle même s'il porte une date_fin) sur ce même
-    // appartement, hors le bail en cours de génération.
+    // archivé) sur ce même appartement, hors le bail en cours de génération,
+    // et réellement occupé : date_activation OU date_resiliation renseignée
+    // (commit 5 des petites suites, compléments du 2026-11-23 soir). Un
+    // brouillon archivé passe lui aussi au statut « archive », même avec une
+    // date_fin, mais n'a ni l'une ni l'autre : activer() pose la première,
+    // et seul resilier() pose la seconde, sur un bail actif ou en préavis.
+    // date_resiliation rattrape les baux activés avant la migration 0007
+    // (date_activation jamais rétro-remplie). Tri : date_fin, puis la
+    // résiliation la plus récente ; un bail sans date_resiliation (résilié
+    // avant la migration 0013) passe en dernier à date_fin égale.
     const [bailPrecedent] = await this.db
       .select()
       .from(baux)
@@ -433,10 +440,11 @@ export class BailDocumentDocxService {
           eq(baux.appartementId, appartement.id),
           ne(baux.id, bailId),
           inArray(baux.statut, ["resilie", "archive"]),
-          isNotNull(baux.dateFin)
+          isNotNull(baux.dateFin),
+          or(isNotNull(baux.dateActivation), isNotNull(baux.dateResiliation))
         )
       )
-      .orderBy(desc(baux.dateFin), desc(baux.dateResiliation))
+      .orderBy(desc(baux.dateFin), sql`${baux.dateResiliation} desc nulls last`)
       .limit(1);
     const montantLoyerPrecedent = calculerLoyerPrecedentLocataire(
       bailPrecedent ? { loyerMensuel: bailPrecedent.loyerMensuel, dateFin: bailPrecedent.dateFin } : null,
